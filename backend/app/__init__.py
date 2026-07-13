@@ -1,0 +1,1 @@
+"""Travel Hunter backend package."""
