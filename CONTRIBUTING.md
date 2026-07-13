@@ -1,6 +1,6 @@
 # 트래블헌터 앱 기여 가이드
 
-> 이 문서는 `travel-hunter-app` 레포에 처음 기여하는 팀원을 위한 안내서입니다.
+> 이 문서는 `travel-hunter-onprem` 레포에 처음 기여하는 팀원을 위한 안내서입니다.
 > 스터디 레포(`travel-hunter-study`)의 PR 흐름을 먼저 익히고 오세요.
 
 ---
@@ -62,7 +62,7 @@ feat: 카카오 소셜 로그인 구현
 fix: JWT 토큰 만료 오류 수정
 docs: API 명세서 업데이트
 infra: Terraform VPC 모듈 추가
-ci: GitHub Actions 배포 파이프라인 구성
+ci: Jenkins 배포 파이프라인 구성
 ```
 
 | type | 사용 상황 |

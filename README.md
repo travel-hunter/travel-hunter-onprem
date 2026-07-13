@@ -151,4 +151,4 @@ Deployment: Docker Compose + Caddy + Cloudflare Tunnel
 | Database | PostgreSQL, psycopg 3 |
 | Auth | PyJWT, pwdlib(argon2), refresh token cookie, Kakao/Google OAuth |
 | Test | Vitest, Testing Library, Playwright, Pytest, httpx |
-| Infra | Docker Compose, Caddy, Cloudflare Tunnel, GitHub Actions, Jenkins CD plan |
+| Infra | Docker Compose, Caddy, Cloudflare Tunnel, Jenkins CD plan |

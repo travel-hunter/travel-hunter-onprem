@@ -61,7 +61,7 @@ chmod 600 ~/.travel-hunter-smoke.env
 - [ ] 배포 대상 브랜치가 맞다.
   - 개발 서버: `develop`
   - 운영 서버: `main`
-- [ ] GitHub Actions CI가 통과했다.
+- [ ] Jenkins 빌드/배포 파이프라인이 통과했다.
 - [ ] Jenkins build가 통과했다.
 - [ ] 실제 `.env`, DB password, OAuth secret, tunnel token이 commit에 없다.
 - [ ] 임시 Docker 이미지 archive(`*.tar`, `*.tar.gz`, `*.tgz`)가 commit에 없다.
@@ -160,7 +160,7 @@ Release candidate handoff는 아래 기준을 모두 설명할 수 있을 때만
 코드 rollback:
 
 ```bash
-cd /srv/travel-hunter-app
+cd /srv/travel-hunter-onprem
 git checkout <previous-good-commit>
 docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml build
 docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml up -d
