@@ -460,7 +460,6 @@ export function SignupVerifyPage() {
   const [error, setError] = useState("");
   const [isVerifying, setIsVerifying] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const attemptedTokenRef = useRef<string | null>(null);
   const redirect = getSafeRedirect(searchParams) ?? "/home";
   const token = searchParams.get("token") ?? "";
 
@@ -472,8 +471,6 @@ export function SignupVerifyPage() {
         setIsVerifying(false);
         return;
       }
-      if (attemptedTokenRef.current === token) return;
-      attemptedTokenRef.current = token;
       setIsVerifying(true);
       setError("");
       try {

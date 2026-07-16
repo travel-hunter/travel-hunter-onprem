@@ -117,6 +117,37 @@ describe("Travel Hunter app — auth & routing", () => {
     expect(document.querySelector('button[type="submit"]')).toBeTruthy();
   });
 
+  it("keeps signup verification progressing when session bootstrap rerenders mid-request", async () => {
+    let resolveVerify: (result: { verified: true; email: string }) => void = () => {};
+    const verifyPromise = new Promise<{ verified: true; email: string }>((resolve) => {
+      resolveVerify = resolve;
+    });
+    const refreshSpy = vi
+      .spyOn(appDataApi, "refreshSession")
+      .mockRejectedValue(new Error("missing refresh cookie"));
+    const verifySpy = vi
+      .spyOn(appDataApi, "verifySignup")
+      .mockReturnValue(verifyPromise);
+
+    try {
+      renderAppRoute("/signup/verify?token=valid-token");
+
+      await waitFor(() => expect(verifySpy).toHaveBeenCalledWith({ token: "valid-token" }));
+      await waitFor(() => expect(refreshSpy).toHaveBeenCalled());
+
+      resolveVerify({ verified: true, email: "signup-progress@example.com" });
+
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "비밀번호 설정하고 가입 완료" })).toBeInTheDocument(),
+      );
+      expect(document.querySelector('input[name="password"]')).toBeTruthy();
+      expect(document.body).toHaveTextContent("이메일 인증이 완료됐어요");
+    } finally {
+      refreshSpy.mockRestore();
+      verifySpy.mockRestore();
+    }
+  });
+
   it("opens core authenticated routes", async () => {
     await login();
 
