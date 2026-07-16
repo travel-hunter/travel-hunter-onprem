@@ -2,23 +2,21 @@
 
 ## Current Status
 
-- Active task/status: PR #102 was merged to `develop` and deployed to the development server.
-- Development server SHA: `7b8be51` (`Merge pull request #102 from travel-hunter/agent/policies-table-cleanup-hardening`).
-- Scope guard: The deployment used clean `develop` on `/home/deploy/travelhunterapp`; secrets were not printed.
+- Active task/status: Preparing `feature/signup-verify-state-fix` from `origin/develop` in `travel-hunter-onprem`.
+- Scope guard: Include only signup verify frontend fix, regression test, Semi-Trunk strategy docs/guard, and local Codex/OMX skill.
+- Excluded from this branch: backend policy/data/schema/migration changes, secrets/env, `main` update, direct `develop` push, PR merge, and production promotion.
 
 ## Latest Validation Evidence
 
-- GitHub PR #102 CI passed before merge: Backend fast lane, Frontend DB-backed fast lane, and CodeRabbit.
-- Local final gate before merge passed: backend full pytest 528 passed, Alembic SQL generation, frontend typecheck/test/build, compose config, diff/UTF-8 checks, independent code-reviewer APPROVE, and architect CLEAR.
-- Development server deploy passed: `docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml config`, build, `up -d db`, `alembic upgrade head`, and `up -d`.
-- Development server Alembic version is `0026_user_withdrawal_fields`; `users.withdrawn_at` and `users.withdrawn_email_hash` exist.
-- Development server smoke passed: `/api/health`, `/login`, `/api/policies?limit=1`, and unauthenticated account lifecycle endpoint guards returning 401.
+- Frontend typecheck passed: `cd frontend && npm run typecheck`.
+- Targeted auth regression passed: `cd frontend && npx vitest run src/app/__tests__/auth.test.tsx -t "keeps signup verification progressing"`.
+- Frontend `npm test` did not complete: mojibake precheck passed, then `scripts/run-backend-command.cjs` started compose PostgreSQL but Alembic failed in the local Python environment with `No module named alembic.__main__; 'alembic' is a package and cannot be directly executed`. The test compose container/volume/network were removed with `docker compose down -v --remove-orphans`.
+- External dev smoke evidence provided for the source fix: public `/api/health` OK, synthetic `POST /api/auth/signup/verify` 200, and Playwright public verify page showed password input plus completion button.
 
 ## Remaining Risks
 
-- Fresh PostgreSQL `pg_dump` regeneration was not performed; `docs/db-schema-current.sql` remains a schema reference updated from Alembic 0026 SQL evidence.
-- Authenticated browser smoke on the development server remains manual because it requires runtime login credentials.
-- Jenkins build status was not checked from this environment.
+- Full frontend `npm test` is blocked by the local backend Alembic executable environment above; e2e, backend pytest, and Jenkins dev status were not run for this narrow frontend/docs branch.
+- PR is for review into `develop`; merge and production promotion remain intentionally out of scope.
 
 ## Cleanup Policy
 
