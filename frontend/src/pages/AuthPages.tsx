@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ChevronLeft, Dice5 } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { appDataApi } from "../api";
+import { appDataApi, type SignupVerifyResponse } from "../api";
 import { getPostAuthPath } from "../app/onboarding";
 import { useSession } from "../app/session";
 import { AuthFormShell, BrandMark } from "../components/patterns";
@@ -39,6 +39,34 @@ const oauthProviderLabels = {
 
 const CURRENT_TERMS_VERSION = "2026-06-26";
 const CURRENT_PRIVACY_VERSION = "2026-06-26";
+
+type SignupVerifyCacheEntry = {
+  promise?: Promise<SignupVerifyResponse>;
+  result?: SignupVerifyResponse;
+};
+
+const signupVerifyRequests = new Map<string, SignupVerifyCacheEntry>();
+
+function verifySignupOnceForToken(token: string, verifySignup: (token: string) => Promise<SignupVerifyResponse>) {
+  const cached = signupVerifyRequests.get(token);
+  if (cached?.result) return Promise.resolve(cached.result);
+  if (cached?.promise) return cached.promise;
+
+  const promise = verifySignup(token).then(
+    (result) => {
+      signupVerifyRequests.set(token, { result });
+      return result;
+    },
+    (error) => {
+      if (signupVerifyRequests.get(token)?.promise === promise) {
+        signupVerifyRequests.delete(token);
+      }
+      throw error;
+    },
+  );
+  signupVerifyRequests.set(token, { promise });
+  return promise;
+}
 
 type AgreementKey = "terms" | "privacy";
 type AgreementState = Record<AgreementKey, boolean>;
@@ -474,7 +502,7 @@ export function SignupVerifyPage() {
       setIsVerifying(true);
       setError("");
       try {
-        const result = await verifySignup(token);
+        const result = await verifySignupOnceForToken(token, verifySignup);
         if (!cancelled) setEmail(result.email);
       } catch (error) {
         const detail = error instanceof Error ? error.message : "";

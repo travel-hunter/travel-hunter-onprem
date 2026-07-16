@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -134,12 +135,17 @@ describe("Travel Hunter app — auth & routing", () => {
 
       await waitFor(() => expect(verifySpy).toHaveBeenCalledWith({ token: "valid-token" }));
       await waitFor(() => expect(refreshSpy).toHaveBeenCalled());
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(verifySpy).toHaveBeenCalledTimes(1);
 
       resolveVerify({ verified: true, email: "signup-progress@example.com" });
 
       await waitFor(() =>
         expect(screen.getByRole("button", { name: "비밀번호 설정하고 가입 완료" })).toBeInTheDocument(),
       );
+      expect(verifySpy).toHaveBeenCalledTimes(1);
       expect(document.querySelector('input[name="password"]')).toBeTruthy();
       expect(document.body).toHaveTextContent("이메일 인증이 완료됐어요");
     } finally {
