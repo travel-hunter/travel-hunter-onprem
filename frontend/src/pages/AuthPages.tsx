@@ -43,24 +43,48 @@ const CURRENT_PRIVACY_VERSION = "2026-06-26";
 type SignupVerifyCacheEntry = {
   promise?: Promise<SignupVerifyResponse>;
   result?: SignupVerifyResponse;
+  expiresAt?: number;
+  cleanupTimer?: ReturnType<typeof setTimeout>;
 };
 
+const SIGNUP_VERIFY_SUCCESS_TTL_MS = 30_000;
 const signupVerifyRequests = new Map<string, SignupVerifyCacheEntry>();
+
+function deleteSignupVerifyRequest(token: string, expectedEntry?: SignupVerifyCacheEntry) {
+  const currentEntry = signupVerifyRequests.get(token);
+  if (!currentEntry || (expectedEntry && currentEntry !== expectedEntry)) return;
+  if (currentEntry.cleanupTimer) clearTimeout(currentEntry.cleanupTimer);
+  signupVerifyRequests.delete(token);
+}
+
+function cacheSignupVerifySuccess(token: string, result: SignupVerifyResponse) {
+  const entry: SignupVerifyCacheEntry = {
+    result,
+    expiresAt: Date.now() + SIGNUP_VERIFY_SUCCESS_TTL_MS,
+  };
+  entry.cleanupTimer = setTimeout(() => {
+    deleteSignupVerifyRequest(token, entry);
+  }, SIGNUP_VERIFY_SUCCESS_TTL_MS);
+  signupVerifyRequests.set(token, entry);
+}
 
 function verifySignupOnceForToken(token: string, verifySignup: (token: string) => Promise<SignupVerifyResponse>) {
   const cached = signupVerifyRequests.get(token);
-  if (cached?.result) return Promise.resolve(cached.result);
+  if (cached?.result && cached.expiresAt && cached.expiresAt > Date.now()) return Promise.resolve(cached.result);
+  if (cached?.result) {
+    deleteSignupVerifyRequest(token, cached);
+  }
   if (cached?.promise) return cached.promise;
 
   const promise = verifySignup(token).then(
     (result) => {
-      signupVerifyRequests.set(token, { result });
+      if (signupVerifyRequests.get(token)?.promise === promise) {
+        cacheSignupVerifySuccess(token, result);
+      }
       return result;
     },
     (error) => {
-      if (signupVerifyRequests.get(token)?.promise === promise) {
-        signupVerifyRequests.delete(token);
-      }
+      if (signupVerifyRequests.get(token)?.promise === promise) deleteSignupVerifyRequest(token);
       throw error;
     },
   );
@@ -533,6 +557,7 @@ export function SignupVerifyPage() {
     setIsSubmitting(true);
     try {
       const user = await completeSignup({ token, password });
+      deleteSignupVerifyRequest(token);
       navigate(getPostAuthPath(user, redirect), { replace: true });
     } catch (error) {
       const detail = error instanceof Error ? error.message : "";
