@@ -237,6 +237,34 @@ class Policy(Base):
     notification_deliveries: Mapped[list[NotificationDelivery]] = relationship(
         back_populates="policy"
     )
+    slug_aliases: Mapped[list[PolicySlugAlias]] = relationship(back_populates="policy")
+
+
+class PolicySlugAlias(Base):
+    __tablename__ = "policy_slug_aliases"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    old_slug: Mapped[str] = mapped_column(String(160), unique=True, nullable=False)
+    policy_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("policies.id"), nullable=False, index=True
+    )
+    canonical_slug: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    alias_kind: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="legacy", server_default="legacy"
+    )
+    source_kind: Mapped[str | None] = mapped_column(String(50))
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    policy: Mapped[Policy] = relationship(back_populates="slug_aliases")
 
 
 class AdminAuditLog(Base):

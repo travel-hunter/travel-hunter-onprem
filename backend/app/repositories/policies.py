@@ -1,8 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models import Policy, PolicySlugAlias, Trip, TripMember, TripPolicy, UserSavedPolicy
 from app.models.policy_status import POLICY_STATUS_ACTIVE
-from app.models import Policy, Trip, TripMember, TripPolicy, UserSavedPolicy
 
 
 def _active_policy_clause():
@@ -35,6 +35,40 @@ def get_policy_by_slug_any_status(db: Session, policy_slug: str) -> Policy | Non
         .where(Policy.slug == policy_slug)
     )
     return db.scalar(statement)
+
+
+def get_active_slug_alias_by_old_slug(
+    db: Session,
+    old_slug: str,
+) -> PolicySlugAlias | None:
+    statement = (
+        select(PolicySlugAlias)
+        .options(selectinload(PolicySlugAlias.policy).selectinload(Policy.documents))
+        .where(
+            PolicySlugAlias.old_slug == old_slug,
+            PolicySlugAlias.is_active.is_(True),
+            PolicySlugAlias.superseded_at.is_(None),
+        )
+    )
+    return db.scalar(statement)
+
+
+def list_slug_aliases_by_policy_id(
+    db: Session,
+    *,
+    policy_id: int,
+    active_only: bool = False,
+) -> list[PolicySlugAlias]:
+    statement = select(PolicySlugAlias).where(PolicySlugAlias.policy_id == policy_id)
+    if active_only:
+        statement = statement.where(
+            PolicySlugAlias.is_active.is_(True),
+            PolicySlugAlias.superseded_at.is_(None),
+        )
+    statement = statement.order_by(
+        PolicySlugAlias.created_at.desc(), PolicySlugAlias.id.desc()
+    )
+    return list(db.scalars(statement).all())
 
 
 def get_saved_policy(

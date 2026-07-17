@@ -11,6 +11,7 @@ from app.db.base import Base
 from app.models import (
     ExternalSourceRecord,
     Policy,
+    PolicySlugAlias,
     Recommendation,
     Trip,
     TripDay,
@@ -930,7 +931,11 @@ def test_remove_policy_from_trip_is_idempotent_when_link_missing(monkeypatch) ->
     removed_links: list[TripPolicy] = []
 
     monkeypatch.setattr(trip_service.trip_repository, "get_accessible_trip_by_id", lambda *_args, **_kwargs: trip)
-    monkeypatch.setattr(trip_service.policy_repository, "get_policy_by_slug", lambda *_args, **_kwargs: policy)
+    monkeypatch.setattr(
+        trip_service.policy_repository,
+        "get_policy_by_slug",
+        lambda _db, slug: policy if policy is not None and slug == policy.slug else None,
+    )
     monkeypatch.setattr(trip_service.trip_repository, "get_trip_policy", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(trip_service.trip_repository, "remove_trip_policy", lambda _db, link: removed_links.append(link))
 
@@ -951,12 +956,14 @@ def test_add_policy_to_trip_resolves_stay_discount_alias_to_canonical(monkeypatc
 
     monkeypatch.setattr(trip_service.trip_repository, "get_accessible_trip_by_id", lambda *_args, **_kwargs: trip)
     monkeypatch.setattr(trip_service.policy_repository, "list_policies", lambda db: [stay_policy] if db is fake_db else [])
+    monkeypatch.setattr(trip_service.policy_repository, "get_active_slug_alias_by_old_slug", lambda *_args: None)
     monkeypatch.setattr(
         trip_service.external_source_repository,
         "get_external_source_record_by_id",
         lambda db, record_id: stay_record if db is fake_db and record_id == 88 else None,
     )
     monkeypatch.setattr(trip_service.policy_repository, "get_policy_by_slug", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(trip_service.policy_repository, "get_active_slug_alias_by_old_slug", lambda *_args: None)
     monkeypatch.setattr(trip_service.trip_repository, "get_trip_policy", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         trip_service.trip_repository,
@@ -968,6 +975,50 @@ def test_add_policy_to_trip_resolves_stay_discount_alias_to_canonical(monkeypatc
 
     assert result == {"tripId": "7", "policyId": "stay-discount-gangwon-goseong", "added": True}
     assert added_links == [{"trip_id": 7, "policy_id": 88}]
+    assert fake_db.commits == 1
+
+
+def test_add_policy_to_trip_resolves_persisted_alias_to_canonical_and_echoes_request(
+    monkeypatch,
+) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    policy = Policy(id=58, slug="travelmonth-58", title="Official benefit")
+    alias = PolicySlugAlias(
+        old_slug="dgtour-hapcheon-1",
+        policy_id=policy.id,
+        canonical_slug="travelmonth-58",
+    )
+    alias.policy = policy
+    added_links: list[dict[str, int]] = []
+
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "get_accessible_trip_by_id",
+        lambda *_args, **_kwargs: trip,
+    )
+    monkeypatch.setattr(
+        trip_service.policy_repository,
+        "get_policy_by_slug",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        trip_service.policy_repository,
+        "get_active_slug_alias_by_old_slug",
+        lambda db, slug: alias if db is fake_db and slug == "dgtour-hapcheon-1" else None,
+    )
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_policy", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "add_trip_policy",
+        lambda _db, **kwargs: added_links.append(kwargs),
+    )
+
+    result = trip_service.add_policy_to_trip(fake_db, user, "7", "dgtour-hapcheon-1")
+
+    assert result == {"tripId": "7", "policyId": "dgtour-hapcheon-1", "added": True}
+    assert added_links == [{"trip_id": 7, "policy_id": 58}]
     assert fake_db.commits == 1
 
 
@@ -992,6 +1043,7 @@ def test_add_policy_to_trip_rejects_hidden_stay_discount_alias(monkeypatch) -> N
         lambda db, record_id: stay_record if db is fake_db and record_id == 88 else None,
     )
     monkeypatch.setattr(trip_service.policy_repository, "get_policy_by_slug", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(trip_service.policy_repository, "get_active_slug_alias_by_old_slug", lambda *_args: None)
     monkeypatch.setattr(
         trip_service.trip_repository,
         "add_trip_policy",
@@ -1025,6 +1077,7 @@ def test_remove_policy_from_trip_resolves_stay_discount_alias_to_canonical(monke
         lambda db, record_id: stay_record if db is fake_db and record_id == 88 else None,
     )
     monkeypatch.setattr(trip_service.policy_repository, "get_policy_by_slug", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(trip_service.policy_repository, "get_active_slug_alias_by_old_slug", lambda *_args: None)
     monkeypatch.setattr(
         trip_service.trip_repository,
         "get_trip_policy",
@@ -1994,10 +2047,16 @@ def test_send_invite_email_returns_fallback_when_smtp_not_configured(monkeypatch
     assert fake_db.commits == 1
 
 
-def install_create_trip_stubs(monkeypatch, *, policy: Policy | None = None):
+def install_create_trip_stubs(
+    monkeypatch,
+    *,
+    policy: Policy | None = None,
+    linked_policy: Policy | None = None,
+):
     captured: dict[str, object] = {"trip_days": [], "trip_places": [], "recommendations": []}
     created_trip = make_trip()
     created_trip.id = 11
+    linked_policy = linked_policy if linked_policy is not None else policy
 
     def create_trip_stub(db, **kwargs):
         captured["create_trip"] = kwargs
@@ -2038,13 +2097,17 @@ def install_create_trip_stubs(monkeypatch, *, policy: Policy | None = None):
         "get_accessible_trip_by_id",
         lambda *_args, **_kwargs: created_trip,
     )
-    monkeypatch.setattr(trip_service.policy_repository, "get_policy_by_slug", lambda *_args, **_kwargs: policy)
+    monkeypatch.setattr(
+        trip_service.policy_repository,
+        "get_policy_by_slug",
+        lambda _db, slug: policy if policy is not None and slug == policy.slug else None,
+    )
 
     def add_trip_policy_stub(_db, **kwargs):
         captured["add_trip_policy"] = kwargs
-        if policy is not None and kwargs["policy_id"] == policy.id:
-            link = TripPolicy(id=99, trip_id=kwargs["trip_id"], policy_id=policy.id)
-            link.policy = policy
+        if linked_policy is not None and kwargs["policy_id"] == linked_policy.id:
+            link = TripPolicy(id=99, trip_id=kwargs["trip_id"], policy_id=linked_policy.id)
+            link.policy = linked_policy
             created_trip.policies = [link]
 
     monkeypatch.setattr(trip_service.trip_repository, "add_trip_policy", add_trip_policy_stub)
@@ -2387,6 +2450,7 @@ def test_create_trip_with_stay_discount_alias_links_canonical_and_echoes_alias(m
     stay_record = make_stay_record()
     captured = install_create_trip_stubs(monkeypatch, policy=stay_policy)
     monkeypatch.setattr(trip_service.policy_repository, "list_policies", lambda db: [stay_policy] if db is fake_db else [])
+    monkeypatch.setattr(trip_service.policy_repository, "get_active_slug_alias_by_old_slug", lambda *_args: None)
     monkeypatch.setattr(
         trip_service.external_source_repository,
         "get_external_source_record_by_id",
@@ -2405,10 +2469,38 @@ def test_create_trip_with_stay_discount_alias_links_canonical_and_echoes_alias(m
     assert payload["linkedPolicies"][0]["region"] == "경남"
 
 
+def test_create_trip_with_persisted_alias_links_canonical_policy(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    policy = Policy(id=58, slug="travelmonth-58", title="Official benefit")
+    alias = PolicySlugAlias(
+        old_slug="dgtour-hapcheon-1",
+        policy_id=policy.id,
+        canonical_slug="travelmonth-58",
+    )
+    alias.policy = policy
+    captured = install_create_trip_stubs(monkeypatch, policy=None, linked_policy=policy)
+    monkeypatch.setattr(
+        trip_service.policy_repository,
+        "get_active_slug_alias_by_old_slug",
+        lambda db, slug: alias if db is fake_db and slug == "dgtour-hapcheon-1" else None,
+    )
+
+    payload = trip_service.create_trip(
+        fake_db,
+        user,
+        CreateTripRequest(policySlug="dgtour-hapcheon-1"),
+    )
+
+    assert captured["add_trip_policy"] == {"trip_id": 11, "policy_id": 58}
+    assert payload["linkedPolicies"][0]["slug"] == "dgtour-hapcheon-1"
+
+
 def test_create_trip_rejects_unknown_policy_slug(monkeypatch) -> None:
     fake_db = FakeDb()
     user = make_user()
     install_create_trip_stubs(monkeypatch, policy=None)
+    monkeypatch.setattr(trip_service.policy_repository, "get_active_slug_alias_by_old_slug", lambda *_args: None)
 
     try:
         trip_service.create_trip(fake_db, user, CreateTripRequest(policySlug="missing-policy"))

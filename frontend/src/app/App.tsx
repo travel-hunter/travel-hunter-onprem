@@ -48,7 +48,7 @@ export function App() {
         <Route element={<ServiceLayout />}>
           <Route path="/home" element={<HomePage />} />
           <Route path="/policies" element={<PolicyListPage />} />
-          <Route path="/policies/:policyId" element={<PolicyDetailPage />} />
+          <Route path="/policies/:policySlug" element={<PolicyDetailPage />} />
           <Route path="/trips" element={<ItineraryListPage />} />
           <Route path="/trips/new" element={<ItineraryCreatePage />} />
           <Route path="/trips/:tripId" element={<ItineraryDetailPage />} />

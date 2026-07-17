@@ -11,6 +11,7 @@ def test_current_schema_tables_are_registered() -> None:
         "pending_social_signups",
         "social_accounts",
         "policies",
+        "policy_slug_aliases",
         "policy_documents",
         "external_source_records",
         "trips",
@@ -30,6 +31,7 @@ def test_current_schema_tables_are_registered() -> None:
 def test_current_schema_decision_columns_are_registered() -> None:
     users = Base.metadata.tables["users"]
     policies = Base.metadata.tables["policies"]
+    policy_slug_aliases = Base.metadata.tables["policy_slug_aliases"]
     trips = Base.metadata.tables["trips"]
     trip_invites = Base.metadata.tables["trip_invites"]
     notification_deliveries = Base.metadata.tables["notification_deliveries"]
@@ -64,6 +66,43 @@ def test_current_schema_decision_columns_are_registered() -> None:
     assert "saved_at" in user_saved_policies.c
     assert "slug" in policies.c
     assert "apply_url" in policies.c
+    expected_alias_columns = {
+        "id",
+        "old_slug",
+        "policy_id",
+        "canonical_slug",
+        "alias_kind",
+        "source_kind",
+        "is_active",
+        "superseded_at",
+        "created_at",
+        "updated_at",
+    }
+    assert expected_alias_columns.issubset(set(policy_slug_aliases.c.keys()))
+    assert policy_slug_aliases.c["id"].primary_key
+    assert policy_slug_aliases.c["old_slug"].type.length == 160
+    assert not policy_slug_aliases.c["old_slug"].nullable
+    assert policy_slug_aliases.c["old_slug"].unique
+    assert not policy_slug_aliases.c["policy_id"].nullable
+    assert policy_slug_aliases.c["policy_id"].index
+    assert policy_slug_aliases.c["canonical_slug"].type.length == 160
+    assert not policy_slug_aliases.c["canonical_slug"].nullable
+    assert policy_slug_aliases.c["canonical_slug"].index
+    assert policy_slug_aliases.c["alias_kind"].type.length == 50
+    assert not policy_slug_aliases.c["alias_kind"].nullable
+    assert policy_slug_aliases.c["alias_kind"].server_default is not None
+    assert policy_slug_aliases.c["source_kind"].nullable
+    assert not policy_slug_aliases.c["is_active"].nullable
+    assert policy_slug_aliases.c["is_active"].server_default is not None
+    assert policy_slug_aliases.c["superseded_at"].nullable
+    assert policy_slug_aliases.c["superseded_at"].type.timezone
+    assert policy_slug_aliases.c["created_at"].server_default is not None
+    assert policy_slug_aliases.c["updated_at"].server_default is not None
+    alias_policy_fks = {
+        fk.column.table.name
+        for fk in policy_slug_aliases.c["policy_id"].foreign_keys
+    }
+    assert "policies" in alias_policy_fks
     expected_policy_source_columns = {
         "source_type",
         "source_name",

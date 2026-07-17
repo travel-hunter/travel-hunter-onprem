@@ -1,12 +1,29 @@
 from datetime import date
 
+import pytest
+
 from app.models import Policy as PolicyModel
 from app.models import ExternalSourceRecord
 from app.models import PolicyDocument
+from app.models import PolicySlugAlias
 from app.models import User as UserModel
 from app.models import UserSavedPolicy
 from app.services import policies as policy_service
 from app.services.policy_structured_detail import build_structured_detail_from_policy
+
+
+@pytest.fixture(autouse=True)
+def policy_repository_defaults_to_no_persisted_alias(monkeypatch) -> None:
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_active_slug_alias_by_old_slug",
+        lambda *_args: None,
+    )
 
 
 def make_policy() -> PolicyModel:
@@ -248,6 +265,11 @@ def test_db_policy_service_uses_repository_boundary(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda db, slug: policy if db is fake_db and slug == "fixture-policy" else None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
         "get_policy_by_slug_any_status",
         lambda db, slug: policy if db is fake_db and slug == "fixture-policy" else None,
     )
@@ -357,6 +379,163 @@ def test_db_policy_detail_resolves_collected_external_benefit_slug(monkeypatch) 
     assert detail["sourceType"] == "external"
     assert detail["actionStatus"] == "infoOnly"
 
+
+def test_policy_resolution_identifies_canonical_slug_without_redirect(monkeypatch) -> None:
+    fake_db = object()
+    policy = make_policy()
+
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda db, slug: policy if db is fake_db and slug == "fixture-policy" else None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug_any_status",
+        lambda db, slug: policy if db is fake_db and slug == "fixture-policy" else None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_active_slug_alias_by_old_slug",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        policy_service.external_source_repository,
+        "get_external_source_record_by_policy_slug",
+        lambda *_args: None,
+    )
+
+    resolution = policy_service.get_policy_resolution("fixture-policy", fake_db)
+
+    assert resolution is not None
+    assert resolution.policy is policy
+    assert resolution.request_slug == "fixture-policy"
+    assert resolution.canonical_slug == "fixture-policy"
+    assert resolution.kind == "canonical"
+    assert resolution.should_redirect is False
+
+
+def test_policy_resolution_redirects_persisted_alias_to_active_canonical(monkeypatch) -> None:
+    fake_db = object()
+    policy = make_policy()
+    policy.slug = "travelmonth-58"
+    alias = PolicySlugAlias(
+        old_slug="dgtour-hapcheon-1",
+        policy_id=policy.id,
+        canonical_slug="stale-canonical",
+        alias_kind="dgtour_legacy",
+    )
+    alias.policy = policy
+
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug_any_status",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_active_slug_alias_by_old_slug",
+        lambda db, slug: alias if db is fake_db and slug == "dgtour-hapcheon-1" else None,
+    )
+    monkeypatch.setattr(
+        policy_service.external_source_repository,
+        "get_external_source_record_by_policy_slug",
+        lambda *_args: None,
+    )
+
+    resolution = policy_service.get_policy_resolution("dgtour-hapcheon-1", fake_db)
+
+    assert resolution is not None
+    assert resolution.policy is policy
+    assert resolution.request_slug == "dgtour-hapcheon-1"
+    assert resolution.canonical_slug == "travelmonth-58"
+    assert resolution.kind == "persisted_alias"
+    assert resolution.should_redirect is True
+    assert policy_service.policy_resolution_to_api(resolution)["slug"] == "travelmonth-58"
+
+
+def test_policy_resolution_prefers_active_alias_over_hidden_old_slug(monkeypatch) -> None:
+    fake_db = object()
+    hidden_old_policy = make_policy()
+    hidden_old_policy.slug = "dgtour-hapcheon-1"
+    hidden_old_policy.status = "hidden"
+    canonical_policy = make_policy()
+    canonical_policy.id = 58
+    canonical_policy.slug = "travelmonth-58"
+    alias = PolicySlugAlias(
+        old_slug="dgtour-hapcheon-1",
+        policy_id=canonical_policy.id,
+        canonical_slug="travelmonth-58",
+        alias_kind="dgtour_legacy",
+    )
+    alias.policy = canonical_policy
+
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda db, slug: None if db is fake_db and slug == "dgtour-hapcheon-1" else None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_active_slug_alias_by_old_slug",
+        lambda db, slug: alias if db is fake_db and slug == "dgtour-hapcheon-1" else None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug_any_status",
+        lambda db, slug: hidden_old_policy if db is fake_db and slug == "dgtour-hapcheon-1" else None,
+    )
+    monkeypatch.setattr(
+        policy_service.external_source_repository,
+        "get_external_source_record_by_policy_slug",
+        lambda *_args: None,
+    )
+
+    resolution = policy_service.get_policy_resolution("dgtour-hapcheon-1", fake_db)
+
+    assert resolution is not None
+    assert resolution.policy is canonical_policy
+    assert resolution.kind == "persisted_alias"
+    assert resolution.canonical_slug == "travelmonth-58"
+    assert resolution.should_redirect is True
+
+
+def test_policy_resolution_rejects_persisted_alias_to_hidden_policy(monkeypatch) -> None:
+    fake_db = object()
+    hidden_policy = make_policy()
+    hidden_policy.slug = "travelmonth-58"
+    hidden_policy.status = "hidden"
+    alias = PolicySlugAlias(
+        old_slug="dgtour-hidden-1",
+        policy_id=hidden_policy.id,
+        canonical_slug="travelmonth-58",
+    )
+    alias.policy = hidden_policy
+
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug_any_status",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_active_slug_alias_by_old_slug",
+        lambda db, slug: alias if db is fake_db and slug == "dgtour-hidden-1" else None,
+    )
+
+    assert policy_service.get_policy_resolution("dgtour-hidden-1", fake_db) is None
+
+
 def test_local_half_trip_raw_fallback_title_uses_bracketed_city_prefix(monkeypatch) -> None:
     fake_db = object()
     external_record = make_external_record()
@@ -464,6 +643,51 @@ def test_db_save_policy_creates_idempotent_saved_policy(monkeypatch) -> None:
 
     assert payload == {"policyId": "fixture-policy", "saved": True}
     assert added_rows == [{"user_id": 7, "policy_id": 1}]
+    assert fake_db.commits == 1
+
+
+def test_db_save_policy_resolves_persisted_alias_to_canonical_and_echoes_request(
+    monkeypatch,
+) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    policy = make_policy()
+    policy.id = 58
+    policy.slug = "travelmonth-58"
+    alias = PolicySlugAlias(
+        old_slug="dgtour-hapcheon-1",
+        policy_id=policy.id,
+        canonical_slug="travelmonth-58",
+    )
+    alias.policy = policy
+    added_rows: list[dict[str, int]] = []
+
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_active_slug_alias_by_old_slug",
+        lambda db, slug: alias if db is fake_db and slug == "dgtour-hapcheon-1" else None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_saved_policy",
+        lambda *_args, **_kwargs: None,
+    )
+
+    def add_saved_policy_stub(_db, **kwargs):
+        added_rows.append(kwargs)
+        return UserSavedPolicy(id=1, **kwargs)
+
+    monkeypatch.setattr(policy_service.policy_repository, "add_saved_policy", add_saved_policy_stub)
+
+    payload = policy_service.save_policy("dgtour-hapcheon-1", fake_db, user)
+
+    assert payload == {"policyId": "dgtour-hapcheon-1", "saved": True}
+    assert added_rows == [{"user_id": 7, "policy_id": 58}]
     assert fake_db.commits == 1
 
 
@@ -757,6 +981,11 @@ def test_hidden_policy_detail_returns_none_for_direct_slug(monkeypatch) -> None:
     hidden_policy = make_policy()
     hidden_policy.status = "hidden"
 
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda db, slug: None if db is fake_db and slug == "fixture-policy" else None,
+    )
     monkeypatch.setattr(
         policy_service.policy_repository,
         "get_policy_by_slug_any_status",

@@ -364,6 +364,42 @@ CREATE SEQUENCE public.policies_id_seq
 
 ALTER SEQUENCE public.policies_id_seq OWNED BY public.policies.id;
 
+--
+-- Name: policy_slug_aliases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_slug_aliases (
+    id bigint NOT NULL,
+    old_slug character varying(160) NOT NULL,
+    policy_id bigint NOT NULL,
+    canonical_slug character varying(160) NOT NULL,
+    alias_kind character varying(50) DEFAULT 'legacy'::character varying NOT NULL,
+    source_kind character varying(50),
+    is_active boolean DEFAULT true NOT NULL,
+    superseded_at timestamp with time zone,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: policy_slug_aliases_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.policy_slug_aliases_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: policy_slug_aliases_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.policy_slug_aliases_id_seq OWNED BY public.policy_slug_aliases.id;
+
 
 --
 -- Name: policy_documents; Type: TABLE; Schema: public; Owner: -
@@ -799,6 +835,12 @@ ALTER TABLE ONLY public.pending_social_signups ALTER COLUMN id SET DEFAULT nextv
 
 ALTER TABLE ONLY public.policies ALTER COLUMN id SET DEFAULT nextval('public.policies_id_seq'::regclass);
 
+--
+-- Name: policy_slug_aliases id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_slug_aliases ALTER COLUMN id SET DEFAULT nextval('public.policy_slug_aliases_id_seq'::regclass);
+
 
 --
 -- Name: policy_documents id; Type: DEFAULT; Schema: public; Owner: -
@@ -1009,6 +1051,21 @@ ALTER TABLE ONLY public.policies
 
 ALTER TABLE ONLY public.policies
     ADD CONSTRAINT policies_slug_key UNIQUE (slug);
+
+--
+-- Name: policy_slug_aliases policy_slug_aliases_old_slug_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_slug_aliases
+    ADD CONSTRAINT policy_slug_aliases_old_slug_key UNIQUE (old_slug);
+
+
+--
+-- Name: policy_slug_aliases policy_slug_aliases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_slug_aliases
+    ADD CONSTRAINT policy_slug_aliases_pkey PRIMARY KEY (id);
 
 
 --
@@ -1356,6 +1413,19 @@ CREATE INDEX ix_policies_source_name ON public.policies USING btree (source_name
 
 CREATE INDEX ix_policies_source_type ON public.policies USING btree (source_type);
 
+--
+-- Name: ix_policy_slug_aliases_canonical_slug; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_policy_slug_aliases_canonical_slug ON public.policy_slug_aliases USING btree (canonical_slug);
+
+
+--
+-- Name: ix_policy_slug_aliases_policy_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_policy_slug_aliases_policy_id ON public.policy_slug_aliases USING btree (policy_id);
+
 
 --
 -- Name: ix_trip_places_external_place_id; Type: INDEX; Schema: public; Owner: -
@@ -1431,6 +1501,14 @@ ALTER TABLE ONLY public.notification_deliveries
 
 ALTER TABLE ONLY public.password_reset_tokens
     ADD CONSTRAINT password_reset_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+--
+-- Name: policy_slug_aliases policy_slug_aliases_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_slug_aliases
+    ADD CONSTRAINT policy_slug_aliases_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.policies(id);
+
 
 --
 -- Name: policy_documents policy_documents_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -

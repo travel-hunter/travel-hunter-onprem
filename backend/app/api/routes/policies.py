@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
@@ -24,10 +25,16 @@ def list_policies(db: Session | None = Depends(get_optional_db)) -> list[Policy]
 @router.get("/policies/{policy_slug}", response_model=Policy)
 def get_policy(
     policy_slug: str, db: Session | None = Depends(get_optional_db)
-) -> Policy:
-    policy = policy_service.get_policy(policy_slug, db)
-    if policy is None:
+) -> Policy | RedirectResponse:
+    resolution = policy_service.get_policy_resolution(policy_slug, db)
+    if resolution is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Policy not found")
+    if resolution.should_redirect:
+        return RedirectResponse(
+            url=f"/api/policies/{resolution.canonical_slug}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+    policy = policy_service.policy_resolution_to_api(resolution)
     return Policy(**policy)
 
 

@@ -21,6 +21,11 @@ from app.services.policy_semantics import (
     policy_url_fields_for_policy,
     requirement_items_for_policy,
 )
+from app.services.policy_slug_resolution import (
+    SlugResolution,
+    canonical_slug_for_external_record,
+    resolve_policy_slug,
+)
 from app.services.policy_structured_detail import structured_detail_for_api
 
 
@@ -113,7 +118,7 @@ def _policy_detail_with_alias(
 
 
 def external_policy_slug(record: ExternalSourceRecord) -> str:
-    return f"{external_source_repository.EXTERNAL_POLICY_SLUG_PREFIX}{record.id}"
+    return canonical_slug_for_external_record(record)
 
 
 def _external_policy_label(record: ExternalSourceRecord) -> str:
@@ -174,6 +179,30 @@ def external_source_record_to_policy_api(
     return payload
 
 
+def get_policy_resolution(
+    policy_slug: str,
+    db: Session | None = None,
+) -> SlugResolution | None:
+    if db is None:
+        raise RuntimeError("DB session is required.")
+    return resolve_policy_slug(
+        db,
+        policy_slug,
+        include_raw_fallback=True,
+        include_inactive_direct_lookup=True,
+    )
+
+
+def policy_resolution_to_api(resolution: SlugResolution) -> dict[str, object]:
+    if resolution.external_record is not None:
+        return external_source_record_to_policy_api(resolution.external_record)
+    if resolution.policy is None:
+        raise RuntimeError("Policy resolution is missing a policy.")
+    if resolution.alias_area is not None:
+        return _policy_detail_with_alias(resolution.policy, resolution.alias_area)
+    return policy_to_api(resolution.policy)
+
+
 def list_policies(db: Session | None = None) -> list[dict[str, object]]:
     if db is None:
         raise RuntimeError("DB session is required.")
@@ -192,31 +221,10 @@ def list_policies(db: Session | None = None) -> list[dict[str, object]]:
 
 
 def get_policy(policy_slug: str, db: Session | None = None) -> dict[str, object] | None:
-    if db is None:
-        raise RuntimeError("DB session is required.")
-
-    alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
-    if alias_resolution is not None:
-        policy = alias_resolution.canonical_policy
-        if not is_public_policy(policy):
-            return None
-        if alias_resolution.alias_area is None:
-            return policy_to_api(policy)
-        return _policy_detail_with_alias(policy, alias_resolution.alias_area)
-
-    policy = policy_repository.get_policy_by_slug_any_status(db, policy_slug)
-    if policy is not None:
-        if not is_public_policy(policy):
-            return None
-        return policy_to_api(policy)
-
-    external_record = external_source_repository.get_external_source_record_by_policy_slug(
-        db,
-        policy_slug,
-    )
-    if external_record is None:
+    resolution = get_policy_resolution(policy_slug, db)
+    if resolution is None:
         return None
-    return external_source_record_to_policy_api(external_record)
+    return policy_resolution_to_api(resolution)
 
 
 def save_policy(
@@ -229,14 +237,10 @@ def save_policy(
     if user is None:
         raise RuntimeError("User is required.")
 
-    alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
-    policy = (
-        alias_resolution.canonical_policy
-        if alias_resolution is not None
-        else policy_repository.get_policy_by_slug(db, policy_slug)
-    )
-    if policy is None:
+    resolution = resolve_policy_slug(db, policy_slug)
+    if resolution is None or resolution.policy is None:
         return None
+    policy = resolution.policy
 
     existing = policy_repository.get_saved_policy(
         db,
@@ -337,14 +341,10 @@ def remove_saved_policy(
     if user is None:
         raise RuntimeError("User is required.")
 
-    alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
-    policy = (
-        alias_resolution.canonical_policy
-        if alias_resolution is not None
-        else policy_repository.get_policy_by_slug(db, policy_slug)
-    )
-    if policy is None:
+    resolution = resolve_policy_slug(db, policy_slug)
+    if resolution is None or resolution.policy is None:
         return None
+    policy = resolution.policy
 
     policy_repository.remove_saved_policy(
         db,

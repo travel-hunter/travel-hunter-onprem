@@ -84,9 +84,11 @@ describe("Travel Hunter app — my page", () => {
       );
       expect(getLink(examplePolicyPath)).toBeInTheDocument();
     });
+    const savedPolicyCard = getLink(examplePolicyPath).closest("article");
+    expect(savedPolicyCard).toBeTruthy();
     await user.click(
-      screen.getByRole("button", {
-        name: `${examplePolicyTitle} 즐겨찾기 해제`,
+      within(savedPolicyCard as HTMLElement).getByRole("button", {
+        name: /즐겨찾기 해제$/,
       }),
     );
     await waitFor(() =>
@@ -411,7 +413,7 @@ describe("Travel Hunter app — my page", () => {
       });
       await user.click(
         within(linkedRegion).getByRole("button", {
-          name: `${examplePolicyTitle} 연결 삭제`,
+          name: /연결 삭제$/,
         }),
       );
       await waitFor(() =>
@@ -423,7 +425,7 @@ describe("Travel Hunter app — my page", () => {
       await waitFor(() =>
         expect(
           within(linkedRegion).queryByRole("button", {
-            name: `${examplePolicyTitle} 연결 삭제`,
+            name: /연결 삭제$/,
           }),
         ).not.toBeInTheDocument(),
       );
@@ -568,7 +570,9 @@ describe("Travel Hunter app — my page", () => {
           screen.queryByRole("heading", { name: "프로필 편집" }),
         ).not.toBeInTheDocument(),
       );
-      expect(screen.getByText(nextUser.nickname)).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.getByText(nextUser.nickname)).toBeInTheDocument(),
+      );
       expect(screen.getByRole("button", { name: "편집" })).toBeInTheDocument();
     } finally {
       updateNicknameSpy.mockRestore();

@@ -27,6 +27,9 @@ function getPolicyTripRegionQuery(policy: Pick<Policy, "region" | "title">): str
   const titleLocalRegion = /^\s*([가-힣]{2,}(?:[·∙][가-힣]{2,})?)\s+디지털관광주민증\s+혜택/.exec(policy.title)?.[1]?.trim();
   if (titleLocalRegion && titleLocalRegion !== "전국") return titleLocalRegion;
 
+  const halfTripRegion = /^\s*(?:20\d{2}\s+)?([가-힣]{2,}(?:[·∙][가-힣]{2,})?)반값여행/.exec(policy.title)?.[1]?.trim();
+  if (halfTripRegion && halfTripRegion !== "전국") return halfTripRegion;
+
   const region = policy.region.trim();
   return region && region !== "전국" ? region : null;
 }
@@ -833,17 +836,34 @@ function PolicyDiscoveryBlocks({ policies, onSelectCategory }: { policies: Polic
 }
 
 export function PolicyDetailPage() {
-  const { policyId } = useParams();
+  const { policySlug } = useParams();
   const navigate = useNavigate();
   const { addPolicy, isPolicyAdded, savedSlugs, addSavedSlug, removeSavedSlug } = useSession();
-  const { data: policyData, error, isLoading } = useAsyncResource(() => appDataApi.getPolicy(policyId), [policyId]);
-  const policy = policyData as Policy;
+  const {
+    data: policyResource,
+    error,
+    isLoading,
+  } = useAsyncResource(
+    async () => {
+      const requestSlug = policySlug;
+      const policy = await appDataApi.getPolicy(requestSlug);
+      return { policy, requestSlug };
+    },
+    [policySlug],
+  );
+  const policy = policyResource?.policy as Policy | undefined;
   const [notice, setNotice] = useState<string | null>(null);
   const [sheetStatus, setSheetStatus] = useState<TripSheetStatus>("closed");
   const [trips, setTrips] = useState<Trip[]>([]);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [sheetError, setSheetError] = useState("");
   const [isSavingPolicy, setIsSavingPolicy] = useState(false);
+
+  useEffect(() => {
+    if (isLoading || policyResource?.requestSlug !== policySlug) return;
+    if (!policy || !policySlug || policy.slug === policySlug) return;
+    navigate(`/policies/${policy.slug}`, { replace: true });
+  }, [isLoading, navigate, policy, policyResource?.requestSlug, policySlug]);
 
   const addToTrip = async () => {
     if (!policy) return;
@@ -883,7 +903,7 @@ export function PolicyDetailPage() {
   };
 
   const viewSelectedTrip = () => {
-    if (!selectedTrip) return;
+    if (!selectedTrip || !policy) return;
     const linkedPolicy: LinkedTripPolicy = {
       slug: policy.slug,
       title: policy.title,

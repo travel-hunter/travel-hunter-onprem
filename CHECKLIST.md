@@ -2,25 +2,25 @@
 
 ## Current Status
 
-- Active task/status: PR #1 signup verify state fix retention WATCH resolved on `feature/signup-verify-state-fix` in `travel-hunter-onprem`.
-- Scope guard: Include only signup verify frontend cache retention fix, focused regression test, and this checklist update.
-- Excluded from this branch: backend policy/data/schema/migration changes, secrets/env, `main` update, direct `develop` push, PR merge, and production promotion.
+- Active task/status: Final verifier re-run on `feature/policy-detail-url-unification` is clean with an explicit environment note: backend-mode e2e passed by using the script-supported `SKIP_E2E_DB_START` + `DATABASE_URL` override against a temporary isolated Postgres container on `127.0.0.1:56432`, because the default compose host port `55432` is occupied by the foreign `travel-hunter-app-db-1` container.
+- Scope guard: cleanup stayed inside the current git diff; no commits, pushes, deploy/env/auth changes, parser overhaul, DB batch conversion, or production operations.
+- Behavior result: policy slug resolution checks active canonical direct lookup, active persisted alias, inactive direct hidden-policy guard, virtual stay-discount alias, then raw fallback; trip creation echoes persisted/virtual alias request slugs in the returned linked policy payload.
 
 ## Latest Validation Evidence
 
-- Signup verify cache now keeps same-token in-flight single-flight behavior, keeps successful same-token reuse briefly with a 30초 TTL, deletes expired success entries, and clears the current token entry after `completeSignup` succeeds.
-- Frontend typecheck passed after retention hardening: `cd frontend && npm run typecheck`.
-- Targeted auth regression passed and asserts one same-token verify request through session bootstrap rerender: `cd frontend && npx vitest run src/app/__tests__/auth.test.tsx -t "keeps signup verification progressing"`.
-- New targeted auth regression passed and asserts completing signup clears the token cache so a later same-token page entry verifies again: `cd frontend && npx vitest run src/app/__tests__/auth.test.tsx -t "clears signup verification cache"`.
-- Diff hygiene passed: `git diff --check origin/develop`, `git diff --check origin/develop -- CHECKLIST.md`, UTF-8/U+FFFD scan for changed text files, and excluded backend/deploy/env/compose diff check.
-- Frontend `npm test` did not complete: mojibake precheck passed, then `scripts/run-backend-command.cjs` started compose PostgreSQL but Alembic failed in the local Python environment with `No module named alembic.__main__; 'alembic' is a package and cannot be directly executed`. The test compose container/volume/network were removed with `docker compose down -v --remove-orphans`.
-- Full auth test file was not used as a release gate for this narrow fix; a local run of `cd frontend && npx vitest run src/app/__tests__/auth.test.tsx` still fails on the pre-existing live-backend login-dependent cases, while the two signup verification targeted cases pass.
-- External dev smoke evidence provided for the source fix: public `/api/health` OK, synthetic `POST /api/auth/signup/verify` 200, and Playwright public verify page showed password input plus completion button.
+- Backend full tests passed with the local repo venv: `cd backend && /home/hp/projects/travel-hunter-onprem/.venv/bin/python -m pytest` (`539 passed`, one existing Starlette/httpx deprecation warning).
+- Alembic offline SQL generation passed through head `0027_policy_slug_aliases`: `cd backend && /home/hp/projects/travel-hunter-onprem/.venv/bin/alembic upgrade head --sql`.
+- Frontend typecheck passed: `cd frontend && npm run typecheck`.
+- Frontend Vitest passed on the first full re-run: `cd frontend && npx vitest run` (`22 passed` test files, `217 passed` tests); no flaky-test rerun was needed.
+- Frontend build passed: `cd frontend && npm run build`.
+- Frontend backend-mode e2e passed without stopping or reusing foreign containers: a temporary verifier-owned Postgres `postgres:16-alpine` container ran on `127.0.0.1:56432`, then `cd frontend && SKIP_E2E_DB_START=1 PYTHON=/home/hp/projects/travel-hunter-onprem/.venv/bin/python DATABASE_URL=postgresql+psycopg://travelhunter:travelhunter@127.0.0.1:56432/travelhunter E2E_API_PORT=8001 E2E_FRONTEND_PORT=5174 npm run test:e2e` passed (`11 passed`). Inspection found the e2e script supports `DATABASE_URL`, `SKIP_E2E_DB_START`, `E2E_API_PORT`, and `E2E_FRONTEND_PORT`; `compose.yaml` still hardcodes `55432:5432` with no `POSTGRES_PORT`/`DB_PORT` interpolation.
+- Compose config passed: `docker compose -f compose.yaml config`.
+- Diff and encoding checks passed: `git diff --check`, `git diff --check -- CHECKLIST.md`, and UTF-8/U+FFFD scan of 25 changed tracked/untracked text files.
 
 ## Remaining Risks
 
-- Full frontend `npm test` is blocked by the local backend Alembic executable environment above; e2e, backend pytest, and Jenkins dev status were not run for this narrow frontend/docs branch.
-- PR is for review into `develop`; merge and production promotion remain intentionally out of scope.
+- Existing Starlette/httpx deprecation warning remains unrelated to this change.
+- The default unmodified e2e DB startup path still targets hardcoded host port `55432`; in this environment that port belongs to the foreign `travel-hunter-app-db-1` container, so the verifier used the supported isolated DB override instead of stopping or mutating that container.
 
 ## Cleanup Policy
 

@@ -2,15 +2,15 @@
 
 ## 기준
 
-- 2026-07-11에 코드 기준으로 갱신했다.
-- 이 문서의 기준 소스는 `backend/app/models/tables.py`의 SQLAlchemy metadata와 Alembic head `0025_prune_contact_notify`다.
-- SQL snapshot 교차 검증 기준은 `docs/db-schema-current.sql`이다. 이전 schema-only snapshot에 Alembic head `0025_prune_contact_notify`의 offline SQL diff를 반영했다. Fresh DB pg_dump 재생성은 별도 검증으로 다시 수행할 수 있다.
+- 2026-07-18에 코드 기준으로 갱신했다.
+- 이 문서의 기준 소스는 `backend/app/models/tables.py`의 SQLAlchemy metadata와 Alembic head `0027_policy_slug_aliases`다.
+- SQL snapshot 교차 검증 기준은 `docs/db-schema-current.sql`이다. 이전 schema-only snapshot에 Alembic head `0027_policy_slug_aliases`의 offline SQL diff를 반영했다. Fresh DB pg_dump 재생성은 별도 검증으로 다시 수행할 수 있다.
 - 이 문서는 문서화/시각화 산출물이다. schema, migration, repository, API DTO를 변경하지 않는다.
 
 ## 한눈에 보는 테이블 그룹
 
 - **인증/사용자:** `users`, `auth_refresh_tokens`, `social_accounts`, `password_reset_tokens`, `pending_signups`, `pending_social_signups`, `admin_audit_logs`
-- **정책:** `policies`, `policy_documents`, `user_saved_policies`, `external_source_records`
+- **정책:** `policies`, `policy_documents`, `policy_slug_aliases`, `user_saved_policies`, `external_source_records`
 - **일정:** `trips`, `trip_days`, `trip_places`, `trip_members`, `trip_policies`, `trip_invites`, `recommendations`
 - **알림:** `notification_deliveries`
 
@@ -165,6 +165,18 @@ erDiagram
     VARCHAR_255 description
     BOOLEAN is_required "NOT NULL"
   }
+  policy_slug_aliases {
+    BIGINT id PK "NOT NULL"
+    VARCHAR_160 old_slug UK "NOT NULL"
+    BIGINT policy_id FK "NOT NULL"
+    VARCHAR_160 canonical_slug "NOT NULL"
+    VARCHAR_50 alias_kind "NOT NULL"
+    VARCHAR_50 source_kind
+    BOOLEAN is_active "NOT NULL"
+    DATETIME superseded_at
+    DATETIME created_at "NOT NULL"
+    DATETIME updated_at "NOT NULL"
+  }
   recommendations {
     BIGINT id PK "NOT NULL"
     BIGINT user_id FK "NOT NULL"
@@ -275,6 +287,7 @@ erDiagram
   users ||--o{ password_reset_tokens : "user_id -> id"
   external_source_records ||--o| policies : "external_source_record_id -> id"
   policies ||--o{ policy_documents : "policy_id -> id"
+  policies ||--o{ policy_slug_aliases : "policy_id -> id"
   trips ||--o{ recommendations : "trip_id -> id"
   users ||--o{ recommendations : "user_id -> id"
   users ||--o{ social_accounts : "user_id -> id"
@@ -302,6 +315,7 @@ erDiagram
 | `users` | `password_reset_tokens` | `password_reset_tokens.user_id` -> `users.id` | `CASCADE` |
 | `external_source_records` | `policies` | `policies.external_source_record_id` -> `external_source_records.id` | `SET NULL` |
 | `policies` | `policy_documents` | `policy_documents.policy_id` -> `policies.id` | `CASCADE` |
+| `policies` | `policy_slug_aliases` | `policy_slug_aliases.policy_id` -> `policies.id` | `CASCADE` |
 | `trips` | `recommendations` | `recommendations.trip_id` -> `trips.id` | `-` |
 | `users` | `recommendations` | `recommendations.user_id` -> `users.id` | `-` |
 | `users` | `social_accounts` | `social_accounts.user_id` -> `users.id` | `CASCADE` |
@@ -381,6 +395,13 @@ erDiagram
 - 제약 조건: FK(policy_id->policies.id; ondelete=CASCADE); PK(id)
 - 인덱스: -
 
+### `policy_slug_aliases`
+
+- 핵심 컬럼: `id`, `old_slug`, `policy_id`, `canonical_slug`, `alias_kind`, `is_active`, `superseded_at`, `created_at`, `updated_at`
+- 전체 컬럼: `id` PK, `old_slug`, `policy_id` FK, `canonical_slug`, `alias_kind`, `source_kind`, `is_active`, `superseded_at`, `created_at`, `updated_at`
+- 제약 조건: FK(policy_id->policies.id; ondelete=CASCADE); PK(id); UNIQUE(old_slug)
+- 인덱스: `ix_policy_slug_aliases_canonical_slug`(canonical_slug); `ix_policy_slug_aliases_policy_id`(policy_id)
+
 ### `recommendations`
 
 - 핵심 컬럼: `id`, `user_id`, `trip_id`, `created_at`, `query`, `result`
@@ -453,7 +474,7 @@ erDiagram
 
 ## 기존 schema 기준 문서와의 drift
 
-`docs/db-schema-current.sql`은 기존 schema-only snapshot에서 Alembic head `0025_prune_contact_notify` drop diff를 반영했다. 따라서 현재 체크인된 SQL snapshot에는 이전에 누락됐던 최신 code-head 추가 사항이 포함되어 있다.
+`docs/db-schema-current.sql`은 기존 schema-only snapshot에서 Alembic head `0027_policy_slug_aliases` diff를 반영했다. 따라서 현재 체크인된 SQL snapshot에는 정책 slug alias table을 포함한 최신 code-head 추가 사항이 포함되어 있다.
 
 - SQLAlchemy metadata에는 있지만 `docs/db-schema-current.sql`에는 없는 application table: 없음.
 - `docs/db-schema-current.sql`에는 있지만 SQLAlchemy metadata에는 없는 application table: 없음.
@@ -468,6 +489,7 @@ erDiagram
 - `0023_policy_structured_detail`은 `policies.structured_detail` JSONB 컬럼을 추가하고 기존 정책 row를 화면용 구조화 섹션 JSON으로 backfill한다. 조건 섹션은 코드의 조건 정제 규칙과 drift가 생기지 않도록 backfill에서는 비워 두고 화면 fallback을 사용한다.
 - `0024_local_kst_time_shift`는 timestamp data shift를 수행한다.
 - `0025_prune_contact_notify`는 사용자 연락처/OTP/알림 설정 surface와 obsolete user columns를 제거하고 `preferred_regions`를 유지한다.
+- `0027_policy_slug_aliases`는 이전 정책 상세 URL을 canonical `policies.slug`로 해석하기 위한 `policy_slug_aliases` table을 추가한다.
 
 향후 migration이 추가되면 이 ERD 요약과 `docs/db-schema-current.sql`을 함께 갱신해야 한다.
 

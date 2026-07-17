@@ -2,14 +2,14 @@
 
 ## 기준
 
-- 기준일: 2026-07-12
-- 기준 Alembic head: `0026_user_withdrawal_fields`
+- 기준일: 2026-07-18
+- 기준 Alembic head: `0027_policy_slug_aliases`
 - PostgreSQL: 16.14 (`postgres:16-alpine` fresh container)
 - SQL snapshot: `docs/db-schema-current.sql`
 - ERD/관계 시각화: `docs/db-erd.md`
-- 생성 방식: 이전 schema-only snapshot에 Alembic head `0026_user_withdrawal_fields`의 offline SQL diff를 반영했다. Fresh DB pg_dump 재생성은 별도 검증으로 다시 수행할 수 있다. Schema 변경은 Alembic 기준으로 추적하고, 관계/핵심 컬럼 요약은 `docs/db-erd.md`가 제공한다.
+- 생성 방식: 이전 schema-only snapshot에 Alembic head `0027_policy_slug_aliases`의 offline SQL diff를 반영했다. Fresh DB pg_dump 재생성은 별도 검증으로 다시 수행할 수 있다. Schema 변경은 Alembic 기준으로 추적하고, 관계/핵심 컬럼 요약은 `docs/db-erd.md`가 제공한다.
 
-이 문서는 현재 앱이 사용하는 PostgreSQL schema의 기준 문서다. 초기 SQL 기준본 이후 Alembic migration `0002`~`0026`이 적용된 현재 구조를 설명한다. 테이블 관계, 핵심 컬럼, 제약/index, 문서 drift는 `docs/db-erd.md`를 함께 본다.
+이 문서는 현재 앱이 사용하는 PostgreSQL schema의 기준 문서다. 초기 SQL 기준본 이후 Alembic migration `0002`~`0027`이 적용된 현재 구조를 설명한다. 테이블 관계, 핵심 컬럼, 제약/index, 문서 drift는 `docs/db-erd.md`를 함께 본다.
 
 ## 테이블 그룹
 
@@ -28,6 +28,7 @@ Policy:
 
 - `policies`
 - `policy_documents`
+- `policy_slug_aliases`
 - `user_saved_policies`
 
 External collection:
@@ -64,6 +65,7 @@ Migration metadata:
 - `admin_audit_logs`
 - `external_source_records`
 - `alembic_version`
+- `policy_slug_aliases`
 
 추가 컬럼:
 
@@ -86,7 +88,7 @@ Migration metadata:
 
 ## 2026-06-30 ERD/current-code 기준
 
-`docs/db-erd.md`는 SQLAlchemy metadata(`backend/app/models/tables.py`)와 Alembic head `0026_user_withdrawal_fields`를 기준으로 맞춰야 하는 현재 코드 기준 ERD다. 이 ERD는 테이블 관계, 핵심 컬럼, PK/FK/unique/index 요약, `docs/db-schema-current.sql`과의 drift를 함께 기록한다.
+`docs/db-erd.md`는 SQLAlchemy metadata(`backend/app/models/tables.py`)와 Alembic head `0027_policy_slug_aliases`를 기준으로 맞춰야 하는 현재 코드 기준 ERD다. 이 ERD는 테이블 관계, 핵심 컬럼, PK/FK/unique/index 요약, `docs/db-schema-current.sql`과의 drift를 함께 기록한다.
 
 이전에 확인됐고 이번 SQL snapshot 재생성으로 해소된 주요 drift:
 
@@ -98,8 +100,9 @@ Migration metadata:
 - `0024_local_kst_time_shift`: guarded local KST timestamp data shift migration.
 - `0025_prune_contact_notify`: contact/OTP/notification settings surface를 제거하면서 `users`의 personal/contact columns와 관련 설정/OTP 테이블을 drop했다. `users.preferred_regions`는 유지한다.
 - `0026_user_withdrawal_fields`: soft withdrawal/anonymization 상태 추적을 위해 `users.withdrawn_at`과 HMAC/peppered fingerprint 저장용 `users.withdrawn_email_hash` 및 조회 index를 추가했다. `password_reset_tokens`는 유지한다.
+- `0027_policy_slug_aliases`: 정책 상세 URL 정규화를 위한 append-only legacy slug alias lookup 테이블 `policy_slug_aliases`를 추가했다.
 
-현재 `docs/db-schema-current.sql`은 기존 schema-only snapshot에서 Alembic `0026_user_withdrawal_fields` diff를 반영한 schema reference다. 향후 migration이 추가되면 같은 절차로 다시 생성한다.
+현재 `docs/db-schema-current.sql`은 기존 schema-only snapshot에서 Alembic `0027_policy_slug_aliases` diff를 반영한 schema reference다. 향후 migration이 추가되면 같은 절차로 다시 생성한다.
 
 ## `notification_deliveries`
 
@@ -171,6 +174,25 @@ Migration metadata:
 - `raw_list_text` / `raw_detail_text` / `raw_payload`
 - `last_fetched_at` / `last_verified_at` / `freshness_status`
 - `created_at` / `updated_at`
+
+
+## `policy_slug_aliases`
+
+`policy_slug_aliases`는 정책 상세 slug 통합 과정에서 이전 URL을 canonical `policies.slug`로 해석하기 위한 append-only lookup 테이블이다. Active alias는 상세 조회에서 canonical 정책 URL로 307 redirect되고, 저장/삭제/일정 연결 mutation에서는 redirect 없이 canonical `policies.id` 해석에 사용된다.
+
+주요 컬럼:
+
+- `id`
+- `old_slug`: 이전 URL slug. 전역 unique이며 변경/삭제 API를 제공하지 않는다.
+- `policy_id`: canonical 정책 `policies.id` FK.
+- `canonical_slug`: 현재 canonical `policies.slug` 값 스냅샷.
+- `alias_kind`: 기본값 `legacy`.
+- `source_kind`: alias 생성 출처 분류.
+- `is_active`: active lookup 대상 여부.
+- `superseded_at`: alias를 비활성/superseded 처리한 시각.
+- `created_at` / `updated_at`
+
+Lifecycle은 append-only를 기준으로 한다. 이전 `old_slug` row를 삭제하거나 변경하는 repository API는 두지 않고, 필요 시 `is_active=false`와 `superseded_at`으로 비활성 이력을 남긴다.
 
 ## `policies` source tracking
 

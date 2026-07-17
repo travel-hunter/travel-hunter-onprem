@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models import ExternalSourceRecord, Policy
 from app.repositories import external_sources as external_source_repository
 from app.services.policies import _external_policy_category
+from app.services.policy_slug_resolution import canonical_slug_for_external_record
 from app.services.policy_structured_detail import build_structured_detail_from_policy
 from app.services.travelmonth_normalizer import extract_benefit_value
 
@@ -313,7 +314,7 @@ def _build_structured_detail_for_record(
 
 
 def _policy_slug_for_external_record(record: ExternalSourceRecord) -> str:
-    return f"{external_source_repository.EXTERNAL_POLICY_SLUG_PREFIX}{record.id}"
+    return canonical_slug_for_external_record(record)
 
 
 def _get_policy_for_external_record(

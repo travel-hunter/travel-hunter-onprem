@@ -1,10 +1,13 @@
 import {
   cleanup,
+  render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { type ReactElement } from "react";
+import { MemoryRouter, useLocation, useNavigationType } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import {
   appDataApi,
@@ -19,8 +22,63 @@ import {
   getPreviewUser,
 } from "../../test/fixtures";
 import { login, renderAppRoute } from "../../test/renderAppRoute";
+import { App } from "../App";
+import { AppProviders } from "../AppRoot";
+
+function LocationProbe(): ReactElement {
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  return (
+    <output aria-label="current route">
+      {location.pathname}|{navigationType}
+    </output>
+  );
+}
 
 describe("Travel Hunter app — policy detail", () => {
+  it("fetches an alias slug and replaces the URL with the canonical policy slug", async () => {
+    const canonicalPolicy: Policy = {
+      ...examplePolicyDetail,
+      id: "travelmonth-58",
+      slug: "travelmonth-58",
+      title: "부산 공식 캐시백",
+      region: "부산",
+    };
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(canonicalPolicy);
+
+    try {
+      await login();
+      cleanup();
+      render(
+        <MemoryRouter initialEntries={["/policies/legacy-busan-cashback"]}>
+          <AppProviders>
+            <App />
+            <LocationProbe />
+          </AppProviders>
+        </MemoryRouter>,
+      );
+
+      await waitFor(() =>
+        expect(getPolicySpy).toHaveBeenNthCalledWith(
+          1,
+          "legacy-busan-cashback",
+        ),
+      );
+      await waitFor(() =>
+        expect(screen.getByLabelText("current route")).toHaveTextContent(
+          "/policies/travelmonth-58|REPLACE",
+        ),
+      );
+      expect(
+        await screen.findByRole("heading", { name: "부산 공식 캐시백" }),
+      ).toBeInTheDocument();
+    } finally {
+      getPolicySpy.mockRestore();
+    }
+  });
+
   it("renders normalized official benefit detail with enabled save and trip controls", async () => {
     const collectedPolicy: Policy = {
       id: "travelmonth-58",
@@ -691,19 +749,27 @@ describe("Travel Hunter app — policy detail", () => {
   });
 
   it("renders policy detail in prototype-only flow without FAQ accordion", async () => {
-    await login();
-    cleanup();
-    renderAppRoute(examplePolicyPath);
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(examplePolicyDetail);
 
-    await waitFor(() =>
-      expect(document.body).toHaveTextContent(examplePolicyTitle),
-    );
-    expect(
-      screen.queryByRole("button", { name: /어떤 서류가 필요한가요/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /내 일정에 담기|일정에 담김/ }),
-    ).toBeInTheDocument();
+    try {
+      await login();
+      cleanup();
+      renderAppRoute(examplePolicyPath);
+
+      await waitFor(() =>
+        expect(document.body).toHaveTextContent(examplePolicyTitle),
+      );
+      expect(
+        screen.queryByRole("button", { name: /어떤 서류가 필요한가요/ }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /내 일정에 담기|일정에 담김/ }),
+      ).toBeInTheDocument();
+    } finally {
+      getPolicySpy.mockRestore();
+    }
   });
 
   it("keeps the application notice fallback when a policy has no official links", async () => {

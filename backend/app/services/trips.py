@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 import re
 import logging
+from dataclasses import dataclass
 from functools import lru_cache
 import time as monotonic_time
 from datetime import date, datetime, timedelta, time
@@ -35,9 +36,9 @@ from app.services import stay_discount_aliases
 from app.services.kakao_local import KakaoLocalClient, build_kakao_local_client
 from app.services.policy_semantics import (
     benefit_display_amount,
-    is_public_policy,
     policy_status,
 )
+from app.services.policy_slug_resolution import resolve_policy_slug
 
 try:
     from app.data.travel_areas import get_travel_area, list_travel_areas
@@ -51,6 +52,14 @@ except ModuleNotFoundError:
 
 NUMERIC_TRIP_ID_PATTERN = re.compile(r"^[1-9][0-9]*$")
 TRIP_EDIT_ROLES = {"owner", "editor"}
+
+
+@dataclass(frozen=True)
+class LinkedPolicySlugOverride:
+    request_slug: str | None = None
+    alias_area: stay_discount_aliases.StayDiscountAliasArea | None = None
+
+
 NATIONWIDE_REGION = "\uc804\uad6d"
 MIN_RECOMMENDED_POLICY_SCORE = 40
 CONDITIONAL_POLICY_KEYWORDS = (
@@ -203,22 +212,24 @@ def _trip_policy_amount(policy: Policy) -> str:
 
 def _linked_policies(
     trip: Trip,
-    alias_overrides: dict[str, stay_discount_aliases.StayDiscountAliasArea] | None = None,
+    slug_overrides: dict[str, LinkedPolicySlugOverride] | None = None,
 ) -> list[dict[str, str]]:
-    alias_overrides = alias_overrides or {}
+    slug_overrides = slug_overrides or {}
     linked: list[dict[str, str]] = []
     for link in sorted(trip.policies, key=lambda item: item.id or 0):
         policy = link.policy
         if policy is None:
             continue
         slug = policy.slug or str(policy.id)
-        alias_area = alias_overrides.get(slug)
+        override = slug_overrides.get(slug)
         region = policy.region or ""
         title = local_half_trip_display.policy_title(policy.title, policy.source_category)
-        if alias_area is not None:
-            slug = alias_area.slug
-            region = alias_area.sido
-            title = stay_discount_aliases.alias_title(policy.title, alias_area)
+        if override is not None and override.request_slug is not None:
+            slug = override.request_slug
+        if override is not None and override.alias_area is not None:
+            slug = override.alias_area.slug
+            region = override.alias_area.sido
+            title = stay_discount_aliases.alias_title(policy.title, override.alias_area)
         amount = _trip_policy_amount(policy)
         linked.append(
             {
@@ -718,14 +729,11 @@ def _list_recommended_policy_candidates(db: Session) -> list[dict[str, object]]:
 def _resolve_policy_for_request_slug(
     db: Session,
     policy_slug: str,
-) -> tuple[Policy | None, stay_discount_aliases.StayDiscountAliasArea | None]:
-    alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
-    if alias_resolution is not None:
-        policy = alias_resolution.canonical_policy
-        if not is_public_policy(policy):
-            return None, None
-        return policy, alias_resolution.alias_area
-    return policy_repository.get_policy_by_slug(db, policy_slug), None
+) -> Policy | None:
+    resolution = resolve_policy_slug(db, policy_slug)
+    if resolution is None or resolution.policy is None:
+        return None
+    return resolution.policy
 
 
 def _trip_role_for_user(trip: Trip, user: User | None) -> str:
@@ -756,7 +764,7 @@ def trip_to_api(
     trip: Trip,
     user: User | None = None,
     recommended_policies: list[dict[str, object]] | None = None,
-    linked_policy_alias_overrides: dict[str, stay_discount_aliases.StayDiscountAliasArea] | None = None,
+    linked_policy_slug_overrides: dict[str, LinkedPolicySlugOverride] | None = None,
 ) -> dict[str, object]:
     people: list[str] = []
     seen_people: set[str] = set()
@@ -808,7 +816,7 @@ def trip_to_api(
         "people": people,
         "participantCount": trip.participant_count or max(1, len(people)),
         "expectedSaving": _format_saving(_policy_saving(trip)),
-        "linkedPolicies": _linked_policies(trip, linked_policy_alias_overrides),
+        "linkedPolicies": _linked_policies(trip, linked_policy_slug_overrides),
         "recommendedPolicies": _recommended_policies(trip, recommended_policies),
         "days": days,
         "currentUserRole": _trip_role_for_user(trip, user),
@@ -961,24 +969,34 @@ def create_trip(
         )
 
     _ensure_invite(db, trip, user)
+    policy_slug_override: str | None = None
+    alias_area: stay_discount_aliases.StayDiscountAliasArea | None = None
     if payload.get("policySlug"):
         policy_slug = str(payload["policySlug"])
-        policy, alias_area = _resolve_policy_for_request_slug(db, policy_slug)
-        if policy is None:
+        resolution = resolve_policy_slug(db, policy_slug)
+        if resolution is None or resolution.policy is None:
             raise TripServiceError(404, "Policy not found")
+        policy = resolution.policy
+        alias_area = resolution.alias_area
+        if resolution.kind == "persisted_alias":
+            policy_slug_override = resolution.request_slug
         trip_repository.add_trip_policy(db, trip_id=trip.id, policy_id=policy.id)
     else:
-        alias_area = None
         policy = None
     db.commit()
 
     created = trip_repository.get_accessible_trip_by_id(db, trip.id, user.id)
     if created is None:
         raise TripServiceError(404, "Trip not found")
-    alias_overrides: dict[str, stay_discount_aliases.StayDiscountAliasArea] | None = None
-    if policy is not None and alias_area is not None:
-        alias_overrides = {policy.slug or str(policy.id): alias_area}
-    return trip_to_api(created, user, _list_recommended_policy_candidates(db), alias_overrides)
+    slug_overrides: dict[str, LinkedPolicySlugOverride] | None = None
+    if policy is not None and (alias_area is not None or policy_slug_override is not None):
+        slug_overrides = {
+            policy.slug or str(policy.id): LinkedPolicySlugOverride(
+                request_slug=policy_slug_override,
+                alias_area=alias_area,
+            )
+        }
+    return trip_to_api(created, user, _list_recommended_policy_candidates(db), slug_overrides)
 
 
 def add_policy_to_trip(
@@ -989,7 +1007,7 @@ def add_policy_to_trip(
 ) -> dict[str, object]:
     trip = _resolve_required_trip(db, trip_handle, user)
     _require_trip_editor(trip, user)
-    policy, _alias_area = _resolve_policy_for_request_slug(db, policy_slug)
+    policy = _resolve_policy_for_request_slug(db, policy_slug)
     if policy is None:
         raise TripServiceError(404, "Policy not found")
 
@@ -1009,7 +1027,7 @@ def remove_policy_from_trip(
 ) -> dict[str, object]:
     trip = _resolve_required_trip(db, trip_handle, user)
     _require_trip_editor(trip, user)
-    policy, _alias_area = _resolve_policy_for_request_slug(db, policy_slug)
+    policy = _resolve_policy_for_request_slug(db, policy_slug)
     if policy is None:
         raise TripServiceError(404, "Policy not found")
 
