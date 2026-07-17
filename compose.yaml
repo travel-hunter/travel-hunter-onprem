@@ -20,6 +20,10 @@ services:
   backend:
     build:
       context: ./backend
+    env_file:
+      - path: ./backend/compose.defaults.env
+      - path: ./backend/.env.local
+        required: false
     environment:
       APP_ENV: docker
       TZ: Asia/Seoul
@@ -42,20 +46,7 @@ services:
       KAKAO_LOCAL_ENABLED: ${KAKAO_LOCAL_ENABLED:-false}
       KAKAO_LOCAL_REST_API_KEY: ${KAKAO_LOCAL_REST_API_KEY:-}
       KAKAO_LOCAL_TIMEOUT_SECONDS: ${KAKAO_LOCAL_TIMEOUT_SECONDS:-5}
-      TRAVEL_HUNTER_PUBLIC_BASE_URL: http://127.0.0.1:4173
       PASSWORD_RESET_EXPIRE_MINUTES: "30"
-      SMTP_HOST: ""
-      SMTP_PORT: "587"
-      SMTP_USERNAME: ""
-      SMTP_PASSWORD: ""
-      SMTP_FROM_EMAIL: ""
-      SMTP_USE_TLS: "true"
-      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:-}
-      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
-      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-http://127.0.0.1:8000/api/auth/oauth/kakao/callback}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://127.0.0.1:8000/api/auth/oauth/google/callback}
       OAUTH_STATE_COOKIE_NAME: travel_hunter_oauth_state
     ports:
       - "8000:8000"
