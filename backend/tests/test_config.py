@@ -1,6 +1,8 @@
+import os
+
 import pytest
 
-from app.core.config import Settings
+from app.core.config import Settings, load_env_file
 
 
 def test_local_runtime_allows_development_defaults() -> None:
@@ -34,3 +36,34 @@ def test_protected_runtime_accepts_https_public_values() -> None:
         cors_origins=("https://staging.travel-hunter.example",),
         refresh_cookie_secure=True,
     ).validate_runtime()
+
+
+def test_load_env_file_allows_local_file_to_override_prior_file(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.delenv("TRAVEL_HUNTER_TEST_ENV", raising=False)
+    defaults = tmp_path / ".env"
+    local = tmp_path / ".env.local"
+    defaults.write_text("TRAVEL_HUNTER_TEST_ENV=default\n", encoding="utf-8")
+    local.write_text("TRAVEL_HUNTER_TEST_ENV=local\n", encoding="utf-8")
+
+    load_env_file(defaults, protected_keys=frozenset())
+    load_env_file(local, override=True, protected_keys=frozenset())
+
+    assert os.environ["TRAVEL_HUNTER_TEST_ENV"] == "local"
+
+
+def test_load_env_file_does_not_override_original_process_env(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("TRAVEL_HUNTER_TEST_ENV", "process")
+    local = tmp_path / ".env.local"
+    local.write_text("TRAVEL_HUNTER_TEST_ENV=local\n", encoding="utf-8")
+
+    load_env_file(
+        local,
+        override=True,
+        protected_keys=frozenset({"TRAVEL_HUNTER_TEST_ENV"}),
+    )
+
+    assert os.environ["TRAVEL_HUNTER_TEST_ENV"] == "process"

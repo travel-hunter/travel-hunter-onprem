@@ -3,7 +3,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-def load_env_file(path: Path) -> None:
+ORIGINAL_ENV_KEYS = frozenset(os.environ)
+
+
+def load_env_file(
+    path: Path,
+    *,
+    override: bool = False,
+    protected_keys: frozenset[str] = ORIGINAL_ENV_KEYS,
+) -> None:
     if not path.exists():
         return
     for raw_line in path.read_text(encoding="utf-8").splitlines():
@@ -12,13 +20,17 @@ def load_env_file(path: Path) -> None:
             continue
         key, value = line.split("=", 1)
         key = key.strip()
-        if not key or key in os.environ:
+        if not key or key in protected_keys:
+            continue
+        if not override and key in os.environ:
             continue
         value = value.strip().strip('"').strip("'")
         os.environ[key] = value
 
 
-load_env_file(Path(__file__).resolve().parents[2] / ".env")
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+load_env_file(BACKEND_DIR / ".env")
+load_env_file(BACKEND_DIR / ".env.local", override=True)
 
 
 def split_csv(value: str) -> tuple[str, ...]:
