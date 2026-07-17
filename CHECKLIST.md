@@ -2,25 +2,23 @@
 
 ## Current Status
 
-- Active task/status: PR #1 signup verify state fix retention WATCH resolved on `feature/signup-verify-state-fix` in `travel-hunter-onprem`.
-- Scope guard: Include only signup verify frontend cache retention fix, focused regression test, and this checklist update.
-- Excluded from this branch: backend policy/data/schema/migration changes, secrets/env, `main` update, direct `develop` push, PR merge, and production promotion.
+- Active task/status: Ultragoal `G004-alembic-yaml` Alembic 자동 마이그레이션 compose 반영을 완료했다.
+- Completed scope: `feature/deploy-alembic-onprem-hardening`에서 `compose.tunnel.yaml` backend service가 DB health 이후 `python -m alembic upgrade head`를 실행한 뒤 uvicorn을 시작하도록 최소 변경했다.
+- Scope guard: source 변경은 `compose.tunnel.yaml`과 이 checklist에 한정했다. 실제 `docker compose up/down/restart/build`, 실제 `alembic upgrade`, DB volume 삭제/초기화, cloudflared/caddy 공개 dev 도메인 전환은 실행하지 않았다.
 
 ## Latest Validation Evidence
 
-- Signup verify cache now keeps same-token in-flight single-flight behavior, keeps successful same-token reuse briefly with a 30초 TTL, deletes expired success entries, and clears the current token entry after `completeSignup` succeeds.
-- Frontend typecheck passed after retention hardening: `cd frontend && npm run typecheck`.
-- Targeted auth regression passed and asserts one same-token verify request through session bootstrap rerender: `cd frontend && npx vitest run src/app/__tests__/auth.test.tsx -t "keeps signup verification progressing"`.
-- New targeted auth regression passed and asserts completing signup clears the token cache so a later same-token page entry verifies again: `cd frontend && npx vitest run src/app/__tests__/auth.test.tsx -t "clears signup verification cache"`.
-- Diff hygiene passed: `git diff --check origin/develop`, `git diff --check origin/develop -- CHECKLIST.md`, UTF-8/U+FFFD scan for changed text files, and excluded backend/deploy/env/compose diff check.
-- Frontend `npm test` did not complete: mojibake precheck passed, then `scripts/run-backend-command.cjs` started compose PostgreSQL but Alembic failed in the local Python environment with `No module named alembic.__main__; 'alembic' is a package and cannot be directly executed`. The test compose container/volume/network were removed with `docker compose down -v --remove-orphans`.
-- Full auth test file was not used as a release gate for this narrow fix; a local run of `cd frontend && npx vitest run src/app/__tests__/auth.test.tsx` still fails on the pre-existing live-backend login-dependent cases, while the two signup verification targeted cases pass.
-- External dev smoke evidence provided for the source fix: public `/api/health` OK, synthetic `POST /api/auth/signup/verify` 200, and Playwright public verify page showed password input plus completion button.
+- Local compose validation: `docker compose --env-file deploy/.env.tunnel.example -f compose.tunnel.yaml config -q` passed.
+- Server env compatibility validation: temporary `/tmp/travel-hunter-onprem-compose-g004.yaml` with `/home/deploy/travelhunterapp/deploy/.env.prod` and `--project-directory /home/deploy/travel-hunter-onprem` ran `config -q` and passed.
+- Server running stack check: only `travelhunterapp2` remains running, with config `/home/deploy/travelhunterapp2/compose.tunnel.yaml`.
+- Static command check: `compose.tunnel.yaml` contains `python -m alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000`.
+- Diff hygiene: `git diff --check -- compose.tunnel.yaml CHECKLIST.md` passed.
+- UTF-8/U+FFFD scan for `compose.tunnel.yaml` and `CHECKLIST.md` passed.
 
 ## Remaining Risks
 
-- Full frontend `npm test` is blocked by the local backend Alembic executable environment above; e2e, backend pytest, and Jenkins dev status were not run for this narrow frontend/docs branch.
-- PR is for review into `develop`; merge and production promotion remain intentionally out of scope.
+- Actual image build and Alembic migration execution remain intentionally unrun for this goal; readiness is proven by compose config and static command/file checks only.
+- Server GitHub HTTPS credentials issue is handled by the G003 bundle fallback path rather than direct server-side git fetch/pull.
 
 ## Cleanup Policy
 
