@@ -44,6 +44,8 @@ cutover 승인 전 아래 항목을 먼저 확인한다.
 - [ ] `deploy/.env.prod`는 key 존재 여부와 파일 권한만 확인한다.
   - 값은 출력하지 않는다.
   - 권장 권한은 소유자만 읽고 쓸 수 있는 설정이다.
+- [ ] `docker compose ls`로 기존 app stack과 온프레미스 후보 stack의 project name, config path, 상태를 확인한다.
+- [ ] 온프레미스 전환 명령은 명시 project name `travel-hunter-onprem-dev`를 사용하고, 기존 app stack 명령은 `travelhunterapp2` project/config path가 맞는지 확인한 뒤 실행한다.
 - [ ] compose project name, volume name, network name이 기존 `travelhunterapp2` stack과 충돌하지 않는지 확인한다.
 - [ ] DB backup 또는 snapshot이 확보됐는지 확인한다.
 - [ ] 기존 개발서버 running stack의 app-facing 서비스(`cloudflared/caddy/frontend/backend`)를 멈추는 시점과 rollback 판단 기준을 승인받는다.
@@ -54,34 +56,47 @@ cutover 승인 전 아래 항목을 먼저 확인한다.
 아래는 별도 승인 후 운영자가 실행할 수 있도록 남기는 초안이다. 지금 실행하지 않는다. secret 값은 출력하지 않는다. DB volume 삭제나 초기화 명령은 포함하지 않는다.
 
 ```bash
-# 0) 사전 확인: 값 출력 금지, 상태와 key/권한만 확인
+# 0) 사전 확인: 값 출력 금지, 상태와 key/권한/project identity만 확인
+docker compose ls
+
 cd /home/deploy/travel-hunter-onprem
 git status --short
 git branch --show-current
 git rev-parse HEAD
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml config --services
+docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compose.tunnel.yaml config --services
+
+cd /home/deploy/travelhunterapp2
+docker compose -p travelhunterapp2 --env-file deploy/.env.prod -f compose.tunnel.yaml config --services
+
+# 위 docker compose ls/config 출력에서 project name과 config path가 의도한 stack과 맞는지 확인한 뒤 다음 단계로 진행한다.
 
 # 1) 별도 승인 후 기존 개발서버 app-facing 서비스 정지: DB/volume은 건드리지 않음
 cd /home/deploy/travelhunterapp2
 # 전제: config --services에서 아래 서비스명이 확인되어야 한다.
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml stop cloudflared caddy frontend backend
+docker compose -p travelhunterapp2 --env-file deploy/.env.prod -f compose.tunnel.yaml stop cloudflared caddy frontend backend
 
 # 2) 새 온프레미스 DB만 먼저 기동
 cd /home/deploy/travel-hunter-onprem
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml up -d db
+docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compose.tunnel.yaml up -d db
 
-# 3) Alembic migration 확인 실행
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml run --rm backend python -m alembic upgrade head
+# 3) 새 온프레미스 backend 기동
+# compose backend command가 "python -m alembic upgrade head && exec uvicorn ..." 순서로 실행한다.
+# migration의 단일 authoritative entrypoint는 backend startup command다. 별도 manual migration command는 실행하지 않는다.
+docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compose.tunnel.yaml up -d backend
 
-# 4) 새 온프레미스 stack 기동
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml up -d
+# 4) backend health/log와 migration 현재 revision 진단: 진단만 수행하고 migration은 재실행하지 않음
+docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compose.tunnel.yaml logs --tail=100 backend
+docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compose.tunnel.yaml exec backend python -m alembic current
+docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compose.tunnel.yaml exec backend python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).read()"
 
-# 5) 로그 확인: secret 값 출력 금지
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml logs --tail=100 backend
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml logs --tail=100 caddy
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml logs --tail=100 cloudflared
+# 5) frontend/caddy/cloudflared 기동
+docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compose.tunnel.yaml up -d frontend caddy cloudflared
 
-# 6) public smoke
+# 6) 로그 확인: secret 값 출력 금지
+docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compose.tunnel.yaml logs --tail=100 caddy
+docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compose.tunnel.yaml logs --tail=100 cloudflared
+
+# 7) public smoke
 curl -fsS https://dev.travel-hunter.co.kr/api/health
 curl -fsS https://dev.travel-hunter.co.kr/
 curl -fsS https://dev.travel-hunter.co.kr/login
@@ -89,7 +104,7 @@ curl -fsS https://dev.travel-hunter.co.kr/login
 
 주의:
 
-- backend service command가 Alembic을 자동 실행하도록 구성된 경우에도, 위 초안의 별도 migration command는 승인된 cutover 절차에서 idempotent 확인용으로만 사용한다.
+- backend service command가 Alembic과 uvicorn을 순서대로 실행한다. migration 확인이 필요하면 `alembic current` 같은 진단 명령만 사용한다.
 - migration 실패, health 실패, login route 실패, provider callback 실패가 발생하면 즉시 rollback 초안을 검토한다.
 - `curl` 결과에 secret, token, cookie 값을 붙여 기록하지 않는다.
 
@@ -98,16 +113,27 @@ curl -fsS https://dev.travel-hunter.co.kr/login
 아래는 별도 승인 후 rollback이 필요할 때의 초안이다. 지금 실행하지 않는다. rollback은 기존 앱 stack을 되살리고 온프레미스 stack을 멈추는 데 한정한다. DB를 파괴적으로 되돌리는 작업은 포함하지 않는다.
 
 ```bash
+# 0) rollback 전 wrong-stack 방지 확인: project name과 config path를 먼저 확인
+docker compose ls
+
+cd /home/deploy/travel-hunter-onprem
+docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compose.tunnel.yaml config --services
+
+cd /home/deploy/travelhunterapp2
+docker compose -p travelhunterapp2 --env-file deploy/.env.prod -f compose.tunnel.yaml config --services
+
+# 위 docker compose ls/config 출력에서 project name과 config path가 의도한 stack과 맞는지 확인한 뒤 다음 단계로 진행한다.
+
 # 1) 온프레미스 app-facing 서비스 정지: DB/volume은 건드리지 않음
 cd /home/deploy/travel-hunter-onprem
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml stop cloudflared caddy frontend backend
+docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compose.tunnel.yaml stop cloudflared caddy frontend backend
 
 # 2) 기존 app 배포 stack 복구
 cd /home/deploy/travelhunterapp2
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml up -d
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml logs --tail=100 backend
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml logs --tail=100 caddy
-docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml logs --tail=100 cloudflared
+docker compose -p travelhunterapp2 --env-file deploy/.env.prod -f compose.tunnel.yaml up -d
+docker compose -p travelhunterapp2 --env-file deploy/.env.prod -f compose.tunnel.yaml logs --tail=100 backend
+docker compose -p travelhunterapp2 --env-file deploy/.env.prod -f compose.tunnel.yaml logs --tail=100 caddy
+docker compose -p travelhunterapp2 --env-file deploy/.env.prod -f compose.tunnel.yaml logs --tail=100 cloudflared
 
 # 3) rollback smoke
 curl -fsS https://dev.travel-hunter.co.kr/api/health
@@ -147,7 +173,7 @@ SMTP와 OAuth smoke는 provider env가 준비된 경우에만 수행한다. prov
 - 서버 GitHub HTTPS credential이 없어 clone/fetch가 실패했고, 이번 검증은 bundle 경로를 사용했다.
 - 실제 image build, Alembic migration, compose up은 실행하지 않았다.
 - PR #2가 merge되기 전까지 온프레미스 `develop`에는 cutover 대상 변경이 없다.
-- 기존 dirty `compose.tunnel.yaml`의 Alembic command line 3개가 운영자 판단을 혼동시킬 수 있다.
-- compose project, volume, network 이름 충돌은 cutover 전 실제 서버 상태로 다시 확인해야 한다.
+- 기존 dirty `compose.tunnel.yaml`의 Alembic command line 3개는 운영자 판단을 혼동시킬 수 있으므로, cutover 절차는 온프레미스 backend startup command를 단일 migration entrypoint로 둔다.
+- compose project, volume, network 이름 충돌과 config path 오인은 cutover 전 실제 서버 상태와 `docker compose ls`로 다시 확인해야 한다.
 - DB backup/snapshot이 확인되기 전에는 migration을 실행하면 안 된다.
 - SMTP/OAuth smoke는 provider env가 준비되지 않으면 완료 판정할 수 없다.
