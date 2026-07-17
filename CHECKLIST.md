@@ -2,25 +2,26 @@
 
 ## Current Status
 
-- Active task/status: G007 architect WATCH 해소 변경 후 mandatory ai-slop-cleaner 재검증을 완료했다.
-- Completed scope: `docs/deployment-cicd/onprem-dev-parallel-validation-handoff.md`, `compose.tunnel.yaml`, `CHECKLIST.md`에서 manual migration, destructive command, wrong-stack, secret 노출, 승인 없는 cutover/rollback 문구를 재점검했다. `CHECKLIST.md`는 최신 검증 근거만 남기도록 유지했다.
-- Scope guard: 실제 서버 lifecycle 명령, 실제 Alembic migration, DB volume 삭제/초기화, secret 변경, dev domain cutover, production 서버 변경, PR merge는 실행하지 않았다.
+- Active task/status: G008 existing app path inconsistency 해소 후 mandatory ai-slop-cleaner 검증을 완료했다.
+- Completed scope: `docs/deployment-cicd/onprem-dev-parallel-validation-handoff.md`에서 `/home/deploy/travelhunterapp2`가 running project/config path이고 `/home/deploy/travelhunterapp`는 별도 app repo/dirty 확인 대상임을 구분했다. 기존 app stop/up/log 명령은 `/home/deploy/travelhunterapp2`와 `-p travelhunterapp2 -f compose.tunnel.yaml` 기준으로만 실행하도록 명시했다.
+- Scope guard: 지정된 문서, 체크리스트, compose 파일만 검토했다. 실제 서버 lifecycle command, 실제 Alembic migration, DB volume 삭제/초기화, secret 변경, dev domain cutover, production 서버 변경, PR merge, commit/push는 실행하지 않았다.
 
 ## Latest Validation Evidence
 
-- Compose validation: `docker compose --env-file deploy/.env.prod.example -f compose.tunnel.yaml config -q` passed.
+- Compose config: `docker compose --env-file deploy/.env.prod.example -f compose.tunnel.yaml config -q` passed.
 - Compose services: `docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod.example -f compose.tunnel.yaml config --services` passed and listed `db`, `backend`, `frontend`, `caddy`, `cloudflared`.
-- Diff hygiene: `git diff --check` passed.
-- UTF-8/U+FFFD scan for all scoped files passed with zero replacement characters.
-- Destructive command scan passed for volume-removal, DB-drop, env-print, and secret-echo patterns.
-- Migration command scan passed: no manual run command remains; the remaining migration phrase is confined to the backend startup command and its handoff explanation.
+- Diff hygiene: scoped `git diff --check` passed.
+- UTF-8/U+FFFD scan: scoped files passed with zero replacement characters.
+- Forbidden command scans: scoped files contain no forbidden volume-removal or one-off manual migration command.
+- Fallback/slop scan: no fallback-like cleanup finding required code or document changes beyond this checklist refresh.
+- Self-check: `/home/deploy/travelhunterapp2` usage consistently refers to the running project/config path `/home/deploy/travelhunterapp2/compose.tunnel.yaml`; `/home/deploy/travelhunterapp` is documented only as a separate app repo/dirty confirmation target.
 
 ## Remaining Risks
 
 - GitHub HTTPS credentials are still a known server-side risk because clone/fetch failed and the previous validation used a bundle path.
 - Actual image build, Alembic migration, compose up, and dev domain cutover remain intentionally unrun.
 - Until PR #2 is merged and `develop` is updated, the onprem `develop` branch lacks the cutover target changes.
-- Compose project/config path checks reduce wrong-stack risk, but operators must still confirm live server `docker compose ls` output before any stop/up command.
+- `/home/deploy/travelhunterapp` and `/home/deploy/travelhunterapp2` both exist, so operators must stop if `docker compose ls` does not confirm `travelhunterapp2` config path as `/home/deploy/travelhunterapp2/compose.tunnel.yaml` before any existing app stop/up/log command.
 
 ## Cleanup Policy
 

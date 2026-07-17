@@ -14,8 +14,10 @@
 ## 2. 현재 확인된 사실
 
 - 기존 개발서버 running stack `travelhunterapp2` 및 기존 app 배포는 보존되어 있다.
-- `/home/deploy/travelhunterapp`의 origin은 `travel-hunter-app.git`이다.
-- 기존 repo의 dirty `compose.tunnel.yaml`에는 Alembic 관련 command line이 3개 남아 있다.
+- 서버에서 `docker compose ls`로 확인한 running project는 `travelhunterapp2`이며, running config path는 `/home/deploy/travelhunterapp2/compose.tunnel.yaml`이다.
+- `/home/deploy/travelhunterapp2`는 `travel-hunter-app.git` repo이고 `develop...origin/develop`, HEAD `ad3d7d94e29f32a304aa0719f8b226b98567b72e`이며, `.github/workflows/ci.yml` 삭제 상태가 dirty로 남아 있다.
+- `/home/deploy/travelhunterapp`도 존재하지만 running stack config path가 아니다. 이 경로는 별도 `travel-hunter-app.git` repo이고 `develop...origin/develop`, HEAD `ad3d7d94e29f32a304aa0719f8b226b98567b72e`이며, `compose.tunnel.yaml` 수정 상태가 dirty로 남아 있다.
+- 두 기존 app repo 모두 `compose.tunnel.yaml` 파일을 가지고 있으므로, 기존 app stack에 대한 cutover/rollback 명령은 running config path인 `/home/deploy/travelhunterapp2/compose.tunnel.yaml`와 명시 project name `travelhunterapp2`를 기준으로만 실행해야 한다.
 - `/home/deploy/travel-hunter-onprem`은 clean 상태로 검증됐고, 기준은 `develop` HEAD `0114b0b40f934716543d8df9bdae91831d064549`이다.
 - 온프레미스 변경은 PR #2에 올라가 있다: <https://github.com/travel-hunter/travel-hunter-onprem/pull/2>
 - GitHub HTTPS credential이 없어 서버에서 clone/fetch가 실패했고, 검증에는 bundle 경로를 사용했다.
@@ -45,7 +47,9 @@ cutover 승인 전 아래 항목을 먼저 확인한다.
   - 값은 출력하지 않는다.
   - 권장 권한은 소유자만 읽고 쓸 수 있는 설정이다.
 - [ ] `docker compose ls`로 기존 app stack과 온프레미스 후보 stack의 project name, config path, 상태를 확인한다.
-- [ ] 온프레미스 전환 명령은 명시 project name `travel-hunter-onprem-dev`를 사용하고, 기존 app stack 명령은 `travelhunterapp2` project/config path가 맞는지 확인한 뒤 실행한다.
+- [ ] `docker compose ls`에서 `travelhunterapp2`의 config path가 `/home/deploy/travelhunterapp2/compose.tunnel.yaml`인지 확인하지 못하면 즉시 중단한다.
+- [ ] `/home/deploy/travelhunterapp`는 별도 app repo/dirty 확인 대상일 뿐 running stack config path가 아니므로, 기존 app stop/up/log 명령의 작업 경로로 사용하지 않는다.
+- [ ] 온프레미스 전환 명령은 명시 project name `travel-hunter-onprem-dev`를 사용하고, 기존 app stack 명령은 `/home/deploy/travelhunterapp2`에서 `-p travelhunterapp2 -f compose.tunnel.yaml`로만 실행한다.
 - [ ] compose project name, volume name, network name이 기존 `travelhunterapp2` stack과 충돌하지 않는지 확인한다.
 - [ ] DB backup 또는 snapshot이 확보됐는지 확인한다.
 - [ ] 기존 개발서버 running stack의 app-facing 서비스(`cloudflared/caddy/frontend/backend`)를 멈추는 시점과 rollback 판단 기준을 승인받는다.
@@ -59,6 +63,10 @@ cutover 승인 전 아래 항목을 먼저 확인한다.
 # 0) 사전 확인: 값 출력 금지, 상태와 key/권한/project identity만 확인
 docker compose ls
 
+# docker compose ls에서 running project travelhunterapp2의 config path가
+# /home/deploy/travelhunterapp2/compose.tunnel.yaml로 확인되지 않으면 중단한다.
+# /home/deploy/travelhunterapp는 별도 app repo/dirty 확인 대상이며, running stack config path가 아니다.
+
 cd /home/deploy/travel-hunter-onprem
 git status --short
 git branch --show-current
@@ -68,7 +76,9 @@ docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compos
 cd /home/deploy/travelhunterapp2
 docker compose -p travelhunterapp2 --env-file deploy/.env.prod -f compose.tunnel.yaml config --services
 
-# 위 docker compose ls/config 출력에서 project name과 config path가 의도한 stack과 맞는지 확인한 뒤 다음 단계로 진행한다.
+# 위 docker compose ls/config 출력에서 기존 app project name이 travelhunterapp2이고,
+# config path가 /home/deploy/travelhunterapp2/compose.tunnel.yaml인지 확인한 뒤 다음 단계로 진행한다.
+# 확인하지 못하면 wrong-stack 위험이 있으므로 stop/up/log 명령을 실행하지 않는다.
 
 # 1) 별도 승인 후 기존 개발서버 app-facing 서비스 정지: DB/volume은 건드리지 않음
 cd /home/deploy/travelhunterapp2
@@ -116,13 +126,19 @@ curl -fsS https://dev.travel-hunter.co.kr/login
 # 0) rollback 전 wrong-stack 방지 확인: project name과 config path를 먼저 확인
 docker compose ls
 
+# docker compose ls에서 running project travelhunterapp2의 config path가
+# /home/deploy/travelhunterapp2/compose.tunnel.yaml로 확인되지 않으면 중단한다.
+# /home/deploy/travelhunterapp는 별도 app repo/dirty 확인 대상이며, running stack config path가 아니다.
+
 cd /home/deploy/travel-hunter-onprem
 docker compose -p travel-hunter-onprem-dev --env-file deploy/.env.prod -f compose.tunnel.yaml config --services
 
 cd /home/deploy/travelhunterapp2
 docker compose -p travelhunterapp2 --env-file deploy/.env.prod -f compose.tunnel.yaml config --services
 
-# 위 docker compose ls/config 출력에서 project name과 config path가 의도한 stack과 맞는지 확인한 뒤 다음 단계로 진행한다.
+# 위 docker compose ls/config 출력에서 기존 app project name이 travelhunterapp2이고,
+# config path가 /home/deploy/travelhunterapp2/compose.tunnel.yaml인지 확인한 뒤 다음 단계로 진행한다.
+# 확인하지 못하면 wrong-stack 위험이 있으므로 stop/up/log 명령을 실행하지 않는다.
 
 # 1) 온프레미스 app-facing 서비스 정지: DB/volume은 건드리지 않음
 cd /home/deploy/travel-hunter-onprem
@@ -163,8 +179,9 @@ SMTP와 OAuth smoke는 provider env가 준비된 경우에만 수행한다. prov
 
 - 온프레미스 repo clean 기준: `/home/deploy/travel-hunter-onprem` `develop` HEAD `0114b0b40f934716543d8df9bdae91831d064549`.
 - 기존 running stack 보존: 기존 개발서버 running stack `travelhunterapp2` 및 기존 app 배포를 멈추지 않은 상태로 병렬 검증했다.
-- 기존 app repo origin 확인: `/home/deploy/travelhunterapp` origin이 `travel-hunter-app.git`이다.
-- dirty compose 확인: 기존 `compose.tunnel.yaml`에 Alembic command line 3개가 남아 있다.
+- 기존 running stack identity: `docker compose ls`에서 project `travelhunterapp2`, config path `/home/deploy/travelhunterapp2/compose.tunnel.yaml`로 확인됐다.
+- 기존 app repo 확인: `/home/deploy/travelhunterapp2`와 `/home/deploy/travelhunterapp` 모두 `travel-hunter-app.git` repo이며 HEAD는 `ad3d7d94e29f32a304aa0719f8b226b98567b72e`다.
+- dirty 상태 구분: `/home/deploy/travelhunterapp2`는 `.github/workflows/ci.yml` 삭제 상태, `/home/deploy/travelhunterapp`는 `compose.tunnel.yaml` 수정 상태다. `/home/deploy/travelhunterapp`는 running stack config path가 아니라 별도 app repo/dirty 확인 대상이다.
 - PR 기준: PR #2 <https://github.com/travel-hunter/travel-hunter-onprem/pull/2>.
 - 실행하지 않은 범위: 실제 build, migration, up, domain cutover, DB volume 삭제/init, secret 변경, production 서버 변경.
 
@@ -173,7 +190,7 @@ SMTP와 OAuth smoke는 provider env가 준비된 경우에만 수행한다. prov
 - 서버 GitHub HTTPS credential이 없어 clone/fetch가 실패했고, 이번 검증은 bundle 경로를 사용했다.
 - 실제 image build, Alembic migration, compose up은 실행하지 않았다.
 - PR #2가 merge되기 전까지 온프레미스 `develop`에는 cutover 대상 변경이 없다.
-- 기존 dirty `compose.tunnel.yaml`의 Alembic command line 3개는 운영자 판단을 혼동시킬 수 있으므로, cutover 절차는 온프레미스 backend startup command를 단일 migration entrypoint로 둔다.
+- `/home/deploy/travelhunterapp`와 `/home/deploy/travelhunterapp2`가 모두 존재하므로, 기존 app stack 조작 전에 running config path가 `/home/deploy/travelhunterapp2/compose.tunnel.yaml`인지 확인하지 못하면 중단해야 한다.
 - compose project, volume, network 이름 충돌과 config path 오인은 cutover 전 실제 서버 상태와 `docker compose ls`로 다시 확인해야 한다.
 - DB backup/snapshot이 확인되기 전에는 migration을 실행하면 안 된다.
 - SMTP/OAuth smoke는 provider env가 준비되지 않으면 완료 판정할 수 없다.
