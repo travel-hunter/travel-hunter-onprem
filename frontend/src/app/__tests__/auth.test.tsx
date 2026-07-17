@@ -1,5 +1,7 @@
 import {
+  act,
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -115,6 +117,106 @@ describe("Travel Hunter app — auth & routing", () => {
       expect(document.querySelector('input[type="email"]')).toBeTruthy(),
     );
     expect(document.querySelector('button[type="submit"]')).toBeTruthy();
+  });
+
+  it("keeps signup verification progressing when session bootstrap rerenders mid-request", async () => {
+    let resolveVerify: (result: { verified: true; email: string }) => void = () => {};
+    const verifyPromise = new Promise<{ verified: true; email: string }>((resolve) => {
+      resolveVerify = resolve;
+    });
+    const refreshSpy = vi
+      .spyOn(appDataApi, "refreshSession")
+      .mockRejectedValue(new Error("missing refresh cookie"));
+    const verifySpy = vi
+      .spyOn(appDataApi, "verifySignup")
+      .mockReturnValue(verifyPromise);
+
+    try {
+      renderAppRoute("/signup/verify?token=valid-token");
+
+      await waitFor(() => expect(verifySpy).toHaveBeenCalledWith({ token: "valid-token" }));
+      await waitFor(() => expect(refreshSpy).toHaveBeenCalled());
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(verifySpy).toHaveBeenCalledTimes(1);
+
+      resolveVerify({ verified: true, email: "signup-progress@example.com" });
+
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "비밀번호 설정하고 가입 완료" })).toBeInTheDocument(),
+      );
+      expect(verifySpy).toHaveBeenCalledTimes(1);
+      expect(document.querySelector('input[name="password"]')).toBeTruthy();
+      expect(document.body).toHaveTextContent("이메일 인증이 완료됐어요");
+    } finally {
+      refreshSpy.mockRestore();
+      verifySpy.mockRestore();
+    }
+  });
+
+  it("clears signup verification cache after signup completes", async () => {
+    const email = "signup-cache-clear@example.com";
+    const refreshSpy = vi
+      .spyOn(appDataApi, "refreshSession")
+      .mockRejectedValue(new Error("missing refresh cookie"));
+    const verifySpy = vi
+      .spyOn(appDataApi, "verifySignup")
+      .mockResolvedValue({ verified: true, email });
+    const completeSpy = vi.spyOn(appDataApi, "completeSignup").mockResolvedValue({
+      accessToken: "signup-cache-clear-access-token",
+      user: {
+        id: "signup-cache-clear-user",
+        nickname: "캐시정리",
+        email,
+        role: "user",
+        hasPassword: true,
+        preferredRegions: null,
+        persona: "캐시정리님",
+        savedAmount: 0,
+        onboardingCompleted: true,
+        nicknameSetupCompleted: true,
+        socialAccounts: [],
+        createdAt: "2026-06-15T00:00:00Z",
+        updatedAt: "2026-06-15T00:00:00Z",
+      },
+    });
+    const getProfileSpy = vi.spyOn(appDataApi, "getProfile").mockResolvedValue({
+      preferredRegions: null,
+      style: null,
+      budget: null,
+    });
+
+    try {
+      renderAppRoute("/signup/verify?token=cache-clear-token");
+
+      await waitFor(() => expect(refreshSpy).toHaveBeenCalled());
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        const input = document.querySelector('input[name="password"]') as HTMLInputElement | null;
+        expect(input).toBeTruthy();
+      });
+      const passwordInput = document.querySelector('input[name="password"]') as HTMLInputElement;
+      fireEvent.change(passwordInput, { target: { value: "password123" } });
+      expect(passwordInput.value).toBe("password123");
+      fireEvent.click(screen.getByRole("button", { name: "비밀번호 설정하고 가입 완료" }));
+      await waitFor(() =>
+        expect(completeSpy).toHaveBeenCalledWith({ token: "cache-clear-token", password: "password123" }),
+      );
+
+      cleanup();
+      window.localStorage.clear();
+      renderAppRoute("/signup/verify?token=cache-clear-token");
+
+      await waitFor(() => expect(verifySpy).toHaveBeenCalledTimes(2));
+    } finally {
+      refreshSpy.mockRestore();
+      verifySpy.mockRestore();
+      completeSpy.mockRestore();
+      getProfileSpy.mockRestore();
+    }
   });
 
   it("opens core authenticated routes", async () => {

@@ -6,6 +6,8 @@
 
 1. `09-release-checklist.md`
    - 배포 전후 smoke, rollback, 운영 확인 기준.
+2. `branch-strategy.md`
+   - `travel-hunter-onprem` GitHub 소스 오브 트루스와 Semi-Trunk 브랜치 운용 기준.
 
 ## 현재 기준
 
