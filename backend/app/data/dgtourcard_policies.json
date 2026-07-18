@@ -1,6 +1,6 @@
 [
   {
-    "slug": "dgtour-밀양-1",
+    "slug": "dgtour-miryang-1",
     "title": "밀양 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "경남",
@@ -23,10 +23,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "준비중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-밀양-1"
+    "sourceCanonicalKey": "legacy-dgtour-밀양-1",
+    "legacySlugs": [
+      "dgtour-밀양-1"
+    ]
   },
   {
-    "slug": "dgtour-평창-2",
+    "slug": "dgtour-pyeongchang-2",
     "title": "평창 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "강원",
@@ -49,10 +52,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "준비중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-평창-2"
+    "sourceCanonicalKey": "legacy-dgtour-평창-2",
+    "legacySlugs": [
+      "dgtour-평창-2"
+    ]
   },
   {
-    "slug": "dgtour-하동-3",
+    "slug": "dgtour-hadong-3",
     "title": "하동 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "경남",
@@ -75,10 +81,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "신청접수중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-하동-3"
+    "sourceCanonicalKey": "legacy-dgtour-하동-3",
+    "legacySlugs": [
+      "dgtour-하동-3"
+    ]
   },
   {
-    "slug": "dgtour-거창-4",
+    "slug": "dgtour-geochang-4",
     "title": "거창 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "경남",
@@ -101,10 +110,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "준비중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-거창-4"
+    "sourceCanonicalKey": "legacy-dgtour-거창-4",
+    "legacySlugs": [
+      "dgtour-거창-4"
+    ]
   },
   {
-    "slug": "dgtour-영월-5",
+    "slug": "dgtour-yeongwol-5",
     "title": "영월 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "강원",
@@ -127,10 +139,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "준비중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-영월-5"
+    "sourceCanonicalKey": "legacy-dgtour-영월-5",
+    "legacySlugs": [
+      "dgtour-영월-5"
+    ]
   },
   {
-    "slug": "dgtour-제천-6",
+    "slug": "dgtour-jecheon-6",
     "title": "제천 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "충북",
@@ -153,10 +168,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "마감",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-제천-6"
+    "sourceCanonicalKey": "legacy-dgtour-제천-6",
+    "legacySlugs": [
+      "dgtour-제천-6"
+    ]
   },
   {
-    "slug": "dgtour-강진-7",
+    "slug": "dgtour-gangjin-7",
     "title": "강진 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "전남",
@@ -179,10 +197,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "준비중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-강진-7"
+    "sourceCanonicalKey": "legacy-dgtour-강진-7",
+    "legacySlugs": [
+      "dgtour-강진-7"
+    ]
   },
   {
-    "slug": "dgtour-영광-8",
+    "slug": "dgtour-yeonggwang-8",
     "title": "영광 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "전남",
@@ -205,10 +226,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "신청접수중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-영광-8"
+    "sourceCanonicalKey": "legacy-dgtour-영광-8",
+    "legacySlugs": [
+      "dgtour-영광-8"
+    ]
   },
   {
-    "slug": "dgtour-합천-9",
+    "slug": "dgtour-hapcheon-9",
     "title": "합천 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "경남",
@@ -231,10 +255,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "신청접수중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-합천-9"
+    "sourceCanonicalKey": "legacy-dgtour-합천-9",
+    "legacySlugs": [
+      "dgtour-합천-9"
+    ]
   },
   {
-    "slug": "dgtour-해남-10",
+    "slug": "dgtour-haenam-10",
     "title": "해남 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "전남",
@@ -257,10 +284,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "신청접수중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-해남-10"
+    "sourceCanonicalKey": "legacy-dgtour-해남-10",
+    "legacySlugs": [
+      "dgtour-해남-10"
+    ]
   },
   {
-    "slug": "dgtour-남해-11",
+    "slug": "dgtour-namhae-11",
     "title": "남해 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "경남",
@@ -283,10 +313,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "마감",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-남해-11"
+    "sourceCanonicalKey": "legacy-dgtour-남해-11",
+    "legacySlugs": [
+      "dgtour-남해-11"
+    ]
   },
   {
-    "slug": "dgtour-영암-12",
+    "slug": "dgtour-yeongam-12",
     "title": "영암 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "전남",
@@ -309,10 +342,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "마감",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-영암-12"
+    "sourceCanonicalKey": "legacy-dgtour-영암-12",
+    "legacySlugs": [
+      "dgtour-영암-12"
+    ]
   },
   {
-    "slug": "dgtour-고흥-13",
+    "slug": "dgtour-goheung-13",
     "title": "고흥 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "전남",
@@ -335,10 +371,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "준비중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-고흥-13"
+    "sourceCanonicalKey": "legacy-dgtour-고흥-13",
+    "legacySlugs": [
+      "dgtour-고흥-13"
+    ]
   },
   {
-    "slug": "dgtour-횡성-14",
+    "slug": "dgtour-hoengseong-14",
     "title": "횡성 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "강원",
@@ -361,10 +400,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "마감",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-횡성-14"
+    "sourceCanonicalKey": "legacy-dgtour-횡성-14",
+    "legacySlugs": [
+      "dgtour-횡성-14"
+    ]
   },
   {
-    "slug": "dgtour-완도-15",
+    "slug": "dgtour-wando-15",
     "title": "완도 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "전남",
@@ -387,10 +429,13 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "신청접수중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-완도-15"
+    "sourceCanonicalKey": "legacy-dgtour-완도-15",
+    "legacySlugs": [
+      "dgtour-완도-15"
+    ]
   },
   {
-    "slug": "dgtour-고창-16",
+    "slug": "dgtour-gochang-16",
     "title": "고창 디지털관광주민증 혜택",
     "org": "한국관광공사",
     "region": "전북",
@@ -413,6 +458,9 @@
     "sourceCategory": "local_half_trip",
     "sourceStatus": "준비중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
-    "sourceCanonicalKey": "legacy-dgtour-고창-16"
+    "sourceCanonicalKey": "legacy-dgtour-고창-16",
+    "legacySlugs": [
+      "dgtour-고창-16"
+    ]
   }
 ]

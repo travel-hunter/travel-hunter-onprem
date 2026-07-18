@@ -1,17 +1,25 @@
 from app.data import seed
 from app.db.seed import seed_policies
 from app.db.base import Base
-from app.models import Policy, PolicyDocument
+from app.api.routes import policies as policy_routes
+from app.main import app
+from app.models import Policy, PolicyDocument, PolicySlugAlias, User, UserSavedPolicy
+from fastapi.testclient import TestClient
 import pytest
 from scripts.crawl_dgtourcard import DEFAULT_EXISTING_SLUGS
 from scripts.audit_policy_sources import audit_policies, audit_policy
 from sqlalchemy import BigInteger, Integer, create_engine, select
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 
 @pytest.fixture
 def sqlite_db_session():
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     mutated_columns = []
     for table in Base.metadata.tables.values():
         for column in table.c:
@@ -117,3 +125,71 @@ def test_seed_policies_deletes_legacy_dummy_policies_from_existing_db(sqlite_db_
         select(Policy.slug).where(Policy.slug.in_(["local-vacation", "sokcho-stay", "busan-cashback"]))
     ).all()
     assert remaining == []
+
+
+def test_seed_policies_migrates_legacy_dgtour_slug_to_canonical_id(
+    sqlite_db_session,
+) -> None:
+    user = User(email="saved@example.com", nickname="saved-user")
+    legacy_policy = Policy(
+        slug="dgtour-영광-8",
+        title="legacy dgtour",
+        organization="demo",
+        policy_type="digital_tourism_card",
+        description="old",
+        benefit_detail="old",
+        target_condition="old",
+        region="전남",
+        official_url="https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+    )
+    sqlite_db_session.add_all([user, legacy_policy])
+    sqlite_db_session.flush()
+    legacy_id = legacy_policy.id
+    sqlite_db_session.add(UserSavedPolicy(user_id=user.id, policy_id=legacy_id))
+    sqlite_db_session.commit()
+
+    seed_policies(sqlite_db_session)
+    sqlite_db_session.commit()
+
+    canonical_policy = sqlite_db_session.scalar(
+        select(Policy).where(Policy.slug == "dgtour-yeonggwang-8")
+    )
+    legacy_policy = sqlite_db_session.scalar(
+        select(Policy).where(Policy.slug == "dgtour-영광-8")
+    )
+    alias = sqlite_db_session.scalar(
+        select(PolicySlugAlias).where(PolicySlugAlias.old_slug == "dgtour-영광-8")
+    )
+    saved_policy = sqlite_db_session.scalar(select(UserSavedPolicy))
+
+    assert canonical_policy is not None
+    assert canonical_policy.id == legacy_id
+    assert legacy_policy is None
+    assert saved_policy is not None
+    assert saved_policy.policy_id == canonical_policy.id
+    assert alias is not None
+    assert alias.policy_id == canonical_policy.id
+    assert alias.canonical_slug == "dgtour-yeonggwang-8"
+    assert alias.alias_kind == "legacy"
+    assert alias.source_kind == "seed"
+    assert alias.is_active is True
+    assert alias.superseded_at is None
+
+
+def test_seeded_legacy_dgtour_detail_redirects_to_canonical_slug(
+    sqlite_db_session,
+) -> None:
+    seed_policies(sqlite_db_session)
+    sqlite_db_session.commit()
+
+    app.dependency_overrides[policy_routes.get_optional_db] = lambda: sqlite_db_session
+    try:
+        response = TestClient(app).get(
+            "/api/policies/dgtour-영광-8",
+            follow_redirects=False,
+        )
+    finally:
+        app.dependency_overrides.pop(policy_routes.get_optional_db, None)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "/api/policies/dgtour-yeonggwang-8"

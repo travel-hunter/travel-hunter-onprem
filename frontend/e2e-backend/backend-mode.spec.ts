@@ -7,7 +7,7 @@ const seedUser = {
 
 const numericTripId = /^[1-9][0-9]*$/;
 const apiBaseUrl = process.env.VITE_API_BASE_URL || "http://127.0.0.1:8001";
-const examplePolicySlug = "dgtour-\uC601\uAD11-8";
+const examplePolicySlug = "dgtour-yeonggwang-8";
 const examplePolicyPath = `/policies/${encodeURIComponent(examplePolicySlug)}`;
 const examplePolicyOfficialUrl = "https://www.yeonggwang.go.kr/travel/";
 

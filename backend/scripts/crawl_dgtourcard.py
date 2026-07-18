@@ -64,6 +64,26 @@ REGION_CODE: dict[str, str] = {
     "전국": "nation",
 }
 
+# 디지털관광주민증 운영 지역명 → ASCII slug 접미사
+CITY_CODE: dict[str, str] = {
+    "밀양": "miryang",
+    "평창": "pyeongchang",
+    "하동": "hadong",
+    "거창": "geochang",
+    "영월": "yeongwol",
+    "제천": "jecheon",
+    "강진": "gangjin",
+    "영광": "yeonggwang",
+    "합천": "hapcheon",
+    "해남": "haenam",
+    "남해": "namhae",
+    "영암": "yeongam",
+    "고흥": "goheung",
+    "횡성": "hoengseong",
+    "완도": "wando",
+    "고창": "gochang",
+}
+
 # 카테고리 매핑 (허용값: "교통" | "숙박" | "여행상품" | "지역할인" | "이벤트" | "기타")
 CATEGORY_MAP: dict[str, str] = {
     "할인": "지역할인",
@@ -78,17 +98,32 @@ CATEGORY_MAP: dict[str, str] = {
 
 
 def slugify(text: str) -> str:
-    text = unicodedata.normalize("NFC", text)
+    text = unicodedata.normalize("NFC", text).strip()
+    if text in CITY_CODE:
+        return CITY_CODE[text]
+    if text in REGION_CODE:
+        return REGION_CODE[text]
+    for name, code in CITY_CODE.items():
+        if text.startswith(name):
+            rest = slugify(text[len(name) :])
+            return f"{code}-{rest}" if rest else code
+    for name, code in REGION_CODE.items():
+        if text.startswith(name):
+            rest = slugify(text[len(name) :])
+            return f"{code}-{rest}" if rest else code
     text = text.lower()
-    text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^a-z0-9\s-]", "", text)
     text = re.sub(r"[\s_]+", "-", text)
     text = re.sub(r"-+", "-", text).strip("-")
     return text
 
 
 def make_slug(region: str, title: str) -> str:
-    region_code = REGION_CODE.get(region, slugify(region[:2]))
+    region_code = REGION_CODE.get(region) or CITY_CODE.get(region) or slugify(region[:2]) or "unknown"
     title_slug = slugify(title)[:30].strip("-")
+    if not title_slug or title_slug == region_code:
+        return f"dgtour-{region_code}"
     return f"dgtour-{region_code}-{title_slug}"
 
 
@@ -214,7 +249,7 @@ def parse_policies_from_html(html: str, *, target_url: str = DEFAULT_TARGET_URL)
                 summary=f"디지털관광주민증 소지자 대상 {city}({province}) 지역 방문 시 혜택을 제공합니다.",
                 url=target_url,
             )
-            policy["slug"] = f"dgtour-{slugify(city)}-{entry['id']}"
+            policy["slug"] = f"dgtour-{slugify(city) or 'unknown'}-{entry['id']}"
             policies.append(policy)
     else:
         table_parser = TableParser()

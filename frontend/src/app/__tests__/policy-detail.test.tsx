@@ -586,8 +586,8 @@ describe("Travel Hunter app — policy detail", () => {
 
   it("uses the dgtour summary instead of repeating generic benefit text", async () => {
     const dgtourPolicy: Policy = {
-      id: "dgtour-밀양-1",
-      slug: "dgtour-밀양-1",
+      id: "dgtour-miryang-1",
+      slug: "dgtour-miryang-1",
       label: "경남",
       tag: "지역할인",
       title: "밀양 디지털관광주민증 혜택",
@@ -612,7 +612,7 @@ describe("Travel Hunter app — policy detail", () => {
     try {
       await login();
       cleanup();
-      renderAppRoute("/policies/dgtour-%EB%B0%80%EC%96%91-1");
+      renderAppRoute("/policies/dgtour-miryang-1");
 
       const supportSection = await screen.findByRole("region", {
         name: "지원 내용",

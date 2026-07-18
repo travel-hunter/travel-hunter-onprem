@@ -47,68 +47,106 @@ function mockMyPageAccountLoad(user: User) {
 
 describe("Travel Hunter app — my page", () => {
   it("saves a policy from the policy detail header action", async () => {
-    await login();
-    await appDataApi
-      .removeSavedPolicy(examplePolicySlug)
-      .catch(() => undefined);
-    cleanup();
-    render(
-      <MemoryRouter
-        initialEntries={["/policies", examplePolicyPath]}
-        initialIndex={1}
-      >
-        <AppProviders>
-          <App />
-        </AppProviders>
-      </MemoryRouter>,
-    );
+    let savedPolicies: Policy[] = [];
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(examplePolicyDetail);
+    const listSavedPoliciesSpy = vi
+      .spyOn(appDataApi, "listSavedPolicies")
+      .mockImplementation(async () => savedPolicies);
+    const listPoliciesSpy = vi
+      .spyOn(appDataApi, "listPolicies")
+      .mockResolvedValue([examplePolicyDetail]);
+    const savePolicySpy = vi
+      .spyOn(appDataApi, "savePolicy")
+      .mockImplementation(async (policySlug) => {
+        savedPolicies = [examplePolicyDetail];
+        return { policyId: policySlug, saved: true };
+      });
+    const removeSavedPolicySpy = vi
+      .spyOn(appDataApi, "removeSavedPolicy")
+      .mockImplementation(async (policySlug) => {
+        savedPolicies = [];
+        return { policyId: policySlug, saved: false };
+      });
 
-    const saveButton = await screen.findByRole("button", { name: "저장" });
-    const user = userEvent.setup();
-    await user.click(saveButton);
-
-    await waitFor(() =>
-      expect(document.body).toHaveTextContent("관심 정책으로 저장했어요."),
-    );
-    await user.click(screen.getByRole("button", { name: "뒤로" }));
-    const savedFilterButton = await waitFor(() => {
-      const button = document.querySelector(".prototype-head-pill");
-      expect(button).toBeTruthy();
-      return button as HTMLButtonElement;
-    });
-    await user.click(savedFilterButton);
-
-    await waitFor(() => {
-      expect(document.querySelector(".prototype-head-pill")).toHaveTextContent(
-        /\([1-9]\d*\)/,
+    try {
+      await login();
+      cleanup();
+      render(
+        <MemoryRouter
+          initialEntries={["/policies", examplePolicyPath]}
+          initialIndex={1}
+        >
+          <AppProviders>
+            <App />
+          </AppProviders>
+        </MemoryRouter>,
       );
-      expect(getLink(examplePolicyPath)).toBeInTheDocument();
-    });
-    const savedPolicyCard = getLink(examplePolicyPath).closest("article");
-    expect(savedPolicyCard).toBeTruthy();
-    await user.click(
-      within(savedPolicyCard as HTMLElement).getByRole("button", {
-        name: /즐겨찾기 해제$/,
-      }),
-    );
-    await waitFor(() =>
-      expect(
-        document.querySelector(`a[href="${examplePolicyPath}"]`),
-      ).toBeFalsy(),
-    );
+
+      const saveButton = await screen.findByRole("button", { name: "저장" });
+      const user = userEvent.setup();
+      await user.click(saveButton);
+
+      await waitFor(() =>
+        expect(document.body).toHaveTextContent("관심 정책으로 저장했어요."),
+      );
+      await user.click(screen.getByRole("button", { name: "뒤로" }));
+      const savedFilterButton = await waitFor(() => {
+        const button = document.querySelector(".prototype-head-pill");
+        expect(button).toBeTruthy();
+        return button as HTMLButtonElement;
+      });
+      await user.click(savedFilterButton);
+
+      await waitFor(() => {
+        expect(document.querySelector(".prototype-head-pill")).toHaveTextContent(
+          /\([1-9]\d*\)/,
+        );
+        expect(getLink(examplePolicyPath)).toBeInTheDocument();
+      });
+      const savedPolicyCard = getLink(examplePolicyPath).closest("article");
+      expect(savedPolicyCard).toBeTruthy();
+      await user.click(
+        within(savedPolicyCard as HTMLElement).getByRole("button", {
+          name: /즐겨찾기 해제$/,
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          document.querySelector(`a[href="${examplePolicyPath}"]`),
+        ).toBeFalsy(),
+      );
+    } finally {
+      getPolicySpy.mockRestore();
+      listSavedPoliciesSpy.mockRestore();
+      listPoliciesSpy.mockRestore();
+      savePolicySpy.mockRestore();
+      removeSavedPolicySpy.mockRestore();
+    }
   });
 
   it("refreshes the my page favorite summary after policy detail save and unsave", async () => {
     const user = userEvent.setup();
+    let savedPolicies: Policy[] = [];
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(examplePolicyDetail);
     const listSavedPoliciesSpy = vi
       .spyOn(appDataApi, "listSavedPolicies")
-      .mockResolvedValue([]);
+      .mockImplementation(async () => savedPolicies);
     const savePolicySpy = vi
       .spyOn(appDataApi, "savePolicy")
-      .mockResolvedValue({ policyId: examplePolicySlug, saved: true });
+      .mockImplementation(async (policySlug) => {
+        savedPolicies = [examplePolicyDetail];
+        return { policyId: policySlug, saved: true };
+      });
     const removeSavedPolicySpy = vi
       .spyOn(appDataApi, "removeSavedPolicy")
-      .mockResolvedValue({ policyId: examplePolicySlug, saved: false });
+      .mockImplementation(async (policySlug) => {
+        savedPolicies = [];
+        return { policyId: policySlug, saved: false };
+      });
 
     try {
       await login();
@@ -154,6 +192,7 @@ describe("Travel Hunter app — my page", () => {
         expect(within(updatedFavoritePolicyStat).getByText("0")).toBeInTheDocument(),
       );
     } finally {
+      getPolicySpy.mockRestore();
       listSavedPoliciesSpy.mockRestore();
       savePolicySpy.mockRestore();
       removeSavedPolicySpy.mockRestore();
@@ -161,64 +200,79 @@ describe("Travel Hunter app — my page", () => {
   });
 
   it("shows saved policies on my page and removes them", async () => {
+    let savedPolicies: Policy[] = [examplePolicyDetail];
+    const listSavedPoliciesSpy = vi
+      .spyOn(appDataApi, "listSavedPolicies")
+      .mockImplementation(async () => savedPolicies);
+    const removeSavedPolicySpy = vi
+      .spyOn(appDataApi, "removeSavedPolicy")
+      .mockImplementation(async (policySlug) => {
+        savedPolicies = [];
+        return { policyId: policySlug, saved: false };
+      });
+
     await login();
-    await appDataApi.savePolicy(examplePolicySlug);
-    cleanup();
-    renderAppRoute("/mypage");
-    await waitFor(() => expect(getLink(examplePolicyPath)).toBeInTheDocument());
-    expect(screen.getAllByText("마이").length).toBeGreaterThan(0);
-    expect(screen.queryByText("프로필")).not.toBeInTheDocument();
-    expect(screen.getByText("내 일정")).toBeInTheDocument();
-    expect(screen.getByText("즐겨찾기")).toBeInTheDocument();
-    expect(screen.getByText("신청 정책")).toBeInTheDocument();
-    expect(screen.getByText(/즐겨찾기 정책/)).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /알림 설정/ }),
-    ).not.toBeInTheDocument();
-    expect(document.querySelector(".ds-profile-panel")).toBeTruthy();
-    expect(
-      document.querySelector(".prototype-profile-badge"),
-    ).toHaveTextContent("🧳");
-    expect(document.querySelector(".prototype-mypage-screen")).toHaveClass(
-      "prototype-mypage-screen",
-    );
-    expect(document.querySelector(".ds-settings-menu")).toBeTruthy();
-    const favoriteCard = document.querySelector(".ds-favorite-policy-card");
-    expect(favoriteCard).toBeTruthy();
-    expect(
-      favoriteCard
-        ?.querySelector(".ds-favorite-policy-thumb")
-        ?.textContent?.trim(),
-    ).toMatch(/[🚌🛏️🗺️💸🎊📌]/);
-    expect(
-      favoriteCard
-        ?.querySelector(".ds-favorite-policy-thumb")
-        ?.textContent?.trim(),
-    ).not.toBe("혜");
-    expect(
-      favoriteCard?.querySelector(".ds-favorite-policy-copy"),
-    ).toBeTruthy();
-    expect(
-      within(favoriteCard as HTMLElement).getByRole("button", {
-        name: "저장 해제",
-      }),
-    ).toHaveClass("ds-favorite-policy-remove");
-    const menuIcons = [
-      ...document.querySelectorAll(".prototype-menu-icon"),
-    ].map((icon) => icon.textContent?.trim() ?? "");
-    expect(menuIcons).toEqual(["", "", "", ""]);
-
-    await userEvent.setup().click(
-      within(favoriteCard as HTMLElement).getByRole("button", {
-        name: "저장 해제",
-      }),
-    );
-
-    await waitFor(() =>
+    try {
+      cleanup();
+      renderAppRoute("/mypage");
+      await waitFor(() => expect(getLink(examplePolicyPath)).toBeInTheDocument());
+      expect(screen.getAllByText("마이").length).toBeGreaterThan(0);
+      expect(screen.queryByText("프로필")).not.toBeInTheDocument();
+      expect(screen.getByText("내 일정")).toBeInTheDocument();
+      expect(screen.getByText("즐겨찾기")).toBeInTheDocument();
+      expect(screen.getByText("신청 정책")).toBeInTheDocument();
+      expect(screen.getByText(/즐겨찾기 정책/)).toBeInTheDocument();
       expect(
-        document.querySelector(`a[href="${examplePolicyPath}"]`),
-      ).toBeFalsy(),
-    );
+        screen.queryByRole("button", { name: /알림 설정/ }),
+      ).not.toBeInTheDocument();
+      expect(document.querySelector(".ds-profile-panel")).toBeTruthy();
+      expect(
+        document.querySelector(".prototype-profile-badge"),
+      ).toHaveTextContent("🧳");
+      expect(document.querySelector(".prototype-mypage-screen")).toHaveClass(
+        "prototype-mypage-screen",
+      );
+      expect(document.querySelector(".ds-settings-menu")).toBeTruthy();
+      const favoriteCard = document.querySelector(".ds-favorite-policy-card");
+      expect(favoriteCard).toBeTruthy();
+      expect(
+        favoriteCard
+          ?.querySelector(".ds-favorite-policy-thumb")
+          ?.textContent?.trim(),
+      ).toMatch(/[🚌🛏️🗺️💸🎊📌]/);
+      expect(
+        favoriteCard
+          ?.querySelector(".ds-favorite-policy-thumb")
+          ?.textContent?.trim(),
+      ).not.toBe("혜");
+      expect(
+        favoriteCard?.querySelector(".ds-favorite-policy-copy"),
+      ).toBeTruthy();
+      expect(
+        within(favoriteCard as HTMLElement).getByRole("button", {
+          name: "저장 해제",
+        }),
+      ).toHaveClass("ds-favorite-policy-remove");
+      const menuIcons = [
+        ...document.querySelectorAll(".prototype-menu-icon"),
+      ].map((icon) => icon.textContent?.trim() ?? "");
+      expect(menuIcons).toEqual(["", "", "", ""]);
+
+      await userEvent.setup().click(
+        within(favoriteCard as HTMLElement).getByRole("button", {
+          name: "저장 해제",
+        }),
+      );
+
+      await waitFor(() =>
+        expect(
+          document.querySelector(`a[href="${examplePolicyPath}"]`),
+        ).toBeFalsy(),
+      );
+    } finally {
+      listSavedPoliciesSpy.mockRestore();
+      removeSavedPolicySpy.mockRestore();
+    }
   });
 
   it("shows a compact saved-policy error state with a recovery action on my page", async () => {
@@ -314,6 +368,9 @@ describe("Travel Hunter app — my page", () => {
     const listSavedPoliciesSpy = vi
       .spyOn(appDataApi, "listSavedPolicies")
       .mockResolvedValue([]);
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(examplePolicyDetail);
     const listAppliedPoliciesSpy = vi
       .spyOn(appDataApi, "listAppliedPolicies")
       .mockResolvedValue([]);
@@ -357,6 +414,7 @@ describe("Travel Hunter app — my page", () => {
       );
     } finally {
       listSavedPoliciesSpy.mockRestore();
+      getPolicySpy.mockRestore();
       listAppliedPoliciesSpy.mockRestore();
       listTripsSpy.mockRestore();
       addPolicyToTripSpy.mockRestore();
@@ -376,6 +434,9 @@ describe("Travel Hunter app — my page", () => {
     const listAppliedPoliciesSpy = vi
       .spyOn(appDataApi, "listAppliedPolicies")
       .mockResolvedValue([]);
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(examplePolicyDetail);
     const listTripsSpy = vi
       .spyOn(appDataApi, "listTrips")
       .mockResolvedValue([trip]);
@@ -440,6 +501,7 @@ describe("Travel Hunter app — my page", () => {
       );
     } finally {
       listAppliedPoliciesSpy.mockRestore();
+      getPolicySpy.mockRestore();
       listTripsSpy.mockRestore();
       getTripSpy.mockRestore();
       addPolicyToTripSpy.mockRestore();

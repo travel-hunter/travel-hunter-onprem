@@ -763,6 +763,12 @@ describe("Travel Hunter app — policies & trip picker", () => {
     const listTripsSpy = vi
       .spyOn(appDataApi, "listTrips")
       .mockResolvedValue(trips);
+    const savedPolicySpy = vi
+      .spyOn(appDataApi, "listSavedPolicies")
+      .mockResolvedValue([]);
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(examplePolicyDetail);
 
     try {
       await login();
@@ -782,12 +788,13 @@ describe("Travel Hunter app — policies & trip picker", () => {
         `/trips/new?policySlug=${encodeURIComponent(examplePolicySlug)}&region=%EC%98%81%EA%B4%91&sido=%EC%A0%84%EB%82%A8`,
       );
     } finally {
+      savedPolicySpy.mockRestore();
+      getPolicySpy.mockRestore();
       listTripsSpy.mockRestore();
     }
   });
 
   it("keeps the trip-attached state scoped to the selected policy", async () => {
-    const originalGetPolicy = appDataApi.getPolicy.bind(appDataApi);
     const otherPolicy: Policy = {
       id: "city-pass",
       slug: "city-pass",
@@ -811,8 +818,21 @@ describe("Travel Hunter app — policies & trip picker", () => {
       .mockImplementation((slug) =>
         slug === "city-pass"
           ? Promise.resolve(otherPolicy)
-          : originalGetPolicy(slug),
+          : Promise.resolve(examplePolicyDetail),
       );
+    const savedPolicySpy = vi
+      .spyOn(appDataApi, "listSavedPolicies")
+      .mockResolvedValue([]);
+    const listTripsSpy = vi
+      .spyOn(appDataApi, "listTrips")
+      .mockResolvedValue([{ ...getPreviewTrip(), id: "303", title: "제주 3일 여행" }]);
+    const addPolicyToTripSpy = vi
+      .spyOn(appDataApi, "addPolicyToTrip")
+      .mockResolvedValue({
+        tripId: "303",
+        policyId: examplePolicySlug,
+        added: true,
+      });
 
     try {
       await login();
@@ -851,6 +871,9 @@ describe("Travel Hunter app — policies & trip picker", () => {
       ).not.toBeInTheDocument();
     } finally {
       getPolicySpy.mockRestore();
+      savedPolicySpy.mockRestore();
+      listTripsSpy.mockRestore();
+      addPolicyToTripSpy.mockRestore();
     }
   });
 });

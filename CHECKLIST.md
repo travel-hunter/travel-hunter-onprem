@@ -2,25 +2,22 @@
 
 ## Current Status
 
-- Active task/status: Final verifier re-run on `feature/policy-detail-url-unification` is clean with an explicit environment note: backend-mode e2e passed by using the script-supported `SKIP_E2E_DB_START` + `DATABASE_URL` override against a temporary isolated Postgres container on `127.0.0.1:56432`, because the default compose host port `55432` is occupied by the foreign `travel-hunter-app-db-1` container.
-- Scope guard: cleanup stayed inside the current git diff; no commits, pushes, deploy/env/auth changes, parser overhaul, DB batch conversion, or production operations.
-- Behavior result: policy slug resolution checks active canonical direct lookup, active persisted alias, inactive direct hidden-policy guard, virtual stay-discount alias, then raw fallback; trip creation echoes persisted/virtual alias request slugs in the returned linked policy payload.
+- Active task/status: dgtour seed policy slugs are now ASCII canonical values; the 16 existing Korean dgtour slugs are retained only as `legacySlugs`/`policy_slug_aliases` compatibility aliases.
+- Scope guard: changes are limited to seed slug migration, alias seeding, crawler slug generation, focused tests, frontend fixtures/e2e literals, docs/eval contract examples, and this checklist; no migrations, deploy/env/auth changes, or commits were made.
+- Behavior result: `seed_policies` can migrate an existing Korean legacy dgtour policy row to its canonical slug while preserving that policy id and linked saved/trip references, then creates/updates active seed aliases so old detail URLs redirect to canonical slugs.
 
 ## Latest Validation Evidence
 
-- Backend full tests passed with the local repo venv: `cd backend && /home/hp/projects/travel-hunter-onprem/.venv/bin/python -m pytest` (`539 passed`, one existing Starlette/httpx deprecation warning).
-- Alembic offline SQL generation passed through head `0027_policy_slug_aliases`: `cd backend && /home/hp/projects/travel-hunter-onprem/.venv/bin/alembic upgrade head --sql`.
-- Frontend typecheck passed: `cd frontend && npm run typecheck`.
-- Frontend Vitest passed on the first full re-run: `cd frontend && npx vitest run` (`22 passed` test files, `217 passed` tests); no flaky-test rerun was needed.
-- Frontend build passed: `cd frontend && npm run build`.
-- Frontend backend-mode e2e passed without stopping or reusing foreign containers: a temporary verifier-owned Postgres `postgres:16-alpine` container ran on `127.0.0.1:56432`, then `cd frontend && SKIP_E2E_DB_START=1 PYTHON=/home/hp/projects/travel-hunter-onprem/.venv/bin/python DATABASE_URL=postgresql+psycopg://travelhunter:travelhunter@127.0.0.1:56432/travelhunter E2E_API_PORT=8001 E2E_FRONTEND_PORT=5174 npm run test:e2e` passed (`11 passed`). Inspection found the e2e script supports `DATABASE_URL`, `SKIP_E2E_DB_START`, `E2E_API_PORT`, and `E2E_FRONTEND_PORT`; `compose.yaml` still hardcodes `55432:5432` with no `POSTGRES_PORT`/`DB_PORT` interpolation.
-- Compose config passed: `docker compose -f compose.yaml config`.
-- Diff and encoding checks passed: `git diff --check`, `git diff --check -- CHECKLIST.md`, and UTF-8/U+FFFD scan of 25 changed tracked/untracked text files.
+- Backend targeted tests passed: `cd backend && ../.venv/bin/python -m pytest tests/test_policy_source_audit.py tests/test_crawl_dgtourcard.py tests/test_travel_areas.py tests/test_validate_policy_data.py tests/test_policy_data_validation.py -q` (`35 passed`, one existing Starlette/httpx warning, plus `../.venv` sys.prefix runtime warnings from the relative venv path).
+- Frontend targeted tests passed: `cd frontend && npx vitest run src/app/__tests__/policy-detail.test.tsx src/app/__tests__/policies.test.tsx src/app/__tests__/trip-create.test.tsx src/app/__tests__/trip-detail.test.tsx src/app/__tests__/trips-list.test.tsx src/app/__tests__/mypage.test.tsx` (`6` files, `108 passed`).
+- Frontend typecheck passed: `cd frontend && npm run typecheck` (`tsc --noEmit`).
+- API contract golden JSON parse passed, dgtour seed canonical/legacy mapping check passed for 16 rows, and canonical slug grep checks found no `"slug": "dgtour-{한글}` or `examplePolicySlug = "dgtour-{한글}` remnants.
+- Diff and encoding checks passed: `git diff --check`, `git diff --check -- CHECKLIST.md`, and U+FFFD scan over changed Korean-bearing files.
 
 ## Remaining Risks
 
+- Full backend pytest, full frontend Vitest, e2e, and production build were not rerun in this final pass; targeted tests covered the changed seed/slug/frontend fixture paths.
 - Existing Starlette/httpx deprecation warning remains unrelated to this change.
-- The default unmodified e2e DB startup path still targets hardcoded host port `55432`; in this environment that port belongs to the foreign `travel-hunter-app-db-1` container, so the verifier used the supported isolated DB override instead of stopping or mutating that container.
 
 ## Cleanup Policy
 

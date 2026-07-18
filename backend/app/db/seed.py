@@ -12,6 +12,7 @@ from app.db.session import get_session_factory
 from app.models import (
     Policy,
     PolicyDocument,
+    PolicySlugAlias,
     NotificationDelivery,
     Recommendation,
     Trip,
@@ -92,6 +93,14 @@ def seed_policies(db: Session) -> dict[str, Policy]:
 
     seed_policy_items = list(seed.POLICIES)
     active_seed_slugs = {str(item["slug"]) for item in seed_policy_items}
+    for item in seed_policy_items:
+        legacy_slugs = [str(slug) for slug in item.get("legacySlugs", [])]
+        if legacy_slugs:
+            _migrate_seed_policy_legacy_slugs(
+                db,
+                canonical_slug=str(item["slug"]),
+                legacy_slugs=legacy_slugs,
+            )
     _cleanup_legacy_dgtour_policies(db, active_seed_slugs)
 
     policies: dict[str, Policy] = {}
@@ -126,6 +135,13 @@ def seed_policies(db: Session) -> dict[str, Policy]:
             PolicyDocument(document_name=str(document_name))
             for document_name in item["documents"]
         ]
+        for legacy_slug in item.get("legacySlugs", []):
+            _upsert_seed_slug_alias(
+                db,
+                old_slug=str(legacy_slug),
+                canonical_policy=policy,
+                canonical_slug=slug,
+            )
         policies[slug] = policy
 
     db.flush()
@@ -134,6 +150,90 @@ def seed_policies(db: Session) -> dict[str, Policy]:
 
 def _policy_has_links(policy: Policy) -> bool:
     return bool(policy.user_saves or policy.trip_links or policy.notification_deliveries)
+
+
+def _migrate_seed_policy_legacy_slugs(
+    db: Session,
+    *,
+    canonical_slug: str,
+    legacy_slugs: list[str],
+) -> None:
+    if not legacy_slugs:
+        return
+
+    canonical_policy = db.scalar(select(Policy).where(Policy.slug == canonical_slug))
+    legacy_policies = list(
+        db.scalars(
+            select(Policy)
+            .options(
+                selectinload(Policy.user_saves),
+                selectinload(Policy.trip_links),
+                selectinload(Policy.notification_deliveries),
+            )
+            .where(Policy.slug.in_(legacy_slugs))
+            .order_by(Policy.id)
+        ).all()
+    )
+
+    if canonical_policy is None and legacy_policies:
+        canonical_policy = legacy_policies.pop(0)
+        canonical_policy.slug = canonical_slug
+        db.flush()
+        _retarget_policy_slug_aliases(db, canonical_policy.id, canonical_policy)
+
+    if canonical_policy is None:
+        return
+
+    for legacy_policy in legacy_policies:
+        _retarget_policy_slug_aliases(db, legacy_policy.id, canonical_policy)
+        if _policy_has_links(legacy_policy):
+            legacy_policy.status = "hidden"
+        else:
+            db.delete(legacy_policy)
+
+    db.flush()
+
+    for legacy_slug in legacy_slugs:
+        _upsert_seed_slug_alias(
+            db,
+            old_slug=legacy_slug,
+            canonical_policy=canonical_policy,
+            canonical_slug=canonical_slug,
+        )
+    db.flush()
+
+
+def _retarget_policy_slug_aliases(
+    db: Session,
+    legacy_policy_id: int,
+    canonical_policy: Policy,
+) -> None:
+    aliases = db.scalars(
+        select(PolicySlugAlias).where(PolicySlugAlias.policy_id == legacy_policy_id)
+    ).all()
+    for alias in aliases:
+        alias.policy_id = canonical_policy.id
+        alias.canonical_slug = canonical_policy.slug or str(canonical_policy.id)
+
+
+def _upsert_seed_slug_alias(
+    db: Session,
+    *,
+    old_slug: str,
+    canonical_policy: Policy,
+    canonical_slug: str,
+) -> None:
+    alias = db.scalar(select(PolicySlugAlias).where(PolicySlugAlias.old_slug == old_slug))
+    if alias is None:
+        alias = PolicySlugAlias(old_slug=old_slug)
+        db.add(alias)
+
+    alias.policy_id = canonical_policy.id
+    alias.canonical_slug = canonical_slug
+    alias.alias_kind = "legacy"
+    alias.source_kind = "seed"
+    alias.is_active = True
+    alias.superseded_at = None
 
 
 def _cleanup_legacy_dgtour_policies(db: Session, active_seed_slugs: set[str]) -> None:

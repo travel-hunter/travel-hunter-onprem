@@ -162,7 +162,7 @@ def test_search_sokcho_returns_gangwon_area(db: Session) -> None:
 def test_search_policy_only_municipality_returns_policy_region_area(db: Session) -> None:
     db.add(
         Policy(
-            slug="dgtour-영광-8",
+            slug="dgtour-yeonggwang-8",
             title="영광 디지털관광주민증 혜택",
             region="전남",
             status="active",

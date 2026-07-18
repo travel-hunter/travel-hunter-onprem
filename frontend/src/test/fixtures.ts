@@ -2,7 +2,7 @@ import type { Policy, TravelAreaRecommendationResponse, Trip, User } from "../ap
 
 export const testEmail = "test.user@example.com";
 export const testPassword = "password123";
-export const examplePolicySlug = "dgtour-영광-8";
+export const examplePolicySlug = "dgtour-yeonggwang-8";
 export const examplePolicyPath = `/policies/${encodeURIComponent(examplePolicySlug)}`;
 export const examplePolicyTitle =
   "영광 디지털관광주민증 혜택";
