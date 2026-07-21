@@ -2,7 +2,7 @@ pipeline {
     agent { label 'deploy' }
 
     environment {
-        PROJECT_DIR = "/home/travel-hunter-onprem"
+        PROJECT_DIR = "/home/deploy/travel-hunter-onprem"
         BRANCH_NAME = "develop"
         ENV_FILE = "deploy/.env.prod"
         COMPOSE_FILE = "compose.tunnel.yaml"
