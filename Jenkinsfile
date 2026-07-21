@@ -1,4 +1,3 @@
-# Jenkinsfile
 pipeline {
     agent { label 'deploy' }
 
