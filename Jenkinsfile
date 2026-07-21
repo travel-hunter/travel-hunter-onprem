@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         PROJECT_DIR = "/home/deploy/travel-hunter-onprem"
-        BRANCH_NAME = "develop"
+        BRANCH_NAME = "feature/jenkins"
         ENV_FILE = "deploy/.env.prod"
         COMPOSE_FILE = "compose.tunnel.yaml"
     }
