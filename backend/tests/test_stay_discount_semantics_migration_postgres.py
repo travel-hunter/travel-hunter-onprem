@@ -146,6 +146,8 @@ def _seed(connection: psycopg.Connection, kind: str, detail_shape: str = "canoni
     desired_source = 33 if kind == "single_23_33" else 35
     if detail_shape == "legacy_old_links":
         polluted = migration.LEGACY_OLD_33 if kind == "single_23_33" else migration.LEGACY_OLD_35
+    elif detail_shape == "server_legacy":
+        polluted = migration.SERVER_LEGACY_33 if kind == "single_23_33" else migration.SERVER_LEGACY_35
     else:
         polluted = migration.POLLUTED_33 if kind == "single_23_33" else migration.POLLUTED_35
     target = (
@@ -219,6 +221,7 @@ def _run(connection: psycopg.Connection, statements: tuple[str, ...]) -> None:
     ("kind", "detail_shape"),
     [
         ("single_23_33", "canonical"),
+        ("single_23_33", "server_legacy"),
         ("merged_26_35", "canonical"),
         ("merged_26_35", "legacy_old_links"),
     ],

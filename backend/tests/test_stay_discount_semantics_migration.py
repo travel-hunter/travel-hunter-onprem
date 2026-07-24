@@ -76,6 +76,15 @@ def test_revision_is_guarded_and_mutates_only_three_semantic_columns() -> None:
 
     assert migration.LEGACY_OLD_35["links"] == [{"label": "공식 안내", "url": migration.OFFICIAL_URL}]
     assert "legacyOld35" in migration.UPGRADE_SQL[0]
+    assert migration.SERVER_LEGACY_33["periods"] == [
+        {
+            "title": "신청 기간",
+            "description": "2026-06-11 ~ 2026-07-31",
+            "startDate": "2026-06-11",
+            "endDate": "2026-07-31",
+        }
+    ]
+    assert "serverLegacy33" in migration.UPGRADE_SQL[0]
     assert migration.down_revision == "0027_source_provenance_keys"
     assert migration.UPGRADE_SQL[0].startswith("DO $$")
     assert "identity/raw/semantic prestate mismatch" in migration.UPGRADE_SQL[0]

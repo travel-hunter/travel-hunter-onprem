@@ -2,22 +2,23 @@
 
 ## Current status
 
-- Active task/status: #10 local auth env injection work has been rebased and validated after #9 merged into current onprem `develop`.
-- Scope guard: local Docker/non-Docker backend auth env loading, safe local env examples, local runtime docs, validation evidence, and PR cleanup only.
-- Out of scope: real secrets, email delivery smoke, OAuth callback completion, deploy/tunnel/prod env strategy changes, API shape changes, auth business logic changes, direct `develop` push, PR merge, and production promotion.
+- Active task/status: hotfix branch `hotfix/allow-server-stay-discount-prestate` allows the onprem server's observed legacy stay-discount `structured_detail` prestate in migration `0029_stay_discount_semantics`.
+- Scope guard: migration prestate guard, regression tests, server dry-run evidence, and PR delivery only.
+- Out of scope: changing desired policy semantics, manual production data mutation outside Alembic, frontend/e2e work, direct `develop` push, PR merge, and Jenkins rerun.
 
 ## Recent validation
 
-- PASS: `cd backend && .venv/bin/python -m pytest tests/test_config.py` — 5 passed.
-- PASS: `cd backend && .venv/bin/python -m pytest` — 603 passed, 16 skipped, 1 warning.
+- PASS: `cd backend && .venv/bin/python -m pytest tests/test_stay_discount_semantics_migration.py tests/test_config.py` — 8 passed.
+- PASS: `cd backend && RUN_POSTGRES_MIGRATION_TESTS=1 .venv/bin/python -m pytest tests/test_stay_discount_semantics_migration_postgres.py` — 10 passed.
 - PASS: `cd backend && .venv/bin/alembic upgrade head --sql`.
-- PASS: `docker compose -f compose.yaml config --quiet`.
-- PASS: temporary `backend/.env.local` override smoke with `docker compose -f compose.yaml config --format json` for public base URL, SMTP, Google/Kakao OAuth, and Kakao Local variables.
+- PASS: server DB dry-run with patched `0027` + `0029` SQL inside `BEGIN ... ROLLBACK`; result `hotfix 0029 server dry-run passed`.
+- PASS: `cd backend && .venv/bin/python -m pytest` — 603 passed, 17 skipped, 1 warning.
 
 ## Active risks
 
-- Frontend/e2e suites were not run because this branch changes backend config, Compose env loading, and local runtime docs only.
-- Real email delivery, OAuth callback completion, Jenkins dev deployment, merge, and production promotion remain out of scope.
+- Jenkins deployment was not rerun; run it after this hotfix PR is merged.
+- Server dry-run rolled back intentionally, so the live DB remains at `0026_user_withdrawal_fields` until Jenkins reruns Alembic.
+- Frontend/e2e suites were not run because this branch changes backend data migration guard/tests only.
 
 ## Cleanup Policy
 
