@@ -2,23 +2,21 @@
 
 ## Current status
 
-- Active task/status: hotfix branch `hotfix/allow-partial-half-trip-prestate` allows migration `0030_half_trip_five_semantics` to update the scoped local-half-trip policies that actually exist on the onprem server.
-- Scope guard: migration identity guard, regression test expectation, server dry-run evidence, and PR delivery only.
-- Out of scope: creating missing policies, changing desired five-section semantics, manual production data mutation outside Alembic, frontend/e2e work, direct `develop` push, PR merge, and Jenkins rerun.
+- Active task/status: `/trips/new` disabled CTA guidance and copy update implemented; member withdrawal first-step modal danger button copy updated.
+- Scope guard: frontend UX copy/state guidance only; no API, schema, backend, or data-contract changes.
 
 ## Recent validation
 
-- PASS: `cd backend && .venv/bin/python -m pytest tests/test_local_half_trip_five_semantics_migration.py tests/test_stay_discount_semantics_migration.py` — 6 passed.
-- PASS: `cd backend && .venv/bin/alembic upgrade head --sql`.
-- PASS: server DB dry-run with patched `0027` + `0029` + `0030` SQL inside `BEGIN ... ROLLBACK`; result `hotfix 0030 server dry-run passed` and 3 existing scoped policies updated in the dry-run.
-- PASS: `cd backend && .venv/bin/python -m pytest` — 603 passed, 17 skipped, 1 warning.
+- PASS: `cd frontend && npx vitest run src/app/__tests__/trip-create.test.tsx src/app/__tests__/mypage.test.tsx --reporter=dot` — 42 passed.
+- PASS: `cd frontend && npm run test:mojibake` — no mojibake-like frontend text found.
+- PASS: `cd frontend && npm run typecheck`.
+- PASS: `cd frontend && npm run build`.
+- BLOCKED: `cd frontend && npm test` stopped before Vitest because `scripts/run-backend-command.cjs` resolved system Python 3.14 and failed with `No module named alembic.__main__`; focused Vitest above was run directly and passed.
 
 ## Active risks
 
-- Jenkins deployment was not rerun; run it after this hotfix PR is merged.
-- Server dry-run rolled back intentionally, so the live DB remains at `0026_user_withdrawal_fields` until Jenkins reruns Alembic.
-- The server currently has 3 of the 5 scoped local-half-trip policy rows (`travelmonth-20`, `travelmonth-24`, `travelmonth-32`); this hotfix updates existing rows only and does not create the missing `travelmonth-21`/`travelmonth-27` policy rows.
-- Frontend/e2e suites were not run because this branch changes backend data migration guard/tests only.
+- Full frontend `npm test` needs a backend Python environment with Alembic installed or `PYTHON` pointed at a valid backend venv.
+- Frontend e2e was not run for this small copy/state-guidance change; covered with focused component tests, typecheck, and production build.
 
 ## Cleanup Policy
 
