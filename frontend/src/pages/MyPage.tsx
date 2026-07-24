@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { CircleHelp, Dice5, FileText, KeyRound, LogOut, ShieldCheck, UserX } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { appDataApi, isApiError, type Policy, type Profile, type Trip } from "../api";
@@ -11,6 +11,7 @@ import { Button, EmptyState, ErrorState, LoadingState } from "../components/ui";
 import { useAsyncResource } from "../api/useAsyncResource";
 
 type InfoSheetType = "faq" | "terms" | "privacy";
+type AccountDialogType = "password" | "withdrawal";
 
 const WITHDRAW_CONFIRMATION_PHRASE = "탈퇴합니다";
 
@@ -58,6 +59,8 @@ export function MyPage() {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileEditError, setProfileEditError] = useState("");
   const [infoSheetType, setInfoSheetType] = useState<InfoSheetType | null>(null);
+  const [accountDialogType, setAccountDialogType] = useState<AccountDialogType | null>(null);
+  const [isWithdrawConfirmationOpen, setIsWithdrawConfirmationOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [passwordChangeError, setPasswordChangeError] = useState("");
@@ -110,6 +113,23 @@ export function MyPage() {
     navigate("/login", { replace: true });
   };
 
+  const closePasswordDialog = () => {
+    if (isChangingPassword) return;
+    setAccountDialogType(null);
+    setCurrentPassword("");
+    setNewPassword("");
+    setPasswordChangeError("");
+  };
+
+  const closeWithdrawalDialog = () => {
+    if (isWithdrawing) return;
+    setAccountDialogType(null);
+    setIsWithdrawConfirmationOpen(false);
+    setWithdrawPassword("");
+    setWithdrawConfirmation("");
+    setWithdrawError("");
+  };
+
   const changePassword = async () => {
     setPasswordChangeError("");
     if (!currentPassword) {
@@ -135,7 +155,7 @@ export function MyPage() {
     }
   };
 
-  const withdrawAccount = async () => {
+  const openWithdrawConfirmation = () => {
     setWithdrawError("");
     const hasPassword = currentUser?.hasPassword === true;
     if (hasPassword && !withdrawPassword) {
@@ -147,12 +167,18 @@ export function MyPage() {
       return;
     }
 
+    setIsWithdrawConfirmationOpen(true);
+  };
+
+  const withdrawAccount = async () => {
+    const hasPassword = currentUser?.hasPassword === true;
     setIsWithdrawing(true);
     try {
       await appDataApi.withdraw(hasPassword ? { password: withdrawPassword } : { confirmationPhrase: withdrawConfirmation });
       await clearSessionAndRedirect();
     } catch (error) {
       setWithdrawError(accountErrorMessage(error, "회원 탈퇴를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."));
+      setIsWithdrawConfirmationOpen(false);
     } finally {
       setIsWithdrawing(false);
     }
@@ -301,34 +327,21 @@ export function MyPage() {
           )}
         </section>
 
-        <AccountSecuritySection
-          currentPassword={currentPassword}
-          error={passwordChangeError}
-          hasPassword={currentUser?.hasPassword === true}
-          isSubmitting={isChangingPassword}
-          newPassword={newPassword}
-          onChangeCurrentPassword={setCurrentPassword}
-          onChangeNewPassword={setNewPassword}
-          onSubmit={changePassword}
-        />
-
-        <AccountWithdrawalSection
-          confirmation={withdrawConfirmation}
-          error={withdrawError}
-          hasPassword={currentUser?.hasPassword === true}
-          isSubmitting={isWithdrawing}
-          password={withdrawPassword}
-          onChangeConfirmation={setWithdrawConfirmation}
-          onChangePassword={setWithdrawPassword}
-          onSubmit={withdrawAccount}
-        />
-
         <section className="prototype-settings-menu ds-settings-menu" aria-label="설정 메뉴">
           <button className="prototype-menu-row" onClick={() => setInfoSheetType("faq")} type="button">
             <span className="prototype-menu-icon" aria-hidden="true">
               <CircleHelp size={18} />
             </span>
             <strong>공지사항 / FAQ</strong>
+            <span className="prototype-menu-chevron" aria-hidden="true">
+              ›
+            </span>
+          </button>
+          <button className="prototype-menu-row" onClick={() => setAccountDialogType("password")} type="button">
+            <span className="prototype-menu-icon" aria-hidden="true">
+              <KeyRound size={18} />
+            </span>
+            <strong>비밀번호 관리</strong>
             <span className="prototype-menu-chevron" aria-hidden="true">
               ›
             </span>
@@ -347,6 +360,15 @@ export function MyPage() {
               <ShieldCheck size={18} />
             </span>
             <strong>개인정보처리방침</strong>
+            <span className="prototype-menu-chevron" aria-hidden="true">
+              ›
+            </span>
+          </button>
+          <button className="prototype-menu-row danger" onClick={() => setAccountDialogType("withdrawal")} type="button">
+            <span className="prototype-menu-icon" aria-hidden="true">
+              <UserX size={18} />
+            </span>
+            <strong>회원 탈퇴</strong>
             <span className="prototype-menu-chevron" aria-hidden="true">
               ›
             </span>
@@ -383,12 +405,45 @@ export function MyPage() {
 
 
         {infoSheetType && <InfoSheet type={infoSheetType} onClose={() => setInfoSheetType(null)} />}
+        {accountDialogType === "password" && (
+          <AccountSecurityDialog
+            currentPassword={currentPassword}
+            error={passwordChangeError}
+            hasPassword={currentUser?.hasPassword === true}
+            isSubmitting={isChangingPassword}
+            newPassword={newPassword}
+            onChangeCurrentPassword={setCurrentPassword}
+            onChangeNewPassword={setNewPassword}
+            onClose={closePasswordDialog}
+            onSubmit={changePassword}
+          />
+        )}
+        {accountDialogType === "withdrawal" && !isWithdrawConfirmationOpen && (
+          <AccountWithdrawalDialog
+            confirmation={withdrawConfirmation}
+            error={withdrawError}
+            hasPassword={currentUser?.hasPassword === true}
+            isSubmitting={isWithdrawing}
+            password={withdrawPassword}
+            onChangeConfirmation={setWithdrawConfirmation}
+            onChangePassword={setWithdrawPassword}
+            onClose={closeWithdrawalDialog}
+            onSubmit={openWithdrawConfirmation}
+          />
+        )}
+        {isWithdrawConfirmationOpen && (
+          <WithdrawalConfirmationDialog
+            isSubmitting={isWithdrawing}
+            onCancel={() => !isWithdrawing && setIsWithdrawConfirmationOpen(false)}
+            onConfirm={withdrawAccount}
+          />
+        )}
       </div>
     </section>
   );
 }
 
-function AccountSecuritySection({
+function AccountSecurityDialog({
   currentPassword,
   error,
   hasPassword,
@@ -396,6 +451,7 @@ function AccountSecuritySection({
   newPassword,
   onChangeCurrentPassword,
   onChangeNewPassword,
+  onClose,
   onSubmit,
 }: {
   currentPassword: string;
@@ -405,21 +461,20 @@ function AccountSecuritySection({
   newPassword: string;
   onChangeCurrentPassword: (value: string) => void;
   onChangeNewPassword: (value: string) => void;
+  onClose: () => void;
   onSubmit: () => void;
 }) {
   return (
-    <section className="ds-card prototype-account-section" aria-labelledby="account-password-title">
-      <div className="prototype-account-section-head">
-        <span className="prototype-account-icon" aria-hidden="true">
-          <KeyRound size={18} />
-        </span>
+    <AccountDialog labelId="account-password-title" onClose={onClose}>
+      <div className="prototype-account-dialog-head">
         <div>
           <h2 id="account-password-title">비밀번호 관리</h2>
-          <p className="meta">계정 보안을 위해 변경 후 다시 로그인해야 합니다.</p>
+          <p>계정 보안을 위해 변경 후 다시 로그인해야 합니다.</p>
         </div>
+        <button aria-label="비밀번호 관리 닫기" className="prototype-account-close" disabled={isSubmitting} onClick={onClose} type="button">×</button>
       </div>
       {hasPassword ? (
-        <div className="profile-edit-sections">
+        <form className="prototype-account-dialog-body" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
           <label className="field">
             <span>현재 비밀번호</span>
             <input
@@ -449,21 +504,25 @@ function AccountSecuritySection({
               {error}
             </p>
           )}
-          <Button disabled={isSubmitting} onClick={onSubmit}>
-            {isSubmitting ? "변경 중입니다" : "비밀번호 변경"}
-          </Button>
-        </div>
+          <div className="prototype-account-actions">
+            <Button disabled={isSubmitting} onClick={onClose} variant="secondary">취소</Button>
+            <Button disabled={isSubmitting} type="submit">{isSubmitting ? "변경 중입니다" : "비밀번호 변경"}</Button>
+          </div>
+        </form>
       ) : (
-        <div className="prototype-info-block">
-          <strong>소셜 로그인 계정입니다</strong>
-          <p>이 계정은 앱 비밀번호가 없어 비밀번호 변경을 제공하지 않습니다. 비밀번호와 로그인 보안은 연결한 소셜 제공자에서 관리해 주세요.</p>
+        <div className="prototype-account-dialog-body">
+          <div className="prototype-account-notice oauth">
+            <strong>소셜 로그인 계정입니다</strong>
+            <p>이 계정은 앱 비밀번호가 없어 비밀번호 변경을 제공하지 않습니다. 비밀번호와 로그인 보안은 연결한 소셜 제공자에서 관리해 주세요.</p>
+          </div>
+          <Button onClick={onClose} variant="secondary">확인</Button>
         </div>
       )}
-    </section>
+    </AccountDialog>
   );
 }
 
-function AccountWithdrawalSection({
+function AccountWithdrawalDialog({
   confirmation,
   error,
   hasPassword,
@@ -471,6 +530,7 @@ function AccountWithdrawalSection({
   password,
   onChangeConfirmation,
   onChangePassword,
+  onClose,
   onSubmit,
 }: {
   confirmation: string;
@@ -480,25 +540,27 @@ function AccountWithdrawalSection({
   password: string;
   onChangeConfirmation: (value: string) => void;
   onChangePassword: (value: string) => void;
+  onClose: () => void;
   onSubmit: () => void;
 }) {
   return (
-    <section className="ds-card danger prototype-account-section" aria-labelledby="account-withdraw-title">
-      <div className="prototype-account-section-head">
-        <span className="prototype-account-icon" aria-hidden="true">
-          <UserX size={18} />
-        </span>
+    <AccountDialog labelId="account-withdraw-title" onClose={onClose}>
+      <div className="prototype-account-dialog-head">
         <div>
           <h2 id="account-withdraw-title">회원 탈퇴</h2>
-          <p className="meta">탈퇴하면 계정이 비활성화되고 다시 로그인할 수 없습니다.</p>
+          <p>계정을 삭제하기 전에 본인 확인이 필요합니다.</p>
         </div>
+        <button aria-label="회원 탈퇴 닫기" className="prototype-account-close" disabled={isSubmitting} onClick={onClose} type="button">×</button>
       </div>
-      <div className="profile-edit-sections">
-        <ul className="meta">
-          <li>탈퇴 후 계정은 복구할 수 없습니다.</li>
-          <li>같은 이메일로 다시 가입할 수 있습니다.</li>
-          <li>새로 가입해도 이전 데이터는 복원되지 않습니다.</li>
-        </ul>
+      <form className="prototype-account-dialog-body" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
+        <div className="prototype-account-notice">
+          <strong>탈퇴하면 다음 내용이 적용됩니다</strong>
+          <ul>
+            <li>탈퇴 후 계정은 복구할 수 없습니다.</li>
+            <li>같은 이메일로 다시 가입할 수 있습니다.</li>
+            <li>새로 가입해도 이전 데이터는 복원되지 않습니다.</li>
+          </ul>
+        </div>
         {hasPassword ? (
           <label className="field">
             <span>현재 비밀번호</span>
@@ -533,11 +595,120 @@ function AccountWithdrawalSection({
             {error}
           </p>
         )}
-        <Button disabled={isSubmitting} onClick={onSubmit} variant="danger">
-          {isSubmitting ? "탈퇴 처리 중입니다" : "회원 탈퇴"}
-        </Button>
-      </div>
-    </section>
+        <div className="prototype-account-actions">
+          <Button disabled={isSubmitting} onClick={onClose} variant="secondary">취소</Button>
+          <Button disabled={isSubmitting} type="submit" variant="danger">최종 확인으로</Button>
+        </div>
+      </form>
+    </AccountDialog>
+  );
+}
+
+function AccountDialog({ children, labelId, onClose }: { children: ReactNode; labelId: string; onClose: () => void }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusable = () => [...(dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])') ?? [])];
+    focusable()[0]?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (!document.querySelector(".prototype-account-confirm-dialog")) onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const elements = focusable();
+      if (elements.length === 0) return;
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (event.shiftKey && event.target === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && event.target === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      opener?.focus();
+    };
+  }, []);
+
+  return (
+    <div className="prototype-account-backdrop" onMouseDown={onClose} role="presentation">
+      <section aria-labelledby={labelId} aria-modal="true" className="prototype-account-dialog" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role="dialog">
+        <div aria-hidden="true" className="prototype-account-handle" />
+        {children}
+      </section>
+    </div>
+  );
+}
+
+function WithdrawalConfirmationDialog({ isSubmitting, onCancel, onConfirm }: { isSubmitting: boolean; onCancel: () => void; onConfirm: () => void }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusable = () => [...(dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])') ?? [])];
+    focusable()[0]?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopImmediatePropagation();
+        onCancelRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const elements = focusable();
+      if (elements.length === 0) return;
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (event.shiftKey && event.target === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && event.target === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.body.style.overflow = previousOverflow;
+      opener?.focus();
+    };
+  }, []);
+
+  return (
+    <div className="prototype-account-backdrop prototype-account-confirm-backdrop" onMouseDown={onCancel} role="presentation">
+      <section aria-labelledby="withdraw-confirm-title" aria-modal="true" className="prototype-account-confirm-dialog" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role="alertdialog">
+        <span aria-hidden="true" className="prototype-account-danger-mark">!</span>
+        <h2 id="withdraw-confirm-title">정말 탈퇴하시겠어요?</h2>
+        <p>이 단계에서 탈퇴를 선택하면 계정 삭제가 시작됩니다.</p>
+        <ul>
+          <li>탈퇴한 계정은 복구할 수 없습니다.</li>
+          <li>동일 이메일로 재가입할 수 있습니다.</li>
+          <li>이전 일정과 저장 정책은 복원되지 않습니다.</li>
+        </ul>
+        <div className="prototype-account-actions">
+          <Button disabled={isSubmitting} onClick={onCancel} variant="secondary">돌아가기</Button>
+          <Button disabled={isSubmitting} onClick={onConfirm} variant="danger">{isSubmitting ? "탈퇴 처리 중입니다" : "탈퇴 확정"}</Button>
+        </div>
+      </section>
+    </div>
   );
 }
 
