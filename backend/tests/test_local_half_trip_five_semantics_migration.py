@@ -60,8 +60,10 @@ def test_revision_is_scoped_guarded_and_mutates_only_allowed_policy_columns() ->
     assert migration.revision == "0030_half_trip_five_semantics"
     assert migration.down_revision == "0029_stay_discount_semantics"
     assert guard.startswith("DO $$")
-    assert "local half-trip five identity prestate mismatch" in guard
+    assert "local half-trip scoped identity prestate mismatch" in guard
+    assert "candidate_count" in guard
     assert "IF matched_count = 0 THEN" in guard
+    assert "matched_count <> 5" not in guard
     assert "JOIN external_source_records" in guard
     assert "source_category = 'local_half_trip'" in guard
     for slug in ("travelmonth-20", "travelmonth-24", "travelmonth-32", "travelmonth-21", "travelmonth-27"):
