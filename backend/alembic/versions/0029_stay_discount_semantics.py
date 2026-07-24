@@ -227,6 +227,42 @@ LEGACY_OLD_35 = _legacy_old_detail(
 )
 
 
+def _server_legacy_detail(*, end_date: str) -> dict[str, object]:
+    """Legacy shape observed on the onprem dev DB before 0029 was deployed."""
+
+    return {
+        "benefits": [
+            {"title": "혜택", "amount": "2/3/5/7만원 할인권", "description": "2/3/5/7만원 할인권"}
+        ],
+        "conditions": [],
+        "documents": [],
+        "links": [{"label": "공식 안내", "url": OFFICIAL_URL}],
+        "notices": [
+            {
+                "title": "확인 필요 사항",
+                "description": (
+                    "7만원 미만* 국내 숙박상품 예약 시 2만원 할인 (1박 이상 / "
+                    "7만원 이상 국내 숙박상품 예약 시 3만원 할인 (1박 이상 / "
+                    "14만원 미만** 국내 숙박상품 예약 시 5만원 할인 (연박 이상 / "
+                    "14만원 이상 국내 숙박상품 예약 시 7만원 할인 (연박 이상"
+                ),
+            }
+        ],
+        "periods": [
+            {
+                "title": "신청 기간",
+                "description": f"2026-06-11 ~ {end_date}",
+                "startDate": "2026-06-11",
+                "endDate": end_date,
+            }
+        ],
+    }
+
+
+SERVER_LEGACY_33 = _server_legacy_detail(end_date="2026-07-31")
+SERVER_LEGACY_35 = _server_legacy_detail(end_date="2026-08-17")
+
+
 def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -242,6 +278,8 @@ _POLLUTED_33_SQL = _json_sql(POLLUTED_33, "polluted33")
 _POLLUTED_35_SQL = _json_sql(POLLUTED_35, "polluted35")
 _LEGACY_OLD_33_SQL = _json_sql(LEGACY_OLD_33, "legacyOld33")
 _LEGACY_OLD_35_SQL = _json_sql(LEGACY_OLD_35, "legacyOld35")
+_SERVER_LEGACY_33_SQL = _json_sql(SERVER_LEGACY_33, "serverLegacy33")
+_SERVER_LEGACY_35_SQL = _json_sql(SERVER_LEGACY_35, "serverLegacy35")
 
 
 def _raw_guard(source_id: int, issue_period: str, stay_period: str) -> str:
@@ -301,7 +339,7 @@ BEGIN
         AND external_source_record_id=33 AND source_canonical_key='{SOURCE_33_KEY}'
         AND official_url='{OFFICIAL_URL}' AND source_url='{OFFICIAL_URL}'
         AND (target_condition IS NULL OR md5(target_condition)='a57ba6f2019c3935338fcf6261e44516')
-        AND (structured_detail={_POLLUTED_33_SQL} OR structured_detail={_LEGACY_OLD_33_SQL} OR structured_detail={_DESIRED_33_SQL})
+        AND (structured_detail={_POLLUTED_33_SQL} OR structured_detail={_LEGACY_OLD_33_SQL} OR structured_detail={_SERVER_LEGACY_33_SQL} OR structured_detail={_DESIRED_33_SQL})
     )
   INTO single_state;
 
@@ -329,7 +367,7 @@ BEGIN
         AND external_source_record_id=35 AND source_canonical_key='{SOURCE_35_KEY}'
         AND official_url='{OFFICIAL_URL}' AND source_url='{OFFICIAL_URL}'
         AND (target_condition IS NULL OR md5(target_condition)='6151a9bb9de8a357a1a595803930aedf')
-        AND (structured_detail={_POLLUTED_35_SQL} OR structured_detail={_LEGACY_OLD_35_SQL} OR structured_detail={_DESIRED_35_SQL})
+        AND (structured_detail={_POLLUTED_35_SQL} OR structured_detail={_LEGACY_OLD_35_SQL} OR structured_detail={_SERVER_LEGACY_35_SQL} OR structured_detail={_DESIRED_35_SQL})
     )
     AND EXISTS (
       SELECT 1 FROM policies
@@ -338,7 +376,7 @@ BEGIN
         AND external_source_record_id IS NULL AND source_canonical_key='{SOURCE_35_KEY}'
         AND official_url='{OFFICIAL_URL}' AND source_url='{OFFICIAL_URL}'
         AND (target_condition IS NULL OR md5(target_condition)='6151a9bb9de8a357a1a595803930aedf')
-        AND (structured_detail={_POLLUTED_35_SQL} OR structured_detail={_LEGACY_OLD_35_SQL} OR structured_detail={_DESIRED_35_SQL})
+        AND (structured_detail={_POLLUTED_35_SQL} OR structured_detail={_LEGACY_OLD_35_SQL} OR structured_detail={_SERVER_LEGACY_35_SQL} OR structured_detail={_DESIRED_35_SQL})
     )
   INTO merged_state;
 
