@@ -51,7 +51,7 @@ def test_validate_policy_data_rejects_duplicates_bad_dates_and_mojibake(tmp_path
 def test_seed_dgtour_active_policies_use_official_participating_regions_and_urls() -> None:
     from pathlib import Path
 
-    from app.data import digital_tourism_resident_card as official
+    from app.services import digital_tourism_resident_card as official
 
     policies = json.loads(
         (Path(__file__).parents[1] / "app" / "data" / "dgtourcard_policies.json").read_text(
@@ -71,9 +71,17 @@ def test_seed_dgtour_active_policies_use_official_participating_regions_and_urls
         city = title[1 : title.index("]")] if title.startswith("[") and "]" in title else ""
         assert city in official.PARTICIPATING_CITY_REGIONS
         official_url = str(policy.get("officialUrl") or "")
-        assert official_url.startswith(official.SOURCE_URL)
+        assert official.is_visitkorea_dgtourcard_url(official_url)
         assert "haenam50.kr" not in official_url
+        assert "tour50.do" not in official_url
         assert policy.get("sourceName") == official.SOURCE_NAME
+        assert policy.get("applyUrl") is None
+        structured_detail = policy.get("structuredDetail")
+        assert isinstance(structured_detail, dict)
+        assert "반값여행" not in str(structured_detail)
+
+    by_title_city = {policy["title"][1 : policy["title"].index("]")]: policy for policy in active_dgtour}
+    assert by_title_city["하동"]["officialUrl"] == official.HADONG_REGIONAL_URL
 
 
 def test_seed_dgtour_non_participating_regions_are_hidden() -> None:

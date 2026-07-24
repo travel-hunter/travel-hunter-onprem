@@ -2,23 +2,25 @@
 
 ## Current status
 
-- Active task/status: 디지털관광주민증 정책 수집/표출을 VisitKorea 공식 참여지역 52개 allowlist 기준으로 정리했다.
-- Scope guard: backend source materializer, promotion/deactivation gates, seed URLs/status, Alembic data migrations, tests, API contract/docs/eval만 변경했다. Frontend runtime code는 변경하지 않았다.
+- Active task/status: 디지털관광주민증 52개 참여지역의 VisitKorea 지역별 상세 URL을 모두 반영했다.
+- Scope guard: backend 디지털관광주민증 source data/materializer/semantic mapper/normalization/seed/Alembic/tests/API contract만 변경했다. Frontend runtime code는 변경하지 않았다.
 
 ## Recent validation
 
-- PASS: `cd backend && ../.venv/bin/python -m pytest` — 617 passed, 17 skipped, 1 warning.
-- PASS: `cd backend && ../.venv/bin/python -m alembic upgrade head --sql >/tmp/alembic-dgtour.sql` — SQL generated through `0033_dgtour_scope`.
+- PASS: `cd backend && ../.venv/bin/python -m pytest` — 624 passed, 17 skipped, 1 warning.
+- PASS: `cd backend && ../.venv/bin/python -m alembic upgrade head --sql >/tmp/alembic-dgtour-detail-url.sql` — SQL generated through `0034_dgtour_detail_urls` with 52 regional URL values.
+- PASS: local compose DB migration rewrite: `alembic downgrade 0033_dgtour_scope && alembic upgrade head` — reapplied `0034_dgtour_detail_urls` after the 52-region URL update.
+- PASS: local seed + materializer: `Travel Hunter development seed data applied`; `app.scripts.collect_travelmonth_once --timeout 15` produced 52 `digital_tourism_resident_card` records and promoted active policies.
+- PASS: DB audit on `127.0.0.1:55432`: 52 active digital tourism policies, 52 external digital records, 0 generic URLs, 0 non-regional URLs, 0 forbidden half-trip rows.
+- PASS: API audit on `127.0.0.1:8000`, saved to `tmp/dgtour-52-api-link-audit.json` and `.csv`: 52/52 list policies, 52/52 detail 200, 52/52 regional VisitKorea `regnMain.do` URLs, 0 generic URLs, 0 forbidden half-trip rows.
 - PASS: `cd frontend && npm run typecheck`.
 - PASS: `cd frontend && PYTHON=../.venv/bin/python npm test -- --run src/app/__tests__/policy-detail.test.tsx src/app/__tests__/policies.test.tsx` — 32 passed.
-- PASS: API smoke with test DB/env on `127.0.0.1:8002`: `dgtour-강진-7` -> 404, `dgtour-하동-3` -> 200 + `https://korean.visitkorea.or.kr/dgtourcard/`, `dgtour-해남-10` -> 200 + VisitKorea regional dgtourcard URL.
-- PASS: local digital materializer run against compose DB: `success 52 52`; `/api/policies` returned 52 `디지털관광주민증` policies.
-- PASS: `cd backend && ../.venv/bin/python -m pytest tests/test_policy_normalization.py tests/test_digital_tourism_resident_card.py tests/test_external_benefit_collection.py tests/test_external_source_repository.py tests/test_dgtourcard_parser.py tests/test_policy_data_validation.py tests/test_digital_tourism_identity_migration.py` — 73 passed, 1 warning.
-- BLOCKED/ENV: `cd frontend && npm test -- --run ...` without `PYTHON=../.venv/bin/python` still resolves system Python 3.14 and fails before Vitest with `No module named alembic.__main__`.
+- PASS: `cd frontend && npm run build`.
+- PASS: logged-in Playwright UI audit on `127.0.0.1:4173`, saved to `tmp/dgtour-52-ui-link-audit.json`: 52/52 CTA found, 52/52 API `officialUrl` equals frontend `혜택 안내 보기` href, 52/52 regional URL, 0 generic URL, 0 forbidden half-trip rows.
 
 ## Active risks
 
-- VisitKorea 참여지역은 변동 가능성이 있다. 현재 allowlist는 `https://korean.visitkorea.or.kr/dgtourcard/` 기준 2026-07-24 확인 목록이며, 변경 시 data allowlist와 tests를 갱신해야 한다.
+- VisitKorea 참여지역/지역별 URL은 변동 가능성이 있다. 현재 지역 URL 매핑은 2026-07-25 렌더링된 VisitKorea 디지털관광주민증 메인 지도 DOM의 `fnRegnMain(mtpcDoCd, signguCd)` 값을 근거로 한다.
 - Full frontend `npm test` needs `PYTHON` pointed at the repo venv or an equivalent backend Python environment with Alembic installed.
 
 ## Cleanup Policy

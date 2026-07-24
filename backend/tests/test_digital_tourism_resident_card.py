@@ -38,11 +38,24 @@ def test_materialized_sources_use_visitkorea_dgtourcard_urls() -> None:
         )
     }
 
-    assert sources["하동"].detail_url == dgtour.SOURCE_URL
-    assert sources["완도"].detail_url == dgtour.SOURCE_URL
+    assert sources["하동"].detail_url == dgtour.HADONG_REGIONAL_URL
+    assert sources["완도"].detail_url == dgtour.WANDO_REGIONAL_URL
     assert sources["해남"].detail_url == dgtour.HAENAM_REGIONAL_URL
+    assert sources["양양"].detail_url == dgtour.data.YANGYANG_REGIONAL_URL
+    assert sources["가평"].detail_url == dgtour.data.GAPYEONG_REGIONAL_URL
     assert "haenam50.kr" not in (sources["해남"].detail_url or "")
     assert all(dgtour.is_visitkorea_dgtourcard_url(source.detail_url) for source in sources.values())
+    assert all("tour50.do" not in (source.detail_url or "") for source in sources.values())
+
+
+def test_confirmed_regional_urls_are_explicitly_scoped() -> None:
+    assert len(dgtour.REGIONAL_URLS) == 52
+    assert set(dgtour.REGIONAL_URLS) == dgtour.PARTICIPATING_CITIES
+    assert dgtour.REGIONAL_URLS["가평"] == dgtour.data.GAPYEONG_REGIONAL_URL
+    assert dgtour.REGIONAL_URLS["합천"] == dgtour.data.HAPCHEON_REGIONAL_URL
+    assert dgtour.REGIONAL_URLS["하동"] == dgtour.HADONG_REGIONAL_URL
+    assert all(dgtour.is_visitkorea_dgtourcard_url(url) for url in dgtour.REGIONAL_URLS.values())
+    assert all("regnMain.do?mtpcDoCd=" in url and "&signguCd=" in url for url in dgtour.REGIONAL_URLS.values())
 
 
 def test_live_enrichment_never_overrides_to_half_trip_url() -> None:
@@ -57,3 +70,28 @@ def test_live_enrichment_never_overrides_to_half_trip_url() -> None:
     merged_haenam = next(source for source in merged if source.city == "해남")
 
     assert merged_haenam.detail_url == dgtour.HAENAM_REGIONAL_URL
+
+
+def test_live_enrichment_rejects_half_trip_urls_and_copy() -> None:
+    materialized = dgtour.materialize_participating_region_sources(
+        fetched_at=FETCHED_AT,
+        today=date(2026, 7, 24),
+    )
+    by_city = {source.city: source for source in materialized}
+    polluted = [
+        by_city["하동"].model_copy(
+            update={
+                "detail_url": "https://hadongtrip.kr/index.php",
+                "raw_detail_text": "대한민국 반값여행 최대 20만원 50% 환급",
+            }
+        ),
+        by_city["완도"].model_copy(update={"detail_url": "https://www.wandotrip.kr/index.php"}),
+        by_city["해남"].model_copy(update={"detail_url": "https://www.haenam50.kr/index"}),
+    ]
+
+    merged = {source.city: source for source in dgtour.merge_materialized_and_parsed_sources(materialized, polluted)}
+
+    assert merged["하동"].detail_url == dgtour.HADONG_REGIONAL_URL
+    assert merged["완도"].detail_url == dgtour.WANDO_REGIONAL_URL
+    assert merged["해남"].detail_url == dgtour.HAENAM_REGIONAL_URL
+    assert "반값여행" not in merged["하동"].raw_detail_text

@@ -334,6 +334,58 @@ def test_local_half_trip_currency_evidence_is_an_explicit_stable_target_conditio
     assert _descriptions(result, "applicationTarget") == [expected]
 
 
+def test_digital_tourism_mapper_outputs_digital_only_sections() -> None:
+    record = _record(
+        source_category="digital_tourism_resident_card",
+        raw_payload={"notes": "대한민국 반값여행 최대 20만원 50% 환급"},
+    )
+    record.title = "[하동] 디지털관광주민증 혜택"
+    record.city = "하동"
+    record.benefit_text = "대한민국 반값여행 최대 20만원 50% 환급"
+    record.benefit_value_text = "50% 환급"
+
+    result = _map(record)
+    serialized = str(result.structured_detail)
+
+    assert result.mapper_status == "mapped"
+    assert result.target_condition == "하동 디지털관광주민증을 발급한 여행자"
+    assert _descriptions(result, "supportContent") == [
+        "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+    ]
+    assert _descriptions(result, "applicationTarget") == [
+        "하동 디지털관광주민증을 발급한 여행자",
+        "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다.",
+    ]
+    assert _descriptions(result, "requiredDocuments") == [
+        "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+    ]
+    assert _descriptions(result, "notes") == [
+        "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요.",
+        "지역별 제휴처와 혜택은 변동될 수 있습니다.",
+    ]
+    assert "반값여행" not in serialized
+    assert "50% 환급" not in serialized
+    assert "최대 20만원" not in serialized
+
+
+def test_digital_tourism_mapper_does_not_stringify_payload_note_lists() -> None:
+    record = _record(
+        source_category="digital_tourism_resident_card",
+        raw_payload={"notes": ["지역별 제휴처와 혜택은 변동될 수 있습니다."]},
+    )
+    record.title = "[하동] 디지털관광주민증 혜택"
+    record.city = "하동"
+
+    result = _map(record)
+    notes = _descriptions(result, "notes")
+
+    assert notes == [
+        "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요.",
+        "지역별 제휴처와 혜택은 변동될 수 있습니다.",
+    ]
+    assert not any(note.startswith("[") for note in notes)
+
+
 def test_unknown_mapper_is_explicitly_empty_and_fail_closed() -> None:
     result = _map(_record(source_category="future_unknown_campaign"))
 

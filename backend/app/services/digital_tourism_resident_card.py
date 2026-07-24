@@ -15,6 +15,8 @@ TITLE_SUFFIX = data.TITLE_SUFFIX
 OFFICIAL_PARTICIPATING_REGIONS_SOURCE_URL = data.OFFICIAL_PARTICIPATING_REGIONS_SOURCE_URL
 OFFICIAL_PARTICIPATING_REGIONS_VERIFIED_ON = data.OFFICIAL_PARTICIPATING_REGIONS_VERIFIED_ON
 HAENAM_REGIONAL_URL = data.HAENAM_REGIONAL_URL
+HADONG_REGIONAL_URL = data.HADONG_REGIONAL_URL
+WANDO_REGIONAL_URL = data.WANDO_REGIONAL_URL
 VISITKOREA_DGTOURCARD_HOST = data.VISITKOREA_DGTOURCARD_HOST
 VISITKOREA_DGTOURCARD_PATH_PREFIX = data.VISITKOREA_DGTOURCARD_PATH_PREFIX
 PARTICIPATING_REGIONS = data.PARTICIPATING_REGIONS
@@ -22,13 +24,22 @@ PARTICIPATING_CITY_REGIONS = data.PARTICIPATING_CITY_REGIONS
 PARTICIPATING_CITIES = data.PARTICIPATING_CITIES
 REGIONAL_URLS = data.REGIONAL_URLS
 
-DEFAULT_BENEFIT_TEXT = "디지털관광주민증 발급 지역의 숙박·식음·체험 등 제휴 혜택을 이용할 수 있습니다."
+SUPPORT_CONTENT_TEXT = "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+DEFAULT_BENEFIT_TEXT = f"{SUPPORT_CONTENT_TEXT}을 이용할 수 있습니다."
 DEFAULT_BENEFIT_VALUE_TEXT = "지역 제휴 혜택"
+USAGE_CONDITION_TEXT = (
+    "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+)
+REQUIRED_DOCUMENTS_TEXT = "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+OFFICIAL_CONFIRMATION_NOTE = "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+BENEFIT_VARIATION_NOTE = "지역별 제휴처와 혜택은 변동될 수 있습니다."
 FORBIDDEN_HALF_TRIP_URLS = {
     "https://www.haenam50.kr/index",
     "https://hadongtrip.kr/index.php",
     "https://www.wandotrip.kr/index.php",
+    "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
 }
+FORBIDDEN_HALF_TRIP_TERMS = ("반값여행", "50% 환급", "최대 20만원", "여행경비 50%")
 
 
 def display_city_name(city: str | None) -> str:
@@ -64,6 +75,13 @@ def title_with_city_prefix(city: str | None) -> str:
     return f"[{display_city}] {TITLE_SUFFIX}"
 
 
+def application_target_text(city: str | None) -> str:
+    display_city = display_city_name(city)
+    if display_city:
+        return f"{display_city} 디지털관광주민증을 발급한 여행자"
+    return "디지털관광주민증을 발급한 여행자"
+
+
 def city_from_title(title: str) -> str:
     title = title.strip()
     if title.startswith("[") and "]" in title:
@@ -81,7 +99,13 @@ def is_visitkorea_dgtourcard_url(url: str | None) -> bool:
         parsed.scheme in {"http", "https"}
         and parsed.netloc == VISITKOREA_DGTOURCARD_HOST
         and parsed.path.startswith(VISITKOREA_DGTOURCARD_PATH_PREFIX)
+        and parsed.path != "/dgtourcard/tour50.do"
     )
+
+
+def contains_forbidden_half_trip_text(value: str | None) -> bool:
+    text = value or ""
+    return any(term in text for term in FORBIDDEN_HALF_TRIP_TERMS)
 
 
 def official_url_for_city(city: str | None, fallback: str | None = None) -> str | None:
@@ -124,6 +148,11 @@ def materialize_participating_region_sources(
             "verifiedAt": OFFICIAL_PARTICIPATING_REGIONS_VERIFIED_ON,
             "participatingRegionsSourceUrl": OFFICIAL_PARTICIPATING_REGIONS_SOURCE_URL,
             "collectionMode": "allowlist-materialized",
+            "supportContent": SUPPORT_CONTENT_TEXT,
+            "applicationTarget": application_target_text(city),
+            "usageCondition": USAGE_CONDITION_TEXT,
+            "requiredDocuments": REQUIRED_DOCUMENTS_TEXT,
+            "notes": [OFFICIAL_CONFIRMATION_NOTE, BENEFIT_VARIATION_NOTE],
         }
         sources.append(
             ExternalBenefitSource(
@@ -186,13 +215,19 @@ def merge_materialized_and_parsed_sources(
         payload = dict(fallback.raw_payload)
         payload.update(source.raw_payload if isinstance(source.raw_payload, dict) else {})
         payload["collectionMode"] = "allowlist-materialized+live-enriched"
+        raw_detail_text = (
+            source.raw_detail_text
+            if source.raw_detail_text
+            and not contains_forbidden_half_trip_text(source.raw_detail_text)
+            else fallback.raw_detail_text
+        )
         by_city[city] = fallback.model_copy(
             update={
                 "detail_url": detail_url,
                 "title": title_with_city_prefix(city),
                 "status_text": source.status_text or fallback.status_text,
                 "raw_list_text": source.raw_list_text or fallback.raw_list_text,
-                "raw_detail_text": source.raw_detail_text or fallback.raw_detail_text,
+                "raw_detail_text": raw_detail_text,
                 "raw_payload": payload,
                 "last_fetched_at": source.last_fetched_at,
                 "last_verified_at": source.last_verified_at or fallback.last_verified_at,

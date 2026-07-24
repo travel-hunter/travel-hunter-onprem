@@ -268,27 +268,20 @@ def _digital_tourism_resident_card(record: ExternalSourceRecord) -> ExternalSour
     payload = record.raw_payload if isinstance(record.raw_payload, dict) else {}
     detail = empty_structured_detail()
 
-    benefit = _text(record.benefit_value_text or record.benefit_text)
-    if benefit:
-        _append(detail["supportContent"], title="혜택", description=benefit)
-    else:
-        _append(
-            detail["supportContent"],
-            title="혜택",
-            description="디지털관광주민증 발급 지역의 숙박·식음·체험 등 제휴 혜택",
-        )
+    _append(
+        detail["supportContent"],
+        title="혜택",
+        description=dgtour_identity.SUPPORT_CONTENT_TEXT,
+        amount=dgtour_identity.DEFAULT_BENEFIT_VALUE_TEXT,
+    )
 
     city = _text(record.city) or dgtour_identity.city_from_title(_text(record.title))
-    target = (
-        f"{city} 디지털관광주민증을 발급하고 해당 지역을 방문·이용하는 여행자"
-        if city
-        else "디지털관광주민증을 발급하고 해당 지역을 방문·이용하는 여행자"
-    )
+    target = dgtour_identity.application_target_text(city)
     _append(detail["applicationTarget"], title="신청대상", description=target)
     _append(
         detail["applicationTarget"],
         title="이용조건",
-        description="대한민국 구석구석/VisitKorea 디지털관광주민증 발급 및 제휴처 이용 조건을 충족해야 합니다.",
+        description=dgtour_identity.USAGE_CONDITION_TEXT,
     )
 
     default_year = record.last_fetched_at.year if record.last_fetched_at is not None else 2026
@@ -299,16 +292,14 @@ def _digital_tourism_resident_card(record: ExternalSourceRecord) -> ExternalSour
     _append(
         detail["requiredDocuments"],
         title="필요서류",
-        description="별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용",
+        description=dgtour_identity.REQUIRED_DOCUMENTS_TEXT,
     )
-    raw_notes = _text(payload.get("notes"))
-    if raw_notes:
+    payload_notes = payload.get("notes")
+    raw_notes = _text(payload_notes) if isinstance(payload_notes, str) else ""
+    if raw_notes and not dgtour_identity.contains_forbidden_half_trip_text(raw_notes):
         _append(detail["notes"], title="비고", description=raw_notes)
-    _append(
-        detail["notes"],
-        title="비고",
-        description="제휴 혜택, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요.",
-    )
+    _append(detail["notes"], title="비고", description=dgtour_identity.OFFICIAL_CONFIRMATION_NOTE)
+    _append(detail["notes"], title="비고", description=dgtour_identity.BENEFIT_VARIATION_NOTE)
 
     return ExternalSourceSemanticMapping(target, detail, "mapped")
 

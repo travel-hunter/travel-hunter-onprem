@@ -50,6 +50,21 @@ def _load_participant_scope_migration() -> ModuleType:
     return module
 
 
+def _load_detail_url_migration() -> ModuleType:
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "0034_dgtour_detail_url_cleanup.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_0034_dgtour_detail_urls", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_digital_tourism_identity_migration_metadata_and_scope() -> None:
     migration = _load_migration()
     upgrade_sql = "\n".join(migration.UPGRADE_SQL)
@@ -139,6 +154,43 @@ def test_digital_tourism_participant_scope_migration_hides_nonparticipants(
     assert "freshness_status = 'stale'" in migration.EXTERNAL_RECORD_SCOPE_SQL
     assert "source_category = 'digital_tourism_resident_card'" in upgrade_sql
     assert "NOT IN (SELECT city_name FROM official)" in upgrade_sql
+
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+
+    migration.upgrade()
+    assert executed == migration.UPGRADE_SQL
+
+    executed.clear()
+    migration.downgrade()
+    assert executed == [migration.DOWNGRADE_GUARD_SQL]
+    assert "no-op" in migration.DOWNGRADE_GUARD_SQL
+
+
+def test_digital_tourism_detail_url_migration_rewrites_half_trip_copy_and_urls(
+    monkeypatch,
+) -> None:
+    migration = _load_detail_url_migration()
+    upgrade_sql = "\n".join(migration.UPGRADE_SQL)
+    executed: list[str] = []
+
+    assert migration.revision == "0034_dgtour_detail_urls"
+    assert migration.down_revision == "0033_dgtour_scope"
+    assert "structured_detail" in migration.POLICY_DETAIL_URL_SQL
+    assert "숙박·식음·체험·관광지 제휴 혜택" in upgrade_sql
+    assert "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급" in upgrade_sql
+    assert "mtpcDoCd=48&signguCd=48850" in upgrade_sql
+    assert "mtpcDoCd=12&signguCd=12850" in upgrade_sql
+    assert "mtpcDoCd=26&signguCd=26140" in upgrade_sql
+    assert "official_url = digital.official_url" in migration.POLICY_DETAIL_URL_SQL
+    assert "apply_url = NULL" in migration.POLICY_DETAIL_URL_SQL
+    assert "raw_payload = r.raw_payload || jsonb_build_object" in migration.EXTERNAL_RECORD_DETAIL_URL_SQL
+    assert "hadongtrip.kr" not in upgrade_sql
+    assert "wandotrip.kr" not in upgrade_sql
+    assert "haenam50.kr" not in upgrade_sql
+    assert "tour50.do" not in upgrade_sql
+    assert "대한민국 반값여행" not in upgrade_sql
+    assert "50% 환급" not in upgrade_sql
+    assert "최대 20만원" not in upgrade_sql
 
     monkeypatch.setattr(migration.op, "execute", executed.append)
 

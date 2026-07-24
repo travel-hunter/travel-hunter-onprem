@@ -6,24 +6,65 @@
     "region": "경남",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "밀양 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "밀양 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "경남 밀양 방문"
+      "밀양 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48270",
     "applyUrl": null,
     "status": "hidden",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "준비중",
-    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:경남:밀양"
+    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48270",
+    "sourceCanonicalKey": "digital-tourism-resident-card:경남:밀양",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "밀양 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-평창-2",
@@ -32,24 +73,65 @@
     "region": "강원",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "평창 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "평창 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "강원 평창 방문"
+      "평창 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=51&signguCd=51760",
     "applyUrl": null,
     "status": "hidden",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "준비중",
-    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:강원:평창"
+    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=51&signguCd=51760",
+    "sourceCanonicalKey": "digital-tourism-resident-card:강원:평창",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "평창 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-하동-3",
@@ -58,24 +140,65 @@
     "region": "경남",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "하동 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "하동 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "경남 하동 방문"
+      "하동 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48850",
     "applyUrl": null,
     "status": "active",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "신청접수중",
-    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:경남:하동"
+    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48850",
+    "sourceCanonicalKey": "digital-tourism-resident-card:경남:하동",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "하동 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-거창-4",
@@ -84,24 +207,65 @@
     "region": "경남",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "거창 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "거창 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "경남 거창 방문"
+      "거창 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48880",
     "applyUrl": null,
     "status": "hidden",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "준비중",
-    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:경남:거창"
+    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48880",
+    "sourceCanonicalKey": "digital-tourism-resident-card:경남:거창",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "거창 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-영월-5",
@@ -110,24 +274,65 @@
     "region": "강원",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "영월 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "영월 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "강원 영월 방문"
+      "영월 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=51&signguCd=51750",
     "applyUrl": null,
     "status": "hidden",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "준비중",
-    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:강원:영월"
+    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=51&signguCd=51750",
+    "sourceCanonicalKey": "digital-tourism-resident-card:강원:영월",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "영월 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-제천-6",
@@ -136,24 +341,65 @@
     "region": "충북",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "제천 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "제천 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "충북 제천 방문"
+      "제천 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=43&signguCd=43150",
     "applyUrl": null,
     "status": "hidden",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "마감",
-    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:충북:제천"
+    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=43&signguCd=43150",
+    "sourceCanonicalKey": "digital-tourism-resident-card:충북:제천",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "제천 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-강진-7",
@@ -162,24 +408,65 @@
     "region": "전남",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "강진 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "강진 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "전남 강진 방문"
+      "강진 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": null,
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
     "applyUrl": null,
     "status": "hidden",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "준비중",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:nonparticipant:강진"
+    "sourceCanonicalKey": "digital-tourism-resident-card:nonparticipant:강진",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "강진 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-영광-8",
@@ -188,24 +475,65 @@
     "region": "전남",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "영광 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "영광 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "전남 영광 방문"
+      "영광 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=12&signguCd=12830",
     "applyUrl": null,
     "status": "active",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "신청접수중",
-    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:전남:영광"
+    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=12&signguCd=12830",
+    "sourceCanonicalKey": "digital-tourism-resident-card:전남:영광",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "영광 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-합천-9",
@@ -214,24 +542,65 @@
     "region": "경남",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "합천 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "합천 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "경남 합천 방문"
+      "합천 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48890",
     "applyUrl": null,
     "status": "active",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "신청접수중",
-    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:경남:합천"
+    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48890",
+    "sourceCanonicalKey": "digital-tourism-resident-card:경남:합천",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "합천 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-해남-10",
@@ -240,12 +609,12 @@
     "region": "전남",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "해남 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "해남 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "전남 해남 방문"
+      "해남 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
@@ -256,8 +625,49 @@
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "신청접수중",
-    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:전남:해남"
+    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=12&signguCd=12790",
+    "sourceCanonicalKey": "digital-tourism-resident-card:전남:해남",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "해남 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-남해-11",
@@ -266,24 +676,65 @@
     "region": "경남",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "남해 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "남해 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "경남 남해 방문"
+      "남해 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": null,
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
     "applyUrl": null,
     "status": "hidden",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "마감",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:nonparticipant:남해"
+    "sourceCanonicalKey": "digital-tourism-resident-card:nonparticipant:남해",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "남해 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-영암-12",
@@ -292,24 +743,65 @@
     "region": "전남",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "영암 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "영암 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "전남 영암 방문"
+      "영암 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": null,
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
     "applyUrl": null,
     "status": "hidden",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "마감",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:nonparticipant:영암"
+    "sourceCanonicalKey": "digital-tourism-resident-card:nonparticipant:영암",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "영암 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-고흥-13",
@@ -318,24 +810,65 @@
     "region": "전남",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "고흥 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "고흥 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "전남 고흥 방문"
+      "고흥 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=12&signguCd=12740",
     "applyUrl": null,
     "status": "hidden",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "준비중",
-    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:전남:고흥"
+    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=12&signguCd=12740",
+    "sourceCanonicalKey": "digital-tourism-resident-card:전남:고흥",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "고흥 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-횡성-14",
@@ -344,24 +877,65 @@
     "region": "강원",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "횡성 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "횡성 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "강원 횡성 방문"
+      "횡성 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": null,
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
     "applyUrl": null,
     "status": "hidden",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "마감",
     "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:nonparticipant:횡성"
+    "sourceCanonicalKey": "digital-tourism-resident-card:nonparticipant:횡성",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "횡성 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-완도-15",
@@ -370,24 +944,65 @@
     "region": "전남",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "완도 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "완도 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "전남 완도 방문"
+      "완도 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=12&signguCd=12850",
     "applyUrl": null,
     "status": "active",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "신청접수중",
-    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:전남:완도"
+    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=12&signguCd=12850",
+    "sourceCanonicalKey": "digital-tourism-resident-card:전남:완도",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "완도 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   },
   {
     "slug": "dgtour-고창-16",
@@ -396,23 +1011,64 @@
     "region": "전북",
     "deadline": "2026-12-31",
     "amount": "지역 제휴 혜택",
-    "summary": "고창 디지털관광주민증을 발급하고 해당 지역 제휴 혜택을 확인할 수 있습니다.",
+    "summary": "고창 디지털관광주민증을 발급하고 지역 제휴 혜택을 확인할 수 있습니다.",
     "match": 75,
     "category": "지역할인",
     "requirements": [
-      "VisitKorea 디지털관광주민증 발급 및 제시",
-      "전북 고창 방문"
+      "고창 디지털관광주민증을 발급한 여행자",
+      "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
     ],
     "documents": [
       "디지털관광주민증"
     ],
-    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
+    "officialUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=52&signguCd=52790",
     "applyUrl": null,
     "status": "hidden",
     "sourceName": "디지털관광주민증",
     "sourceCategory": "digital_tourism_resident_card",
     "sourceStatus": "준비중",
-    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/",
-    "sourceCanonicalKey": "digital-tourism-resident-card:전북:고창"
+    "sourceUrl": "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=52&signguCd=52790",
+    "sourceCanonicalKey": "digital-tourism-resident-card:전북:고창",
+    "structuredDetail": {
+      "supportContent": [
+        {
+          "title": "혜택",
+          "amount": "지역 제휴 혜택",
+          "description": "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        }
+      ],
+      "periods": [
+        {
+          "title": "기간",
+          "description": "~ 2026-12-31"
+        }
+      ],
+      "applicationTarget": [
+        {
+          "title": "신청대상",
+          "description": "고창 디지털관광주민증을 발급한 여행자"
+        },
+        {
+          "title": "이용조건",
+          "description": "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+        }
+      ],
+      "requiredDocuments": [
+        {
+          "title": "필요서류",
+          "description": "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        }
+      ],
+      "notes": [
+        {
+          "title": "비고",
+          "description": "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
+        },
+        {
+          "title": "비고",
+          "description": "지역별 제휴처와 혜택은 변동될 수 있습니다."
+        }
+      ]
+    }
   }
 ]

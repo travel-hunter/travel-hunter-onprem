@@ -108,6 +108,7 @@ def seed_policies(db: Session) -> dict[str, Policy]:
         policy.description = str(item["summary"])
         policy.benefit_amount = BENEFIT_AMOUNTS.get(slug)
         policy.benefit_detail = str(item["amount"])
+        policy.structured_detail = item.get("structuredDetail")
         policy.target_condition = "\n".join(str(value) for value in item["requirements"])
         policy.region = str(item["region"])
         policy.end_date = parse_date(str(item["deadline"]))

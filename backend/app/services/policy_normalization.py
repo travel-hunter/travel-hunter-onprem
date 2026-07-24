@@ -206,12 +206,18 @@ def _assign_policy_from_external_record(
 
     benefit_value = extract_benefit_value(record.benefit_text or "", title=record.title)
     benefit_detail = record.benefit_value_text or benefit_value.value_text or record.benefit_text
+    if record.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY:
+        benefit_detail = dgtour_identity.DEFAULT_BENEFIT_VALUE_TEXT
     if not policy.slug:
         policy.slug = _policy_slug_for_external_record(record)
     policy.title = record.title
     policy.organization = record.organizer_text or record.source_name
     policy.policy_type = _external_policy_category(record)
-    policy.description = record.raw_detail_text or record.benefit_text
+    policy.description = (
+        dgtour_identity.DEFAULT_BENEFIT_TEXT
+        if record.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY
+        else record.raw_detail_text or record.benefit_text
+    )
     policy.benefit_amount = record.extracted_amount_krw or benefit_value.amount_krw
     policy.benefit_detail = benefit_detail
     policy.target_condition = semantic_mapping.target_condition
@@ -221,7 +227,11 @@ def _assign_policy_from_external_record(
     policy.end_date = representative_deadline.deadline
     policy.official_url = _official_url_for_external_record(record)
     policy.apply_url = None
-    policy.policy_comment = record.benefit_text[:300] if record.benefit_text else None
+    policy.policy_comment = (
+        dgtour_identity.DEFAULT_BENEFIT_TEXT[:300]
+        if record.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY
+        else record.benefit_text[:300] if record.benefit_text else None
+    )
     policy.policy_period = None
     policy.source_type = record.source_type
     policy.source_name = record.source_name
