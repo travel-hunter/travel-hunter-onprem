@@ -3,11 +3,10 @@ services:
     image: postgres:16-alpine
     command: ["postgres", "-c", "timezone=Asia/Seoul", "-c", "log_timezone=Asia/Seoul"]
     environment:
-      TZ: 'Asia/Seoul'
-      PGTZ: 'Asia/Seoul'
       POSTGRES_DB: travelhunter
       POSTGRES_USER: travelhunter
       POSTGRES_PASSWORD: travelhunter
+      TZ: Asia/Seoul
     ports:
       - "55432:5432"
     healthcheck:
@@ -68,7 +67,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      
+
   frontend:
     build:
       context: ./frontend
@@ -80,6 +79,6 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-        
+
 volumes:
   travelhunter-db:
