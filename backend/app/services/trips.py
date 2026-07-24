@@ -574,7 +574,7 @@ def _trip_policy_category_score(candidate: dict[str, object], trip: Trip) -> int
         score += 55 if trip_days >= 2 else 15
     if source_category == "traffic_benefit" or policy_type == "교통":
         score += 15
-    if source_category in {"local_half_trip", "regional_benefit"} or policy_type == "지역할인":
+    if source_category in {"local_half_trip", "digital_tourism_resident_card", "regional_benefit"} or policy_type == "지역할인":
         score += 10
     return score
 

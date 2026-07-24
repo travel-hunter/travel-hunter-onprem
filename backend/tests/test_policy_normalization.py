@@ -1734,3 +1734,70 @@ def test_promoted_policy_is_exposed_by_list_and_detail_then_hidden_when_source_s
     assert stale_list_response.status_code == 200
     assert slug not in {policy["slug"] for policy in stale_list_response.json()}
     assert stale_detail_response.status_code == 404
+
+
+def test_digital_tourism_seed_matching_is_municipality_scoped(db: Session) -> None:
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    yeonggwang_seed = Policy(
+        slug="dgtour-영광-8",
+        title="[영광] 디지털관광주민증 혜택",
+        organization="한국관광공사",
+        policy_type="지역할인",
+        description="영광 seed",
+        benefit_detail="지역 제휴 혜택",
+        target_condition="VisitKorea 디지털관광주민증 발급 및 제시",
+        region="전남",
+        status="active",
+        source_category="digital_tourism_resident_card",
+        source_canonical_key="digital-tourism-resident-card:전남:영광",
+    )
+    haenam_seed = Policy(
+        slug="dgtour-해남-10",
+        title="[해남] 디지털관광주민증 혜택",
+        organization="한국관광공사",
+        policy_type="지역할인",
+        description="해남 seed",
+        benefit_detail="지역 제휴 혜택",
+        target_condition="VisitKorea 디지털관광주민증 발급 및 제시",
+        region="전남",
+        status="active",
+        source_category="digital_tourism_resident_card",
+        source_canonical_key="digital-tourism-resident-card:전남:해남",
+    )
+    db.add_all([yeonggwang_seed, haenam_seed])
+    db.flush()
+
+    rows = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name="디지털관광주민증",
+                source_url="https://korean.visitkorea.or.kr/dgtourcard/",
+                source_category="digital_tourism_resident_card",
+                external_id="digital-yeonggwang",
+                canonical_key="digital-tourism-resident-card:전남:영광",
+                logical_key="digital-tourism-resident-card:2026:전남:영광",
+                detail_url="https://korean.visitkorea.or.kr/dgtourcard/",
+                collected_page_url="https://korean.visitkorea.or.kr/dgtourcard/",
+                title="[영광] 디지털관광주민증 혜택",
+                organizer_text="영광 지자체 · 한국관광공사",
+                organizers=["영광 지자체", "한국관광공사"],
+                region="전남",
+                city="영광",
+                benefit_text="디지털관광주민증 지역 제휴 혜택",
+                benefit_value_text="지역 제휴 혜택",
+                extracted_amount_krw=None,
+                extracted_discount_percent=None,
+                benefit_value_type="mixed",
+            )
+        ],
+    )
+
+    result = promote_external_benefits_to_policies(db)
+
+    assert result.promoted_count == 1
+    assert yeonggwang_seed.external_source_record_id == rows[0].id
+    assert haenam_seed.external_source_record_id is None
+    assert yeonggwang_seed.status == "active"
+    assert haenam_seed.status == "active"

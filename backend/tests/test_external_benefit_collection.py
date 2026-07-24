@@ -273,3 +273,58 @@ def test_collect_external_benefits_from_live_sources_reports_partial_success_for
         ("regional_benefit", "source_unavailable"),
         ("stay_discount", "success"),
     ]
+
+
+def test_collect_live_sources_materializes_digital_tourism_without_network_fetch(
+    monkeypatch,
+) -> None:
+    from app.services import digital_tourism_resident_card as dgtour
+    from app.services import external_benefit_collection
+    from app.services.external_benefit_collection import SourceDefinition
+
+    fetched_urls: list[str] = []
+    upserted_categories: list[str] = []
+
+    monkeypatch.setattr(
+        external_benefit_collection,
+        "_source_registry",
+        lambda: (
+            SourceDefinition(
+                dgtour.SOURCE_CATEGORY,
+                dgtour.SOURCE_URL,
+                external_benefit_collection._parser_for(dgtour.SOURCE_CATEGORY),
+            ),
+        ),
+    )
+
+    def fake_fetch(url, *, timeout):
+        fetched_urls.append(url)
+        return ""
+
+    def fake_upsert(db_arg, sources):
+        rows = list(sources)
+        upserted_categories.extend(source.source_category for source in rows)
+        return rows
+
+    monkeypatch.setattr(external_benefit_collection, "fetch_external_source_html", fake_fetch)
+    monkeypatch.setattr(
+        external_benefit_collection.external_source_repository,
+        "upsert_external_source_records",
+        fake_upsert,
+    )
+    monkeypatch.setattr(
+        external_benefit_collection.policy_normalization,
+        "promote_external_benefits_to_policies",
+        lambda db_arg: None,
+    )
+
+    result = external_benefit_collection.collect_external_benefits_from_live_sources(
+        FakeDb(),
+        fetched_at=datetime(2026, 7, 24, tzinfo=UTC),
+        today=date(2026, 7, 24),
+    )
+
+    assert fetched_urls == []
+    assert result.outcome == "success"
+    assert result.parsed_count == 52
+    assert upserted_categories == [dgtour.SOURCE_CATEGORY] * 52

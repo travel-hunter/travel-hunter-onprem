@@ -7,7 +7,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 SourceType = Literal["official_campaign"]
-SourceCategory = Literal["regional_benefit", "traffic_benefit", "local_half_trip", "stay_discount"]
+SourceCategory = Literal[
+    "regional_benefit",
+    "traffic_benefit",
+    "local_half_trip",
+    "digital_tourism_resident_card",
+    "stay_discount",
+]
 SourceStatus = Literal["active", "ended", "scheduled", "unknown"]
 BenefitValueType = Literal["amount", "percent", "free", "upgrade", "mixed", "unknown"]
 FreshnessStatus = Literal["fresh", "stale", "expired", "unknown"]

@@ -8,6 +8,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.repositories import external_sources as external_source_repository
+from app.services import digital_tourism_resident_card as dgtour_identity
 from app.services import policy_normalization
 from app.services.dgtourcard_parser import parse_dgtourcard_benefits
 from app.services.travelmonth_collection import (
@@ -29,6 +30,7 @@ from app.services.travelmonth_traffic_parser import (
 from app.services.travelmonth_traffic_parser import parse_traffic_benefits
 
 DGTOURCARD_URL = "https://korean.visitkorea.or.kr/dgtourcard/tour50.do"
+DIGITAL_TOURISM_RESIDENT_CARD_URL = dgtour_identity.SOURCE_URL
 
 
 @dataclass(frozen=True)
@@ -108,7 +110,11 @@ def collect_external_benefits_from_live_sources(
     all_rows = []
     for source in _source_registry():
         try:
-            html = fetch_external_source_html(source.url, timeout=timeout)
+            html = (
+                ""
+                if source.source_category == dgtour_identity.SOURCE_CATEGORY
+                else fetch_external_source_html(source.url, timeout=timeout)
+            )
             rows, result = _collect_source_records(
                 db,
                 source_category=source.source_category,
@@ -152,6 +158,14 @@ def _collect_source_records(
     today: date,
 ) -> tuple[list[object], SourceCollectionResult]:
     parsed = list(parser(html, fetched_at, today))
+    if source_category == dgtour_identity.SOURCE_CATEGORY:
+        parsed = dgtour_identity.merge_materialized_and_parsed_sources(
+            dgtour_identity.materialize_participating_region_sources(
+                fetched_at=fetched_at,
+                today=today,
+            ),
+            parsed,
+        )
     rows = external_source_repository.upsert_external_source_records(db, parsed)
     return rows, SourceCollectionResult(
         source_category=source_category,
@@ -183,6 +197,8 @@ def _parser_for(source_category: str) -> Parser:
             fetched_at=fetched_at,
             today=today,
         )
+    if source_category == dgtour_identity.SOURCE_CATEGORY:
+        return lambda html, fetched_at, today: []
     if source_category == "stay_discount":
         return lambda html, fetched_at, today: parse_stay_discount_benefits(
             html,
@@ -210,6 +226,11 @@ def _source_registry() -> tuple[SourceDefinition, ...]:
             "local_half_trip",
             DGTOURCARD_URL,
             _parser_for("local_half_trip"),
+        ),
+        SourceDefinition(
+            dgtour_identity.SOURCE_CATEGORY,
+            DIGITAL_TOURISM_RESIDENT_CARD_URL,
+            _parser_for(dgtour_identity.SOURCE_CATEGORY),
         ),
         SourceDefinition(
             "stay_discount",
