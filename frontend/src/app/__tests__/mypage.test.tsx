@@ -857,7 +857,7 @@ describe("Travel Hunter app — my page", () => {
       const withdrawalDialog = await screen.findByRole("dialog", { name: "회원 탈퇴" });
       expect(withdrawalDialog).toHaveClass("prototype-account-dialog");
       expect(withdrawalDialog.querySelector(".prototype-account-notice")).toBeTruthy();
-      expect(within(withdrawalDialog).getByRole("button", { name: "최종 확인으로" })).toBeInTheDocument();
+      expect(within(withdrawalDialog).getByRole("button", { name: "회원 탈퇴" })).toBeInTheDocument();
     } finally {
       loadSpies.forEach((spy) => spy.mockRestore());
     }
@@ -974,7 +974,7 @@ describe("Travel Hunter app — my page", () => {
       expect(within(withdrawalSection).queryByLabelText("현재 비밀번호")).not.toBeInTheDocument();
 
       await user.type(within(withdrawalSection).getByLabelText("확인 문구"), "탈퇴할게요");
-      await user.click(within(withdrawalSection).getByRole("button", { name: "최종 확인으로" }));
+      await user.click(within(withdrawalSection).getByRole("button", { name: "회원 탈퇴" }));
       expect(await within(withdrawalSection).findByRole("alert")).toHaveTextContent(
         "탈퇴하려면 확인 문구 탈퇴합니다를 정확히 입력해 주세요.",
       );
@@ -982,7 +982,7 @@ describe("Travel Hunter app — my page", () => {
 
       await user.clear(within(withdrawalSection).getByLabelText("확인 문구"));
       await user.type(within(withdrawalSection).getByLabelText("확인 문구"), "탈퇴합니다");
-      await user.click(within(withdrawalSection).getByRole("button", { name: "최종 확인으로" }));
+      await user.click(within(withdrawalSection).getByRole("button", { name: "회원 탈퇴" }));
 
       const finalDialog = await screen.findByRole("alertdialog", { name: "정말 탈퇴하시겠어요?" });
       expect(withdrawSpy).not.toHaveBeenCalled();
@@ -1022,7 +1022,7 @@ describe("Travel Hunter app — my page", () => {
       expect(within(withdrawalSection).getByLabelText("현재 비밀번호")).toBeInTheDocument();
       expect(within(withdrawalSection).queryByLabelText("확인 문구")).not.toBeInTheDocument();
 
-      await user.click(within(withdrawalSection).getByRole("button", { name: "최종 확인으로" }));
+      await user.click(within(withdrawalSection).getByRole("button", { name: "회원 탈퇴" }));
       expect(await within(withdrawalSection).findByRole("alert")).toHaveTextContent(
         "탈퇴하려면 현재 비밀번호를 입력해 주세요.",
       );
@@ -1047,7 +1047,7 @@ describe("Travel Hunter app — my page", () => {
       await user.click(screen.getByRole("button", { name: /회원 탈퇴/ }));
       const reopenedWithdrawalSection = await screen.findByRole("dialog", { name: "회원 탈퇴" });
       await user.type(within(reopenedWithdrawalSection).getByLabelText("현재 비밀번호"), "password123");
-      await user.click(within(reopenedWithdrawalSection).getByRole("button", { name: "최종 확인으로" }));
+      await user.click(within(reopenedWithdrawalSection).getByRole("button", { name: "회원 탈퇴" }));
       finalDialog = await screen.findByRole("alertdialog", { name: "정말 탈퇴하시겠어요?" });
       expect(withdrawSpy).not.toHaveBeenCalled();
       await user.click(within(finalDialog).getByRole("button", { name: "탈퇴 확정" }));

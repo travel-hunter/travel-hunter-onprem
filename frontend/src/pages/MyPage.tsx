@@ -597,7 +597,7 @@ function AccountWithdrawalDialog({
         )}
         <div className="prototype-account-actions">
           <Button disabled={isSubmitting} onClick={onClose} variant="secondary">취소</Button>
-          <Button disabled={isSubmitting} type="submit" variant="danger">최종 확인으로</Button>
+          <Button disabled={isSubmitting} type="submit" variant="danger">회원 탈퇴</Button>
         </div>
       </form>
     </AccountDialog>

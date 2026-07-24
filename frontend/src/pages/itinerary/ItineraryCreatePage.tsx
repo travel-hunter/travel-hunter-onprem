@@ -53,10 +53,6 @@ function tripDateDayCount(startDate: string, endDate: string): number | null {
   return Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
 }
 
-function formatTripCreateDate(value: string): string {
-  return value.replace(/-/g, ".");
-}
-
 function generatedTripTitle(region: string, dayCount: number | null): string {
   return `${region || "선택한 지역"} ${dayCount ?? 3}일 여행`;
 }
@@ -191,6 +187,23 @@ export function ItineraryCreatePage() {
       ? Boolean(selectedRegion) &&
         (!requiresTravelAreaSelection || Boolean(selectedTravelArea))
       : canCreateTrip;
+  const tripCreateActionHint = canProceed || isCreating
+    ? ""
+    : step === 1
+      ? isTravelAreaLoading
+        ? "세부 지역을 불러오는 중이에요."
+        : requiresTravelAreaSelection && !selectedTravelArea
+          ? "세부 지역을 선택해야 다음 단계로 이동할 수 있어요."
+          : "지역을 선택해 주세요."
+      : isResolvingPolicyLinkedRegion
+        ? "세부 지역을 불러오는 중이에요."
+        : !titleDraft.trim()
+          ? "일정 제목을 입력해 주세요."
+          : dateRangeError
+            ? dateRangeError
+            : !profile.style
+              ? "코스 취향을 선택해야 일정 생성이 가능해요."
+              : "";
 
   const syncTravelAreaSearchParams = (updates: {
     region?: string | null;
@@ -700,18 +713,6 @@ export function ItineraryCreatePage() {
               </button>
             </section>
 
-            <div className="prototype-create-summary prototype-checkout-summary">
-              <span>요약</span>
-              <div>지역 · {selectedRegion}</div>
-              <div>
-                일정 · {formatTripCreateDate(startDate)} ~{" "}
-                {formatTripCreateDate(endDate)} ({dayCount ?? "-"}일)
-              </div>
-              <div>취향 · {profile.style || "미선택"}</div>
-              {linkablePolicySlug && (
-                <div className="linked">연결 정책 · 선택한 정책</div>
-              )}
-            </div>
           </section>
         )}
 
@@ -730,6 +731,11 @@ export function ItineraryCreatePage() {
       </div>
 
       <div className="prototype-create-sticky-actions">
+        {tripCreateActionHint && (
+          <p className="prototype-create-action-hint" aria-live="polite">
+            {tripCreateActionHint}
+          </p>
+        )}
         {step > 1 && (
           <Button
             variant="line"
@@ -744,7 +750,7 @@ export function ItineraryCreatePage() {
             ? "일정 생성 중"
             : step === 1
               ? "다음"
-              : "확인하고 만들기"}
+              : "일정 생성"}
         </Button>
       </div>
 
