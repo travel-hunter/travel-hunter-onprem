@@ -808,6 +808,43 @@ describe("Travel Hunter app — my page", () => {
     }
   });
 
+  it("keeps account actions as expanded MyPage cards with stable design hooks", async () => {
+    const accountUser = { ...getPreviewUser(), hasPassword: true };
+    installStoredUser(accountUser);
+    const loadSpies = mockMyPageAccountLoad(accountUser);
+
+    try {
+      renderAppRoute("/mypage");
+
+      const passwordSection = await screen.findByRole("region", {
+        name: "비밀번호 관리",
+      });
+      const withdrawalSection = screen.getByRole("region", {
+        name: "회원 탈퇴",
+      });
+      const settingsMenu = screen.getByRole("region", { name: "설정 메뉴" });
+
+      expect(passwordSection).toHaveClass("ds-card", "prototype-account-section");
+      expect(passwordSection).not.toHaveClass("danger");
+      expect(withdrawalSection).toHaveClass(
+        "ds-card",
+        "danger",
+        "prototype-account-section",
+      );
+      for (const section of [passwordSection, withdrawalSection]) {
+        expect(
+          section.querySelector(".prototype-account-section-head"),
+        ).toBeTruthy();
+        expect(section.querySelector(".prototype-account-icon")).toBeTruthy();
+        expect(
+          section.compareDocumentPosition(settingsMenu)
+            & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      }
+    } finally {
+      loadSpies.forEach((spy) => spy.mockRestore());
+    }
+  });
 
   it("lets password users change password, clears auth, and redirects to login", async () => {
     const accountUser = { ...getPreviewUser(), hasPassword: true };
