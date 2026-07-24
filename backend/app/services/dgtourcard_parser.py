@@ -6,6 +6,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
 from app.schemas.external_sources import ExternalBenefitSource
+from app.services import digital_tourism_resident_card as dgtour_identity
 from app.services.local_half_trip_display import title_with_city_prefix
 from app.services.travelmonth_normalizer import normalize_text, parse_period, stable_hash
 
@@ -18,24 +19,7 @@ DEFAULT_BENEFIT_TEXT = (
     "1명 최대 10만원, 2명 이상 최대 20만원까지 지원됩니다."
 )
 
-CITY_REGION = {
-    "밀양": "경남",
-    "평창": "강원",
-    "하동": "경남",
-    "거창": "경남",
-    "영월": "강원",
-    "제천": "충북",
-    "강진": "전남",
-    "영광": "전남",
-    "합천": "경남",
-    "해남": "전남",
-    "남해": "경남",
-    "영암": "전남",
-    "고흥": "전남",
-    "횡성": "강원",
-    "완도": "전남",
-    "고창": "전북",
-}
+CITY_REGION = dgtour_identity.PARTICIPATING_CITY_REGIONS
 
 _VOID_TAGS = {
     "area",
@@ -220,8 +204,9 @@ def _record_from_data_attrs(
     today: date,
 ) -> ExternalBenefitSource | None:
     city = _city_from_data_attrs(raw_record)
-    if city not in CITY_REGION:
+    if not dgtour_identity.is_participating_city(city):
         return None
+    city = dgtour_identity.display_city_name(city)
     status_text = normalize_text(str(raw_record.get("data-sttsnm") or ""))
     field_values = raw_record.get("field_values")
     if not isinstance(field_values, dict):
@@ -282,8 +267,9 @@ def _record_from_section(
 ) -> ExternalBenefitSource | None:
     heading = str(raw_record.get("heading", ""))
     city, status_text = _split_heading(heading)
-    if city not in CITY_REGION:
+    if not dgtour_identity.is_participating_city(city):
         return None
+    city = dgtour_identity.display_city_name(city)
     paragraphs = [
         str(item) for item in raw_record.get("paragraphs", []) if str(item).strip()
     ]
@@ -346,7 +332,7 @@ def _build_record(
         title=title_with_city_prefix("대한민국 반값여행 지원", city),
         organizer_text=f"{city} 지자체",
         organizers=[f"{city} 지자체", "한국관광공사"],
-        region=CITY_REGION[city],
+        region=dgtour_identity.region_for_city(city) or "전국",
         city=city,
         is_nationwide=False,
         status_text=status_text or application_period,

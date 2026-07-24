@@ -252,3 +252,78 @@ def test_list_policy_deactivation_records_returns_non_active_or_non_fresh_record
         "unknown",
         "stale",
     ]
+
+
+def test_digital_tourism_promotion_requires_official_participating_city(
+    db: Session,
+) -> None:
+    upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name="디지털관광주민증",
+                source_url="https://korean.visitkorea.or.kr/dgtourcard/",
+                source_category="digital_tourism_resident_card",
+                external_id="digital-hadong",
+                canonical_key="digital-hadong",
+                logical_key="digital-tourism-resident-card:2026:경남:하동",
+                collected_page_url="https://korean.visitkorea.or.kr/dgtourcard/",
+                title="[하동] 디지털관광주민증 혜택",
+                region="경남",
+                city="하동",
+                benefit_text="지역 제휴 혜택",
+                benefit_value_text="지역 제휴 혜택",
+                extracted_discount_percent=None,
+                benefit_value_type="mixed",
+            ),
+            make_source(
+                source_name="디지털관광주민증",
+                source_url="https://korean.visitkorea.or.kr/dgtourcard/",
+                source_category="digital_tourism_resident_card",
+                external_id="digital-gangjin",
+                canonical_key="digital-gangjin",
+                logical_key="digital-tourism-resident-card:2026:전남:강진",
+                collected_page_url="https://korean.visitkorea.or.kr/dgtourcard/",
+                title="[강진] 디지털관광주민증 혜택",
+                region="전남",
+                city="강진",
+                benefit_text="지역 제휴 혜택",
+                benefit_value_text="지역 제휴 혜택",
+                extracted_discount_percent=None,
+                benefit_value_type="mixed",
+            ),
+        ],
+    )
+
+    promoted = list_policy_promotion_records(db)
+    deactivated = list_policy_deactivation_records(db)
+
+    assert [record.city for record in promoted] == ["하동"]
+    assert "강진" in [record.city for record in deactivated]
+
+
+def test_policy_slug_fallback_excludes_non_participant_digital_tourism_record(
+    db: Session,
+) -> None:
+    rows = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name="디지털관광주민증",
+                source_url="https://korean.visitkorea.or.kr/dgtourcard/",
+                source_category="digital_tourism_resident_card",
+                external_id="digital-gangjin",
+                canonical_key="digital-gangjin",
+                collected_page_url="https://korean.visitkorea.or.kr/dgtourcard/",
+                title="[강진] 디지털관광주민증 혜택",
+                region="전남",
+                city="강진",
+                benefit_text="지역 제휴 혜택",
+                benefit_value_text="지역 제휴 혜택",
+                extracted_discount_percent=None,
+                benefit_value_type="mixed",
+            ),
+        ],
+    )
+
+    assert get_external_source_record_by_policy_slug(db, f"travelmonth-{rows[0].id}") is None

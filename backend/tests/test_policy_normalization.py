@@ -1734,3 +1734,131 @@ def test_promoted_policy_is_exposed_by_list_and_detail_then_hidden_when_source_s
     assert stale_list_response.status_code == 200
     assert slug not in {policy["slug"] for policy in stale_list_response.json()}
     assert stale_detail_response.status_code == 404
+
+
+def test_digital_tourism_seed_matching_is_municipality_scoped(db: Session) -> None:
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    yeonggwang_seed = Policy(
+        slug="dgtour-영광-8",
+        title="[영광] 디지털관광주민증 혜택",
+        organization="한국관광공사",
+        policy_type="지역할인",
+        description="영광 seed",
+        benefit_detail="지역 제휴 혜택",
+        target_condition="VisitKorea 디지털관광주민증 발급 및 제시",
+        region="전남",
+        status="active",
+        source_category="digital_tourism_resident_card",
+        source_canonical_key="digital-tourism-resident-card:전남:영광",
+    )
+    haenam_seed = Policy(
+        slug="dgtour-해남-10",
+        title="[해남] 디지털관광주민증 혜택",
+        organization="한국관광공사",
+        policy_type="지역할인",
+        description="해남 seed",
+        benefit_detail="지역 제휴 혜택",
+        target_condition="VisitKorea 디지털관광주민증 발급 및 제시",
+        region="전남",
+        status="active",
+        source_category="digital_tourism_resident_card",
+        source_canonical_key="digital-tourism-resident-card:전남:해남",
+    )
+    db.add_all([yeonggwang_seed, haenam_seed])
+    db.flush()
+
+    rows = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name="디지털관광주민증",
+                source_url="https://korean.visitkorea.or.kr/dgtourcard/",
+                source_category="digital_tourism_resident_card",
+                external_id="digital-yeonggwang",
+                canonical_key="digital-tourism-resident-card:전남:영광",
+                logical_key="digital-tourism-resident-card:2026:전남:영광",
+                detail_url="https://korean.visitkorea.or.kr/dgtourcard/",
+                collected_page_url="https://korean.visitkorea.or.kr/dgtourcard/",
+                title="[영광] 디지털관광주민증 혜택",
+                organizer_text="영광 지자체 · 한국관광공사",
+                organizers=["영광 지자체", "한국관광공사"],
+                region="전남",
+                city="영광",
+                benefit_text="디지털관광주민증 지역 제휴 혜택",
+                benefit_value_text="지역 제휴 혜택",
+                extracted_amount_krw=None,
+                extracted_discount_percent=None,
+                benefit_value_type="mixed",
+            )
+        ],
+    )
+
+    result = promote_external_benefits_to_policies(db)
+
+    assert result.promoted_count == 1
+    assert yeonggwang_seed.external_source_record_id == rows[0].id
+    assert haenam_seed.external_source_record_id is None
+    assert yeonggwang_seed.status == "active"
+    assert haenam_seed.status == "active"
+
+
+def test_promoting_digital_tourism_uses_regional_visitkorea_url_not_half_trip(
+    db: Session,
+) -> None:
+    from app.services import digital_tourism_resident_card as dgtour
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    seed = Policy(
+        slug="dgtour-하동-3",
+        title="[하동] 디지털관광주민증 혜택",
+        organization="한국관광공사",
+        policy_type="지역할인",
+        description="polluted",
+        benefit_detail="50% 환급",
+        target_condition="대한민국 반값여행",
+        region="경남",
+        status="active",
+        source_category=dgtour.SOURCE_CATEGORY,
+        source_canonical_key=dgtour.canonical_key_for_city("하동"),
+    )
+    db.add(seed)
+    db.flush()
+    rows = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name=dgtour.SOURCE_NAME,
+                source_url=dgtour.SOURCE_URL,
+                source_category=dgtour.SOURCE_CATEGORY,
+                external_id="digital-hadong",
+                canonical_key=dgtour.canonical_key_for_city("하동"),
+                logical_key="digital-tourism-resident-card:2026:경남:하동",
+                detail_url="https://hadongtrip.kr/index.php",
+                collected_page_url=dgtour.SOURCE_URL,
+                title="[하동] 디지털관광주민증 혜택",
+                organizer_text="하동 지자체 · 한국관광공사",
+                organizers=["하동 지자체", "한국관광공사"],
+                region="경남",
+                city="하동",
+                benefit_text="대한민국 반값여행 최대 20만원 50% 환급",
+                benefit_value_text="50% 환급",
+                extracted_amount_krw=None,
+                extracted_discount_percent=None,
+                benefit_value_type="mixed",
+                raw_detail_text="대한민국 반값여행 최대 20만원 50% 환급",
+                raw_payload={"notes": "대한민국 반값여행 최대 20만원 50% 환급"},
+            )
+        ],
+    )
+
+    result = promote_external_benefits_to_policies(db)
+
+    assert result.promoted_count == 1
+    assert seed.external_source_record_id == rows[0].id
+    assert seed.official_url == dgtour.HADONG_REGIONAL_URL
+    assert seed.source_url == dgtour.HADONG_REGIONAL_URL
+    assert seed.apply_url is None
+    assert seed.benefit_detail == dgtour.DEFAULT_BENEFIT_VALUE_TEXT
+    assert "반값여행" not in str(seed.structured_detail)
+    assert "50% 환급" not in str(seed.structured_detail)

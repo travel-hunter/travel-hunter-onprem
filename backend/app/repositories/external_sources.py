@@ -6,6 +6,7 @@ from datetime import date, datetime
 from sqlalchemy import and_, not_, or_, select
 from sqlalchemy.orm import Session
 
+from app.services import digital_tourism_resident_card as dgtour_identity
 from app.data.stay_discount_campaign import (
     STAY_DISCOUNT_SOURCE_CATEGORY,
     select_current_stay_discount_record,
@@ -17,6 +18,7 @@ from app.schemas.external_sources import ExternalBenefitSource
 EXTERNAL_POLICY_SLUG_PREFIX = "travelmonth-"
 POLICY_PROMOTION_SOURCE_CATEGORIES = (
     "local_half_trip",
+    dgtour_identity.SOURCE_CATEGORY,
     "stay_discount",
 )
 POLICY_DEACTIVATION_SOURCE_CATEGORIES = (
@@ -26,10 +28,13 @@ POLICY_DEACTIVATION_SOURCE_CATEGORIES = (
 )
 RECOMMENDATION_SOURCE_CATEGORIES = (
     "local_half_trip",
+    dgtour_identity.SOURCE_CATEGORY,
     "stay_discount",
 )
 LOCAL_HALF_TRIP_PUBLIC_STATUSES = ("active", "scheduled")
 LOCAL_HALF_TRIP_PUBLIC_FRESHNESS_STATUSES = ("fresh", "unknown")
+DIGITAL_TOURISM_PUBLIC_STATUSES = ("active", "scheduled")
+DIGITAL_TOURISM_PUBLIC_FRESHNESS_STATUSES = ("fresh", "unknown")
 
 
 def _assign_record(
@@ -106,7 +111,8 @@ def list_regional_benefit_recommendation_records(
         .where(ExternalSourceRecord.freshness_status == "fresh")
         .order_by(ExternalSourceRecord.id)
     )
-    return _deduplicate_current_logical_records(list(db.scalars(statement).all()))
+    records = _deduplicate_current_logical_records(list(db.scalars(statement).all()))
+    return [record for record in records if _is_publicly_eligible_source_record(record)]
 
 
 def list_policy_promotion_records(
@@ -118,7 +124,8 @@ def list_policy_promotion_records(
         .where(_policy_public_condition())
         .order_by(ExternalSourceRecord.id)
     )
-    return _deduplicate_current_logical_records(list(db.scalars(statement).all()))
+    records = _deduplicate_current_logical_records(list(db.scalars(statement).all()))
+    return [record for record in records if _is_publicly_eligible_source_record(record)]
 
 
 def list_policy_deactivation_records(
@@ -155,7 +162,33 @@ def list_policy_deactivation_records(
             or record.source_category == STAY_DISCOUNT_SOURCE_CATEGORY
         )
     )
+    digital_records = list(
+        db.scalars(
+            select(ExternalSourceRecord).where(
+                ExternalSourceRecord.source_category == dgtour_identity.SOURCE_CATEGORY
+            )
+        ).all()
+    )
+    records.extend(
+        record for record in digital_records if not _is_publicly_eligible_source_record(record)
+    )
     return sorted({record.id: record for record in records}.values(), key=lambda record: record.id)
+
+
+def _digital_tourism_record_city(record: ExternalSourceRecord) -> str:
+    return dgtour_identity.display_city_name(record.city) or dgtour_identity.city_from_title(
+        record.title or ""
+    )
+
+
+def _is_publicly_eligible_source_record(record: ExternalSourceRecord) -> bool:
+    if record.source_category != dgtour_identity.SOURCE_CATEGORY:
+        return True
+    return (
+        record.status in DIGITAL_TOURISM_PUBLIC_STATUSES
+        and record.freshness_status in DIGITAL_TOURISM_PUBLIC_FRESHNESS_STATUSES
+        and dgtour_identity.is_participating_city(_digital_tourism_record_city(record))
+    )
 
 
 def _deduplicate_current_logical_records(
@@ -205,6 +238,11 @@ def _policy_public_condition():
             ExternalSourceRecord.freshness_status.in_(LOCAL_HALF_TRIP_PUBLIC_FRESHNESS_STATUSES),
         ),
         and_(
+            ExternalSourceRecord.source_category == dgtour_identity.SOURCE_CATEGORY,
+            ExternalSourceRecord.status.in_(DIGITAL_TOURISM_PUBLIC_STATUSES),
+            ExternalSourceRecord.freshness_status.in_(DIGITAL_TOURISM_PUBLIC_FRESHNESS_STATUSES),
+        ),
+        and_(
             ExternalSourceRecord.source_category == "stay_discount",
             ExternalSourceRecord.status == "active",
             ExternalSourceRecord.freshness_status == "fresh",
@@ -228,6 +266,7 @@ def get_external_source_record_by_policy_slug(
             ExternalSourceRecord.source_category.in_(
                 (
                     "local_half_trip",
+                    dgtour_identity.SOURCE_CATEGORY,
                     "stay_discount",
                 )
             )
@@ -235,7 +274,10 @@ def get_external_source_record_by_policy_slug(
         .where(ExternalSourceRecord.status == "active")
         .where(ExternalSourceRecord.freshness_status == "fresh")
     )
-    return db.scalar(statement)
+    record = db.scalar(statement)
+    if record is None or not _is_publicly_eligible_source_record(record):
+        return None
+    return record
 
 
 def get_external_source_record_by_id(

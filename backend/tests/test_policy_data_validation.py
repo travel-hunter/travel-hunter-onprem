@@ -46,3 +46,53 @@ def test_validate_policy_data_rejects_duplicates_bad_dates_and_mojibake(tmp_path
     assert any("deadline 형식" in error for error in errors)
     assert any("인코딩 깨짐" in error for error in errors)
     assert any("documents" in error for error in errors)
+
+
+def test_seed_dgtour_active_policies_use_official_participating_regions_and_urls() -> None:
+    from pathlib import Path
+
+    from app.services import digital_tourism_resident_card as official
+
+    policies = json.loads(
+        (Path(__file__).parents[1] / "app" / "data" / "dgtourcard_policies.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    active_dgtour = [
+        policy
+        for policy in policies
+        if policy.get("sourceCategory") == official.SOURCE_CATEGORY
+        and policy.get("status", "active") != "hidden"
+    ]
+
+    assert active_dgtour
+    for policy in active_dgtour:
+        title = str(policy["title"])
+        city = title[1 : title.index("]")] if title.startswith("[") and "]" in title else ""
+        assert city in official.PARTICIPATING_CITY_REGIONS
+        official_url = str(policy.get("officialUrl") or "")
+        assert official.is_visitkorea_dgtourcard_url(official_url)
+        assert "haenam50.kr" not in official_url
+        assert "tour50.do" not in official_url
+        assert policy.get("sourceName") == official.SOURCE_NAME
+        assert policy.get("applyUrl") is None
+        structured_detail = policy.get("structuredDetail")
+        assert isinstance(structured_detail, dict)
+        assert "반값여행" not in str(structured_detail)
+
+    by_title_city = {policy["title"][1 : policy["title"].index("]")]: policy for policy in active_dgtour}
+    assert by_title_city["하동"]["officialUrl"] == official.HADONG_REGIONAL_URL
+
+
+def test_seed_dgtour_non_participating_regions_are_hidden() -> None:
+    from pathlib import Path
+
+    policies = json.loads(
+        (Path(__file__).parents[1] / "app" / "data" / "dgtourcard_policies.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    by_slug = {policy["slug"]: policy for policy in policies}
+
+    for slug in ("dgtour-강진-7", "dgtour-남해-11", "dgtour-영암-12", "dgtour-횡성-14"):
+        assert by_slug[slug]["status"] == "hidden"
