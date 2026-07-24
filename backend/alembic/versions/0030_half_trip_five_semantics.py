@@ -306,6 +306,7 @@ IDENTITY_GUARD_SQL = f"""
 DO $$
 DECLARE
   matched_count integer;
+  candidate_count integer;
   relation_count_before integer;
   relation_count_after integer;
 BEGIN
@@ -319,10 +320,17 @@ BEGIN
   WHERE p.source_category = '{SOURCE_CATEGORY}'
     AND e.source_category = '{SOURCE_CATEGORY}';
 
+  SELECT count(*) INTO candidate_count
+  FROM policies
+  WHERE slug IN ({_slug_list()})
+     OR external_source_record_id IN (
+       {", ".join(str(record["external_source_record_id"]) for record in SCOPED_RECORDS)}
+     );
+
   IF matched_count = 0 THEN
     RETURN;
-  ELSIF matched_count <> {len(SCOPED_RECORDS)} THEN
-    RAISE EXCEPTION 'local half-trip five identity prestate mismatch: expected %, matched %', {len(SCOPED_RECORDS)}, matched_count;
+  ELSIF matched_count <> candidate_count THEN
+    RAISE EXCEPTION 'local half-trip scoped identity prestate mismatch: candidates %, matched %', candidate_count, matched_count;
   END IF;
 
   SELECT count(*) INTO relation_count_before
@@ -363,6 +371,7 @@ DOWNGRADE_GUARD_SQL = f"""
 DO $$
 DECLARE
   matched_count integer;
+  candidate_count integer;
 BEGIN
   SELECT count(*) INTO matched_count
   FROM policies p
@@ -372,10 +381,17 @@ BEGIN
     ON scoped.slug = p.slug AND scoped.external_source_record_id = p.external_source_record_id
   WHERE p.source_category = '{SOURCE_CATEGORY}';
 
+  SELECT count(*) INTO candidate_count
+  FROM policies
+  WHERE slug IN ({_slug_list()})
+     OR external_source_record_id IN (
+       {", ".join(str(record["external_source_record_id"]) for record in SCOPED_RECORDS)}
+     );
+
   IF matched_count = 0 THEN
     RETURN;
-  ELSIF matched_count <> {len(SCOPED_RECORDS)} THEN
-    RAISE EXCEPTION 'local half-trip five downgrade guard mismatch: expected %, matched %', {len(SCOPED_RECORDS)}, matched_count;
+  ELSIF matched_count <> candidate_count THEN
+    RAISE EXCEPTION 'local half-trip scoped downgrade guard mismatch: candidates %, matched %', candidate_count, matched_count;
   END IF;
 END $$;
 """.strip()
