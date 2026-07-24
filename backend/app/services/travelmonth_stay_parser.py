@@ -296,7 +296,6 @@ def _build_record(
         "eligibleAreaCount": sum(len(group["cities"]) for group in eligible_areas),
         "earlyCloseWarning": any(token in raw_text for token in ("예산 소진", "조기 종료", "조기종료", "소진 시")),
     }
-    contact_text = _truncate_text(_contact_text(raw_payload), 200)
     return ExternalBenefitSource(
         source_name=SOURCE_NAME,
         source_type="official_campaign",
@@ -322,7 +321,7 @@ def _build_record(
         extracted_discount_percent=benefit_value.discount_percent,
         benefit_value_type=benefit_value.value_type,
         tags=tags,
-        contact_text=contact_text,
+        contact_text=None,
         inferred_travel_styles=infer_travel_styles(title=title, benefit_text=benefit_text, tags=tags),
         confidence=90 if start_date and end_date and benefit_value.value_text else 75,
         field_completeness=calculate_field_completeness(
@@ -519,24 +518,6 @@ def _eligible_areas(value: object) -> list[dict[str, object]]:
         if cities:
             groups.append({"sido": sido, "cities": cities})
     return groups
-
-
-def _contact_text(raw_payload: dict[str, object]) -> str | None:
-    parts = []
-    discount_tiers = raw_payload.get("discountTiers")
-    if isinstance(discount_tiers, list) and discount_tiers:
-        parts.append("할인혜택: " + " / ".join(str(item) for item in discount_tiers))
-    for key, label in (
-        ("issuePeriod", "발급기간"),
-        ("stayPeriod", "입실기간"),
-        ("usageArea", "사용지역"),
-        ("usagePlace", "사용처"),
-        ("usageMethod", "사용방법"),
-    ):
-        value = raw_payload.get(key)
-        if value:
-            parts.append(f"{label}: {value}")
-    return "\n".join(parts) if parts else None
 
 
 def _max_discount_amount_krw(discount_tiers: list[str] | None) -> int | None:

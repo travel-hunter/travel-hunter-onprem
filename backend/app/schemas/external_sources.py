@@ -31,6 +31,8 @@ class ExternalBenefitSource(BaseModel):
     source_category: SourceCategory
     external_id: str
     canonical_key: str
+    logical_key: str | None = None
+    canonical_key_version: str | None = None
     detail_url: str | None = None
     collected_page_url: str
     title: str

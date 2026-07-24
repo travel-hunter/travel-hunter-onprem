@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import date, datetime
 
 from sqlalchemy import and_, not_, or_, select
 from sqlalchemy.orm import Session
 
+from app.data.stay_discount_campaign import (
+    STAY_DISCOUNT_SOURCE_CATEGORY,
+    select_current_stay_discount_record,
+)
 from app.models import ExternalSourceRecord
 from app.schemas.external_sources import ExternalBenefitSource
 
@@ -101,7 +106,7 @@ def list_regional_benefit_recommendation_records(
         .where(ExternalSourceRecord.freshness_status == "fresh")
         .order_by(ExternalSourceRecord.id)
     )
-    return list(db.scalars(statement).all())
+    return _deduplicate_current_logical_records(list(db.scalars(statement).all()))
 
 
 def list_policy_promotion_records(
@@ -113,7 +118,7 @@ def list_policy_promotion_records(
         .where(_policy_public_condition())
         .order_by(ExternalSourceRecord.id)
     )
-    return list(db.scalars(statement).all())
+    return _deduplicate_current_logical_records(list(db.scalars(statement).all()))
 
 
 def list_policy_deactivation_records(
@@ -130,7 +135,66 @@ def list_policy_deactivation_records(
         )
         .order_by(ExternalSourceRecord.id)
     )
-    return list(db.scalars(statement).all())
+    records = list(db.scalars(statement).all())
+    public_records = list(
+        db.scalars(
+            select(ExternalSourceRecord)
+            .where(ExternalSourceRecord.source_category.in_(POLICY_PROMOTION_SOURCE_CATEGORIES))
+            .where(_policy_public_condition())
+        ).all()
+    )
+    selected_ids = {
+        record.id for record in _deduplicate_current_logical_records(public_records)
+    }
+    records.extend(
+        record
+        for record in public_records
+        if record.id not in selected_ids
+        and (
+            record.logical_key is not None
+            or record.source_category == STAY_DISCOUNT_SOURCE_CATEGORY
+        )
+    )
+    return sorted({record.id: record for record in records}.values(), key=lambda record: record.id)
+
+
+def _deduplicate_current_logical_records(
+    records: list[ExternalSourceRecord],
+) -> list[ExternalSourceRecord]:
+    stay_records = [
+        record for record in records
+        if record.source_category == STAY_DISCOUNT_SOURCE_CATEGORY
+    ]
+    selected: list[ExternalSourceRecord] = []
+    current_stay_record = select_current_stay_discount_record(stay_records)
+    if current_stay_record is not None:
+        selected.append(current_stay_record)
+
+    logical_groups: dict[str, list[ExternalSourceRecord]] = {}
+    for record in records:
+        if record.source_category == STAY_DISCOUNT_SOURCE_CATEGORY:
+            continue
+        if record.logical_key is None:
+            selected.append(record)
+            continue
+        logical_groups.setdefault(record.logical_key, []).append(record)
+    selected.extend(max(group, key=_logical_snapshot_rank) for group in logical_groups.values())
+    return sorted(selected, key=lambda record: int(record.id or 0))
+
+
+def _logical_snapshot_rank(record: ExternalSourceRecord) -> tuple[datetime, datetime, date, int]:
+    return (
+        _datetime_for_snapshot_comparison(record.last_verified_at),
+        _datetime_for_snapshot_comparison(record.last_fetched_at),
+        record.end_date or date.min,
+        int(record.id or 0),
+    )
+
+
+def _datetime_for_snapshot_comparison(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.min
+    return value.replace(tzinfo=None) if value.tzinfo is not None else value
 
 
 def _policy_public_condition():

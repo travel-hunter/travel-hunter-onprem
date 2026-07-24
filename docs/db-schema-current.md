@@ -2,14 +2,14 @@
 
 ## 기준
 
-- 기준일: 2026-07-12
-- 기준 Alembic head: `0026_user_withdrawal_fields`
+- 기준일: 2026-07-24
+- 기준 Alembic head: `0030_half_trip_five_semantics`
 - PostgreSQL: 16.14 (`postgres:16-alpine` fresh container)
 - SQL snapshot: `docs/db-schema-current.sql`
 - ERD/관계 시각화: `docs/db-erd.md`
-- 생성 방식: 이전 schema-only snapshot에 Alembic head `0026_user_withdrawal_fields`의 offline SQL diff를 반영했다. Fresh DB pg_dump 재생성은 별도 검증으로 다시 수행할 수 있다. Schema 변경은 Alembic 기준으로 추적하고, 관계/핵심 컬럼 요약은 `docs/db-erd.md`가 제공한다.
+- 생성 방식: 이전 schema-only snapshot에 Alembic head `0027_source_provenance_keys`의 offline SQL diff를 반영했고, 이후 `0029`/`0030`은 data-only semantic migration으로 schema object를 추가하지 않는다. Fresh DB pg_dump 재생성은 별도 검증으로 다시 수행할 수 있다. Schema 변경은 Alembic 기준으로 추적하고, 관계/핵심 컬럼 요약은 `docs/db-erd.md`가 제공한다.
 
-이 문서는 현재 앱이 사용하는 PostgreSQL schema의 기준 문서다. 초기 SQL 기준본 이후 Alembic migration `0002`~`0026`이 적용된 현재 구조를 설명한다. 테이블 관계, 핵심 컬럼, 제약/index, 문서 drift는 `docs/db-erd.md`를 함께 본다.
+이 문서는 현재 앱이 사용하는 PostgreSQL schema의 기준 문서다. 초기 SQL 기준본 이후 Alembic migration `0002`~`0030`이 적용된 현재 구조를 설명한다. 테이블 관계, 핵심 컬럼, 제약/index, 문서 drift는 `docs/db-erd.md`를 함께 본다.
 
 ## 테이블 그룹
 
@@ -86,7 +86,7 @@ Migration metadata:
 
 ## 2026-06-30 ERD/current-code 기준
 
-`docs/db-erd.md`는 SQLAlchemy metadata(`backend/app/models/tables.py`)와 Alembic head `0026_user_withdrawal_fields`를 기준으로 맞춰야 하는 현재 코드 기준 ERD다. 이 ERD는 테이블 관계, 핵심 컬럼, PK/FK/unique/index 요약, `docs/db-schema-current.sql`과의 drift를 함께 기록한다.
+`docs/db-erd.md`는 SQLAlchemy metadata(`backend/app/models/tables.py`)와 Alembic head `0030_half_trip_five_semantics`를 기준으로 맞춰야 하는 현재 코드 기준 ERD다. 이 ERD는 테이블 관계, 핵심 컬럼, PK/FK/unique/index 요약, `docs/db-schema-current.sql`과의 drift를 함께 기록한다.
 
 이전에 확인됐고 이번 SQL snapshot 재생성으로 해소된 주요 drift:
 
@@ -98,8 +98,11 @@ Migration metadata:
 - `0024_local_kst_time_shift`: guarded local KST timestamp data shift migration.
 - `0025_prune_contact_notify`: contact/OTP/notification settings surface를 제거하면서 `users`의 personal/contact columns와 관련 설정/OTP 테이블을 drop했다. `users.preferred_regions`는 유지한다.
 - `0026_user_withdrawal_fields`: soft withdrawal/anonymization 상태 추적을 위해 `users.withdrawn_at`과 HMAC/peppered fingerprint 저장용 `users.withdrawn_email_hash` 및 조회 index를 추가했다. `password_reset_tokens`는 유지한다.
+- `0027_source_provenance_keys`: 외부 원문의 snapshot `canonical_key`와 nullable, non-unique `logical_key`를 분리하고 key 버전(`canonical_key_version`)을 추가한다. 기존 레코드는 source_category/지역/기간 기반으로 가능한 범위에서 backfill한다.
+- `0029_stay_discount_semantics`: 숙박세일페스타 semantic data-only 보정이다. 새 schema object는 추가하지 않는다.
+- `0030_half_trip_five_semantics`: scoped 대한민국 반값여행 5섹션 semantic data-only 보정이다. 새 schema object는 추가하지 않는다.
 
-현재 `docs/db-schema-current.sql`은 기존 schema-only snapshot에서 Alembic `0026_user_withdrawal_fields` diff를 반영한 schema reference다. 향후 migration이 추가되면 같은 절차로 다시 생성한다.
+현재 `docs/db-schema-current.sql`은 기존 schema-only snapshot에서 Alembic `0027_source_provenance_keys` diff를 반영한 schema reference이며, `0029`/`0030`은 schema object 변경이 없는 data-only migration이다. 향후 schema migration이 추가되면 같은 절차로 다시 생성한다.
 
 ## `notification_deliveries`
 
@@ -160,7 +163,7 @@ Migration metadata:
 
 - `id`
 - `source_name` / `source_type` / `source_url` / `source_category`
-- `external_id` / `canonical_key`
+- `external_id` / `canonical_key` / `logical_key` / `canonical_key_version`
 - `detail_url` / `collected_page_url`
 - `title` / `organizer_text` / `organizers`
 - `region` / `city` / `is_nationwide`
@@ -172,6 +175,12 @@ Migration metadata:
 - `last_fetched_at` / `last_verified_at` / `freshness_status`
 - `created_at` / `updated_at`
 
+`canonical_key`는 `source_name`·`source_category`와 함께 원문 스냅샷 업서트
+identity를 구성하며 기간이나 원문이 달라진 스냅샷끼리 공유하지 않는다.
+`logical_key`는 여러 스냅샷이 같은 캠페인·지역 혜택 계열임을 나타내는 nullable,
+non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 버전이며,
+현재 값은 `snapshot-v1`이다.
+
 ## `policies` source tracking
 
 `policies`는 사용자에게 노출되는 공식 혜택의 정규화 테이블이다. TravelMonth 등 외부 공식 수집 레코드는 원문 근거를 `external_source_records`에 보존한 뒤 active/fresh 항목을 `policies`로 승격한다. 승격된 정책은 저장, 일정 연결, 추천 카드, 상세 페이지에서 일반 정책과 같은 경로를 사용한다.
@@ -180,7 +189,7 @@ Migration metadata:
 
 정책 상세 화면용 구조화 컬럼:
 
-- `structured_detail`: `benefits`, `conditions`, `periods`, `links`, `documents`, `notices` 섹션을 담는 JSONB 정리본이다. raw 수집 JSON이 아니라 사용자 화면에서 바로 섹션 렌더링하기 위한 보조/장기 기준 데이터이며, 섹션이 없거나 비어 있으면 해당 섹션만 기존 `summary`/`requirements` fallback을 사용한다. public 링크는 `http://`/`https://`만 노출한다.
+- `structured_detail`: `supportContent`, `periods`, `applicationTarget`, `requiredDocuments`, `notes` 다섯 섹션을 담는 JSONB 정리본이다. raw 수집 JSON이 아니라 사용자 화면에서 바로 섹션 렌더링하기 위한 보조/장기 기준 데이터이며, 섹션이 없거나 비어 있으면 해당 섹션만 기존 `summary`/`requirements`/`documents` fallback을 사용한다. 공식 링크는 이 JSON에 중복 저장하지 않고 top-level `official_url`/`apply_url`에서 노출한다.
 
 정규화 출처 추적 컬럼:
 
@@ -247,4 +256,12 @@ cd backend
 
 현재 `status`는 계속 `active|hidden` string enum이다. public 목록/상세/저장/일정 연결 경로는 active-only 규칙을 공유한다. boolean/visibility 컬럼 전환은 phase-2 schema cleanup 선택지이며, 이 schema snapshot에는 반영하지 않는다.
 
-`admin_audit_logs`는 관리자 변경 이력을 남긴다. `before_json`과 `after_json`에는 sanitized JSON만 저장해야 하며 password hash, token, OTP, OAuth identifier 같은 secret/internal 값은 포함하지 않는다.
+`admin_audit_logs`는 관리자 변경 이력을 남긴다. 새 update row의 `before_json`과
+`after_json`에는 중앙 entity/action allowlist를 통과한 실제 변경 필드만 저장한다.
+현재 `user.update`, `policy.create`, `policy.update`만 지원하고 policy create는 승인된
+최소 필드만 사용하며 no-op update는 row를 만들지 않는다.
+password/hash, token, OTP/code, cookie/session, secret/API key, OAuth/provider identifier,
+raw source와 임의 request/ORM snapshot은 중첩 검사까지 거쳐 제외한다. `summary`는
+target email/title 대신 `action target=<id>` 형식을 사용한다. 과거 row는 재작성하지
+않으며 보존 정책과 timestamp 해석은
+`docs/specs/data-audit-retention-timezone-decisions.md`를 따른다.
