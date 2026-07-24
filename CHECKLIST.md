@@ -2,26 +2,23 @@
 
 ## Current Status
 
-- Active task/status: `/mypage` account section Option A design refresh implemented on `feature/mypage-account-design-refresh` targeting `origin/develop`.
-- Scope guard: account card CSS, stable design-hook regression coverage, current validation evidence, and the G005 final review/commit/push/PR delivery gate.
-- G005 supersedes G004 as the active delivery gate; merge/production promotion, modal/sheet behavior, API/backend changes, and broader MyPage redesign remain out of scope.
+- Active task/status: port only `b6e85f0` MyPage account settings changes onto current onprem `develop` via `agent/mypage-account-settings-dialogs`.
+- Scope guard: `/mypage` password management and account withdrawal menu rows, modal/dialog UX, focused regression coverage, and PR delivery only.
+- Out of scope: backend/API changes, broader MyPage redesign, merge/production promotion, and unrelated live-data route test failures.
 
 ## Latest Validation Evidence
 
-- Password management and withdrawal remain expanded semantic regions using `.prototype-account-section`, section-head/icon hooks, and the existing danger modifier before the settings menu.
-- AI slop cleanup pass tightened account CSS selector scope to `/mypage` and reduced duplicate design-hook assertions without changing behavior.
-- Frontend typecheck passed after cleanup: `cd frontend && npm run typecheck`.
-- Account design and behavior tests passed after cleanup (4 passed, 17 skipped): `cd frontend && npx vitest run src/app/__tests__/mypage.test.tsx -t "account actions|password users change password|OAuth-only account guidance|password confirmation for password user withdrawal"`.
-- Production build passed after cleanup: `cd frontend && npm run build`.
-- Diff/UTF-8 hygiene passed after cleanup: `git diff --check -- frontend/src/styles/app.css frontend/src/app/__tests__/mypage.test.tsx CHECKLIST.md`; UTF-8/U+FFFD/Hanja scan for scoped files.
-- Frontend mojibake precheck passed as part of `cd frontend && npm test -- mypage`.
+- MyPage account controls now live in the settings menu as `비밀번호 관리` and `회원 탈퇴` rows and open independent dialogs; withdrawal keeps the second confirmation dialog.
+- Frontend typecheck passed: `cd frontend && npm run typecheck`.
+- Frontend mojibake scan passed: `cd frontend && npm run test:mojibake`.
+- Account-focused MyPage Vitest passed: `cd frontend && npx vitest run src/app/__tests__/mypage.test.tsx -t "account|password|withdrawal|OAuth"` (5 passed, 17 skipped).
+- Production build passed: `cd frontend && npm run build`.
+- Diff and UTF-8 hygiene passed: `git diff --cached --check`, `git diff --cached --check -- CHECKLIST.md`, and UTF-8/U+FFFD scan for changed files.
 
 ## Remaining Risks
 
-- `npm test -- mypage` and full `npm test` are blocked before Vitest by the local Python 3.14 Alembic environment: `No module named alembic.__main__; 'alembic' is a package and cannot be directly executed`.
-- Direct full-file Vitest ran 21 tests with 16 passing and 5 pre-existing live-data-dependent failures outside the account sections.
-- Browser viewport smoke was not run.
-- G005 supersedes G004 as the active delivery gate; merge/production promotion remains out of scope.
+- `cd frontend && npm test -- --run src/app/__tests__/mypage.test.tsx` is blocked before Vitest because an existing local Docker container `travel-hunter-onprem-db-1` already binds `0.0.0.0:55432`.
+- Full frontend/backend/e2e suites were not run for this frontend-only port; run them in an isolated environment before merge if required.
 
 ## Cleanup Policy
 
