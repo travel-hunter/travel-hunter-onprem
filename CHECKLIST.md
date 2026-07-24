@@ -1,27 +1,23 @@
 # CHECKLIST
 
-## Current Status
+## Current status
 
-- Active task/status: port only `b6e85f0` MyPage account settings changes onto current onprem `develop` via `agent/mypage-account-settings-dialogs`.
-- Scope guard: `/mypage` password management and account withdrawal menu rows, modal/dialog UX, focused regression coverage, and PR delivery only.
-- Out of scope: backend/API changes, broader MyPage redesign, merge/production promotion, and unrelated live-data route test failures.
+- Ready for review: selectively ported `4dbdc29` policy detail five-section semantics onto onprem `develop` in `agent/policy-detail-five-section-port`.
+- Added onprem-compatible source provenance support (`0027_source_provenance_keys`) so the guarded `0029`/`0030` semantic migrations have a valid Alembic chain from current onprem head.
 
-## Latest Validation Evidence
+## Recent validation
 
-- MyPage account controls now live in the settings menu as `비밀번호 관리` and `회원 탈퇴` rows and open independent dialogs; withdrawal keeps the second confirmation dialog.
-- Frontend typecheck passed: `cd frontend && npm run typecheck`.
-- Frontend mojibake scan passed: `cd frontend && npm run test:mojibake`.
-- Account-focused MyPage Vitest passed: `cd frontend && npx vitest run src/app/__tests__/mypage.test.tsx -t "account|password|withdrawal|OAuth"` (5 passed, 17 skipped).
-- Production build passed: `cd frontend && npm run build`.
-- Diff and UTF-8 hygiene passed: `git diff --cached --check`, `git diff --cached --check -- CHECKLIST.md`, and UTF-8/U+FFFD scan for changed files.
+- PASS: `backend/.venv/bin/python -m compileall backend/app backend/alembic/versions backend/scripts`
+- PASS: focused backend semantic/policy tests — 127 passed.
+- PASS: `cd backend && .venv/bin/alembic upgrade head --sql`
+- PASS: `cd backend && .venv/bin/python -m pytest` — 601 passed, 16 skipped, 1 warning.
+- PASS: `cd frontend && npm run typecheck`
+- PASS: `cd frontend && npx vitest run src/app/__tests__/policy-detail.test.tsx` — 20 passed.
+- PASS: `cd frontend && npm run build`
+- PASS: `docker compose -f compose.yaml config`
+- BLOCKED: `cd frontend && npm test -- --run src/app/__tests__/policy-detail.test.tsx` wrapper could not start its compose DB because local port `55432` is already allocated by an existing Docker container; direct Vitest policy-detail test passed instead.
 
-## Remaining Risks
+## Active risks
 
-- `cd frontend && npm test -- --run src/app/__tests__/mypage.test.tsx` is blocked before Vitest because an existing local Docker container `travel-hunter-onprem-db-1` already binds `0.0.0.0:55432`.
-- Full frontend/backend/e2e suites were not run for this frontend-only port; run them in an isolated environment before merge if required.
-
-## Cleanup Policy
-
-- Keep this file slim: current status, latest validation evidence, active remaining risks only.
-- Do not append long historical logs; replace stale validation detail as new gates run.
-- Before claiming completion, run `git diff --check`; for Korean-bearing changes, also verify UTF-8 has no U+FFFD replacement characters.
+- `0029`/`0030` are source-data guarded migrations. Empty databases pass, and known reviewed identities pass; deployment databases with partially drifted collected policy rows will intentionally stop before mutation and need data review.
+- Frontend dependency install reported 2 moderate npm audit findings in existing dependency tree; not changed or remediated in this policy-detail port.

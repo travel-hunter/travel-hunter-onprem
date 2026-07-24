@@ -6,6 +6,8 @@ from app.models import PolicyDocument
 from app.models import User as UserModel
 from app.models import UserSavedPolicy
 from app.services import policies as policy_service
+from app.data.stay_discount_campaign import STAY_DISCOUNT_CAMPAIGN_KEY
+from app.services.local_half_trip_corrections import local_half_trip_five_corrections
 from app.services.policy_structured_detail import build_structured_detail_from_policy
 
 
@@ -78,12 +80,11 @@ def test_policy_to_api_preserves_contract_shape() -> None:
 def test_policy_to_api_includes_structured_detail_when_present() -> None:
     policy = make_policy()
     policy.structured_detail = {
-        "benefits": [{"title": "혜택", "description": "숙박비 할인", "amount": "최대 7만원"}],
-        "conditions": [{"title": "대상", "description": "비수도권 숙박 예약자"}],
+        "supportContent": [{"title": "혜택", "description": "숙박비 할인", "amount": "최대 7만원"}],
+        "applicationTarget": [{"title": "대상", "description": "비수도권 숙박 예약자"}],
         "periods": [],
-        "links": [{"label": "공식 안내", "url": "https://example.com"}],
-        "documents": [],
-        "notices": [],
+        "requiredDocuments": [],
+        "notes": [],
     }
 
     payload = policy_service.policy_to_api(policy)
@@ -91,41 +92,125 @@ def test_policy_to_api_includes_structured_detail_when_present() -> None:
     assert payload["structuredDetail"] == policy.structured_detail
 
 
-def test_policy_to_api_sanitizes_structured_detail_links_and_keys() -> None:
+def test_policy_to_api_projects_requirements_from_authoritative_structured_conditions() -> None:
+    policy = make_policy()
+    policy.target_condition = "과거 할인·기간 composite는 재사용하면 안 됨"
+    policy.structured_detail = {
+        "supportContent": [{"title": "혜택", "description": "7만원 미만 예약 시 2만원 할인"}],
+        "applicationTarget": [
+            {"title": "신청대상", "description": "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자"},
+        ],
+        "periods": [
+            {"title": "발급 기간", "description": "2026.6.11~8.17", "type": "application"}
+        ],
+        "requiredDocuments": [],
+        "notes": [{"title": "비고", "description": "예산 소진 시 조기 종료"}],
+    }
+
+    payload = policy_service.policy_to_api(policy)
+
+    assert payload["requirements"] == [
+        "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자",
+    ]
+    assert "7만원 미만" not in " ".join(payload["requirements"])
+    assert "2026.6.11" not in " ".join(payload["requirements"])
+    assert "예산 소진" not in " ".join(payload["requirements"])
+
+
+def test_policy_to_api_projects_scoped_local_half_trip_five_sections_without_proof_pollution() -> None:
+    corrections = local_half_trip_five_corrections()
+    forbidden_target_terms = ("영수증", "결제내역", "인증사진", "인증 사진", "캡처", "캡쳐", "숙박업소 이용 확인서")
+
+    for source_id in (20, 24, 21, 27):
+        correction = corrections[source_id]
+        policy = make_policy()
+        policy.id = source_id
+        policy.slug = correction.slug
+        policy.title = "대한민국 구석구석 반값여행"
+        policy.source_category = "local_half_trip"
+        policy.external_source_record_id = source_id
+        policy.status = correction.status
+        policy.verification_status = correction.verification_status
+        policy.target_condition = correction.target_condition
+        policy.structured_detail = correction.structured_detail
+
+        payload = policy_service.policy_to_api(policy)
+        assert payload["structuredDetail"] == correction.structured_detail
+        assert payload["requirements"] == [
+            item["description"] for item in correction.structured_detail["applicationTarget"]
+        ]
+        target_text = " ".join(
+            item["description"] for item in payload["structuredDetail"]["applicationTarget"]
+        )
+        document_text = " ".join(
+            item["description"] for item in payload["structuredDetail"]["requiredDocuments"]
+        )
+        assert not any(term in target_text for term in forbidden_target_terms)
+        assert any(term in document_text for term in forbidden_target_terms)
+        assert payload["structuredDetail"]["supportContent"]
+        assert payload["structuredDetail"]["periods"]
+        assert payload["structuredDetail"]["notes"]
+
+
+def test_get_policy_hides_scoped_local_half_trip_needs_review_policy(monkeypatch) -> None:
+    correction = local_half_trip_five_corrections()[32]
+    hidden_policy = make_policy()
+    hidden_policy.slug = correction.slug
+    hidden_policy.status = correction.status
+    hidden_policy.verification_status = correction.verification_status
+    hidden_policy.source_category = "local_half_trip"
+    hidden_policy.external_source_record_id = correction.external_source_record_id
+    hidden_policy.structured_detail = correction.structured_detail
+    fake_db = object()
+
+    monkeypatch.setattr(policy_service.stay_discount_aliases, "resolve_stay_discount_alias_slug", lambda *_args: None)
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug_any_status",
+        lambda db, slug: hidden_policy if db is fake_db and slug == correction.slug else None,
+    )
+    monkeypatch.setattr(
+        policy_service.external_source_repository,
+        "get_external_source_record_by_policy_slug",
+        lambda *_args: None,
+    )
+
+    assert policy_service.get_policy(correction.slug, fake_db) is None
+
+
+def test_policy_to_api_sanitizes_structured_detail_keys_and_ignores_legacy_links() -> None:
     policy = make_policy()
     policy.structured_detail = {
-        "benefits": [{"title": "혜택", "description": "숙박비 할인", "rawPayload": "secret"}],
-        "conditions": [],
+        "supportContent": [{"title": "혜택", "description": "숙박비 할인", "rawPayload": "secret"}],
+        "applicationTarget": [],
         "periods": [],
         "links": [
             {"label": "공식 안내", "url": "https://example.com/ok", "rawPayload": {"internal": True}},
             {"label": "위험 링크", "url": "javascript:alert(1)"},
         ],
-        "documents": [],
-        "notices": [],
+        "requiredDocuments": [],
+        "notes": [],
     }
 
     payload = policy_service.policy_to_api(policy)
 
     assert payload["structuredDetail"] == {
-        "benefits": [{"title": "혜택", "description": "숙박비 할인"}],
-        "conditions": [],
+        "supportContent": [{"title": "혜택", "description": "숙박비 할인"}],
+        "applicationTarget": [],
         "periods": [],
-        "links": [{"label": "공식 안내", "url": "https://example.com/ok"}],
-        "documents": [],
-        "notices": [],
+        "requiredDocuments": [],
+        "notes": [],
     }
 
 
 def test_policy_to_api_omits_empty_structured_detail_for_fallback() -> None:
     policy = make_policy()
     policy.structured_detail = {
-        "benefits": [],
-        "conditions": [],
+        "supportContent": [],
+        "applicationTarget": [],
         "periods": [],
-        "links": [],
-        "documents": [],
-        "notices": [],
+        "requiredDocuments": [],
+        "notes": [],
     }
 
     payload = policy_service.policy_to_api(policy)
@@ -195,24 +280,69 @@ def test_built_structured_detail_matches_policy_api_fallback_fields() -> None:
     payload = policy_service.policy_to_api(policy)
     detail = build_structured_detail_from_policy(policy)
 
-    assert [item["description"] for item in detail["conditions"]] == payload["requirements"]
-    assert detail["benefits"] == [
+    assert [item["description"] for item in detail["applicationTarget"]] == payload["requirements"]
+    assert detail["supportContent"] == [
         {"title": "혜택", "description": "숙박비 5만원 지원", "amount": "숙박비 5만원 지원"}
     ]
-    assert detail["links"] == [
-        {"label": "신청하기", "url": "https://apply.example/policy"},
-        {"label": "공식 안내", "url": "https://official.example/policy"},
-    ]
+    assert "links" not in detail
+    assert payload["applyUrl"] == "https://apply.example/policy"
+    assert payload["officialUrl"] == "https://official.example/policy"
 
 
-def test_build_structured_detail_filters_unsafe_policy_links() -> None:
+def test_policy_to_api_filters_unsafe_top_level_policy_links() -> None:
     policy = make_policy()
     policy.apply_url = "javascript:alert(1)"
     policy.official_url = "https://example.com/official"
 
-    detail = build_structured_detail_from_policy(policy)
+    payload = policy_service.policy_to_api(policy)
 
-    assert detail["links"] == [{"label": "공식 안내", "url": "https://example.com/official"}]
+    assert payload["applyUrl"] is None
+    assert payload["officialUrl"] == "https://example.com/official"
+
+
+def test_policy_to_api_projects_reviewed_typed_periods_without_changing_dto() -> None:
+    policy = make_policy()
+    policy.start_date = date(2026, 7, 14)
+    policy.end_date = None
+    policy.apply_url = "https://apply.example/policy"
+    policy.official_url = "https://official.example/policy"
+    policy.structured_detail = {
+        "campaignIdentity": "검증된 캠페인",
+        "applicationPeriod": {
+            "type": "explicit_open_event_no_safe_end",
+            "startDate": "2026-07-14",
+            "endDate": None,
+            "conclusion": "공식 신청은 7월 14일 시작하며 예산 소진 시 마감합니다.",
+        },
+        "usagePeriod": {
+            "type": "explicit_travel_period",
+            "startDate": "2026-08-01",
+            "endDate": "2026-08-31",
+            "conclusion": "공식 여행 기간입니다.",
+        },
+        "cutoffEvidence": {"type": "event_based_ttl_only"},
+    }
+
+    payload = policy_service.policy_to_api(policy)
+
+    assert payload["structuredDetail"]["periods"] == [
+        {
+            "title": "신청 기간",
+            "description": "공식 신청은 7월 14일 시작하며 예산 소진 시 마감합니다.",
+            "startDate": "2026-07-14",
+            "type": "application",
+        },
+        {
+            "title": "여행 기간",
+            "description": "공식 여행 기간입니다.",
+            "startDate": "2026-08-01",
+            "endDate": "2026-08-31",
+            "type": "usage",
+        },
+    ]
+    assert "links" not in payload["structuredDetail"]
+    assert payload["applyUrl"] == "https://apply.example/policy"
+    assert payload["officialUrl"] == "https://official.example/policy"
 
 
 def test_policy_to_api_filters_phone_contact_requirements() -> None:
@@ -422,7 +552,8 @@ def test_external_policy_fallback_copy_uses_official_benefit_wording() -> None:
     assert payload["amount"] == "혜택 확인 필요"
     assert payload["tag"] == "여행상품"
     assert payload["summary"] == "공식 혜택 안내를 확인해 주세요."
-    assert payload["documents"] == ["혜택 안내 확인"]
+    assert payload["documents"] == []
+    assert payload["requirements"] == []
 
 
 class FakeDb:
@@ -632,6 +763,34 @@ def make_stay_policy() -> PolicyModel:
         status="active",
     )
     policy.documents = []
+    policy.structured_detail = {
+        "supportContent": [
+            {"title": "할인 혜택", "description": "7만원 미만 국내 숙박상품 예약 시 2만원 할인"},
+            {"title": "할인 혜택", "description": "7만원 이상 국내 숙박상품 예약 시 3만원 할인"},
+            {"title": "할인 혜택", "description": "14만원 미만 국내 숙박상품 예약 시 5만원 할인"},
+            {"title": "할인 혜택", "description": "14만원 이상 국내 숙박상품 예약 시 7만원 할인"},
+        ],
+        "applicationTarget": [
+            {"title": "신청대상", "description": "숙박세일페스타 대상 지역 숙박 이용자"},
+            {"title": "신청대상", "description": "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자"},
+            {"title": "신청대상", "description": "할인권 발급 후 지정 기간 내 입실 가능한 사용자"},
+        ],
+        "periods": [
+            {"title": "쿠폰 발급 기간", "description": "2026.6.11~8.17", "type": "application"},
+            {"title": "입실 기간", "description": "2026.6.11~8.17", "type": "usage"},
+        ],
+        "requiredDocuments": [
+            {
+                "title": "필요서류",
+                "description": "별도 제출 서류 없음 · 온라인 할인권 발급 및 예약 기준으로 적용",
+            }
+        ],
+        "notes": [
+            {"title": "비고", "description": "할인권은 선착순으로 발급됩니다."},
+            {"title": "비고", "description": "예산 소진 시 조기 종료될 수 있습니다."},
+            {"title": "비고", "description": "세부 기준은 공식 안내에서 최종 확인하세요."},
+        ],
+    }
     return policy
 
 
@@ -643,6 +802,7 @@ def make_stay_record() -> ExternalSourceRecord:
         source_category="stay_discount",
         external_id="stay-discount",
         canonical_key="stay-discount",
+        logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
         detail_url="https://ktostay.visitkorea.or.kr/",
         collected_page_url="https://ktostay.visitkorea.or.kr/",
         title="2026 대한민국 숙박세일 페스타 숙박 할인",
@@ -660,6 +820,17 @@ def make_stay_record() -> ExternalSourceRecord:
         field_completeness=90,
         freshness_status="fresh",
         raw_payload={
+            "issuePeriod": "2026.6.11(목)~8.17(월) 매일 오전 10시부터 선착순 발급",
+            "stayPeriod": "2026.6.11(목)~8.17(월)",
+            "usageArea": "비수도권 인구감소지역(85개 지자체)",
+            "usagePlace": "국내숙박 업소 / 대실 사용 불가",
+            "usageMethod": "참여 온라인 여행사를 통한 숙박 할인권 발급 후 사용 / 1인 1매 사용(선착순)",
+            "discountTiers": [
+                "7만원 미만* 국내 숙박상품 예약 시 2만원 할인(1박 이상)",
+                "7만원 이상* 국내 숙박상품 예약 시 3만원 할인(1박 이상)",
+                "14만원 미만** 국내 숙박상품 예약 시 5만원 할인(연박 이상)",
+                "14만원 이상** 국내 숙박상품 예약 시 7만원 할인(연박 이상)",
+            ],
             "eligibleAreas": [
                 {"sido": "강원", "cities": ["고성군", "삼척시"]},
                 {"sido": "경남", "cities": ["고성군"]},
@@ -667,6 +838,28 @@ def make_stay_record() -> ExternalSourceRecord:
             "eligibleAreaCount": 3,
         },
     )
+
+
+def make_two_stay_campaigns():
+    current_policy = make_stay_policy()
+    current_policy.id = 23
+    current_policy.slug = "travelmonth-33"
+    current_policy.external_source_record_id = 35
+    current_policy.end_date = date(2026, 8, 17)
+    legacy_policy = make_stay_policy()
+    legacy_policy.id = 26
+    legacy_policy.slug = "travelmonth-35"
+    legacy_policy.external_source_record_id = 33
+    legacy_policy.end_date = date(2026, 7, 31)
+    current_record = make_stay_record()
+    current_record.id = 35
+    current_record.canonical_key = STAY_DISCOUNT_CAMPAIGN_KEY
+    current_record.end_date = date(2026, 8, 17)
+    legacy_record = make_stay_record()
+    legacy_record.id = 33
+    legacy_record.canonical_key = "legacy-period-hash"
+    legacy_record.end_date = date(2026, 7, 31)
+    return current_policy, legacy_policy, current_record, legacy_record
 
 
 def test_stay_discount_list_projects_aliases_and_hides_canonical(monkeypatch) -> None:
@@ -698,6 +891,67 @@ def test_stay_discount_list_projects_aliases_and_hides_canonical(monkeypatch) ->
     assert all(item["category"] == "숙박" for item in payload)
     assert all(item.get("actionStatus") is None for item in payload)
     assert "travelmonth-88" not in [item["slug"] for item in payload]
+
+
+def test_stay_discount_list_and_detail_select_current_source_on_survivor_policy(
+    monkeypatch,
+) -> None:
+    fake_db = object()
+    survivor = make_stay_policy()
+    survivor.id = 23
+    survivor.slug = "travelmonth-35"
+    survivor.external_source_record_id = 35
+    survivor.end_date = date(2026, 8, 17)
+    legacy = make_stay_policy()
+    legacy.id = 26
+    legacy.slug = "travelmonth-33"
+    legacy.external_source_record_id = 33
+
+    current_record = make_stay_record()
+    current_record.id = 35
+    current_record.canonical_key = STAY_DISCOUNT_CAMPAIGN_KEY
+    current_record.end_date = date(2026, 8, 17)
+    legacy_record = make_stay_record()
+    legacy_record.id = 33
+    legacy_record.canonical_key = "legacy-period-hash"
+
+    records = {33: legacy_record, 35: current_record}
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "list_policies",
+        lambda db: [legacy, survivor] if db is fake_db else [],
+    )
+    monkeypatch.setattr(
+        policy_service.external_source_repository,
+        "get_external_source_record_by_id",
+        lambda db, record_id: records.get(record_id) if db is fake_db else None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug_any_status",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        policy_service.external_source_repository,
+        "get_external_source_record_by_policy_slug",
+        lambda *_args: None,
+    )
+
+    payload = policy_service.list_policies(fake_db)
+    detail = policy_service.get_policy("stay-discount-gangwon-goseong", fake_db)
+
+    assert len(payload) == 3
+    assert len({item["slug"] for item in payload}) == 3
+    assert detail is not None
+    assert detail["deadline"] == "2026-08-17"
+    resolution = policy_service.stay_discount_aliases.resolve_stay_discount_alias_slug(
+        fake_db,
+        "stay-discount-gangwon-goseong",
+        [legacy, survivor],
+    )
+    assert resolution is not None
+    assert resolution.canonical_policy.id == 23
+    assert resolution.canonical_policy.external_source_record_id == 35
 
 
 def test_stay_discount_list_hides_canonical_when_alias_payload_missing(monkeypatch) -> None:
@@ -738,18 +992,89 @@ def test_stay_discount_alias_detail_echoes_alias_slug(monkeypatch) -> None:
     assert detail["title"] == "[고성] 2026 대한민국 숙박세일 페스타 숙박 할인"
     assert detail["region"] == "경남"
     assert detail["amount"] == "최대 7만원"
-    assert detail["summary"] == "비수도권 인구감소지역 숙박 예약 시 결제 금액과 숙박 조건에 따라 2만~7만원 할인권을 제공합니다."
+    assert detail["summary"] == (
+        "혜택: 7만원 미만 국내 숙박상품 예약 시 2만원 할인 / "
+        "7만원 이상 국내 숙박상품 예약 시 3만원 할인 / "
+        "14만원 미만 국내 숙박상품 예약 시 5만원 할인 / "
+        "14만원 이상 국내 숙박상품 예약 시 7만원 할인 · "
+        "이용 조건: 경남 고성 등 숙박세일페스타 대상 지역 숙박 이용자 / "
+        "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자 / "
+        "할인권 발급 후 지정 기간 내 입실 가능한 사용자"
+    )
     assert detail["requirements"] == [
-        "7만원 미만 국내 숙박상품: 2만원 할인 (1박 이상)",
-        "7만원 이상 국내 숙박상품: 3만원 할인 (1박 이상)",
-        "14만원 미만 국내 숙박상품: 5만원 할인 (연박 이상)",
-        "14만원 이상 국내 숙박상품: 7만원 할인 (연박 이상)",
-        "참여 온라인 여행사에서 매일 오전 10시부터 선착순 발급",
-        "입실기간: 2026.6.11~7.31",
+        "경남 고성 등 숙박세일페스타 대상 지역 숙박 이용자",
+        "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자",
+        "할인권 발급 후 지정 기간 내 입실 가능한 사용자",
     ]
     assert "7만원 미만* 국내 숙박상품 예약 시 2만원 할인" not in str(detail["summary"])
     assert detail["officialUrl"] == "https://ktostay.visitkorea.or.kr/"
     assert detail.get("actionStatus") is None
+
+
+def test_stay_discount_alias_requirements_follow_persisted_structured_conditions(
+    monkeypatch,
+) -> None:
+    fake_db = object()
+    canonical = make_stay_policy()
+    canonical.target_condition = None
+    canonical.structured_detail = {
+        "supportContent": [
+            {"title": "혜택", "description": "7만원 미만 국내 숙박상품 예약 시 2만원 할인"}
+        ],
+        "applicationTarget": [
+            {"title": "혜택 적용 조건", "description": "국내 숙박상품"},
+            {"title": "혜택 적용 조건", "description": "참여 온라인 여행사에서 할인권 발급 후 사용"},
+            {"title": "혜택 적용 조건", "description": "1박 이상"},
+        ],
+        "periods": [
+            {"title": "발급 기간", "description": "2026.6.11~8.17", "type": "application"},
+            {"title": "입실 기간", "description": "2026.6.11~8.17", "type": "usage"},
+        ],
+        "requiredDocuments": [],
+        "notes": [{"title": "비고", "description": "예산 소진 시 조기 종료"}],
+    }
+    record = make_stay_record()
+
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "list_policies",
+        lambda db: [canonical] if db is fake_db else [],
+    )
+    monkeypatch.setattr(
+        policy_service.external_source_repository,
+        "get_external_source_record_by_id",
+        lambda db, record_id: record if db is fake_db and record_id == 88 else None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug_any_status",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        policy_service.external_source_repository,
+        "get_external_source_record_by_policy_slug",
+        lambda *_args: None,
+    )
+
+    detail = policy_service.get_policy("stay-discount-gangwon-goseong", fake_db)
+
+    assert detail is not None
+    assert detail["requirements"] == [
+        "강원 고성 등 숙박세일페스타 대상 지역 숙박 이용자",
+        "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자",
+        "할인권 발급 후 지정 기간 내 입실 가능한 사용자",
+    ]
+    assert detail["structuredDetail"]["applicationTarget"] == [
+        {"title": "신청대상", "description": "강원 고성 등 숙박세일페스타 대상 지역 숙박 이용자"},
+        {"title": "신청대상", "description": "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자"},
+        {"title": "신청대상", "description": "할인권 발급 후 지정 기간 내 입실 가능한 사용자"},
+    ]
+    assert detail["structuredDetail"]["requiredDocuments"] == [
+        {
+            "title": "필요서류",
+            "description": "별도 제출 서류 없음 · 온라인 할인권 발급 및 예약 기준으로 적용",
+        }
+    ]
 
 
 def test_hidden_policy_detail_returns_none_for_direct_slug(monkeypatch) -> None:
@@ -797,7 +1122,7 @@ def test_hidden_policy_detail_returns_none_for_stay_alias(monkeypatch) -> None:
     assert policy_service.get_policy("stay-discount-gangwon-goseong", fake_db) is None
 
 
-def test_stay_discount_raw_fallback_detail_uses_clean_display_copy(monkeypatch) -> None:
+def test_stay_discount_raw_fallback_detail_uses_structured_mapping_presentation(monkeypatch) -> None:
     fake_db = object()
     record = make_stay_record()
     record.raw_detail_text = (
@@ -817,28 +1142,61 @@ def test_stay_discount_raw_fallback_detail_uses_clean_display_copy(monkeypatch) 
 
     assert detail is not None
     assert detail["amount"] == "최대 7만원"
-    assert detail["summary"] == "비수도권 인구감소지역 숙박 예약 시 결제 금액과 숙박 조건에 따라 2만~7만원 할인권을 제공합니다."
-    assert detail["requirements"][:4] == [
-        "7만원 미만 국내 숙박상품: 2만원 할인 (1박 이상)",
-        "7만원 이상 국내 숙박상품: 3만원 할인 (1박 이상)",
-        "14만원 미만 국내 숙박상품: 5만원 할인 (연박 이상)",
-        "14만원 이상 국내 숙박상품: 7만원 할인 (연박 이상)",
+    assert detail["tag"] == "최대 7만원"
+    assert detail["summary"] == (
+        "혜택: 7만원 미만 국내 숙박상품 예약 시 2만원 할인 / "
+        "7만원 이상 국내 숙박상품 예약 시 3만원 할인 / "
+        "14만원 미만 국내 숙박상품 예약 시 5만원 할인 / "
+        "14만원 이상 국내 숙박상품 예약 시 7만원 할인 · "
+        "이용 조건: 숙박세일페스타 대상 지역 숙박 이용자 / "
+        "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자 / "
+        "할인권 발급 후 지정 기간 내 입실 가능한 사용자"
+    )
+    assert detail["requirements"] == [
+        "숙박세일페스타 대상 지역 숙박 이용자",
+        "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자",
+        "할인권 발급 후 지정 기간 내 입실 가능한 사용자",
     ]
     assert str(detail).count("7만원 미만*") == 0
+
+
+def test_stay_discount_raw_fallback_with_invalid_mapping_is_semantically_empty(monkeypatch) -> None:
+    fake_db = object()
+    record = make_stay_record()
+    record.raw_payload = {
+        "discountTiers": ["7만원 미만 국내 숙박상품 예약 시 2만원 할인(1박 이상)"],
+        "eligibleAreas": record.raw_payload["eligibleAreas"],
+    }
+
+    monkeypatch.setattr(policy_service.policy_repository, "get_policy_by_slug_any_status", lambda *_args: None)
+    monkeypatch.setattr(
+        policy_service.external_source_repository,
+        "get_external_source_record_by_policy_slug",
+        lambda db, slug: record if db is fake_db and slug == "travelmonth-88" else None,
+    )
+
+    detail = policy_service.get_policy("travelmonth-88", fake_db)
+
+    assert detail is not None
+    assert detail["structuredDetail"] is None
+    assert detail["amount"] == ""
+    assert detail["tag"] == ""
+    assert detail["summary"] == ""
+    assert detail["requirements"] == []
 
 
 def test_stay_discount_alias_save_uses_canonical_policy_id_and_echoes_alias(monkeypatch) -> None:
     fake_db = FakeDb()
     user = make_user()
-    canonical = make_stay_policy()
-    record = make_stay_record()
+    canonical, legacy, record, legacy_record = make_two_stay_campaigns()
+    records = {35: record, 33: legacy_record}
     added_rows: list[dict[str, int]] = []
 
-    monkeypatch.setattr(policy_service.policy_repository, "list_policies", lambda db: [canonical] if db is fake_db else [])
+    monkeypatch.setattr(policy_service.policy_repository, "list_policies", lambda db: [legacy, canonical] if db is fake_db else [])
     monkeypatch.setattr(
         policy_service.external_source_repository,
         "get_external_source_record_by_id",
-        lambda db, record_id: record if db is fake_db and record_id == 88 else None,
+        lambda db, record_id: records.get(record_id) if db is fake_db else None,
     )
     monkeypatch.setattr(policy_service.policy_repository, "get_policy_by_slug", lambda *_args: None)
     monkeypatch.setattr(policy_service.policy_repository, "get_saved_policy", lambda *_args, **_kwargs: None)
@@ -852,7 +1210,7 @@ def test_stay_discount_alias_save_uses_canonical_policy_id_and_echoes_alias(monk
     payload = policy_service.save_policy("stay-discount-gyeongnam-goseong", fake_db, user)
 
     assert payload == {"policyId": "stay-discount-gyeongnam-goseong", "saved": True}
-    assert added_rows == [{"user_id": 7, "policy_id": 88}]
+    assert added_rows == [{"user_id": 7, "policy_id": 23}]
     assert fake_db.commits == 1
 
 
@@ -890,15 +1248,15 @@ def test_stay_discount_alias_save_deduplicates_canonical_saved_policy(monkeypatc
 def test_stay_discount_alias_remove_uses_canonical_policy_id_and_echoes_alias(monkeypatch) -> None:
     fake_db = FakeDb()
     user = make_user()
-    canonical = make_stay_policy()
-    record = make_stay_record()
+    canonical, legacy, record, legacy_record = make_two_stay_campaigns()
+    records = {35: record, 33: legacy_record}
     removed_rows: list[dict[str, int]] = []
 
-    monkeypatch.setattr(policy_service.policy_repository, "list_policies", lambda db: [canonical] if db is fake_db else [])
+    monkeypatch.setattr(policy_service.policy_repository, "list_policies", lambda db: [legacy, canonical] if db is fake_db else [])
     monkeypatch.setattr(
         policy_service.external_source_repository,
         "get_external_source_record_by_id",
-        lambda db, record_id: record if db is fake_db and record_id == 88 else None,
+        lambda db, record_id: records.get(record_id) if db is fake_db else None,
     )
     monkeypatch.setattr(policy_service.policy_repository, "get_policy_by_slug", lambda *_args: None)
 
@@ -911,5 +1269,5 @@ def test_stay_discount_alias_remove_uses_canonical_policy_id_and_echoes_alias(mo
     payload = policy_service.remove_saved_policy("stay-discount-gangwon-samcheok", fake_db, user)
 
     assert payload == {"policyId": "stay-discount-gangwon-samcheok", "saved": False}
-    assert removed_rows == [{"user_id": 7, "policy_id": 88}]
+    assert removed_rows == [{"user_id": 7, "policy_id": 23}]
     assert fake_db.commits == 1

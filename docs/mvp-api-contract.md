@@ -129,6 +129,25 @@ DB 연결 상태 포함 서버 헬스 확인. 인증 불필요.
   "nationwideRecords": 16,
   "recordsWithAmount": 21,
   "recordsWithStyles": 37,
+  "dateDiagnostics": {
+    "totalIssueRecords": 3,
+    "unsafeRepresentativeDeadlineRecords": 1,
+    "sourceStartKnownCanonicalStartNullRecords": 1,
+    "defaultLikeOnlyUnsafeRecords": 1,
+    "defaultLikeIgnoredRecords": 1,
+    "unclassifiedDateRangeRecords": 1,
+    "sameTypeConflictRecords": 0,
+    "budgetCaveatOnlyRecords": 0,
+    "budgetCaveatNotDateRecords": 0,
+    "budgetTextWithCanonicalDateRecords": 0,
+    "counts": {
+      "default-like-only-unsafe": 1,
+      "lower-priority-default-like-ignored": 1,
+      "source-start-known-canonical-start-null": 1,
+      "unclassified-date-range": 1,
+      "unsafe-representative-deadline": 1
+    }
+  },
   "latestFetchedAt": "2026-05-21T00:00:00",
   "latestVerifiedAt": "2026-05-21T00:00:00",
   "regions": [],
@@ -136,7 +155,7 @@ DB 연결 상태 포함 서버 헬스 확인. 인증 불필요.
 }
 ```
 
-`regions`는 지역별 저장 품질 집계이며 `recommendationPreview`는 기존 `GET /recommendations/regions`와 같은 ranking service를 사용한다.
+`regions`는 지역별 저장 품질 집계이며 `recommendationPreview`는 기존 `GET /recommendations/regions`와 같은 ranking service를 사용한다. `dateDiagnostics`는 수집 원문 기간 evidence와 현재 canonical date 필드의 품질 진단이다. `deadline`으로 승격하기 unsafe한 기본값성 12/31, 미분류 기간, 같은 타입 기간 충돌, 예산 소진 문구, source start가 있으나 canonical `start_date`가 null인 사례를 machine-readable count로 제공하며 live fetch나 DB 수정은 수행하지 않는다.
 
 ---
 
@@ -734,7 +753,7 @@ Account linking policy:
 
 ### GET /policies
 
-전체 정책 목록. 인증 불필요. DB `policies` 레코드만 `Policy` DTO로 반환한다. TravelMonth, 대한민국 반값여행 등 공식 외부 수집 레코드(`external_source_records`)는 수집/검증 원문 근거로 보존하고, `local_half_trip` 신청접수중/준비중 항목과 active/fresh `stay_discount` 항목만 collection normalization service가 `policies`로 승격한다. `regional_benefit`은 대한민국 반값여행과 같은 정책의 legacy 요약 source로 보고 public 정책 승격/추천/상세 fallback에서 제외하며, 기존 승격 정책은 `hidden`으로 내린다. `traffic_benefit`은 legacy/optional 수집 근거로 보존될 수 있지만 public 정책 승격 대상에서는 제외한다. `local_half_trip` 같은 지역별 외부 정책은 기존 호환 slug `travelmonth-{externalSourceRecordId}`를 사용한다. `stay_discount`는 공식 `https://ktostay.visitkorea.or.kr/`의 비수도권 인구감소지역 85개 지자체를 `raw_payload.eligibleAreas`에 저장하고, 목록/검색/지역 추천에서는 canonical `travelmonth-{externalSourceRecordId}` 1건을 숨긴 뒤 `stay-discount-{sidoSlug}-{citySlug}` 지역 alias 85건으로 투영한다. alias DTO는 제목을 `[고성] 2026 대한민국 숙박세일 페스타 숙박 할인`처럼 시/군 단위 접두어로 표시하고, `region`은 정책 목록 메타/필터가 반값여행 카드와 맞도록 광역자치단체(`강원`, `경남` 등)만 담는다. 숙박세일 상세/alias 응답의 `summary`, `amount`, `requirements`는 원문 반복 문구 대신 2만/3만/5만/7만원 할인 조건과 발급·입실 기간을 항목화한 정리본으로 반환한다. 저장/일정 연결 가능 상태이므로 `actionStatus`를 생략하거나 `null`로 둔다. 대한민국 반값여행 계열(`local_half_trip`)은 공식 페이지의 지역별 상태가 `신청접수중` 또는 `준비중`인 항목을 public 정책으로 노출하고, 제목은 `[합천] 대한민국 반값여행 지원`처럼 지자체명을 대괄호 접두어로 표시한다. 공식 디지털 관광주민증 seed 정책은 `docs/디지털관광주민증.xlsx`의 `지원내용`, `신청기간`, `확인 필요 사항`, `필요 서류` 값을 그대로 정책 본문으로 사용하고, KTO 공식 운영 지자체 목록(`https://korean.visitkorea.or.kr/dgtourcard/biz/main/main.do`)에 있는 지역만 `digital_tourism_card` 성격의 `dgtour-{city}-{n}` 별도 정책으로 유지한다. 제목은 `[지역명] 디지털 관광주민증 혜택` 형식으로 표시하고, 같은 지자체 반값여행 정책과 제목/요약/공식 URL을 섞지 않는다. `[강진]`처럼 지역 상세 페이지가 비었거나 공식 운영 지자체 목록에 없는 기존 dgtour 정책은 삭제하지 않고 `policies.status = "hidden"`으로 내려 public 목록/상세/저장 가능 대상에서 제외한다. `준비중` 항목은 원천 `freshness_status`가 `unknown`이어도 정책 목록/상세에 표시하며, 마감/unknown 상태 또는 stale 항목은 기존 연결 보호를 위해 `policies.status = "hidden"`으로 내려 사용자 목록에서 제외한다.
+전체 정책 목록. 인증 불필요. DB `policies` 레코드만 `Policy` DTO로 반환한다. TravelMonth, 대한민국 반값여행 등 공식 외부 수집 레코드(`external_source_records`)는 수집/검증 원문 근거로 보존하고, `local_half_trip` 신청접수중/준비중 항목과 active/fresh `stay_discount` 항목만 collection normalization service가 `policies`로 승격한다. `regional_benefit`은 대한민국 반값여행과 같은 정책의 legacy 요약 source로 보고 public 정책 승격/추천/상세 fallback에서 제외하며, 기존 승격 정책은 `hidden`으로 내린다. `traffic_benefit`은 legacy/optional 수집 근거로 보존될 수 있지만 public 정책 승격 대상에서는 제외한다. `local_half_trip` 같은 지역별 외부 정책은 기존 호환 slug `travelmonth-{externalSourceRecordId}`를 사용한다. `stay_discount`는 공식 `https://ktostay.visitkorea.or.kr/`의 비수도권 인구감소지역 85개 지자체를 `raw_payload.eligibleAreas`에 저장하고, 목록/검색/지역 추천에서는 canonical `travelmonth-{externalSourceRecordId}` 1건을 숨긴 뒤 `stay-discount-{sidoSlug}-{citySlug}` 지역 alias 85건으로 투영한다. alias DTO는 제목을 `[고성] 2026 대한민국 숙박세일 페스타 숙박 할인`처럼 시/군 단위 접두어로 표시하고, `region`은 정책 목록 메타/필터가 반값여행 카드와 맞도록 광역자치단체(`강원`, `경남` 등)만 담는다. 숙박세일 상세/alias 응답의 `requirements`는 `structuredDetail.applicationTarget` 설명만 안정된 순서로 투영하며, alias 상세에서는 첫 신청대상을 `경남 고성 등 숙박세일페스타 대상 지역 숙박 이용자`처럼 요청 지역 기준으로 치환한다. 2만/3만/5만/7만원 할인은 `structuredDetail.supportContent`, 쿠폰 발급·입실 기간은 `structuredDetail.periods`, 제출 서류 없음 안내는 `structuredDetail.requiredDocuments`, 선착순/예산 소진/공식 안내 최종 확인은 `structuredDetail.notes`에 남기며 `requirements`에 섞지 않는다. 저장/일정 연결 가능 상태이므로 `actionStatus`를 생략하거나 `null`로 둔다. 대한민국 반값여행 계열(`local_half_trip`)은 공식 페이지의 지역별 상태가 `신청접수중` 또는 `준비중`인 항목을 public 정책으로 노출하고, 제목은 `[합천] 대한민국 반값여행 지원`처럼 지자체명을 대괄호 접두어로 표시한다. 2026-07-16 검증된 scoped 5개(`travelmonth-20`, `travelmonth-24`, `travelmonth-32`, `travelmonth-21`, `travelmonth-27`)는 detail URL evidence manifest를 우선해 5섹션으로 재분류하며, 신청대상에는 관외 거주/신청 승인/제외 지역 같은 eligibility만 두고 영수증·결제내역·인증사진·캡처·숙박이용확인서 등 증빙 문구는 `requiredDocuments` 또는 `notes`로 분리한다. detail URL에서 현재 신청 가능 상태를 확정하지 못한 `travelmonth-32`는 `hidden/needs_review`로 fail-closed되어 public 목록/상세/저장/일정 연결 대상에서 제외된다. 공식 디지털 관광주민증 seed 정책은 `docs/디지털관광주민증.xlsx`의 `지원내용`, `신청기간`, `확인 필요 사항`, `필요 서류` 값을 그대로 정책 본문으로 사용하고, KTO 공식 운영 지자체 목록(`https://korean.visitkorea.or.kr/dgtourcard/biz/main/main.do`)에 있는 지역만 `digital_tourism_card` 성격의 `dgtour-{city}-{n}` 별도 정책으로 유지한다. 제목은 `[지역명] 디지털 관광주민증 혜택` 형식으로 표시하고, 같은 지자체 반값여행 정책과 제목/요약/공식 URL을 섞지 않는다. `[강진]`처럼 지역 상세 페이지가 비었거나 공식 운영 지자체 목록에 없는 기존 dgtour 정책은 삭제하지 않고 `policies.status = "hidden"`으로 내려 public 목록/상세/저장 가능 대상에서 제외한다. `준비중` 항목은 원천 `freshness_status`가 `unknown`이어도 정책 목록/상세에 표시하며, 마감/unknown 상태 또는 stale 항목은 기존 연결 보호를 위해 `policies.status = "hidden"`으로 내려 사용자 목록에서 제외한다.
 
 **Response 200** → `Policy[]`
 ```json
@@ -755,12 +774,11 @@ Account linking policy:
     "requirements": ["만 19세 이상", "국내 거주자"],
     "documents": ["신분증"],
     "structuredDetail": {
-      "benefits": [{ "title": "혜택", "description": "최대 30만원", "amount": "최대 30만원" }],
-      "conditions": [{ "title": "조건", "description": "만 19세 이상" }],
-      "periods": [{ "title": "신청 기간", "description": "2026-01-01 ~ 2026-12-31", "startDate": "2026-01-01", "endDate": "2026-12-31" }],
-      "links": [{ "label": "공식 안내", "url": "https://example.com/official" }],
-      "documents": [{ "title": "필요 서류", "description": "신분증" }],
-      "notices": []
+      "supportContent": [{ "title": "혜택", "description": "최대 30만원", "amount": "최대 30만원" }],
+      "periods": [{ "title": "신청 기간", "description": "2026-01-01 ~ 2026-12-31", "type": "application", "startDate": "2026-01-01", "endDate": "2026-12-31" }],
+      "applicationTarget": [{ "title": "조건", "description": "만 19세 이상" }],
+      "requiredDocuments": [{ "title": "필요 서류", "description": "신분증" }],
+      "notes": []
     },
     "officialUrl": "https://example.com/official",
     "applyUrl": "https://example.com/apply",
@@ -773,28 +791,29 @@ Account linking policy:
 `category` 허용 값: `"교통" | "숙박" | "여행상품" | "지역할인" | "이벤트" | "기타"`
 `sourceType` 허용 값은 `"internal" | "external"`이며 API 호환과 내부 진단을 위해 유지한다. 사용자 화면은 `internal/external` 같은 구현 구분 문구를 노출하지 않는다. 사용자에게 노출되는 모든 정책은 정규화된 `policies` 레코드이므로 저장/일정 연결 동작을 동일하게 지원한다.
 
-`PolicyStructuredDetail` v1 섹션은 아래 여섯 배열만 표준으로 사용한다. 각 item은 화면 표시용 `title`/`label`, `description`/`value`, `amount`, `url`, `startDate`, `endDate` 같은 문자열 필드를 느슨하게 담을 수 있다. 빈 배열은 허용하며 frontend는 빈 섹션을 숨긴다. 외부 수집 정책 상세에서 `structuredDetail`은 primary screen-ready contract다. frontend는 비어 있지 않은 `structuredDetail` 섹션을 그대로 우선 렌더링하고, 해당 섹션이 비어 있거나 누락된 경우에만 `summary`/`requirements`/`documents`/기간 값으로 section-by-section fallback을 수행한다. `requirements`는 legacy/simple fallback 재료이며, `structuredDetail`이 제공한 섹션 항목을 다시 신청 대상/혜택 조건/필요 서류/확인 사항으로 의미 추론하거나 재분류하지 않는다.
+`PolicyStructuredDetail` v1 섹션은 아래 다섯 배열만 표준으로 사용한다. 각 item은 화면 표시용 `title`/`label`, `description`/`value`, `amount`, `startDate`, `endDate`, 기간 의미를 나타내는 `type` 같은 문자열 필드를 느슨하게 담을 수 있다. 빈 배열은 허용하며 frontend는 빈 섹션을 숨긴다. 공식 안내/신청 링크는 `structuredDetail` 안에 중복 저장하지 않고 top-level `officialUrl`/`applyUrl` CTA로만 노출한다. 외부 수집 정책 상세에서 `structuredDetail`은 primary screen-ready contract다. frontend는 비어 있지 않은 `structuredDetail` 섹션을 그대로 우선 렌더링하고, 해당 섹션이 비어 있거나 누락된 경우에만 `summary`/`requirements`/`documents`/기간 값으로 section-by-section fallback을 수행한다. `requirements`는 legacy/simple fallback 재료이며, `structuredDetail.applicationTarget`이 하나라도 있으면 frontend는 `requirements`를 다시 분류하거나 조건·안내 섹션에 병합하지 않는다. 외부 source 의미 분류는 등록된 `sourceCategory` mapper만 수행하며, 미등록 source는 `contact_text`나 긴 원문을 조건으로 추측하지 않고 빈 조건으로 응답한다. `stay_discount` raw fallback은 공식 4단계 할인 조합, 필수 이용 근거, 시작·종료일이 모두 해석되는 발급·입실 기간이 완전할 때만 매핑한다. 표시용 `summary`/`amount`/`requirements`는 구조화된 지원 내용·신청 대상과 canonical 금액에서 파생하고, 불완전한 원문에는 하드코딩된 캠페인 문구를 보충하지 않는다.
 
 ```json
 {
-  "benefits": [],
-  "conditions": [],
+  "supportContent": [],
   "periods": [],
-  "links": [],
-  "documents": [],
-  "notices": []
+  "applicationTarget": [],
+  "requiredDocuments": [],
+  "notes": []
 }
 ```
 
+정책 `deadline`은 기존 public string 필드를 유지한다. ISO 날짜 문자열은 backend 기간 evidence selector가 선택한 안전한 대표 신청/발급/사용 마감일이고, 빈 문자열(`""`)은 안전한 대표 마감일이 없어 화면에서 확인 필요로 다뤄야 한다는 뜻이다. source 원문의 명확한 시작/종료일은 top-level `startDate`/`endDate`를 새로 추가하지 않고 `structuredDetail.periods[*].startDate` / `endDate`에 보존한다. DB `policies.end_date`도 첫 pass에서는 안전한 대표 마감일만 저장하며, 기본값성 또는 미분류 raw `end_date`는 public `deadline`으로 노출하지 않는다.
+
 `actionStatus`는 생략 또는 `null`이면 저장/일정 연결 가능 상태로 간주한다. migration gap 동안 상세 조회만 허용되는 raw fallback 정책은 `"infoOnly"`를 반환하며, 프론트엔드는 저장/일정 연결 action을 차단하고 공식 원문 확인 안내만 제공한다.
-`external_source_records.source_category` 중 정책 승격 대상은 `local_half_trip`, `stay_discount`이다. `local_half_trip`은 신청접수중과 준비중을 모두 공개 승격 대상으로 본다. `stay_discount`는 하나의 canonical 정책으로 저장/중복 방지하고, public 목록과 추천 후보에서만 eligible area alias로 확장한다. `regional_benefit`과 `traffic_benefit`은 legacy source evidence로 남기며 목적지/지역 추천 점수와 public 정책 승격에서 제외한다. 일정 상세 정책 추천은 정규화된 공개 정책 및 `stay_discount` alias 후보에 대해 지역/일정 날짜/카테고리/여행 스타일 태그만 사용하는 deterministic scoring을 적용한다.
+`external_source_records.source_category` 중 정책 승격 대상은 `local_half_trip`, `stay_discount`이다. `local_half_trip`은 신청접수중과 준비중을 공개 승격 후보로 보되, source-specific evidence correction이 `hidden/needs_review`를 지정한 행은 public 정책으로 노출하지 않는다. `stay_discount`는 하나의 canonical 정책으로 저장/중복 방지하고, public 목록과 추천 후보에서만 eligible area alias로 확장한다. `regional_benefit`과 `traffic_benefit`은 legacy source evidence로 남기며 목적지/지역 추천 점수와 public 정책 승격에서 제외한다. 일정 상세 정책 추천은 정규화된 공개 정책 및 `stay_discount` alias 후보에 대해 지역/일정 날짜/카테고리/여행 스타일 태그만 사용하는 deterministic scoring을 적용한다.
 외부 수집 정책의 `category`는 `external_source_records`의 제목, 혜택 본문, 태그, 출처 URL, source category를 점수화한 deterministic classifier 결과다. 단순 source URL/source category 매핑이 아니며, 동점이면 `교통 > 숙박 > 여행상품 > 이벤트 > 지역할인 > 기타` 우선순위를 따른다.
 
 ---
 
 ### GET /policies/{policy_slug}
 
-정책 상세. `policies.status != "active"`인 정책은 기존 행을 보존하더라도 public 상세에서 404로 처리한다. `travelmonth-{externalSourceRecordId}` slug는 정규화된 TravelMonth 정책 상세로 해석한다. 기존 `dgtour-{city}-{n}` 상세 slug가 같은 지자체의 승격된 `local_half_trip` 정책과 중복되면 `307`로 최신 `/api/policies/travelmonth-{externalSourceRecordId}`에 리다이렉트해 구버전 상세 내용이 다시 노출되지 않게 한다. 단, 활성 `dgtour-*` 정책이 `digital_tourism_card`처럼 반값여행이 아닌 별도 공식 디지털 관광주민증 정책으로 정리되어 있으면 redirect하지 않고 `[지역명] 디지털 관광주민증 혜택` 상세를 반환한다. `stay-discount-{sidoSlug}-{citySlug}` slug는 숙박세일 canonical 정책 상세로 해석하되 응답의 `id`, `slug`는 요청 alias를 echo하고, `title`은 `[고성] ...` 지역 접두어 형식, `region`은 광역자치단체 단위로 반환하며, `summary`/`requirements`는 중복 원문 대신 결제 금액별 할인 조건과 발급·입실 기간을 항목화한다. 저장, 삭제, 일정 연결은 내부적으로 canonical `policies.id`를 사용해 중복 저장/중복 연결을 방지하고, mutation 응답의 `policyId`는 요청 alias를 echo한다. migration gap 동안 상세 조회만 기존 raw `external_source_records` fallback을 사용할 수 있지만, 목록/추천/저장/일정 연결 경로는 정규화된 `policies` 기준이다. raw fallback은 active/fresh `local_half_trip`, `stay_discount`만 허용하며, `regional_benefit`, `traffic_benefit`, non-active/non-fresh source는 상세 404와 동일하게 처리한다. `local_half_trip`의 지역별 상세 URL이 확인된 경우 `officialUrl`은 generic `tour50.do`보다 해당 지역 안내/신청 페이지를 우선하며, 제목은 `[합천] 대한민국 반값여행 지원`처럼 지자체명을 대괄호 접두어로 표시한다.
+정책 상세. `policies.status != "active"`인 정책은 기존 행을 보존하더라도 public 상세에서 404로 처리한다. `travelmonth-{externalSourceRecordId}` slug는 정규화된 TravelMonth 정책 상세로 해석한다. 기존 `dgtour-{city}-{n}` 상세 slug가 같은 지자체의 승격된 `local_half_trip` 정책과 중복되면 `307`로 최신 `/api/policies/travelmonth-{externalSourceRecordId}`에 리다이렉트해 구버전 상세 내용이 다시 노출되지 않게 한다. 단, 활성 `dgtour-*` 정책이 `digital_tourism_card`처럼 반값여행이 아닌 별도 공식 디지털 관광주민증 정책으로 정리되어 있으면 redirect하지 않고 `[지역명] 디지털 관광주민증 혜택` 상세를 반환한다. `stay-discount-{sidoSlug}-{citySlug}` slug는 숙박세일 canonical 정책 상세로 해석하되 응답의 `id`, `slug`는 요청 alias를 echo하고, `title`은 `[고성] ...` 지역 접두어 형식, `region`은 광역자치단체 단위로 반환한다. 숙박세일 `requirements`는 `structuredDetail.applicationTarget`에서만 파생되며, alias 상세의 `applicationTarget` 첫 항목은 요청 지역명으로 치환한다. 결제 금액별 할인은 `supportContent`, 발급·입실 기간은 `periods`, 제출 서류 없음은 `requiredDocuments`, 선착순/조기 종료/공식 안내 최종 확인은 `notes`의 별도 구조화 섹션으로 반환한다. 저장, 삭제, 일정 연결은 내부적으로 canonical `policies.id`를 사용해 중복 저장/중복 연결을 방지하고, mutation 응답의 `policyId`는 요청 alias를 echo한다. migration gap 동안 상세 조회만 기존 raw `external_source_records` fallback을 사용할 수 있지만, 목록/추천/저장/일정 연결 경로는 정규화된 `policies` 기준이다. raw fallback은 active/fresh `local_half_trip`, `stay_discount`만 허용하며, `regional_benefit`, `traffic_benefit`, non-active/non-fresh source는 상세 404와 동일하게 처리한다. `local_half_trip`의 지역별 상세 URL이 확인된 경우 `officialUrl`은 generic `tour50.do`보다 해당 지역 안내/신청 페이지를 우선하며, 제목은 `[합천] 대한민국 반값여행 지원`처럼 지자체명을 대괄호 접두어로 표시한다.
 
 **Response 200** → `Policy`
 
@@ -1116,7 +1135,7 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
 
 ### GET /trips/{trip_id}/recommendations
 
-Returns additional AI place candidates for the trip. The backend treats `(sourceProvider, externalPlaceId)` as the durable external identity, then applies a conservative same-provider `externalPlaceId` and normalized-title duplicate exclusion for existing MVP data. Kakao-backed candidates include official Kakao Local API map metadata when available; ratings/reviews are not exposed because the official API response does not provide those fields. When official Kakao data can supply enough non-duplicate places, the response targets at least 10 candidates with a useful mix of attractions, food, and stays; sparse categories are backfilled from other official candidates instead of creating synthetic places. New trip creation no longer seeds saved summaries. `sourceType="savedSummary"` is reserved for legacy rows or future explicit recommendation-persistence flows, not for fresh `POST /api/trips` results.
+Returns additional AI place candidates for the trip. The backend treats `(sourceProvider, externalPlaceId)` as the durable external identity, then applies a conservative same-provider `externalPlaceId` and normalized-title duplicate exclusion for existing MVP data. Kakao-backed candidates include official Kakao Local API map metadata when available; ratings/reviews are not exposed because the official API response does not provide those fields. When official Kakao data can supply enough non-duplicate places, the response targets at least 10 candidates with a useful mix of attractions, food, and stays; sparse categories are backfilled from other official candidates instead of creating synthetic places. The endpoint returns dynamic `sourceType="freshCandidate"` items first and reads `recommendations.result` only when no fresh candidate is available. New trip creation does not seed saved summaries. `sourceType="savedSummary"` is reserved for existing persisted rows or a future explicit recommendation-persistence contract. The current live row is a development-seed specimen, not proven production legacy history. No runtime writer, TTL, or purge is added until that product contract exists.
 
 Additional `Recommendation` fields:
 - `id`: string | null
@@ -1329,14 +1348,14 @@ AI 추천 장소 목록 조회.
 | title | string | 정책명 |
 | org | string | 주관 기관 |
 | region | string | 적용 지역 |
-| deadline | string | 마감일 |
+| deadline | string | 대표 마감일. ISO 날짜 문자열은 안전한 대표 마감일, 빈 문자열(`""`)은 안전한 대표 마감일 없음/확인 필요 |
 | amount | string | 혜택 금액 표시 |
 | summary | string | 요약 |
 | match | number | 매칭 점수 (0~100) |
 | category | string | `"교통" \| "숙박" \| "여행상품" \| "지역할인" \| "이벤트" \| "기타"` |
 | requirements | string[] | 신청 조건 목록. `structuredDetail`이 없는 legacy/simple fallback 재료이며, 수집 정책 상세에서 `structuredDetail` 섹션이 비어 있지 않으면 frontend가 이 값을 다시 의미 추론해 같은 섹션을 재구성하지 않는다. |
-| documents | string[] | 필요 서류 목록. `structuredDetail.documents`가 비어 있거나 없는 경우에만 문서 섹션 fallback으로 사용한다. |
-| structuredDetail | PolicyStructuredDetail \| null | 사용자 정책 상세 화면용 구조화 JSON. 외부 수집 정책 상세의 primary screen-ready contract다. 섹션별로 비어 있지 않은 `benefits`, `conditions`, `periods`, `links`, `documents`, `notices`를 우선 렌더링하고, 해당 섹션이 비어 있거나 없는 경우에만 기존 `summary`/`requirements`/`documents`/기간 fallback을 사용한다. `links.url`은 `http://` 또는 `https://`만 public 화면에 노출한다. raw 수집 JSON이 아니다. |
+| documents | string[] | 필요 서류 목록. `structuredDetail.requiredDocuments`가 비어 있거나 없는 경우에만 문서 섹션 fallback으로 사용한다. |
+| structuredDetail | PolicyStructuredDetail \| null | 사용자 정책 상세 화면용 구조화 JSON. 외부 수집 정책 상세의 primary screen-ready contract다. 섹션별로 비어 있지 않은 `supportContent`, `periods`, `applicationTarget`, `requiredDocuments`, `notes`를 우선 렌더링하고, 해당 섹션이 비어 있거나 없는 경우에만 기존 `summary`/`requirements`/`documents`/기간 fallback을 사용한다. 공식 링크는 top-level `officialUrl`/`applyUrl`로만 노출한다. raw 수집 JSON이 아니다. |
 | officialUrl | string \| null | 공식 안내 URL. 사용자 화면 CTA 라벨은 `혜택 안내 보기` |
 | applyUrl | string \| null | 신청 URL |
 | sourceType | string | `"internal"` \| `"external"`; 생략 시 internal로 간주 |
@@ -1542,3 +1561,23 @@ Existing trips can return `travelAreaId: null`.
   - `latestFetchedAt`
 
 Admin policy list items additionally expose `sourceCategory` and `sourceLabel` for minimal source identification in `/admin/policies`. Public policy DTOs are unchanged.
+
+## Admin audit data minimization
+
+- `GET /api/admin/audit-logs` remains bearer-authenticated and admin-only. Its
+  response shape is unchanged.
+- New `user.update`, `policy.create`, and `policy.update` writes use a central
+  entity/action allowlist. Update rows contain only fields whose normalized values
+  actually changed; no-op updates do not create an audit row.
+- `beforeJson` and `afterJson` never receive full user/policy snapshots, target
+  email, arbitrary ORM/request serialization, password/hash, token, OTP/code,
+  cookie/session, secret/API key, OAuth/provider identifiers, or raw source fields.
+  Nested forbidden keys are removed and secret-like allowed-field values are
+  redacted.
+- `summary` uses stable `action target=<id>` text and never interpolates target
+  email, policy title, or other arbitrary text. Actor attribution remains in the
+  existing `adminUserId` and `adminEmail` response fields.
+- Historical rows are not rewritten. Retention or deletion requires a separate
+  owner-approved policy. Public policy/list/detail/recommendation DTOs and the
+  external-source admin summary never expose `raw_list_text`, `raw_detail_text`,
+  or `raw_payload`.

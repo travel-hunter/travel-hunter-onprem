@@ -42,15 +42,15 @@ export type PolicyStructuredDetailItem = {
   url?: string;
   startDate?: string;
   endDate?: string;
+  type?: string;
 };
 
 export type PolicyStructuredDetail = {
-  benefits: PolicyStructuredDetailItem[];
-  conditions: PolicyStructuredDetailItem[];
+  supportContent: PolicyStructuredDetailItem[];
   periods: PolicyStructuredDetailItem[];
-  links: PolicyStructuredDetailItem[];
-  documents: PolicyStructuredDetailItem[];
-  notices: PolicyStructuredDetailItem[];
+  applicationTarget: PolicyStructuredDetailItem[];
+  requiredDocuments: PolicyStructuredDetailItem[];
+  notes: PolicyStructuredDetailItem[];
 };
 
 export type Policy = {

@@ -138,8 +138,41 @@ def test_parse_ktostay_population_decline_areas_and_common_fields() -> None:
     assert "참여 온라인 여행사" in str(payload["usageMethod"])
     assert len(payload["discountTiers"]) == 4
     assert "14만원 이상" in str(payload["discountTiers"][-1])
-    assert record.contact_text is not None
-    assert "할인혜택" in record.contact_text
+    assert record.contact_text is None
+
+
+def test_parse_ktostay_keeps_typed_evidence_without_rebuilding_contact_text() -> None:
+    fetched_at = datetime(2026, 6, 16, tzinfo=UTC)
+
+    first = parse_stay_discount_benefits(
+        KTOSTAY_HTML,
+        collected_page_url="https://ktostay.visitkorea.or.kr/",
+        fetched_at=fetched_at,
+        today=date(2026, 6, 16),
+    )[0]
+    second = parse_stay_discount_benefits(
+        KTOSTAY_HTML,
+        collected_page_url="https://ktostay.visitkorea.or.kr/",
+        fetched_at=fetched_at,
+        today=date(2026, 6, 16),
+    )[0]
+
+    assert first.contact_text is second.contact_text is None
+    assert first.raw_payload == second.raw_payload
+    assert first.raw_list_text == second.raw_list_text
+    assert first.raw_detail_text == second.raw_detail_text
+    assert first.detail_url == second.detail_url == "https://ktostay.visitkorea.or.kr/"
+    assert len(first.raw_payload["discountTiers"]) == 4
+    assert "7만원 미만" in first.raw_payload["discountTiers"][0]
+    assert "2만원 할인" in first.raw_payload["discountTiers"][0]
+    assert "14만원 이상" in first.raw_payload["discountTiers"][-1]
+    assert "7만원 할인" in first.raw_payload["discountTiers"][-1]
+    assert first.raw_payload["issuePeriod"].startswith("2026.6.11")
+    assert first.raw_payload["stayPeriod"].startswith("2026. 6.11")
+    assert first.raw_payload["usageArea"]
+    assert first.raw_payload["usagePlace"]
+    assert first.raw_payload["usageMethod"]
+    assert first.raw_payload["earlyCloseWarning"] is True
 
 
 def test_parse_stay_discount_benefits_uses_fallback_text_record() -> None:

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date, datetime
+import logging
+
 import app.models  # noqa: F401
 import pytest
 from fastapi.testclient import TestClient
@@ -9,10 +12,18 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.routes import policies as policy_routes
 from app.db.base import Base
+from app.data.stay_discount_campaign import STAY_DISCOUNT_CAMPAIGN_KEY
 from app.main import app
-from app.models import ExternalSourceRecord, Policy
+from app.models import (
+    ExternalSourceRecord,
+    Policy,
+    Trip,
+    TripPolicy,
+    User,
+    UserSavedPolicy,
+)
 from app.repositories.external_sources import upsert_external_source_records
-from app.repositories.policies import get_policy_by_slug
+from app.repositories.policies import get_policy_by_slug, get_policy_by_slug_any_status
 from app.schemas.external_sources import ExternalBenefitSource
 
 client = TestClient(app)
@@ -59,6 +70,46 @@ def make_source(**overrides) -> ExternalBenefitSource:
     return ExternalBenefitSource(**data)
 
 
+def make_external_source_record(**overrides) -> ExternalSourceRecord:
+    data = {
+        "id": 20,
+        "source_name": "여행가는 달",
+        "source_type": "official_campaign",
+        "source_url": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+        "source_category": "local_half_trip",
+        "external_id": "tour50-20",
+        "canonical_key": "tour50-20",
+        "detail_url": "https://example.com/detail",
+        "collected_page_url": "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+        "title": "대한민국 구석구석 반값여행",
+        "organizer_text": "한국관광공사",
+        "organizers": ["한국관광공사"],
+        "region": "경남",
+        "city": "거창",
+        "is_nationwide": False,
+        "status_text": "신청접수중",
+        "status": "active",
+        "benefit_text": "대한민국 구석구석 반값여행",
+        "benefit_value_text": "여행비 50% 환급",
+        "extracted_amount_krw": 100000,
+        "extracted_discount_percent": 50,
+        "benefit_value_type": "refund",
+        "tags": [],
+        "contact_text": None,
+        "inferred_travel_styles": [],
+        "confidence": 90,
+        "field_completeness": 90,
+        "raw_list_text": "대한민국 구석구석 반값여행",
+        "raw_detail_text": "legacy polluted detail",
+        "raw_payload": {"notes": "영수증과 인증사진이 섞인 legacy 원문"},
+        "last_fetched_at": datetime(2026, 7, 16, 9, 0, 0),
+        "last_verified_at": datetime(2026, 7, 16, 10, 0, 0),
+        "freshness_status": "fresh",
+    }
+    data.update(overrides)
+    return ExternalSourceRecord(**data)
+
+
 @pytest.fixture
 def db() -> Session:
     engine = create_engine(
@@ -82,6 +133,27 @@ def db() -> Session:
     finally:
         for column, original_type in zip(patched_columns, original_types, strict=True):
             column.type = original_type
+
+
+def _policy_identity_state(db: Session) -> dict[str, object]:
+    return {
+        "policies": [
+            (
+                policy.id,
+                policy.slug,
+                policy.status,
+                policy.external_source_record_id,
+                policy.title,
+            )
+            for policy in db.query(Policy).order_by(Policy.id)
+        ],
+        "sources": [
+            (record.id, record.canonical_key, record.logical_key)
+            for record in db.query(ExternalSourceRecord).order_by(ExternalSourceRecord.id)
+        ],
+        "saved": [(row.user_id, row.policy_id) for row in db.query(UserSavedPolicy)],
+        "trip": [(row.trip_id, row.policy_id) for row in db.query(TripPolicy)],
+    }
 
 
 def test_promotes_active_fresh_external_record_to_policy(db: Session) -> None:
@@ -114,12 +186,317 @@ def test_promotes_active_fresh_external_record_to_policy(db: Session) -> None:
     assert policy.source_category == "local_half_trip"
     assert policy.verification_status == "fresh"
     assert policy.structured_detail is not None
-    assert policy.structured_detail["benefits"][0]["description"] == "Up to 50,000 KRW"
-    assert policy.structured_detail["conditions"][0]["description"] == "공식 혜택 안내에서 조건을 확인하세요."
-    assert policy.structured_detail["links"][0]["url"] == "https://example.com/detail"
+    assert policy.structured_detail["supportContent"][0]["description"] == "Up to 50,000 KRW"
+    assert policy.structured_detail["applicationTarget"] == []
+    assert "links" not in policy.structured_detail
 
     assert policy_to_api(policy)["sourceType"] == "external"
+    assert policy_to_api(policy)["requirements"] == ["공식 혜택 안내에서 조건을 확인하세요."]
 
+
+def test_local_half_trip_five_manifest_backfill_preserves_identity_and_hides_unverified(
+    db: Session,
+) -> None:
+    db.add_all(
+        [
+            make_external_source_record(id=20, external_id="tour50-20", canonical_key="tour50-20"),
+            make_external_source_record(
+                id=32,
+                external_id="tour50-32",
+                canonical_key="tour50-32",
+                city="고창",
+                region="전북",
+                status_text="마감",
+            ),
+        ]
+    )
+    existing_public = Policy(
+        id=920,
+        slug="travelmonth-20",
+        title="legacy public half trip",
+        organization="legacy",
+        policy_type="지역할인",
+        description="legacy",
+        benefit_detail="legacy",
+        target_condition="방문 인증사진 및 영수증",
+        structured_detail={"conditions": [{"title": "조건", "description": "방문 인증사진 및 영수증"}]},
+        region="경남",
+        source_category="local_half_trip",
+        external_source_record_id=20,
+    )
+    existing_unverified = Policy(
+        id=932,
+        slug="travelmonth-32",
+        title="legacy unverified half trip",
+        organization="legacy",
+        policy_type="지역할인",
+        description="legacy",
+        benefit_detail="legacy",
+        target_condition="결제내역과 숙박이용확인서",
+        structured_detail={"conditions": [{"title": "조건", "description": "결제내역과 숙박이용확인서"}]},
+        region="전북",
+        source_category="local_half_trip",
+        external_source_record_id=32,
+    )
+    frozen_dgtour = Policy(
+        id=904,
+        slug="dgtour-거창-4",
+        title="거창 legacy dgtour",
+        organization="legacy",
+        policy_type="지역할인",
+        description="legacy",
+        benefit_detail="legacy",
+        target_condition="legacy target",
+        region="경남",
+        status="active",
+        verification_status="verified",
+    )
+    db.add_all([existing_public, existing_unverified, frozen_dgtour])
+    db.flush()
+
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+    from app.services.policies import policy_to_api
+
+    promote_external_benefits_to_policies(db)
+
+    public_policy = get_policy_by_slug(db, "travelmonth-20")
+    hidden_policy = get_policy_by_slug_any_status(db, "travelmonth-32")
+    legacy_policy = get_policy_by_slug(db, "dgtour-거창-4")
+    assert public_policy is not None
+    assert hidden_policy is not None
+    assert legacy_policy is not None
+    assert (public_policy.id, public_policy.slug, public_policy.external_source_record_id) == (
+        920,
+        "travelmonth-20",
+        20,
+    )
+    assert public_policy.status == "active"
+    assert public_policy.verification_status == "fresh"
+    assert "영수증" not in public_policy.target_condition
+    assert "인증사진" not in public_policy.target_condition
+    public_payload = policy_to_api(public_policy)
+    assert public_payload["requirements"] == [
+        "거창을 여행하고 싶은 타지역 거주 관광객으로, 관내 당일 또는 숙박 관광 일정을 사전 신청하여 승인받은 사람.",
+        "거창군, 김천시, 함양군, 산청군, 합천군, 무주군 거주자는 제외한다.",
+    ]
+    public_target_text = " ".join(
+        item["description"] for item in public_payload["structuredDetail"]["applicationTarget"]
+    )
+    public_document_text = " ".join(
+        item["description"] for item in public_payload["structuredDetail"]["requiredDocuments"]
+    )
+    assert "영수증" not in public_target_text
+    assert "인증 사진" not in public_target_text
+    assert "영수증" in public_document_text
+    assert "인증 사진" in public_document_text
+
+    assert (hidden_policy.id, hidden_policy.slug, hidden_policy.external_source_record_id) == (
+        932,
+        "travelmonth-32",
+        32,
+    )
+    assert hidden_policy.status == "hidden"
+    assert hidden_policy.verification_status == "needs_review"
+    assert "결제내역" not in hidden_policy.target_condition
+    assert "숙박이용확인서" not in hidden_policy.target_condition
+    assert legacy_policy.status == "active"
+    assert legacy_policy.target_condition == "legacy target"
+
+
+def test_unknown_source_mapper_preserves_raw_evidence_but_fails_closed() -> None:
+    composite = "할인혜택과 발급기간, 입실기간, 사용방법을 합친 긴 원문 상세"
+    record = ExternalSourceRecord(
+        id=999,
+        source_name="미지원 지역 혜택",
+        source_type="official_campaign",
+        source_url="https://example.com/source",
+        source_category="regional_benefit",
+        external_id="future-unknown",
+        canonical_key="future-unknown",
+        detail_url="https://example.com/detail",
+        collected_page_url="https://example.com/detail",
+        title="미지원 지역 혜택",
+        organizer_text="공식 주관기관",
+        organizers=["공식 주관기관"],
+        region="부산",
+        is_nationwide=False,
+        status="active",
+        benefit_text="공식 혜택 원문",
+        benefit_value_text=None,
+        benefit_value_type="text",
+        tags=[],
+        contact_text=composite,
+        inferred_travel_styles=[],
+        confidence=90,
+        field_completeness=90,
+        raw_list_text="미지원 지역 혜택",
+        raw_detail_text=composite,
+        raw_payload={"untypedDetail": composite},
+        last_fetched_at=datetime(2026, 5, 22, 9, 0, 0),
+        freshness_status="fresh",
+    )
+    policy = Policy(region="전국", status="active")
+
+    from app.services.policy_normalization import _assign_policy_from_external_record
+    from app.services.policies import policy_to_api
+
+    _assign_policy_from_external_record(policy, record)
+
+    assert record.contact_text == composite
+    assert record.raw_detail_text == composite
+    assert record.raw_payload == {"untypedDetail": composite}
+    assert policy.target_condition is None
+    assert policy.structured_detail == {
+        "supportContent": [],
+        "applicationTarget": [],
+        "periods": [],
+        "requiredDocuments": [],
+        "notes": [],
+    }
+    payload = policy_to_api(policy)
+    assert payload["structuredDetail"] is None
+    assert payload["requirements"] == []
+
+
+@pytest.mark.parametrize(
+    ("source_category", "raw_payload", "expected_status"),
+    [
+        ("local_half_trip", {"notes": "지정관광지 방문"}, "mapped"),
+        ("regional_benefit", {"untypedDetail": "민감 원문"}, "missing"),
+        ("stay_discount", {"discountTiers": ["해석할 수 없는 혜택"]}, "invalid"),
+    ],
+)
+def test_semantic_mapping_log_is_private_and_safe(
+    caplog: pytest.LogCaptureFixture,
+    source_category: str,
+    raw_payload: dict[str, object],
+    expected_status: str,
+) -> None:
+    record = ExternalSourceRecord(
+        id=999,
+        source_name="비공개 원문 출처",
+        source_type="official_campaign",
+        source_category=source_category,
+        external_id="private-external-id",
+        canonical_key="private-canonical-key",
+        detail_url="https://secret.example/private-path",
+        title="정규화 로그 테스트",
+        status="active",
+        benefit_text="민감 원문 혜택",
+        raw_detail_text="로그에 남으면 안 되는 민감 원문",
+        raw_payload=raw_payload,
+        freshness_status="fresh",
+    )
+    policy = Policy(region="전국", status="active")
+
+    from app.services.policy_normalization import _assign_policy_from_external_record
+
+    with caplog.at_level(logging.INFO, logger="app.services.policy_normalization"):
+        _assign_policy_from_external_record(policy, record)
+
+    event = next(item for item in caplog.records if item.message == "policy_semantic_mapping")
+    assert event.source_category == source_category
+    assert event.mapper_status == expected_status
+    assert len(event.record_identity_hash) == 16
+    assert set(event.section_counts) == {
+        "supportContent",
+        "applicationTarget",
+        "periods",
+        "requiredDocuments",
+        "notes",
+    }
+    rendered = caplog.text
+    assert "민감 원문" not in rendered
+    assert "secret.example" not in rendered
+    assert "private-external-id" not in rendered
+    assert "private-canonical-key" not in rendered
+
+
+
+def test_promotion_uses_safe_representative_deadline_and_preserves_typed_periods(
+    db: Session,
+) -> None:
+    rows = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                title="Typed period half trip",
+                canonical_key="typed-period-half-trip",
+                external_id="typed-period-half-trip",
+                start_date=None,
+                end_date=None,
+                raw_payload={
+                    "applicationPeriod": "2026.06.10 ~ 2026.08.31",
+                    "tripPeriod": "2026.06.10 ~ 2026.12.31",
+                },
+            )
+        ],
+    )
+
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+    from app.services.policies import policy_to_api
+
+    promote_external_benefits_to_policies(db)
+
+    policy = get_policy_by_slug(db, f"travelmonth-{rows[0].id}")
+    assert policy is not None
+    assert policy.end_date.isoformat() == "2026-08-31"
+    api_policy = policy_to_api(policy)
+    assert api_policy["deadline"] == "2026-08-31"
+    assert api_policy["structuredDetail"]["periods"] == [
+        {
+            "title": "신청 기간",
+            "description": "신청 기간: 2026.06.10 ~ 2026.08.31",
+            "type": "application",
+            "startDate": "2026-06-10",
+            "endDate": "2026-08-31",
+        },
+        {
+            "title": "여행 기간",
+            "description": "여행 기간: 2026.06.10 ~ 2026.12.31",
+            "type": "usage",
+            "startDate": "2026-06-10",
+            "endDate": "2026-12-31",
+        },
+    ]
+
+
+def test_promotion_leaves_unsafe_representative_deadline_empty(
+    db: Session,
+) -> None:
+    rows = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                title="Unsafe default-like half trip",
+                canonical_key="unsafe-default-like-half-trip",
+                external_id="unsafe-default-like-half-trip",
+                start_date=None,
+                end_date=date(2026, 12, 31),
+                raw_payload={"periodText": "12.31까지"},
+            )
+        ],
+    )
+
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+    from app.services.policies import policy_to_api
+
+    promote_external_benefits_to_policies(db)
+
+    policy = get_policy_by_slug(db, f"travelmonth-{rows[0].id}")
+    assert policy is not None
+    assert policy.start_date is None
+    assert policy.end_date is None
+    api_policy = policy_to_api(policy)
+    assert api_policy["deadline"] == ""
+    assert api_policy["structuredDetail"]["periods"] == [
+        {
+            "title": "기간",
+            "description": "12.31까지",
+            "type": "unknown",
+            "endDate": "2026-12-31",
+        }
+    ]
 
 def test_promotes_scheduled_local_half_trip_to_public_policy(db: Session) -> None:
     rows = upsert_external_source_records(
@@ -162,6 +539,402 @@ def test_promotion_is_idempotent_by_external_source_record_id(db: Session) -> No
     assert first.promoted_count == 1
     assert second.promoted_count == 1
     assert len(db.query(Policy).filter(Policy.external_source_record_id == rows[0].id).all()) == 1
+
+
+def test_post_0027_stay_promotion_preserves_public_slug_and_hidden_snapshot(db: Session) -> None:
+    legacy_record, current_record = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name="대한민국 숙박세일 페스타",
+                source_category="stay_discount",
+                canonical_key="legacy-snapshot",
+                logical_key="stay-discount:2026-summer",
+                canonical_key_version="snapshot-v1",
+                end_date=date(2026, 7, 31),
+            ),
+            make_source(
+                source_name="대한민국 숙박세일 페스타",
+                source_category="stay_discount",
+                canonical_key="current-snapshot",
+                logical_key="stay-discount:2026-summer",
+                canonical_key_version="snapshot-v1",
+                title="Current stay campaign",
+                end_date=date(2026, 8, 17),
+            ),
+        ],
+    )
+    survivor = Policy(
+        id=23,
+        slug="travelmonth-33",
+        title="Current stay campaign",
+        region="전국",
+        status="active",
+        source_category="stay_discount",
+        external_source_record_id=current_record.id,
+    )
+    retired = Policy(
+        id=26,
+        slug="travelmonth-35",
+        title="Current stay campaign",
+        region="전국",
+        status="hidden",
+        source_category="stay_discount",
+        external_source_record_id=None,
+    )
+    db.add_all([survivor, retired])
+    db.flush()
+
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    promote_external_benefits_to_policies(db)
+    promote_external_benefits_to_policies(db)
+
+    assert survivor.slug == "travelmonth-33"
+    assert survivor.external_source_record_id == current_record.id
+    assert survivor.title == "Current stay campaign"
+    assert survivor.status == "active"
+    assert retired.slug == "travelmonth-35"
+    assert retired.external_source_record_id is None
+    assert retired.status == "hidden"
+    assert legacy_record.id != current_record.id
+
+
+def test_post_0028_single_snapshot_promotes_new_stay_snapshot_into_policy_23(
+    db: Session,
+) -> None:
+    legacy_record, current_record = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name="대한민국 숙박세일 페스타",
+                source_category="stay_discount",
+                canonical_key="legacy-snapshot",
+                logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
+                canonical_key_version="snapshot-v1",
+                end_date=date(2026, 7, 31),
+            ),
+            make_source(
+                source_name="대한민국 숙박세일 페스타",
+                source_category="stay_discount",
+                canonical_key="current-snapshot",
+                logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
+                canonical_key_version="snapshot-v1",
+                title="Current stay campaign",
+                end_date=date(2026, 8, 17),
+            ),
+        ],
+    )
+    user = User(id=1, email="stay-owner@example.com", nickname="stay-owner")
+    trip = Trip(
+        id=1,
+        owner_id=1,
+        title="Stay identity trip",
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 2),
+    )
+    survivor = Policy(
+        id=23,
+        slug=f"travelmonth-{legacy_record.id}",
+        title="Legacy stay campaign",
+        region="전국",
+        status="active",
+        source_category="stay_discount",
+        external_source_record_id=legacy_record.id,
+        source_canonical_key=legacy_record.canonical_key,
+    )
+    db.add_all([user, trip, survivor])
+    db.flush()
+    db.add_all(
+        [
+            TripPolicy(id=1, trip_id=1, policy_id=23),
+            UserSavedPolicy(id=1, user_id=1, policy_id=23),
+        ]
+    )
+    db.flush()
+
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    promote_external_benefits_to_policies(db)
+    promote_external_benefits_to_policies(db)
+
+    stay_policies = db.query(Policy).filter(Policy.source_category == "stay_discount").all()
+    assert [(policy.id, policy.slug) for policy in stay_policies] == [
+        (23, f"travelmonth-{legacy_record.id}")
+    ]
+    assert survivor.external_source_record_id == current_record.id
+    assert survivor.source_canonical_key == current_record.canonical_key
+    assert survivor.title == "Current stay campaign"
+    assert survivor.status == "active"
+    assert db.query(Policy).filter(Policy.slug == f"travelmonth-{current_record.id}").count() == 0
+    assert db.query(TripPolicy).one().policy_id == 23
+    assert db.query(UserSavedPolicy).one().policy_id == 23
+
+
+def test_stay_logical_campaign_with_zero_policy_matches_creates_one_policy(
+    db: Session,
+) -> None:
+    record = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name="대한민국 숙박세일 페스타",
+                source_category="stay_discount",
+                canonical_key="zero-match-current",
+                logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
+                canonical_key_version="snapshot-v1",
+                end_date=date(2026, 8, 31),
+            )
+        ],
+    )[0]
+
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    result = promote_external_benefits_to_policies(db)
+
+    assert result.promoted_count == 1
+    assert [
+        (policy.slug, policy.external_source_record_id)
+        for policy in db.query(Policy).filter_by(source_category="stay_discount")
+    ] == [(f"travelmonth-{record.id}", record.id)]
+
+
+def test_stay_logical_campaign_with_one_policy_match_reuses_policy_23(
+    db: Session,
+) -> None:
+    legacy_record, current_record = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name="대한민국 숙박세일 페스타",
+                source_category="stay_discount",
+                canonical_key="one-match-legacy",
+                logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
+                canonical_key_version="snapshot-v1",
+                end_date=date(2026, 8, 17),
+            ),
+            make_source(
+                source_name="대한민국 숙박세일 페스타",
+                source_category="stay_discount",
+                canonical_key="one-match-current",
+                logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
+                canonical_key_version="snapshot-v1",
+                title="Current one-match stay campaign",
+                end_date=date(2026, 8, 31),
+            ),
+        ],
+    )
+    survivor = Policy(
+        id=23,
+        slug=f"travelmonth-{legacy_record.id}",
+        title="Legacy one-match stay campaign",
+        region="전국",
+        status="active",
+        source_category="stay_discount",
+        external_source_record_id=legacy_record.id,
+        source_canonical_key=legacy_record.canonical_key,
+    )
+    db.add(survivor)
+    db.flush()
+
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    promote_external_benefits_to_policies(db)
+
+    assert [(policy.id, policy.slug) for policy in db.query(Policy)] == [
+        (23, f"travelmonth-{legacy_record.id}")
+    ]
+    assert survivor.external_source_record_id == current_record.id
+    assert survivor.title == "Current one-match stay campaign"
+
+
+def test_stay_logical_campaign_with_multiple_policy_matches_fails_before_mutation(
+    db: Session,
+) -> None:
+    first_legacy, second_legacy, current_record = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name="대한민국 숙박세일 페스타",
+                source_category="stay_discount",
+                canonical_key="multiple-match-legacy-a",
+                logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
+                canonical_key_version="snapshot-v1",
+                end_date=date(2026, 7, 31),
+            ),
+            make_source(
+                source_name="대한민국 숙박세일 페스타",
+                source_category="stay_discount",
+                canonical_key="multiple-match-legacy-b",
+                logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
+                canonical_key_version="snapshot-v1",
+                end_date=date(2026, 8, 17),
+            ),
+            make_source(
+                source_name="대한민국 숙박세일 페스타",
+                source_category="stay_discount",
+                canonical_key="multiple-match-current",
+                logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
+                canonical_key_version="snapshot-v1",
+                title="Current multiple-match stay campaign",
+                end_date=date(2026, 8, 31),
+            ),
+        ],
+    )
+    user = User(id=1, email="multiple-match@example.com", nickname="multiple-match")
+    trip = Trip(
+        id=1,
+        owner_id=1,
+        title="Multiple-match invariant trip",
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 2),
+    )
+    first_policy = Policy(
+        id=23,
+        slug=f"travelmonth-{first_legacy.id}",
+        title="First legacy stay campaign",
+        region="전국",
+        status="active",
+        source_category="stay_discount",
+        external_source_record_id=first_legacy.id,
+        source_canonical_key=first_legacy.canonical_key,
+    )
+    second_policy = Policy(
+        id=26,
+        slug=f"travelmonth-{second_legacy.id}",
+        title="Second legacy stay campaign",
+        region="전국",
+        status="active",
+        source_category="stay_discount",
+        external_source_record_id=second_legacy.id,
+        source_canonical_key=second_legacy.canonical_key,
+    )
+    db.add_all([user, trip, first_policy, second_policy])
+    db.flush()
+    db.add_all(
+        [
+            TripPolicy(id=1, trip_id=1, policy_id=23),
+            UserSavedPolicy(id=1, user_id=1, policy_id=23),
+        ]
+    )
+    db.commit()
+
+    before = _policy_identity_state(db)
+
+    from app.services.policy_normalization import (
+        PolicyNormalizationError,
+        promote_external_benefits_to_policies,
+    )
+
+    with pytest.raises(
+        PolicyNormalizationError,
+        match="multiple active policies match stay logical campaign",
+    ):
+        promote_external_benefits_to_policies(db)
+    assert _policy_identity_state(db) == before
+    db.rollback()
+
+    after = _policy_identity_state(db)
+    assert after == before
+    assert first_policy.id == 23
+    assert current_record.id not in {policy[3] for policy in after["policies"]}
+
+
+def test_stay_duplicate_is_prevalidated_before_earlier_local_policy_mutation(
+    db: Session,
+) -> None:
+    local_record, first_legacy, second_legacy, current_record = (
+        upsert_external_source_records(
+            db,
+            [
+                make_source(
+                    title="Earlier local half-trip benefit",
+                    canonical_key="earlier-local-half-trip",
+                    external_id="earlier-local-half-trip",
+                ),
+                make_source(
+                    source_name="대한민국 숙박세일 페스타",
+                    source_category="stay_discount",
+                    canonical_key="prevalidation-legacy-a",
+                    logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
+                    canonical_key_version="snapshot-v1",
+                    end_date=date(2026, 7, 31),
+                ),
+                make_source(
+                    source_name="대한민국 숙박세일 페스타",
+                    source_category="stay_discount",
+                    canonical_key="prevalidation-legacy-b",
+                    logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
+                    canonical_key_version="snapshot-v1",
+                    end_date=date(2026, 8, 17),
+                ),
+                make_source(
+                    source_name="대한민국 숙박세일 페스타",
+                    source_category="stay_discount",
+                    canonical_key="prevalidation-current",
+                    logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
+                    canonical_key_version="snapshot-v1",
+                    title="Current prevalidation stay campaign",
+                    end_date=date(2026, 8, 31),
+                ),
+            ],
+        )
+    )
+    user = User(id=1, email="prevalidation@example.com", nickname="prevalidation")
+    trip = Trip(
+        id=1,
+        owner_id=1,
+        title="Prevalidation invariant trip",
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 2),
+    )
+    first_policy = Policy(
+        id=23,
+        slug=f"travelmonth-{first_legacy.id}",
+        title="First prevalidation stay campaign",
+        region="전국",
+        status="active",
+        source_category="stay_discount",
+        external_source_record_id=first_legacy.id,
+        source_canonical_key=first_legacy.canonical_key,
+    )
+    second_policy = Policy(
+        id=26,
+        slug=f"travelmonth-{second_legacy.id}",
+        title="Second prevalidation stay campaign",
+        region="전국",
+        status="active",
+        source_category="stay_discount",
+        external_source_record_id=second_legacy.id,
+        source_canonical_key=second_legacy.canonical_key,
+    )
+    db.add_all([user, trip, first_policy, second_policy])
+    db.flush()
+    db.add_all(
+        [
+            TripPolicy(id=1, trip_id=1, policy_id=23),
+            UserSavedPolicy(id=1, user_id=1, policy_id=23),
+        ]
+    )
+    db.commit()
+    before = _policy_identity_state(db)
+
+    from app.services.policy_normalization import (
+        PolicyNormalizationError,
+        promote_external_benefits_to_policies,
+    )
+
+    with pytest.raises(
+        PolicyNormalizationError,
+        match="multiple active policies match stay logical campaign",
+    ):
+        promote_external_benefits_to_policies(db)
+
+    assert not db.new
+    assert _policy_identity_state(db) == before
+    db.rollback()
+    assert _policy_identity_state(db) == before
+    assert local_record.id < current_record.id
 
 
 def test_local_half_trip_uses_usage_condition_instead_of_contact_phone(db: Session) -> None:
@@ -236,32 +1009,32 @@ def test_local_half_trip_builds_semantic_structured_detail_for_gangjin(
     assert policy is not None
     assert policy.target_condition == combined_detail
     assert policy.structured_detail is not None
-    assert [item["description"] for item in policy.structured_detail["conditions"]] == [
+    assert [item["description"] for item in policy.structured_detail["applicationTarget"]] == [
         "강진군 관광지 2개소 이상 방문",
         "모바일 강진사랑상품권(Chak)으로 결제",
     ]
-    assert [item["description"] for item in policy.structured_detail["documents"]] == [
+    assert [item["description"] for item in policy.structured_detail["requiredDocuments"]] == [
         "거래내역(영수증)",
     ]
-    assert [item["description"] for item in policy.structured_detail["notices"]] == [
+    assert [item["description"] for item in policy.structured_detail["notes"]] == [
         "홈페이지 공지사항(고시공고) 필독",
     ]
     api_policy = policy_to_api(policy)
-    assert api_policy["structuredDetail"]["conditions"] == [
+    assert api_policy["structuredDetail"]["applicationTarget"] == [
         {"title": "혜택 적용 조건", "description": "강진군 관광지 2개소 이상 방문"},
         {"title": "혜택 적용 조건", "description": "모바일 강진사랑상품권(Chak)으로 결제"},
     ]
-    assert api_policy["structuredDetail"]["documents"] == [
+    assert api_policy["structuredDetail"]["requiredDocuments"] == [
         {"title": "필요 서류", "description": "거래내역(영수증)"}
     ]
-    assert api_policy["structuredDetail"]["notices"] == [
-        {"title": "확인 필요 사항", "description": "홈페이지 공지사항(고시공고) 필독"}
+    assert api_policy["structuredDetail"]["notes"] == [
+        {"title": "비고", "description": "홈페이지 공지사항(고시공고) 필독"}
     ]
     assert "거래내역(영수증)" not in [
-        item["description"] for item in api_policy["structuredDetail"]["conditions"]
+        item["description"] for item in api_policy["structuredDetail"]["applicationTarget"]
     ]
     assert "홈페이지 공지사항(고시공고) 필독" not in [
-        item["description"] for item in api_policy["structuredDetail"]["documents"]
+        item["description"] for item in api_policy["structuredDetail"]["requiredDocuments"]
     ]
 
 
@@ -310,7 +1083,7 @@ def test_local_half_trip_structured_detail_uses_source_record_fields_without_dup
     assert policy is not None
     api_policy = policy_to_api(policy)
     structured_detail = api_policy["structuredDetail"]
-    assert [item["description"] for item in structured_detail["conditions"]] == [
+    assert [item["description"] for item in structured_detail["applicationTarget"]] == [
         notes,
         "chak 앱(모바일 강진사랑상품권) 사용",
     ]
@@ -318,8 +1091,8 @@ def test_local_half_trip_structured_detail_uses_source_record_fields_without_dup
         "신청 기간: 2026.06.10-2026.08.31",
         "여행 기간: 6.10~8.31",
     ]
-    assert structured_detail["documents"] == []
-    assert structured_detail["notices"] == []
+    assert structured_detail["requiredDocuments"] == []
+    assert structured_detail["notes"] == []
 
 
 def test_local_half_trip_replaces_existing_phone_target_condition_on_backfill(db: Session) -> None:
@@ -409,16 +1182,17 @@ def test_local_half_trip_does_not_use_mixed_unlabeled_raw_detail_with_phone(db: 
         ],
     )
 
-    from app.services.policy_normalization import (
-        DEFAULT_TARGET_CONDITION,
-        promote_external_benefits_to_policies,
-    )
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+    from app.services.policies import policy_to_api
 
     promote_external_benefits_to_policies(db)
 
     policy = get_policy_by_slug(db, f"travelmonth-{rows[0].id}")
     assert policy is not None
-    assert policy.target_condition == DEFAULT_TARGET_CONDITION
+    assert policy.target_condition is None
+    assert policy.structured_detail is not None
+    assert policy.structured_detail["applicationTarget"] == []
+    assert policy_to_api(policy)["requirements"] == ["공식 혜택 안내에서 조건을 확인하세요."]
 
 
 def test_local_half_trip_uses_default_condition_when_only_contact_exists(db: Session) -> None:
@@ -436,16 +1210,17 @@ def test_local_half_trip_uses_default_condition_when_only_contact_exists(db: Ses
         ],
     )
 
-    from app.services.policy_normalization import (
-        DEFAULT_TARGET_CONDITION,
-        promote_external_benefits_to_policies,
-    )
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+    from app.services.policies import policy_to_api
 
     promote_external_benefits_to_policies(db)
 
     policy = get_policy_by_slug(db, f"travelmonth-{rows[0].id}")
     assert policy is not None
-    assert policy.target_condition == DEFAULT_TARGET_CONDITION
+    assert policy.target_condition is None
+    assert policy.structured_detail is not None
+    assert policy.structured_detail["applicationTarget"] == []
+    assert policy_to_api(policy)["requirements"] == ["공식 혜택 안내에서 조건을 확인하세요."]
 
 
 def test_promotion_reclassifies_existing_policy_type(db: Session) -> None:
@@ -512,6 +1287,7 @@ def test_promotes_active_fresh_stay_discount_as_lodging_policy(db: Session) -> N
                 collected_page_url="https://korean.visitkorea.or.kr/travelmonth/benefits/stay.do",
                 source_category="stay_discount",
                 canonical_key="stay-discount",
+                logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
                 external_id="stay-discount",
                 title="숙박세일 페스타 7만원 할인",
                 benefit_text="숙박상품 2/3/5/7만원 할인권",
@@ -874,6 +1650,46 @@ def test_promoting_local_half_trip_hides_legacy_dgtour_seed_policies(
     assert result.promoted_count == 1
     assert legacy_policy.status == "hidden"
     assert db.query(Policy).filter(Policy.slug.like("travelmonth-%")).one().status == "active"
+
+
+def test_frozen_reviewed_policy_is_excluded_from_normalizer_writers(db: Session) -> None:
+    record = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                canonical_key="frozen-hadong-source",
+                external_id="frozen-hadong-source",
+                title="Overwrite attempt",
+                region="경남",
+                city="하동",
+            )
+        ],
+    )[0]
+    policy = Policy(
+        slug="dgtour-하동-3",
+        title="Reviewed title",
+        organization="Reviewed org",
+        policy_type="지역할인",
+        description="Reviewed description",
+        benefit_detail="Reviewed benefit",
+        target_condition="Reviewed condition",
+        region="경남",
+        status="hidden",
+    )
+    db.add(policy)
+    db.flush()
+
+    from app.services.policy_normalization import (
+        _assign_policy_from_external_record,
+        _hide_legacy_dgtour_seed_policies,
+    )
+
+    _assign_policy_from_external_record(policy, record)
+    _hide_legacy_dgtour_seed_policies(db)
+
+    assert policy.title == "Reviewed title"
+    assert policy.status == "hidden"
+    assert policy.external_source_record_id is None
 
 
 def test_promoted_policy_is_exposed_by_list_and_detail_then_hidden_when_source_stales(

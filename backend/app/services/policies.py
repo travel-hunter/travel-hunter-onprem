@@ -21,7 +21,11 @@ from app.services.policy_semantics import (
     policy_url_fields_for_policy,
     requirement_items_for_policy,
 )
+from app.services.policy_periods import (
+    representative_deadline_from_payload,
+)
 from app.services.policy_structured_detail import structured_detail_for_api
+from app.services.policy_semantic_mapping import map_external_source_semantics
 
 
 LEGACY_CATEGORY_MAP = {
@@ -41,6 +45,26 @@ def _external_policy_category(record: ExternalSourceRecord) -> str:
     return classify_external_policy_category(record).category
 
 
+def _requirements_for_projection(
+    policy: PolicyModel,
+    structured_detail: dict[str, object] | None,
+) -> list[str]:
+    conditions = None
+    if isinstance(structured_detail, dict):
+        conditions = structured_detail.get("applicationTarget") or structured_detail.get("conditions")
+    if isinstance(conditions, list) and conditions:
+        return [
+            str(item.get("description"))
+            for item in conditions
+            if isinstance(item, dict) and item.get("description")
+        ]
+    if policy.source_category == "local_half_trip" and policy.external_source_record_id is not None:
+        return ["공식 혜택 안내에서 조건을 확인하세요."]
+    if policy.external_source_record_id is not None:
+        return []
+    return requirement_items_for_policy(policy)
+
+
 def policy_to_api(policy: PolicyModel) -> dict[str, object]:
     slug = policy.slug or str(policy.id)
     display = DISPLAY_OVERRIDES.get(slug, {})
@@ -53,6 +77,7 @@ def policy_to_api(policy: PolicyModel) -> dict[str, object]:
         policy.title,
         policy.source_category,
     )
+    structured_detail = structured_detail_for_api(policy)
 
     payload = {
         "id": slug,
@@ -67,14 +92,17 @@ def policy_to_api(policy: PolicyModel) -> dict[str, object]:
         "summary": policy.policy_comment or policy.description or "",
         "match": int(display.get("match", 90)),
         "category": category,
-        "requirements": requirement_items_for_policy(policy),
+        "requirements": _requirements_for_projection(policy, structured_detail),
         "documents": [document.document_name for document in policy.documents],
-        "structuredDetail": structured_detail_for_api(policy),
+        "structuredDetail": structured_detail,
         **policy_url_fields_for_policy(policy),
         "sourceType": source_type,
     }
     if stay_discount_aliases.is_stay_discount_canonical_policy(policy):
-        stay_discount_aliases.apply_detail_display_fields(payload)
+        stay_discount_aliases.apply_detail_display_fields(
+            payload,
+            benefit_amount=policy.benefit_amount,
+        )
     return payload
 
 
@@ -94,6 +122,7 @@ def _policy_to_stay_discount_alias_api(
             "sourceType": "external",
         }
     )
+    stay_discount_aliases.apply_alias_structured_detail(payload, alias_area)
     payload.pop("actionStatus", None)
     return payload
 
@@ -108,6 +137,7 @@ def _policy_detail_with_alias(
     payload["title"] = stay_discount_aliases.alias_title(policy.title, alias_area)
     payload["region"] = alias_area.sido
     payload["category"] = "숙박"
+    stay_discount_aliases.apply_alias_structured_detail(payload, alias_area)
     payload.pop("actionStatus", None)
     return payload
 
@@ -143,6 +173,24 @@ def external_source_record_to_policy_api(
         record.source_category,
         record.city,
     )
+    default_year = (
+        record.last_fetched_at.year if record.last_fetched_at is not None else 2026
+    )
+    raw_payload = record.raw_payload if isinstance(record.raw_payload, dict) else {}
+    representative_deadline = representative_deadline_from_payload(
+        raw_payload,
+        default_year=default_year,
+    )
+    semantic_mapping = map_external_source_semantics(record)
+    structured_detail = semantic_mapping.structured_detail
+    conditions = structured_detail["applicationTarget"]
+    requirements = [
+        str(item["description"])
+        for item in conditions
+        if item.get("description")
+    ]
+    if record.source_category == "local_half_trip" and not requirements:
+        requirements = ["공식 혜택 안내에서 조건을 확인하세요."]
 
     payload = {
         "id": external_policy_slug(record),
@@ -152,13 +200,16 @@ def external_source_record_to_policy_api(
         "title": title,
         "org": record.organizer_text or record.source_name,
         "region": record.region or "전국",
-        "deadline": record.end_date.isoformat() if record.end_date else "",
+        "deadline": representative_deadline.deadline.isoformat()
+        if representative_deadline.deadline
+        else "",
         "amount": amount,
         "summary": summary,
         "match": 80,
         "category": category,
-        "requirements": ["공식 안내에서 신청 조건을 확인하세요."],
-        "documents": ["혜택 안내 확인"],
+        "requirements": requirements,
+        "documents": [],
+        "structuredDetail": structured_detail if any(structured_detail.values()) else None,
         **policy_url_fields(
             apply_url=None,
             official_url=record.detail_url or record.collected_page_url,
@@ -178,8 +229,15 @@ def list_policies(db: Session | None = None) -> list[dict[str, object]]:
     if db is None:
         raise RuntimeError("DB session is required.")
     payloads: list[dict[str, object]] = []
-    for policy in policy_repository.list_policies(db):
+    policies = policy_repository.list_policies(db)
+    current_stay_policy = stay_discount_aliases.select_current_stay_discount_policy(
+        db,
+        [policy for policy in policies if stay_discount_aliases.is_stay_discount_canonical_policy(policy)],
+    )
+    for policy in policies:
         if stay_discount_aliases.is_stay_discount_canonical_policy(policy):
+            if policy is not current_stay_policy:
+                continue
             alias_areas = stay_discount_aliases.alias_areas_for_policy(db, policy)
             if alias_areas:
                 payloads.extend(
