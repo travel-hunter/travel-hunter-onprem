@@ -187,11 +187,17 @@ def test_promotes_active_fresh_external_record_to_policy(db: Session) -> None:
     assert policy.verification_status == "fresh"
     assert policy.structured_detail is not None
     assert policy.structured_detail["supportContent"][0]["description"] == "Up to 50,000 KRW"
-    assert policy.structured_detail["applicationTarget"] == []
+    assert any(
+        "반값여행 참여 혜택" in item["description"]
+        for item in policy.structured_detail["applicationTarget"]
+    )
+    assert any("영수증" in item["description"] for item in policy.structured_detail["requiredDocuments"])
+    assert any("공식 혜택 안내" in item["description"] for item in policy.structured_detail["notes"])
     assert "links" not in policy.structured_detail
 
-    assert policy_to_api(policy)["sourceType"] == "external"
-    assert policy_to_api(policy)["requirements"] == ["공식 혜택 안내에서 조건을 확인하세요."]
+    api_payload = policy_to_api(policy)
+    assert api_payload["sourceType"] == "external"
+    assert any("반값여행 참여 혜택" in item for item in api_payload["requirements"])
 
 
 def test_local_half_trip_five_manifest_backfill_preserves_identity_and_hides_unverified(
@@ -1009,27 +1015,41 @@ def test_local_half_trip_builds_semantic_structured_detail_for_gangjin(
     assert policy is not None
     assert policy.target_condition == combined_detail
     assert policy.structured_detail is not None
-    assert [item["description"] for item in policy.structured_detail["applicationTarget"]] == [
-        "강진군 관광지 2개소 이상 방문",
-        "모바일 강진사랑상품권(Chak)으로 결제",
+    application_targets = [item["description"] for item in policy.structured_detail["applicationTarget"]]
+    support_items = [item["description"] for item in policy.structured_detail["supportContent"]]
+    assert application_targets == [
+        "강진 지역 반값여행 참여 혜택을 신청하고, 공식 안내의 사전 신청·승인·이용 조건을 충족한 여행자"
     ]
-    assert [item["description"] for item in policy.structured_detail["requiredDocuments"]] == [
+    assert "강진군 관광지 2개소 이상 방문" in support_items
+    assert "모바일 강진사랑상품권(Chak)으로 결제" in support_items
+    assert [item["description"] for item in policy.structured_detail["requiredDocuments"]][:1] == [
         "거래내역(영수증)",
     ]
-    assert [item["description"] for item in policy.structured_detail["notes"]] == [
+    assert any("영수증" in item["description"] for item in policy.structured_detail["requiredDocuments"])
+    assert [item["description"] for item in policy.structured_detail["notes"]][:1] == [
         "홈페이지 공지사항(고시공고) 필독",
     ]
+    assert any("공식 혜택 안내" in item["description"] for item in policy.structured_detail["notes"])
     api_policy = policy_to_api(policy)
     assert api_policy["structuredDetail"]["applicationTarget"] == [
-        {"title": "혜택 적용 조건", "description": "강진군 관광지 2개소 이상 방문"},
-        {"title": "혜택 적용 조건", "description": "모바일 강진사랑상품권(Chak)으로 결제"},
+        {
+            "title": "신청대상",
+            "description": "강진 지역 반값여행 참여 혜택을 신청하고, 공식 안내의 사전 신청·승인·이용 조건을 충족한 여행자",
+        }
     ]
-    assert api_policy["structuredDetail"]["requiredDocuments"] == [
-        {"title": "필요 서류", "description": "거래내역(영수증)"}
-    ]
-    assert api_policy["structuredDetail"]["notes"] == [
-        {"title": "비고", "description": "홈페이지 공지사항(고시공고) 필독"}
-    ]
+    assert {"title": "혜택 적용 조건", "description": "강진군 관광지 2개소 이상 방문"} in api_policy["structuredDetail"]["supportContent"]
+    assert {"title": "혜택 적용 조건", "description": "모바일 강진사랑상품권(Chak)으로 결제"} in api_policy["structuredDetail"]["supportContent"]
+    assert api_policy["structuredDetail"]["requiredDocuments"][0] == {
+        "title": "필요 서류", "description": "거래내역(영수증)"
+    }
+    assert any(
+        item["title"] == "필요서류" and "지자체별 요구 증빙" in item["description"]
+        for item in api_policy["structuredDetail"]["requiredDocuments"]
+    )
+    assert api_policy["structuredDetail"]["notes"][0] == {
+        "title": "비고", "description": "홈페이지 공지사항(고시공고) 필독"
+    }
+    assert any("공식 혜택 안내" in item["description"] for item in api_policy["structuredDetail"]["notes"])
     assert "거래내역(영수증)" not in [
         item["description"] for item in api_policy["structuredDetail"]["applicationTarget"]
     ]
@@ -1084,15 +1104,17 @@ def test_local_half_trip_structured_detail_uses_source_record_fields_without_dup
     api_policy = policy_to_api(policy)
     structured_detail = api_policy["structuredDetail"]
     assert [item["description"] for item in structured_detail["applicationTarget"]] == [
-        notes,
-        "chak 앱(모바일 강진사랑상품권) 사용",
+        "강진 지역 반값여행 참여 혜택을 신청하고, 공식 안내의 사전 신청·승인·이용 조건을 충족한 여행자"
     ]
+    support_descriptions = [item["description"] for item in structured_detail["supportContent"]]
+    assert notes in support_descriptions
+    assert "chak 앱(모바일 강진사랑상품권) 사용" in support_descriptions
     assert [item["description"] for item in structured_detail["periods"]] == [
         "신청 기간: 2026.06.10-2026.08.31",
         "여행 기간: 6.10~8.31",
     ]
-    assert structured_detail["requiredDocuments"] == []
-    assert structured_detail["notes"] == []
+    assert any("지자체별 요구 증빙" in item["description"] for item in structured_detail["requiredDocuments"])
+    assert any("공식 혜택 안내" in item["description"] for item in structured_detail["notes"])
 
 
 def test_local_half_trip_replaces_existing_phone_target_condition_on_backfill(db: Session) -> None:
@@ -1191,8 +1213,11 @@ def test_local_half_trip_does_not_use_mixed_unlabeled_raw_detail_with_phone(db: 
     assert policy is not None
     assert policy.target_condition is None
     assert policy.structured_detail is not None
-    assert policy.structured_detail["applicationTarget"] == []
-    assert policy_to_api(policy)["requirements"] == ["공식 혜택 안내에서 조건을 확인하세요."]
+    assert any(
+        "반값여행 참여 혜택" in item["description"]
+        for item in policy.structured_detail["applicationTarget"]
+    )
+    assert any("반값여행 참여 혜택" in item for item in policy_to_api(policy)["requirements"])
 
 
 def test_local_half_trip_uses_default_condition_when_only_contact_exists(db: Session) -> None:
@@ -1219,8 +1244,11 @@ def test_local_half_trip_uses_default_condition_when_only_contact_exists(db: Ses
     assert policy is not None
     assert policy.target_condition is None
     assert policy.structured_detail is not None
-    assert policy.structured_detail["applicationTarget"] == []
-    assert policy_to_api(policy)["requirements"] == ["공식 혜택 안내에서 조건을 확인하세요."]
+    assert any(
+        "반값여행 참여 혜택" in item["description"]
+        for item in policy.structured_detail["applicationTarget"]
+    )
+    assert any("반값여행 참여 혜택" in item for item in policy_to_api(policy)["requirements"])
 
 
 def test_promotion_reclassifies_existing_policy_type(db: Session) -> None:

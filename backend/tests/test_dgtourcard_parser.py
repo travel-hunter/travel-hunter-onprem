@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from app.services.dgtourcard_parser import parse_dgtourcard_benefits
+from app.services.dgtourcard_parser import (
+    enrich_dgtourcard_benefits_with_detail_pages,
+    parse_dgtourcard_benefits,
+    parse_local_half_trip_detail_fields,
+)
 
 
 DGTOURCARD_DATA_HTML = """
@@ -246,3 +250,92 @@ def test_parse_dgtourcard_benefits_ignores_official_non_participating_regions() 
     )
 
     assert records == []
+
+
+def test_parse_local_half_trip_detail_fields_reads_participation_target_lines() -> None:
+    html = """
+    <div id="load_content">
+      <div class="msection event-info">
+        <div>
+          <dl>
+            <dt><span>지원내용</span></dt>
+            <dd><p>여행비 50% 환급</p></dd>
+          </dl>
+          <dl>
+            <dt><span>참여대상</span></dt>
+            <dd>
+              <p>강진군 외 지역에 거주하는 사전신청 관광객 누구나</p>
+              <p><em>※</em> 단, 완도군, 해남군, 영암군, 장흥군 거주자는 지원 대상 제외</p>
+            </dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+    """
+
+    fields = parse_local_half_trip_detail_fields(html)
+
+    assert fields["participantTarget"] == (
+        "강진군 외 지역에 거주하는 사전신청 관광객 누구나\n"
+        "※ 단, 완도군, 해남군, 영암군, 장흥군 거주자는 지원 대상 제외"
+    )
+    assert fields["supportDetail"] == "여행비 50% 환급"
+
+
+def test_parse_local_half_trip_detail_fields_reads_yeonggwang_section_rows() -> None:
+    html = """
+    <div class="main_section_row">
+      <span class="main_section_label">참여대상</span>
+      <div class="main_section_cont">
+        <p>영광 관외 거주 사전신청 관광객 누구나</p>
+        <p>제외지역: 함평군, 장성군, 무안군, 고창군</p>
+      </div>
+    </div>
+    <div class="main_section_row">
+      <span class="main_section_label">지원내용</span>
+      <div class="main_section_cont">
+        <p>영광 여행 비용의 최대 50% 모바일 영광사랑상품권 지급</p>
+        <p>최대 환급 금액: 2인이상 최대 20만원까지</p>
+      </div>
+    </div>
+    <div class="main_section_row">
+      <span class="main_section_label">유의사항</span>
+      <div class="main_section_cont">
+        <ul><li>신청 대표자 본인명의의 증빙서류만 제출 가능</li></ul>
+      </div>
+    </div>
+    """
+
+    fields = parse_local_half_trip_detail_fields(html)
+
+    assert fields["participantTarget"] == (
+        "영광 관외 거주 사전신청 관광객 누구나\n"
+        "제외지역: 함평군, 장성군, 무안군, 고창군"
+    )
+    assert fields["supportDetail"] == (
+        "영광 여행 비용의 최대 50% 모바일 영광사랑상품권 지급\n"
+        "최대 환급 금액: 2인이상 최대 20만원까지"
+    )
+    assert fields["detailNotes"] == "신청 대표자 본인명의의 증빙서류만 제출 가능"
+
+
+def test_enrich_dgtourcard_benefits_with_detail_pages_adds_participant_target() -> None:
+    records = parse_dgtourcard_benefits(
+        DGTOURCARD_DATA_HTML,
+        collected_page_url="https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+        fetched_at=datetime(2026, 6, 16, tzinfo=UTC),
+        today=date(2026, 6, 16),
+    )
+
+    enriched = enrich_dgtourcard_benefits_with_detail_pages(
+        records,
+        fetch_detail_html=lambda detail_url: """
+        <dl>
+          <dt>참여대상</dt>
+          <dd><p>강진군 외 지역에 거주하는 사전신청 관광객 누구나</p></dd>
+        </dl>
+        """,
+    )
+
+    assert enriched[0].raw_payload["participantTarget"] == "강진군 외 지역에 거주하는 사전신청 관광객 누구나"
+    assert enriched[0].field_completeness >= 95

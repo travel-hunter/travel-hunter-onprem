@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 import unicodedata
+from urllib.parse import urlparse
 
 from app.models import ExternalSourceRecord
 
@@ -16,6 +17,12 @@ MANIFEST_PATH = (
     / "data"
     / "policy_corrections"
     / "local_half_trip_five_20260716.json"
+)
+PUBLIC_MANUAL_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "data"
+    / "policy_corrections"
+    / "local_half_trip_public_manual_20260726.json"
 )
 SOURCE_CATEGORY = "local_half_trip"
 
@@ -156,4 +163,65 @@ def local_half_trip_five_corrections() -> dict[int, LocalHalfTripCorrection]:
 def correction_for_record(record: ExternalSourceRecord) -> LocalHalfTripCorrection | None:
     if record.source_category != SOURCE_CATEGORY or record.id is None:
         return None
-    return local_half_trip_five_corrections().get(int(record.id))
+    scoped = local_half_trip_five_corrections().get(int(record.id))
+    if scoped is not None:
+        return scoped
+    return local_half_trip_public_manual_correction_for_record(record)
+
+
+@lru_cache(maxsize=1)
+def local_half_trip_public_manual_corrections() -> dict[str, dict[str, Any]]:
+    if not PUBLIC_MANUAL_PATH.exists():
+        return {}
+    with PUBLIC_MANUAL_PATH.open(encoding="utf-8") as file:
+        manifest = json.load(file)
+    if not isinstance(manifest, dict):
+        return {}
+    records = manifest.get("records")
+    if not isinstance(records, list):
+        return {}
+    corrections: dict[str, dict[str, Any]] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        city = str(record.get("city") or "").strip()
+        summary = record.get("expectedFiveSectionSummary")
+        if city and isinstance(summary, dict):
+            corrections[city] = record
+    return corrections
+
+
+def local_half_trip_public_manual_correction_for_record(
+    record: ExternalSourceRecord,
+) -> LocalHalfTripCorrection | None:
+    city = str(record.city or "").strip()
+    if not city:
+        return None
+    correction = local_half_trip_public_manual_corrections().get(city)
+    if correction is None:
+        return None
+    evidence_hosts = {
+        urlparse(str(url)).netloc.removeprefix("www.")
+        for url in correction.get("evidenceUrls", [])
+        if isinstance(url, str)
+    }
+    detail_host = urlparse(str(record.detail_url or "")).netloc.removeprefix("www.")
+    if evidence_hosts and detail_host not in evidence_hosts:
+        return None
+    summary = correction.get("expectedFiveSectionSummary")
+    if not isinstance(summary, dict):
+        return None
+    structured_detail = _structured_detail(summary)
+    target_values = [
+        str(item["description"])
+        for item in structured_detail["applicationTarget"]
+        if item.get("description")
+    ]
+    return LocalHalfTripCorrection(
+        slug=str(correction.get("slug") or f"travelmonth-{record.id}"),
+        external_source_record_id=int(record.id or 0),
+        status=str(correction.get("status") or record.status or "active"),
+        verification_status=str(correction.get("verificationStatus") or "needs_review"),
+        structured_detail=structured_detail,
+        target_condition="\n".join(target_values) if target_values else None,
+    )

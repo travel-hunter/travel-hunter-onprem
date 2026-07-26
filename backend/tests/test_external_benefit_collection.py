@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
+from app.models import ExternalSourceRecord
 from app.services.external_benefit_collection import (
     SourceCollectionResult,
     collect_external_benefits_from_html_sources,
+    enrich_existing_local_half_trip_detail_fields,
+    fetch_local_half_trip_detail_html,
 )
 
 
@@ -346,3 +349,137 @@ def test_collect_live_sources_enriches_digital_tourism_from_partner_api(
     hadong = next(source for source in upserted_sources if source.city == "하동")
     assert hadong.raw_payload["partnerBenefits"][0]["name"] == "하동 제휴 카페"
     assert "하동 제휴처 1곳" in hadong.raw_detail_text
+
+
+def test_fetch_local_half_trip_detail_html_follows_gangjin_ajax_content(
+    monkeypatch,
+) -> None:
+    from app.services import external_benefit_collection
+
+    fetched_urls: list[str] = []
+
+    def fake_fetch(url: str, *, timeout: float) -> str:
+        fetched_urls.append(url)
+        if url == "https://www.gangjintour.com/main/main.html":
+            return """
+            <script>
+            DataLoad('load_content','','/skin_hub/SKIN006/main/ajax_Fmain.php','','');
+            </script>
+            """
+        return "<dl><dt>참여대상</dt><dd>강진군 외 지역에 거주하는 관광객</dd></dl>"
+
+    monkeypatch.setattr(external_benefit_collection, "fetch_external_source_html", fake_fetch)
+
+    html = fetch_local_half_trip_detail_html(
+        "https://www.gangjintour.com/main/main.html",
+        timeout=3,
+    )
+
+    assert fetched_urls == [
+        "https://www.gangjintour.com/main/main.html",
+        "https://www.gangjintour.com/skin_hub/SKIN006/main/ajax_Fmain.php",
+    ]
+    assert "참여대상" in html
+
+
+def test_fetch_local_half_trip_detail_html_follows_meta_refresh_then_ajax(
+    monkeypatch,
+) -> None:
+    from app.services import external_benefit_collection
+
+    fetched_urls: list[str] = []
+
+    def fake_fetch(url: str, *, timeout: float) -> str:
+        fetched_urls.append(url)
+        if url == "https://www.gangjintour.com/":
+            return """
+            <meta http-equiv="refresh" content="0;url=https://www.gangjintour.com/main/main.html">
+            """
+        if url == "https://www.gangjintour.com/main/main.html":
+            return """
+            <script>
+            DataLoad('load_content','','/skin_hub/SKIN006/main/ajax_Fmain.php','','');
+            </script>
+            """
+        return "<dl><dt>참여대상</dt><dd>강진군 외 지역에 거주하는 관광객</dd></dl>"
+
+    monkeypatch.setattr(external_benefit_collection, "fetch_external_source_html", fake_fetch)
+
+    html = fetch_local_half_trip_detail_html(
+        "https://www.gangjintour.com/",
+        timeout=3,
+    )
+
+    assert fetched_urls == [
+        "https://www.gangjintour.com/",
+        "https://www.gangjintour.com/main/main.html",
+        "https://www.gangjintour.com/skin_hub/SKIN006/main/ajax_Fmain.php",
+    ]
+    assert "참여대상" in html
+
+
+def test_enrich_existing_local_half_trip_detail_fields_updates_public_existing_rows(
+    monkeypatch,
+) -> None:
+    from app.services import external_benefit_collection
+
+    record = ExternalSourceRecord(
+        source_name="대한민국 반값여행",
+        source_type="official_campaign",
+        source_url="https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+        source_category="local_half_trip",
+        external_id="legacy-gangjin",
+        canonical_key="legacy-gangjin",
+        detail_url="https://www.gangjintour.com/",
+        collected_page_url="https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+        title="[강진] 대한민국 반값여행 지원",
+        organizer_text="강진 지자체",
+        organizers=["강진 지자체"],
+        region="전남",
+        city="강진",
+        is_nationwide=False,
+        status_text="신청접수중",
+        status="active",
+        benefit_text="대한민국 반값여행 지원",
+        benefit_value_text="최대 20만원 환급",
+        benefit_value_type="mixed",
+        tags=["지역할인", "강진"],
+        inferred_travel_styles=["체험"],
+        confidence=70,
+        field_completeness=70,
+        raw_list_text="강진 반값여행",
+        raw_detail_text="강진군 관광지 2개소 이상 방문",
+        raw_payload={"notes": "강진군 관광지 2개소 이상 방문"},
+        last_fetched_at=datetime(2026, 7, 26, tzinfo=UTC),
+        freshness_status="fresh",
+    )
+    class FakeScalarResult:
+        def all(self):
+            return [record]
+
+    class FakeQueryDb:
+        def scalars(self, statement):
+            return FakeScalarResult()
+
+    monkeypatch.setattr(
+        external_benefit_collection,
+        "fetch_local_half_trip_detail_html",
+        lambda url, *, timeout: """
+        <dl>
+          <dt>참여대상</dt>
+          <dd>
+            <p>강진군 외 지역에 거주하는 사전신청 관광객 누구나</p>
+            <p>※ 단, 완도군, 해남군, 영암군, 장흥군 거주자는 지원 대상 제외</p>
+          </dd>
+        </dl>
+        """,
+    )
+
+    updated_count = enrich_existing_local_half_trip_detail_fields(FakeQueryDb(), timeout=3)
+
+    assert updated_count == 1
+    assert record.raw_payload["participantTarget"] == (
+        "강진군 외 지역에 거주하는 사전신청 관광객 누구나\n"
+        "※ 단, 완도군, 해남군, 영암군, 장흥군 거주자는 지원 대상 제외"
+    )
+    assert record.field_completeness == 95
