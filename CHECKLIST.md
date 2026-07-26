@@ -2,19 +2,20 @@
 
 ## Current status
 
-- Active task/status: `/mypage` 설정 메뉴에서 `비밀번호 관리`를 `회원 탈퇴` 바로 위, `로그아웃`은 마지막으로 이동했다.
-- Scope guard: 메뉴 순서만 조정했고 API/DB 계약은 변경하지 않았다. 테스트 fixture의 디지털관광주민증 예시 slug/title은 현재 canonical 정책 링크(`dgtour-영광`, `[영광] 디지털관광주민증 혜택`)와 맞췄다.
+- Active task/status: `/policies` 결과 행에서 실제 동작하지 않는 `마감 임박순` 고정 표시를 제거했다.
+- Scope guard: 정책 검색/필터/목록 정렬 로직과 API/DB 계약은 변경하지 않고, 오해를 만드는 CSS pseudo-content만 제거했다.
 
 ## Recent validation
 
-- PASS: `cd frontend && npm run typecheck && npx vitest run src/app/__tests__/mypage.test.tsx` — typecheck passed, 22 tests passed.
-- PASS: `cd frontend && npm run build` — typecheck 포함 Vite production build completed.
+- PASS: `cd frontend && npm run typecheck` — TypeScript check passed.
+- PASS: `cd frontend && npx vitest run src/app/__tests__/policies.test.tsx` — 14 tests passed.
+- PASS: `cd frontend && npm run build` — production build completed.
 - PASS: UTF-8 replacement scan for changed Korean-bearing files — no U+FFFD found.
 - PASS: `git diff --check` — no whitespace errors.
 
 ## Active risks
 
-- 로컬 브라우저 수동 확인은 아직 수행하지 않았다. 자동 테스트와 production build 기준으로 메뉴 순서 변경은 검증됐다.
+- 로컬 preview 컨테이너 재기동은 아직 수행하지 않았다. 현재 변경은 CSS pseudo-content 제거라 production build 기준으로 반영 가능하다.
 
 ## Cleanup Policy
 

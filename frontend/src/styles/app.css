@@ -5107,11 +5107,6 @@
   letter-spacing: -0.02em;
 }
 
-.prototype-policy-list-screen .prototype-policy-result-row::after {
-  content: "마감 임박순⌄";
-  color: #5f6475;
-  font-weight: 850;
-}
 
 .prototype-filter-sheet-layer {
   position: fixed;
