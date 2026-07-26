@@ -6,9 +6,31 @@ pipeline {
         BRANCH_NAME = "develop"
         ENV_FILE = "deploy/.env.prod"
         COMPOSE_FILE = "compose.tunnel.yaml"
+
+        //slack 알림 채널
+        SLACK_CHANNEL = "#jenkins"
     }
 
     stages {
+        stage('Notify Build start'){
+            steps {
+                slackSend(
+                    channel: env.SLACK_CHANNEL,
+                    color: '#439FE0',
+                    failOnError: false,
+                    message: """
+   🚀 *Travel Hunter 배포 시작*
+
+    • Job: `${env.JOB_NAME}`
+    • Build: `#${env.BUILD_NUMBER}`
+    • Branch: `${env.BRANCH_NAME}`
+    • <${env.BUILD_URL}|Jenkins 빌드 확인>
+                        """.stripIndent().trim() 
+                )
+            }
+        }
+    
+
         stage('Check Environment') {
             steps {
                 sh '''
@@ -108,10 +130,75 @@ pipeline {
     post {
         success {
             echo "배포 성공"
+
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: "good",
+                failOnError: false,
+                message: """
+    ✅ *Travel Hunter 배포 성공*
+    • Job: `${env.JOB_NAME}`
+    • Build: `#${env.BUILD_NUMBER}`
+    • Branch: `${env.BRANCH_NAME}`
+    • 소요 시간: `${currentBuild.durationString.replace(' and counting', '')}`
+    • 서비스: <https://dev.travel-hunter.co.kr|dev.travel-hunter.co.kr>
+    • <${env.BUILD_URL}|Jenkins 빌드 결과 확인>
+                """.stripIndent().trim()
+            )
         }
 
         failure {
             echo "배포 실패. Jenkins Console Output 확인 필요"
+
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: "danger",
+                failOnError: false,
+                message: """
+    ❌ *Travel Hunter 배포 실패*
+    • Job: `${env.JOB_NAME}`
+    • Build: `#${env.BUILD_NUMBER}`
+    • Branch: `${env.BRANCH_NAME}`
+    • <${env.BUILD_URL}|Jenkins 빌드 결과 확인>
+                """.stripIndent().trim()
+            )
         }
+
+        unstable {
+            echo "빌드 결과 불안정"
+
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: "warning",
+                failOnError: false,
+                message: """
+⚠️ *Travel Hunter 빌드 상태 불안정*
+
+• Job: `${env.JOB_NAME}`
+• Build: `#${env.BUILD_NUMBER}`
+• Branch: `${env.BRANCH_NAME}`
+• <${env.BUILD_URL}|Jenkins 빌드 결과 확인>
+                """.stripIndent().trim()
+            )
+        }
+
+        aborted {
+            echo "빌드 취소"
+
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: "warning",
+                failOnError: false,
+                message: """
+⛔ *Travel Hunter 배포 취소*
+
+• Job: `${env.JOB_NAME}`
+• Build: `#${env.BUILD_NUMBER}`
+• Branch: `${env.BRANCH_NAME}`
+• <${env.BUILD_URL}|Jenkins 빌드 결과 확인>
+                """.stripIndent().trim()
+            )
+        }
+
     }
 }
