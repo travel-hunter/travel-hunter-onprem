@@ -368,6 +368,46 @@ def test_digital_tourism_mapper_outputs_digital_only_sections() -> None:
     assert "최대 20만원" not in serialized
 
 
+
+def test_digital_tourism_mapper_uses_partner_benefits_for_rich_support_content() -> None:
+    record = _record(
+        source_category="digital_tourism_resident_card",
+        raw_payload={
+            "partnerBenefits": [
+                {
+                    "memberId": "pc-1",
+                    "categoryName": "관람",
+                    "name": "평창올림픽플라자",
+                    "intro": "올림픽 레거시 전시장",
+                    "summary": "관람료 할인",
+                    "detail": "대인 15,000원 > 8,000원",
+                },
+                {
+                    "memberId": "pc-2",
+                    "categoryName": "체험",
+                    "name": "대관령코스터",
+                    "intro": "체험시설",
+                    "summary": "이용권 할인",
+                    "detail": "이용권 20% 할인",
+                },
+            ],
+            "partnerBenefitSummary": {
+                "totalCount": 2,
+                "categoryCounts": {"관람": 1, "체험": 1},
+                "displayLimit": 8,
+            },
+        },
+    )
+    record.title = "[평창] 디지털관광주민증 혜택"
+    record.city = "평창"
+
+    result = _map(record)
+    descriptions = _descriptions(result, "supportContent")
+
+    assert descriptions[0] == "평창 제휴처 2곳의 숙박·식음·체험·관광지 혜택을 제공합니다. 주요 분야: 관람 1곳, 체험 1곳."
+    assert descriptions[1].startswith("[관람] 평창올림픽플라자: 대인 15,000원 > 8,000원")
+    assert descriptions[2].startswith("[체험] 대관령코스터: 이용권 20% 할인")
+
 def test_digital_tourism_mapper_does_not_stringify_payload_note_lists() -> None:
     record = _record(
         source_category="digital_tourism_resident_card",

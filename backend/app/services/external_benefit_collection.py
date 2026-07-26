@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from math import ceil
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -110,19 +111,23 @@ def collect_external_benefits_from_live_sources(
     all_rows = []
     for source in _source_registry():
         try:
-            html = (
-                ""
-                if source.source_category == dgtour_identity.SOURCE_CATEGORY
-                else fetch_external_source_html(source.url, timeout=timeout)
-            )
-            rows, result = _collect_source_records(
-                db,
-                source_category=source.source_category,
-                parser=source.parser,
-                html=html,
-                fetched_at=fetched_at,
-                today=today,
-            )
+            if source.source_category == dgtour_identity.SOURCE_CATEGORY:
+                rows, result = _collect_digital_tourism_records(
+                    db,
+                    fetched_at=fetched_at,
+                    today=today,
+                    timeout=timeout,
+                )
+            else:
+                html = fetch_external_source_html(source.url, timeout=timeout)
+                rows, result = _collect_source_records(
+                    db,
+                    source_category=source.source_category,
+                    parser=source.parser,
+                    html=html,
+                    fetched_at=fetched_at,
+                    today=today,
+                )
             all_rows.extend(rows)
             source_results.append(result)
         except Exception as exc:
@@ -132,6 +137,114 @@ def collect_external_benefits_from_live_sources(
     db.commit()
     return _build_result(source_results, len(all_rows))
 
+
+
+def fetch_digital_tourism_partner_benefits(
+    *,
+    city: str,
+    mtpc_do_cd: str,
+    signgu_cd: str,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    client: httpx.Client | None = None,
+) -> list[dict[str, object]]:
+    close_client = client is None
+    http_client = client or httpx.Client(timeout=timeout, follow_redirects=True, headers=DEFAULT_HEADERS)
+    try:
+        rows: list[dict[str, object]] = []
+        page_no = 1
+        total_count: int | None = None
+        while True:
+            payload = {
+                "mtpcDoCd": mtpc_do_cd,
+                "signguCd": signgu_cd,
+                "mbrbBnefClCd": "all",
+                "pageNo": str(page_no),
+                "tipPageNo": "1",
+                "orderDiv": "DATE",
+            }
+            response = http_client.post(
+                dgtour_identity.REGIONAL_MEMBER_BENEFIT_ENDPOINT,
+                data=payload,
+                headers={
+                    **DEFAULT_HEADERS,
+                    "Accept": "application/json, text/javascript, */*; q=0.01",
+                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Origin": "https://korean.visitkorea.or.kr",
+                    "Referer": dgtour_identity.official_url_for_city(city) or dgtour_identity.SOURCE_URL,
+                },
+                timeout=timeout,
+                follow_redirects=True,
+            )
+            response.raise_for_status()
+            result = response.json()
+            page_rows = result.get("resultList") if isinstance(result, dict) else None
+            if not isinstance(page_rows, list):
+                break
+            typed_page_rows = [row for row in page_rows if isinstance(row, dict)]
+            rows.extend(typed_page_rows)
+            if total_count is None:
+                total_count = _digital_tourism_total_count(typed_page_rows)
+            if not typed_page_rows:
+                break
+            if total_count is None:
+                break
+            if page_no >= max(1, ceil(total_count / dgtour_identity.REGIONAL_BENEFIT_PAGE_SIZE)):
+                break
+            page_no += 1
+        return dgtour_identity.partner_benefits_from_api_rows(rows)
+    finally:
+        if close_client:
+            http_client.close()
+
+
+def _digital_tourism_total_count(rows: list[dict[str, object]]) -> int | None:
+    if not rows:
+        return 0
+    total = rows[0].get("totCnt")
+    return total if isinstance(total, int) else None
+
+
+def collect_digital_tourism_partner_benefits_by_city(
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, list[dict[str, object]]]:
+    benefits_by_city: dict[str, list[dict[str, object]]] = {}
+    with httpx.Client(timeout=timeout, follow_redirects=True, headers=DEFAULT_HEADERS) as client:
+        for city, _region, mtpc_do_cd, signgu_cd in dgtour_identity.data.REGIONAL_URL_CODE_ROWS:
+            benefits_by_city[city] = fetch_digital_tourism_partner_benefits(
+                city=city,
+                mtpc_do_cd=mtpc_do_cd,
+                signgu_cd=signgu_cd,
+                timeout=timeout,
+                client=client,
+            )
+    return benefits_by_city
+
+
+def _collect_digital_tourism_records(
+    db: Session,
+    *,
+    fetched_at: datetime,
+    today: date,
+    timeout: float,
+) -> tuple[list[object], SourceCollectionResult]:
+    materialized = dgtour_identity.materialize_participating_region_sources(
+        fetched_at=fetched_at,
+        today=today,
+    )
+    benefits_by_city = collect_digital_tourism_partner_benefits_by_city(timeout=timeout)
+    enriched = dgtour_identity.apply_partner_benefit_enrichment_by_city(
+        materialized,
+        benefits_by_city,
+    )
+    rows = external_source_repository.upsert_external_source_records(db, enriched)
+    return rows, SourceCollectionResult(
+        source_category=dgtour_identity.SOURCE_CATEGORY,
+        parsed_count=len(enriched),
+        created_or_updated_count=len(rows),
+        outcome="success",
+    )
 
 def fetch_external_source_html(
     url: str,

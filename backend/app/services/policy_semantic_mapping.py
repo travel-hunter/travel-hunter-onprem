@@ -264,18 +264,84 @@ def _local_half_trip(record: ExternalSourceRecord) -> ExternalSourceSemanticMapp
     return ExternalSourceSemanticMapping(target_condition, detail, "mapped")
 
 
+
+def _digital_partner_benefits(payload: dict[str, object]) -> list[dict[str, object]]:
+    benefits = payload.get("partnerBenefits")
+    if not isinstance(benefits, list):
+        return []
+    return [benefit for benefit in benefits if isinstance(benefit, dict)]
+
+
+def _digital_partner_summary(payload: dict[str, object]) -> dict[str, object]:
+    summary = payload.get("partnerBenefitSummary")
+    return summary if isinstance(summary, dict) else {}
+
+
+def _digital_partner_summary_description(
+    *,
+    city: str,
+    benefits: list[dict[str, object]],
+    payload: dict[str, object],
+) -> str:
+    summary = _digital_partner_summary(payload)
+    total = summary.get("totalCount")
+    if not isinstance(total, int):
+        total = len(benefits)
+    category_counts = summary.get("categoryCounts")
+    if not isinstance(category_counts, dict):
+        category_counts = dgtour_identity.summarize_partner_benefit_categories(benefits)
+    category_text = ", ".join(
+        f"{_text(name)} {count}곳"
+        for name, count in category_counts.items()
+        if _text(name) and isinstance(count, int) and count > 0
+    )
+    city_text = dgtour_identity.display_city_name(city)
+    if total > 0 and category_text:
+        return f"{city_text} 제휴처 {total}곳의 숙박·식음·체험·관광지 혜택을 제공합니다. 주요 분야: {category_text}."
+    if total > 0:
+        return f"{city_text} 제휴처 {total}곳의 디지털관광주민증 혜택을 제공합니다."
+    return dgtour_identity.SUPPORT_CONTENT_TEXT
+
+
+def _append_digital_partner_benefits(
+    detail: StructuredDetail,
+    *,
+    city: str,
+    payload: dict[str, object],
+) -> None:
+    benefits = _digital_partner_benefits(payload)
+    if not benefits:
+        _append(
+            detail["supportContent"],
+            title="혜택",
+            description=dgtour_identity.SUPPORT_CONTENT_TEXT,
+            amount=dgtour_identity.DEFAULT_BENEFIT_VALUE_TEXT,
+        )
+        return
+
+    _append(
+        detail["supportContent"],
+        title="혜택 요약",
+        description=_digital_partner_summary_description(
+            city=city,
+            benefits=benefits,
+            payload=payload,
+        ),
+    )
+    for benefit in benefits[: dgtour_identity.MAX_DISPLAY_PARTNER_BENEFITS]:
+        _append(
+            detail["supportContent"],
+            title="제휴처 혜택",
+            description=dgtour_identity.format_partner_benefit_for_display(benefit),
+        )
+
 def _digital_tourism_resident_card(record: ExternalSourceRecord) -> ExternalSourceSemanticMapping:
     payload = record.raw_payload if isinstance(record.raw_payload, dict) else {}
     detail = empty_structured_detail()
 
-    _append(
-        detail["supportContent"],
-        title="혜택",
-        description=dgtour_identity.SUPPORT_CONTENT_TEXT,
-        amount=dgtour_identity.DEFAULT_BENEFIT_VALUE_TEXT,
-    )
-
     city = _text(record.city) or dgtour_identity.city_from_title(_text(record.title))
+    _append_digital_partner_benefits(detail, city=city, payload=payload)
+
     target = dgtour_identity.application_target_text(city)
     _append(detail["applicationTarget"], title="신청대상", description=target)
     _append(
