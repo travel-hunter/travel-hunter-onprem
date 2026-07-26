@@ -184,9 +184,9 @@ describe("Travel Hunter app — my page", () => {
     const settingsMenu = document.querySelector(".ds-settings-menu") as HTMLElement;
     expect(within(settingsMenu).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual([
       "공지사항 / FAQ›",
-      "비밀번호 관리›",
       "이용약관›",
       "개인정보처리방침›",
+      "비밀번호 관리›",
       "회원 탈퇴›",
       "로그아웃›",
     ]);
