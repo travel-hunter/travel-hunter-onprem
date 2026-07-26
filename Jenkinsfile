@@ -29,13 +29,6 @@ pipeline {
                 )
             }
         }
-        
-        // 실패 알림 테스트용 임시 Stage
-        stage('Test Failure Notification') {
-            steps {
-                error('Slack 실패 알림 테스트를 위한 의도적인 실패')
-            }
-        }
 
         stage('Check Environment') {
             steps {
