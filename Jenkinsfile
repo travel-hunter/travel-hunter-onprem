@@ -196,7 +196,7 @@ pipeline {
 • Build: `#${env.BUILD_NUMBER}`
 • Branch: `${env.BRANCH_NAME}`
 • <${env.BUILD_URL}|Jenkins 빌드 결과 확인>
-                """.stripIndent().trim()
+                """.stripIndent().trim(
             )
         }
 
