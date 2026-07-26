@@ -41,6 +41,30 @@ test("backend data source requires login for protected routes", async ({ page })
   await expect(page.locator('input[type="email"]')).toBeVisible();
 });
 
+test("login page remains scrollable in short mobile browser viewports", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 560 });
+  await page.goto("/login");
+
+  await expect(page.getByRole("button", { name: "로그인" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "카카오로 시작하기" })).toBeVisible();
+
+  const scrollBefore = await page.evaluate(() => ({
+    documentClientHeight: document.documentElement.clientHeight,
+    documentScrollHeight: document.documentElement.scrollHeight,
+    mainOverflowY: window.getComputedStyle(document.querySelector(".prototype-login-layout") as Element).overflowY,
+    containerOverflowY: window.getComputedStyle(document.querySelector(".prototype-login-container") as Element).overflowY,
+    screenOverflowY: window.getComputedStyle(document.querySelector(".prototype-login-screen") as Element).overflowY,
+  }));
+
+  expect(scrollBefore.documentScrollHeight).toBeGreaterThan(scrollBefore.documentClientHeight);
+  expect(scrollBefore.mainOverflowY).toBe("auto");
+  expect(scrollBefore.containerOverflowY).toBe("visible");
+  expect(scrollBefore.screenOverflowY).toBe("visible");
+
+  await page.getByRole("link", { name: "구글로 시작하기" }).scrollIntoViewIfNeeded();
+  await expect(page.getByRole("link", { name: "구글로 시작하기" })).toBeVisible();
+});
+
 test("backend data source persists profile setup choices", async ({ page }) => {
   await login(page);
 

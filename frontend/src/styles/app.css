@@ -33,6 +33,12 @@
   background: var(--surface-app);
 }
 
+@supports (-webkit-touch-callout: none) {
+  #root {
+    min-height: -webkit-fill-available;
+  }
+}
+
 /* 01. Public and auth shells */
 .public-layout {
   min-height: 100dvh;
@@ -71,20 +77,24 @@
 }
 
 .public-layout.prototype-login-layout {
-  width: 100vw;
-  place-items: center;
+  width: 100%;
+  min-height: 100dvh;
+  align-items: stretch;
+  place-items: stretch center;
   padding: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--surface-shell);
+  -webkit-overflow-scrolling: touch;
 }
 
 .public-container.prototype-login-container {
   display: block;
   width: 100%;
   min-height: 100dvh;
-  height: 100dvh;
+  height: auto;
   margin: 0 auto;
-  overflow: hidden;
+  overflow: visible;
   background: var(--surface-app);
 }
 
@@ -1167,7 +1177,7 @@
   position: relative;
   width: 100%;
   min-height: 100dvh;
-  height: 100dvh;
+  height: auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1177,9 +1187,7 @@
   border: 0;
   border-radius: 0;
   box-shadow: var(--shadow-none);
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
   scrollbar-width: none;
   scrollbar-color: transparent transparent;
 }
@@ -1199,9 +1207,7 @@
   border: 0;
   border-radius: 0;
   box-shadow: var(--shadow-none);
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
   scrollbar-width: none;
   scrollbar-color: transparent transparent;
 }
@@ -1227,11 +1233,11 @@
   flex-direction: column;
   width: min(100%, 420px);
   margin: 0 auto;
-  padding: 32px 24px 0;
+  padding: max(24px, env(safe-area-inset-top)) 24px calc(40px + env(safe-area-inset-bottom));
 }
 
 .prototype-login-screen {
-  padding-bottom: 40px;
+  padding-bottom: 0;
 }
 
 .prototype-login-hero {
@@ -1458,6 +1464,54 @@
 .prototype-social.google {
   border: 1.5px solid #d4d4dc;
   background: #fff;
+}
+
+@media (max-height: 700px) {
+  .prototype-login-content {
+    padding-top: max(18px, env(safe-area-inset-top));
+    padding-bottom: calc(28px + env(safe-area-inset-bottom));
+  }
+
+  .prototype-login-content .ds-auth-form-shell {
+    gap: 18px;
+  }
+
+  .prototype-login-content .ds-auth-form-head {
+    gap: 8px;
+  }
+
+  .prototype-login-content .prototype-login-logo {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 10px;
+  }
+
+  .prototype-login-content .brand-mark-plane {
+    font-size: 30px;
+  }
+
+  .prototype-login-divider {
+    margin: 18px 0;
+  }
+}
+
+@media (max-height: 560px) {
+  .prototype-login-content {
+    padding-top: max(14px, env(safe-area-inset-top));
+  }
+
+  .prototype-login-content .prototype-login-logo {
+    width: 48px;
+    height: 48px;
+  }
+
+  .prototype-login-content .ds-auth-form-head h1 {
+    font-size: 23px;
+  }
+
+  .prototype-login-content .ds-auth-form-head p {
+    font-size: 13px;
+  }
 }
 
 .divider {
