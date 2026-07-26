@@ -248,7 +248,8 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/deadline-only-detail");
 
       expect(await screen.findByRole("heading", { name: "마감일만 확인된 상세 정책" })).toBeInTheDocument();
-      expect(screen.getByText("시작일 확인 필요 · 2026.12.31 마감")).toBeInTheDocument();
+      expect(screen.getByText("2026.12.31 마감")).toBeInTheDocument();
+      expect(document.body).not.toHaveTextContent("시작일 확인 필요");
       expect(document.body).not.toHaveTextContent("2026.05.01");
     } finally {
       getPolicySpy.mockRestore();

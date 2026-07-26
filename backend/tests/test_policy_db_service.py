@@ -46,6 +46,7 @@ def test_policy_to_api_preserves_contract_shape() -> None:
         "title",
         "org",
         "region",
+        "startDate",
         "deadline",
         "amount",
         "summary",
@@ -61,6 +62,7 @@ def test_policy_to_api_preserves_contract_shape() -> None:
     assert payload["id"] == "fixture-policy"
     assert payload["slug"] == "fixture-policy"
     assert payload["label"] == "FI"
+    assert payload["startDate"] is None
     assert payload["deadline"] == "2026-10-31"
     assert payload["amount"] == "Up to 300000 KRW"
     assert payload["match"] == 90

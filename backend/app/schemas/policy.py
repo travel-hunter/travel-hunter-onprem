@@ -24,6 +24,7 @@ class Policy(BaseModel):
     title: str
     org: str
     region: str
+    startDate: str | None = None
     deadline: str
     amount: str
     summary: str

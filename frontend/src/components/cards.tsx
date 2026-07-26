@@ -51,6 +51,7 @@ export function PolicyListCard({
     }
   };
   const canSave = canUsePolicyActions(policy) && Boolean(onToggleSave);
+  const periodSummary = compactPolicyPeriod(policy);
 
   return (
     <SurfaceCard as="article" className="policy-list-card">
@@ -64,7 +65,7 @@ export function PolicyListCard({
           <h3>{policy.title}</h3>
           <div className="policy-list-meta">
             <span aria-hidden="true">📍</span>
-            {policy.region} · {compactPolicyPeriod(policy)}
+            {periodSummary ? `${policy.region} · ${periodSummary}` : policy.region}
           </div>
         </div>
       </Link>

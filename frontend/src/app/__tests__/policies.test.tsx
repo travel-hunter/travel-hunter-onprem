@@ -133,6 +133,46 @@ describe("Travel Hunter app — policies & trip picker", () => {
     }
   });
 
+  it("does not show start-date unknown copy on policy list cards", async () => {
+    const policies: Policy[] = [
+      {
+        ...examplePolicyDetail,
+        id: "deadline-only-list-policy",
+        slug: "deadline-only-list-policy",
+        title: "마감일만 확인된 목록 정책",
+        region: "전국",
+        deadline: "2026-12-31",
+        startDate: null,
+      },
+      {
+        ...examplePolicyDetail,
+        id: "unknown-period-list-policy",
+        slug: "unknown-period-list-policy",
+        title: "기간 미확인 목록 정책",
+        region: "강원",
+        deadline: "",
+        startDate: null,
+      },
+    ];
+    const listPoliciesSpy = vi
+      .spyOn(appDataApi, "listPolicies")
+      .mockResolvedValue(policies);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+
+      expect(await screen.findByText("마감일만 확인된 목록 정책")).toBeInTheDocument();
+      expect(document.body).toHaveTextContent("전국 · 2026.12.31 마감");
+      expect(document.body).toHaveTextContent("기간 미확인 목록 정책");
+      expect(document.body).toHaveTextContent("강원");
+      expect(document.body).not.toHaveTextContent("시작일 확인 필요");
+    } finally {
+      listPoliciesSpy.mockRestore();
+    }
+  });
+
   it("discards draft filter changes when the sheet closes", async () => {
     const policies: Policy[] = [
       examplePolicyDetail,
@@ -818,7 +858,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
       expect(document.querySelectorAll(".trip-select-row")).toHaveLength(2);
       expect(screen.getByRole("link", { name: "새 일정에 담기" })).toHaveAttribute(
         "href",
-        `/trips/new?policySlug=${encodeURIComponent(examplePolicySlug)}&region=%EC%98%81%EA%B4%91&sido=%EC%A0%84%EB%82%A8`,
+        `/trips/new?policySlug=${encodeURIComponent("dgtour-영광")}&region=%EC%98%81%EA%B4%91&sido=%EC%A0%84%EB%82%A8`,
       );
     } finally {
       listTripsSpy.mockRestore();

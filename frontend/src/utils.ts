@@ -8,6 +8,7 @@ export const DIGITAL_TOURISM_PERIOD_NOTICE =
 type PolicyDeadlineDisplayContext = {
   title?: string | null;
   officialUrl?: string | null;
+  startDate?: string | null;
   deadline?: string | null;
 };
 
@@ -24,8 +25,13 @@ export function formatPolicyDeadlineTag(policy: PolicyDeadlineDisplayContext): s
 
 export function formatPolicyPeriodSummary(policy: PolicyDeadlineDisplayContext): string {
   if (isDigitalTourismResidentCardPolicy(policy)) return DIGITAL_TOURISM_PERIOD_LABEL;
-  if (!isSafePolicyDeadline(policy.deadline)) return UNKNOWN_DEADLINE_LABEL;
-  return `시작일 확인 필요 · ${formatDottedPolicyDeadline(policy.deadline)} 마감`;
+  const startLabel = isSafePolicyDeadline(policy.startDate)
+    ? `${formatDottedPolicyDeadline(policy.startDate)} 시작`
+    : "";
+  const deadlineLabel = isSafePolicyDeadline(policy.deadline)
+    ? `${formatDottedPolicyDeadline(policy.deadline)} 마감`
+    : "";
+  return [startLabel, deadlineLabel].filter(Boolean).join(" · ");
 }
 
 export function formatPolicyDeadlineNotice(policy: PolicyDeadlineDisplayContext): string {

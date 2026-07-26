@@ -102,3 +102,5 @@
 - 정책 수집/정규화/노출의 local code path와 release-gate test는 존재하지만, Public v1/RC 판정에는 public domain/runtime smoke 증거가 추가로 필요하다.
 - 실제 AI 엔진, SMTP readiness 이후 친구 초대 email 발송, 운영 관리자 화면, 정책 수집 source 확대와 full automation은 후속 범위다.
 - 지도/장소 검색의 로컬 기본 UX는 일정 상세 지도, 장소 상세 dialog, 장소 추가 sheet 후보 검색, Kakao Local 후보, catalog fallback 기준으로 구현되어 있다. Public map-domain 검증과 추천 품질 고도화는 별도 개선 범위다.
+
+- 정책 목록 카드의 기간 메타는 확정된 시작일/마감일만 표시한다. 시작일이 확인되지 않았으면 “시작일 확인 필요” 문구를 만들지 않고, 마감일만 확인된 경우에는 마감일만 표시한다.
