@@ -174,6 +174,93 @@ def _stay_discount(record: ExternalSourceRecord) -> ExternalSourceSemanticMappin
     return ExternalSourceSemanticMapping(None, detail, "mapped")
 
 
+def _local_half_trip_city(record: ExternalSourceRecord) -> str:
+    city = _text(record.city)
+    if city:
+        return city
+    title = _text(record.title)
+    match = re.match(r"^\[([^\]]+)\]", title)
+    if match:
+        return _text(match.group(1))
+    match = re.match(r"^(.+?)\s+대한민국\s+반값여행", title)
+    return _text(match.group(1)) if match else ""
+
+
+def _local_half_trip_default_target(record: ExternalSourceRecord) -> str:
+    city = _local_half_trip_city(record)
+    city_prefix = f"{city} 지역" if city else "해당 참여지역"
+    return f"{city_prefix} 반값여행 참여 혜택을 신청하고, 공식 안내의 사전 신청·승인·이용 조건을 충족한 여행자"
+
+
+def _split_detail_lines(value: object) -> list[str]:
+    lines: list[str] = []
+    for part in re.split(r"[ \t]*\r?\n[ \t]*", str(value or "")):
+        text = _text(part)
+        if text and text not in lines:
+            lines.append(text)
+    return lines
+
+
+def _append_local_half_trip_default_sections(
+    detail: StructuredDetail,
+    *,
+    record: ExternalSourceRecord,
+) -> None:
+    city = _local_half_trip_city(record)
+    city_prefix = f"{city} 지역" if city else "참여지역"
+    benefit = _text(record.benefit_value_text or record.benefit_text)
+    has_specific_support = any(item.get("title") == "지원내용" for item in detail["supportContent"])
+    if benefit and not has_specific_support:
+        _append(
+            detail["supportContent"],
+            title="지원내용",
+            description=(
+                f"{city_prefix} 여행 후 공식 안내에서 정한 소비·방문 인증 기준을 충족하면 "
+                f"{benefit} 혜택을 받을 수 있습니다."
+            ),
+        )
+    if not has_specific_support:
+        _append(
+            detail["supportContent"],
+            title="지원내용",
+            description=(
+                "숙박·식사·체험·관광지 방문 등 지역 여행 지출을 대상으로 하며, "
+                "환급 방식과 한도는 지자체별 세부 공고를 따릅니다."
+            ),
+        )
+    participant_target = (
+        record.raw_payload.get("participantTarget") if isinstance(record.raw_payload, dict) else None
+    )
+    target_lines = _split_detail_lines(participant_target)
+    if target_lines:
+        for target_line in target_lines:
+            _append(detail["applicationTarget"], title="신청대상", description=target_line)
+    else:
+        _append(
+            detail["applicationTarget"],
+            title="신청대상",
+            description=_local_half_trip_default_target(record),
+        )
+    _append(
+        detail["requiredDocuments"],
+        title="필요서류",
+        description=(
+            "방문·결제·숙박 등 이용 사실을 확인할 수 있는 영수증, 결제내역, "
+            "인증사진 등 지자체별 요구 증빙을 준비해야 합니다."
+        ),
+    )
+    _append(
+        detail["notes"],
+        title="비고",
+        description="예산 소진, 신청 인원, 지자체 운영 기준에 따라 조기 종료되거나 세부 조건이 달라질 수 있습니다.",
+    )
+    _append(
+        detail["notes"],
+        title="비고",
+        description="신청 전 공식 혜택 안내에서 최신 신청 방법, 제출 증빙, 제외 조건을 최종 확인하세요.",
+    )
+
+
 def _local_half_trip(record: ExternalSourceRecord) -> ExternalSourceSemanticMapping:
     correction = correction_for_record(record)
     if correction is not None:
@@ -225,6 +312,18 @@ def _local_half_trip(record: ExternalSourceRecord) -> ExternalSourceSemanticMapp
             item["amount"] = _text(record.benefit_value_text)
         detail["supportContent"].append(item)
 
+    for support_line in _split_detail_lines(payload.get("supportDetail")):
+        if support_line.startswith("※") or re.search(r"불가|제외|확인", support_line):
+            _append(detail["notes"], title="비고", description=support_line)
+        elif re.fullmatch(r"\d+[.)]\s*.+", support_line):
+            continue
+        elif re.search(r"최대|최소|50%|70%|지급|환급|지원|상품권|소비|금액|만원", support_line):
+            _append(detail["supportContent"], title="지원내용", description=support_line)
+    for document_line in _split_detail_lines(payload.get("requiredDocumentsDetail")):
+        _append(detail["requiredDocuments"], title="필요서류", description=document_line)
+    for note_line in _split_detail_lines(payload.get("detailNotes")):
+        _append(detail["notes"], title="비고", description=note_line)
+
     semantic_texts: list[str] = []
     for candidate in [payload.get("notes"), field_values.get("특이사항"), labeled_value("특이사항"), target_condition]:
         for part in re.split(r"\s*(?:,|\*|ㆍ|·|\n|/)\s*", _text(candidate)):
@@ -234,20 +333,27 @@ def _local_half_trip(record: ExternalSourceRecord) -> ExternalSourceSemanticMapp
     for part in semantic_texts:
         payment_document = re.match(r"(.+?결제)한?\s+(.+)$", part)
         if payment_document and re.search(r"영수증|거래내역|결제내역|인증사진|캡처|캡쳐|증빙|서류", payment_document.group(2)):
-            _append(detail["applicationTarget"], title="혜택 적용 조건", description=payment_document.group(1))
+            _append(detail["supportContent"], title="혜택 적용 조건", description=payment_document.group(1))
             _append(detail["requiredDocuments"], title="필요 서류", description=payment_document.group(2))
         elif re.search(r"공지|고시공고|필독|문의|유의|주의|확인", part):
             _append(detail["notes"], title="비고", description=part)
         elif re.search(r"영수증|거래내역|결제내역|인증사진|캡처|캡쳐|증빙|서류", part) and not re.search(r"방문|결제|이용|사용|가맹점", part):
             _append(detail["requiredDocuments"], title="필요 서류", description=part)
         else:
-            _append(detail["applicationTarget"], title="혜택 적용 조건", description=part)
+            _append(detail["supportContent"], title="혜택 적용 조건", description=part)
 
     for value in currency_values:
-        _append(detail["applicationTarget"], title="혜택 적용 조건", description=f"{value} 사용")
+        _append(detail["supportContent"], title="혜택 적용 조건", description=f"{value} 사용")
 
+    _append_local_half_trip_default_sections(detail, record=record)
+
+    period_payload = dict(payload)
+    if not period_payload.get("applicationPeriod") and period_payload.get("applicationPeriodDetail"):
+        period_payload["applicationPeriod"] = period_payload["applicationPeriodDetail"]
+    if not period_payload.get("tripPeriod") and period_payload.get("tripPeriodDetail"):
+        period_payload["tripPeriod"] = period_payload["tripPeriodDetail"]
     default_year = record.last_fetched_at.year if record.last_fetched_at is not None else 2026
-    evidence = evidence_from_payload(payload, default_year=default_year, source=record.source_category)
+    evidence = evidence_from_payload(period_payload, default_year=default_year, source=record.source_category)
     for item in structured_period_items(evidence):
         item = dict(item)
         title = _text(item.get("title"))

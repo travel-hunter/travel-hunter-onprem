@@ -1,0 +1,111 @@
+{
+  "artifactType": "local_half_trip_public_manual_corrections",
+  "manifestVersion": "local-half-trip-public-manual-20260726-v1",
+  "generatedAt": "2026-07-26T00:00:00+09:00",
+  "scope": {
+    "sourceCategory": "local_half_trip",
+    "reason": "공식 지자체 페이지 DOM이 표준 dt/dd 필드로 안정 추출되지 않는 public 게시글 수동 보정"
+  },
+  "records": [
+    {
+      "city": "합천",
+      "slug": "travelmonth-hapcheon-manual",
+      "status": "active",
+      "verificationStatus": "fresh",
+      "evidenceUrls": [
+        "https://www.hctour.kr/",
+        "https://www.hctour.kr/intro/1",
+        "https://www.hctour.kr/content/participation_info",
+        "https://www.hctour.kr/content/expenses_info"
+      ],
+      "expectedFiveSectionSummary": {
+        "supportContent": [
+          "합천 여행 후 관광지 인증 및 가맹점 소비 조건을 충족하면 여행경비의 50%를 모바일 합천반값여행 상품권으로 환급받을 수 있습니다.",
+          "여행경비 50%를 모바일 상품권으로 환급하며, 최대 50만원까지 지원됩니다."
+        ],
+        "periods": [
+          {
+            "type": "application",
+            "title": "신청 기간",
+            "startDate": "2026-04-01",
+            "endDate": "2026-07-31",
+            "description": "신청 기간: 2026-04-01~2026-07-31"
+          },
+          {
+            "type": "travel",
+            "title": "여행 기간",
+            "startDate": "2026-07-28",
+            "endDate": "2026-08-09",
+            "description": "여행 기간: 2026-07-28~2026-08-09"
+          }
+        ],
+        "applicationTarget": [
+          "합천군 외 지역에 거주하는 사전신청 관광객.",
+          "여행 1일 전까지 합천반값여행 홈페이지에서 여행 신청 후 승인을 받아야 합니다."
+        ],
+        "requiredDocuments": [
+          "지정 관광지 방문 인증 자료.",
+          "합천군 관내 합천반값여행상품권 가맹점 소비 증빙.",
+          "숙박 이용 시 숙박이용확인서 등 숙박 이용 내역 확인 자료."
+        ],
+        "notes": [
+          "제로페이 연동 간편결제 앱에서 합천반값여행상품권을 구매해 사용합니다.",
+          "정산 지원 제외 업소와 지정 관광지는 공식 안내에서 최종 확인하세요."
+        ]
+      }
+    },
+    {
+      "city": "완도",
+      "slug": "travelmonth-wando-manual",
+      "status": "active",
+      "verificationStatus": "fresh",
+      "evidenceUrls": [
+        "https://www.wandotrip.kr/index.php",
+        "https://www.wandotrip.kr/content/participation_info",
+        "https://www.wandotrip.kr/content/expenses_info",
+        "https://www.wandotrip.kr/notice/3"
+      ],
+      "expectedFiveSectionSummary": {
+        "supportContent": [
+          "완도 여행 후 관광지·축제·박람회 등 관광사진 2장 이상 인증과 정산 신청 조건을 충족하면 모바일 완도사랑상품권으로 지원금을 받을 수 있습니다.",
+          "지원금은 정산 신청 승인 후 10일 이내 모바일 완도사랑상품권으로 지급됩니다."
+        ],
+        "periods": [
+          {
+            "type": "application",
+            "title": "3차 신청 마감",
+            "startDate": null,
+            "endDate": "2026-07-10",
+            "description": "3차 신청마감: 2026-07-10 18시까지"
+          },
+          {
+            "type": "travel",
+            "title": "3차 여행 기간",
+            "startDate": "2026-07-01",
+            "endDate": "2026-07-31",
+            "description": "3차 여행기간: 2026-07-01~2026-07-31"
+          },
+          {
+            "type": "settlement",
+            "title": "정산 신청 기간",
+            "startDate": null,
+            "endDate": null,
+            "description": "여행 종료 다음날부터 10일 이내 정산 신청해야 합니다."
+          }
+        ],
+        "applicationTarget": [
+          "완도반값여행 공식 페이지에서 여행 1일 전부터 사전 신청 후 승인받은 관광객."
+        ],
+        "requiredDocuments": [
+          "관광지, 축제, 박람회 등 완도 여행 인증사진 2장 이상이 필요합니다. 신청인과 동반인이 모두 포함되어야 합니다.",
+          "숙박 이용 시 완도군 관내 숙박 이용확인서 등 숙박 이용 내역 확인 자료.",
+          "정산 신청 전 신청자 본인 명의 Chak 앱 설치 및 완도사랑상품권 등록."
+        ],
+        "notes": [
+          "지원금 사용기한은 2026-12-31까지입니다.",
+          "예산 소진 시 사전 신청과 지원금 지급이 조기 종료될 수 있습니다."
+        ]
+      }
+    }
+  ]
+}

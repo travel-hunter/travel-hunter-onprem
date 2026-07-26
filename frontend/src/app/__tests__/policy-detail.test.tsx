@@ -947,6 +947,79 @@ describe("Travel Hunter app — policy detail", () => {
     }
   });
 
+  it("separates structured support conditions from core benefit cards", async () => {
+    const halfTripPolicy: Policy = {
+      id: "travelmonth-23",
+      slug: "travelmonth-23",
+      label: "전남",
+      tag: "최대 20만원",
+      title: "[강진] 대한민국 반값여행 지원",
+      org: "강진 지자체, 한국관광공사",
+      region: "전남",
+      deadline: "2026-08-31",
+      amount: "최대 20만원 환급",
+      summary: "강진 반값여행 지원",
+      match: 90,
+      category: "지역할인",
+      requirements: [],
+      documents: [],
+      structuredDetail: {
+        supportContent: [
+          { title: "혜택", description: "최대 20만원 환급" },
+          { title: "혜택 적용 조건", description: "강진군 관광지 2개소 이상 방문" },
+          { title: "혜택 적용 조건", description: "모바일 강진사랑상품권(Chak)으로 결제" },
+          {
+            title: "지원내용",
+            description: "강진 지역 여행 후 공식 안내에서 정한 소비·방문 인증 기준을 충족하면 최대 20만원 환급 혜택을 받을 수 있습니다.",
+          },
+        ],
+        periods: [],
+        applicationTarget: [
+          { title: "신청대상", description: "강진군 외 지역에 거주하는 사전신청 관광객 누구나" },
+        ],
+        requiredDocuments: [],
+        notes: [],
+      },
+      officialUrl: "https://www.gangjintour.com/",
+      applyUrl: null,
+      sourceType: "external",
+    };
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(halfTripPolicy);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies/travelmonth-23");
+
+      const supportSection = await screen.findByRole("region", {
+        name: "지원내용",
+      });
+      const coreBenefitGroup = within(supportSection)
+        .getByText("핵심 혜택")
+        .closest(".policy-benefit-group");
+      const usageConditionGroup = screen
+        .getByRole("heading", { name: /혜택 적용 조건/ })
+        .closest(".policy-requirement-group");
+
+      expect(coreBenefitGroup).not.toBeNull();
+      expect(usageConditionGroup).not.toBeNull();
+      expect(within(coreBenefitGroup as HTMLElement).getByText("최대 20만원 환급")).toBeInTheDocument();
+      expect(
+        within(coreBenefitGroup as HTMLElement).queryByText("강진군 관광지 2개소 이상 방문"),
+      ).not.toBeInTheDocument();
+      expect(
+        within(usageConditionGroup as HTMLElement).getByText("강진군 관광지 2개소 이상 방문"),
+      ).toBeInTheDocument();
+      expect(
+        within(usageConditionGroup as HTMLElement).getByText("모바일 강진사랑상품권(Chak)으로 결제"),
+      ).toBeInTheDocument();
+    } finally {
+      getPolicySpy.mockRestore();
+    }
+  });
+
   it("renders policy detail in prototype-only flow without FAQ accordion", async () => {
     const getPolicySpy = vi
       .spyOn(appDataApi, "getPolicy")

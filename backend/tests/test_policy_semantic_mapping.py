@@ -331,7 +331,90 @@ def test_local_half_trip_currency_evidence_is_an_explicit_stable_target_conditio
     expected = "chak 앱(모바일 강진사랑상품권) 사용"
     assert result.mapper_status == "mapped"
     assert result.target_condition == expected
-    assert _descriptions(result, "applicationTarget") == [expected]
+    targets = _descriptions(result, "applicationTarget")
+    benefits = _descriptions(result, "supportContent")
+    assert expected not in targets
+    assert any("반값여행 참여 혜택" in item for item in targets)
+    assert expected in benefits
+    assert any("영수증" in item for item in _descriptions(result, "requiredDocuments"))
+    assert any("공식 혜택 안내" in item for item in _descriptions(result, "notes"))
+
+
+def test_local_half_trip_uses_detail_participant_target_as_application_target() -> None:
+    record = _record(
+        source_category="local_half_trip",
+        raw_payload={
+            "participantTarget": (
+                "강진군 외 지역에 거주하는 사전신청 관광객 누구나\n"
+                "※ 단, 완도군, 해남군, 영암군, 장흥군 거주자는 지원 대상 제외"
+            ),
+            "field_values": {
+                "지역화폐": "chak 앱(모바일 강진사랑상품권)",
+                "특이사항": "강진군 관광지 2개소 이상 방문",
+            },
+        },
+    )
+    record.city = "강진"
+
+    result = _map(record)
+
+    assert _descriptions(result, "applicationTarget") == [
+        "강진군 외 지역에 거주하는 사전신청 관광객 누구나",
+        "※ 단, 완도군, 해남군, 영암군, 장흥군 거주자는 지원 대상 제외",
+    ]
+    assert "강진군 관광지 2개소 이상 방문" in _descriptions(result, "supportContent")
+    assert "chak 앱(모바일 강진사랑상품권) 사용" in _descriptions(result, "supportContent")
+    assert all("Chak" not in item for item in _descriptions(result, "applicationTarget"))
+
+
+def test_local_half_trip_uses_detail_support_documents_and_notes() -> None:
+    record = _record(
+        source_category="local_half_trip",
+        raw_payload={
+            "participantTarget": "강진군 외 지역에 거주하는 사전신청 관광객 누구나",
+            "supportDetail": "강진 여행 비용의 50% 환급\n모바일 강진사랑상품권으로 지급",
+            "requiredDocumentsDetail": "거래내역 영수증\n관광지 방문 인증사진",
+            "detailNotes": "예산 소진 시 조기 마감",
+        },
+    )
+    record.city = "강진"
+
+    result = _map(record)
+
+    assert "강진 여행 비용의 50% 환급" in _descriptions(result, "supportContent")
+    assert "모바일 강진사랑상품권으로 지급" in _descriptions(result, "supportContent")
+    assert "거래내역 영수증" in _descriptions(result, "requiredDocuments")
+    assert "관광지 방문 인증사진" in _descriptions(result, "requiredDocuments")
+    assert "예산 소진 시 조기 마감" in _descriptions(result, "notes")
+    assert _descriptions(result, "applicationTarget") == [
+        "강진군 외 지역에 거주하는 사전신청 관광객 누구나"
+    ]
+
+
+def test_local_half_trip_public_manual_correction_enriches_hapcheon_and_wando() -> None:
+    hapcheon = _record(source_category="local_half_trip", raw_payload={})
+    hapcheon.id = 25
+    hapcheon.city = "합천"
+    hapcheon.status = "scheduled"
+    hapcheon.detail_url = "https://www.hctour.kr/"
+    wando = _record(source_category="local_half_trip", raw_payload={})
+    wando.id = 31
+    wando.city = "완도"
+    wando.status = "scheduled"
+    wando.detail_url = "https://www.wandotrip.kr/index.php"
+
+    hapcheon_result = _map(hapcheon)
+    wando_result = _map(wando)
+
+    assert hapcheon_result.policy_status == "active"
+    assert hapcheon_result.verification_status == "fresh"
+    assert any("최대 50만원" in item for item in _descriptions(hapcheon_result, "supportContent"))
+    assert any("합천군 외 지역" in item for item in _descriptions(hapcheon_result, "applicationTarget"))
+    assert any("숙박이용확인서" in item for item in _descriptions(hapcheon_result, "requiredDocuments"))
+    assert wando_result.policy_status == "active"
+    assert any("모바일 완도사랑상품권" in item for item in _descriptions(wando_result, "supportContent"))
+    assert any("2026-07-10" in item["description"] for item in wando_result.structured_detail["periods"])
+    assert any("Chak 앱" in item for item in _descriptions(wando_result, "requiredDocuments"))
 
 
 def test_digital_tourism_mapper_outputs_digital_only_sections() -> None:

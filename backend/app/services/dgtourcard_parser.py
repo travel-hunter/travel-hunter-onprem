@@ -399,6 +399,229 @@ def _trip_period_from_text(value: str | None) -> str | None:
     return None
 
 
+
+_DETAIL_FIELD_LABELS = (
+    "참여대상",
+    "지원대상",
+    "신청대상",
+    "대상",
+    "지원내용",
+    "여행기간",
+    "신청기간",
+    "정산신청",
+    "필요서류",
+    "제출서류",
+    "유의사항",
+    "비고",
+)
+_TARGET_FIELD_LABELS = ("참여대상", "지원대상", "신청대상", "대상")
+_SUPPORT_FIELD_LABELS = ("지원내용",)
+_DOCUMENT_FIELD_LABELS = ("필요서류", "제출서류")
+_NOTE_FIELD_LABELS = ("유의사항", "비고")
+
+
+class _DetailFieldHtmlParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fields: dict[str, str] = {}
+        self._in_dt = False
+        self._in_dd = False
+        self._current_label: str | None = None
+        self._dt_buffer: list[str] = []
+        self._dd_buffer: list[str] = []
+        self._row_depth = 0
+        self._row_label_depth = 0
+        self._row_content_depth = 0
+        self._row_label_buffer: list[str] = []
+        self._row_content_buffer: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr_map = {key: value or "" for key, value in attrs if key}
+        class_names = set((attr_map.get("class") or "").split())
+        if "main_section_row" in class_names and self._row_depth == 0:
+            self._row_depth = 1
+            self._row_label_depth = 0
+            self._row_content_depth = 0
+            self._row_label_buffer = []
+            self._row_content_buffer = []
+            return
+        if self._row_depth > 0:
+            if tag not in _VOID_TAGS:
+                self._row_depth += 1
+            if "main_section_label" in class_names:
+                self._row_label_depth = 1
+                self._row_label_buffer = []
+            elif self._row_label_depth > 0 and tag not in _VOID_TAGS:
+                self._row_label_depth += 1
+            if "main_section_cont" in class_names:
+                self._row_content_depth = 1
+                self._row_content_buffer = []
+            elif self._row_content_depth > 0 and tag not in _VOID_TAGS:
+                self._row_content_depth += 1
+            if tag in {"br", "p", "li"} and self._row_content_depth > 0 and self._row_content_buffer:
+                self._row_content_buffer.append("\n")
+            return
+        if tag == "dt":
+            self._in_dt = True
+            self._dt_buffer = []
+        elif tag == "dd":
+            self._in_dd = True
+            self._dd_buffer = []
+        elif tag in {"br", "p", "li"} and self._in_dd:
+            if self._dd_buffer:
+                self._dd_buffer.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._row_depth > 0:
+            if tag in {"p", "li"} and self._row_content_depth > 0:
+                self._row_content_buffer.append("\n")
+            if tag not in _VOID_TAGS:
+                if self._row_label_depth > 0:
+                    self._row_label_depth -= 1
+                if self._row_content_depth > 0:
+                    self._row_content_depth -= 1
+                self._row_depth -= 1
+            if self._row_depth <= 0:
+                label = _normalize_detail_label(" ".join(self._row_label_buffer))
+                value = _normalize_multiline_detail_text("".join(self._row_content_buffer))
+                if label and value:
+                    existing = self.fields.get(label, "")
+                    self.fields[label] = _normalize_multiline_detail_text(
+                        f"{existing}\n{value}" if existing else value
+                    )
+                self._row_depth = 0
+                self._row_label_depth = 0
+                self._row_content_depth = 0
+                self._row_label_buffer = []
+                self._row_content_buffer = []
+            return
+        if tag == "dt" and self._in_dt:
+            self._current_label = _normalize_detail_label(" ".join(self._dt_buffer))
+            self._in_dt = False
+            self._dt_buffer = []
+        elif tag == "dd" and self._in_dd:
+            value = _normalize_multiline_detail_text("".join(self._dd_buffer))
+            if self._current_label and value:
+                existing = self.fields.get(self._current_label, "")
+                self.fields[self._current_label] = _normalize_multiline_detail_text(
+                    f"{existing}\n{value}" if existing else value
+                )
+            self._in_dd = False
+            self._dd_buffer = []
+        elif tag in {"p", "li"} and self._in_dd:
+            self._dd_buffer.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        text = normalize_text(data)
+        if not text:
+            return
+        if self._row_depth > 0:
+            if self._row_label_depth > 0:
+                self._row_label_buffer.append(text)
+            elif self._row_content_depth > 0:
+                self._row_content_buffer.append(f"{text} ")
+        elif self._in_dt:
+            self._dt_buffer.append(text)
+        elif self._in_dd:
+            self._dd_buffer.append(f"{text} ")
+
+
+def _normalize_detail_label(value: str) -> str | None:
+    label = _clean_label(value)
+    for known in _DETAIL_FIELD_LABELS:
+        if known in label:
+            return known
+    return label or None
+
+
+def _normalize_multiline_detail_text(value: str) -> str:
+    lines = []
+    for line in re.split(r"[ \t]*\r?\n[ \t]*", value):
+        line = normalize_text(line)
+        if line and line not in lines:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def parse_local_half_trip_detail_fields(html: str) -> dict[str, object]:
+    parser = _DetailFieldHtmlParser()
+    parser.feed(html)
+    parser.close()
+    fields = {key: value for key, value in parser.fields.items() if key in _DETAIL_FIELD_LABELS and value}
+    if not fields:
+        return {}
+    result: dict[str, object] = {"detailFieldValues": fields}
+    target = _first_field_value(fields, _TARGET_FIELD_LABELS)
+    support = _first_field_value(fields, _SUPPORT_FIELD_LABELS)
+    documents = _first_field_value(fields, _DOCUMENT_FIELD_LABELS)
+    notes = _first_field_value(fields, _NOTE_FIELD_LABELS)
+    if target:
+        result["participantTarget"] = target
+    if support:
+        result["supportDetail"] = support
+    if documents:
+        result["requiredDocumentsDetail"] = documents
+    if notes:
+        result["detailNotes"] = notes
+    application_period = _first_field_value(fields, ("신청기간",))
+    trip_period = _first_field_value(fields, ("여행기간",))
+    settlement_period = _first_field_value(fields, ("정산신청",))
+    if application_period:
+        result["applicationPeriodDetail"] = application_period
+    if trip_period:
+        result["tripPeriodDetail"] = trip_period
+    if settlement_period:
+        result["settlementPeriodDetail"] = settlement_period
+    return result
+
+
+def _first_field_value(fields: dict[str, str], labels: tuple[str, ...]) -> str | None:
+    for label in labels:
+        value = _normalize_multiline_detail_text(fields.get(label, ""))
+        if value:
+            return value
+    return None
+
+
+def enrich_dgtourcard_benefits_with_detail_pages(
+    records: list[ExternalBenefitSource],
+    *,
+    fetch_detail_html,
+) -> list[ExternalBenefitSource]:
+    enriched: list[ExternalBenefitSource] = []
+    for record in records:
+        if not record.detail_url:
+            enriched.append(record)
+            continue
+        try:
+            fields = parse_local_half_trip_detail_fields(fetch_detail_html(record.detail_url))
+        except Exception:
+            enriched.append(record)
+            continue
+        if not fields:
+            enriched.append(record)
+            continue
+        payload = dict(record.raw_payload)
+        payload.update(fields)
+        raw_detail_text = _normalize_multiline_detail_text(
+            "\n".join(
+                str(value)
+                for value in [record.raw_detail_text, fields.get("participantTarget"), fields.get("supportDetail"), fields.get("requiredDocumentsDetail"), fields.get("detailNotes")]
+                if value
+            )
+        )
+        enriched.append(
+            record.model_copy(
+                update={
+                    "raw_payload": payload,
+                    "raw_detail_text": raw_detail_text or record.raw_detail_text,
+                    "field_completeness": min(100, max(record.field_completeness, 95)),
+                    "confidence": min(100, max(record.confidence, 95)),
+                }
+            )
+        )
+    return enriched
+
 def _period_from_dates(start_value: object, end_value: object) -> str | None:
     start_text = normalize_text(str(start_value or ""))
     end_text = normalize_text(str(end_value or ""))

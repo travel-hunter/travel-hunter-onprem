@@ -316,8 +316,13 @@ function structuredText(...values: Array<string | null | undefined>) {
   return values.map((value) => normalizeBenefitText(value ?? "")).find(Boolean) ?? "";
 }
 
+function isStructuredUsageConditionItem(item: NonNullable<Policy["structuredDetail"]>["supportContent"][number]) {
+  return structuredText(item.title, item.label) === "혜택 적용 조건";
+}
+
 function getStructuredBenefitSections(policy: Policy): PolicyBenefitSection[] {
   const benefits = structuredDetailItems(policy, "supportContent")
+    .filter((item) => !isStructuredUsageConditionItem(item))
     .map((item) => structuredText(item.amount, item.description, item.value, item.title, item.label))
     .filter(Boolean);
   return benefits.length > 0 ? [{ title: "핵심 혜택", items: benefits }] : [];
@@ -354,7 +359,17 @@ function getStructuredRequirementSections(policy: Policy): PolicyRequirementSect
       return label ? { label, description: "" } : null;
     })
     .filter((item): item is { label: string; description: string } => Boolean(item));
-  return conditions.length > 0 ? [{ title: "신청대상", items: conditions }] : [];
+  const usageConditions = structuredDetailItems(policy, "supportContent")
+    .filter(isStructuredUsageConditionItem)
+    .map((item) => {
+      const label = structuredText(item.description, item.value);
+      return label ? { label, description: "" } : null;
+    })
+    .filter((item): item is { label: string; description: string } => Boolean(item));
+  return [
+    { title: "신청대상", items: conditions },
+    { title: "혜택 적용 조건", items: usageConditions },
+  ].filter((section) => section.items.length > 0);
 }
 
 function getStructuredDocumentItems(policy: Policy) {
