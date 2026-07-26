@@ -2,20 +2,18 @@
 
 ## Current status
 
-- Active task/status: `/policies` 결과 행에서 실제 동작하지 않는 `마감 임박순` 고정 표시를 제거했다.
-- Scope guard: 정책 검색/필터/목록 정렬 로직과 API/DB 계약은 변경하지 않고, 오해를 만드는 CSS pseudo-content만 제거했다.
+- Active task/status: 회원가입 인증, 비밀번호 재설정, 일정 초대 메일을 HTML + text multipart 본문으로 전환했다.
+- Scope guard: 인증/계정 API 계약, token 생성/검증, SMTP 전송 방식은 유지하고 메일 본문 표현만 개선했다.
 
 ## Recent validation
 
-- PASS: `cd frontend && npm run typecheck` — TypeScript check passed.
-- PASS: `cd frontend && npx vitest run src/app/__tests__/policies.test.tsx` — 14 tests passed.
-- PASS: `cd frontend && npm run build` — production build completed.
+- PASS: `cd backend && ../.venv/bin/python -m pytest tests/test_email_service.py tests/test_auth_db_service.py tests/test_auth_db_routes.py tests/test_trip_db_service.py -q` — 129 tests passed.
 - PASS: UTF-8 replacement scan for changed Korean-bearing files — no U+FFFD found.
 - PASS: `git diff --check` — no whitespace errors.
 
 ## Active risks
 
-- 로컬 preview 컨테이너 재기동은 아직 수행하지 않았다. 현재 변경은 CSS pseudo-content 제거라 production build 기준으로 반영 가능하다.
+- 실제 SMTP 수신함에서 버튼 렌더링은 아직 확인하지 않았다. 코드 레벨에서는 HTML alternative와 plain text fallback을 검증했다.
 
 ## Cleanup Policy
 
