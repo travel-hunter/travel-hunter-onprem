@@ -5686,6 +5686,11 @@
   padding: var(--space-4);
 }
 
+.prototype-policy-detail-screen .policy-benefit-group--core {
+  border-color: #f1d38a;
+  background: #fffdf7;
+}
+
 .prototype-policy-detail-screen .policy-benefit-title {
   color: #7a5400;
   font-size: 12px;

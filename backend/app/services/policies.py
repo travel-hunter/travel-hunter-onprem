@@ -10,6 +10,8 @@ from app.repositories import external_sources as external_source_repository
 from app.repositories import policies as policy_repository
 from app.services.policy_category_classifier import classify_external_policy_category
 from app.services import stay_discount_aliases
+from app.services import digital_tourism_policy_aliases
+from app.services import digital_tourism_resident_card as dgtour_identity
 from app.services import local_half_trip_display
 from app.services.policy_semantics import (
     api_policy_source_type,
@@ -143,6 +145,10 @@ def _policy_detail_with_alias(
 
 
 def external_policy_slug(record: ExternalSourceRecord) -> str:
+    if record.source_category == dgtour_identity.SOURCE_CATEGORY:
+        canonical_slug = dgtour_identity.canonical_policy_slug_for_city(record.city)
+        if canonical_slug:
+            return canonical_slug
     return f"{external_source_repository.EXTERNAL_POLICY_SLUG_PREFIX}{record.id}"
 
 
@@ -262,6 +268,15 @@ def get_policy(policy_slug: str, db: Session | None = None) -> dict[str, object]
             return policy_to_api(policy)
         return _policy_detail_with_alias(policy, alias_resolution.alias_area)
 
+    digital_alias_policy = digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(
+        db,
+        policy_slug,
+    )
+    if digital_alias_policy is not None:
+        if not is_public_policy(digital_alias_policy):
+            return None
+        return policy_to_api(digital_alias_policy)
+
     policy = policy_repository.get_policy_by_slug_any_status(db, policy_slug)
     if policy is not None:
         if not is_public_policy(policy):
@@ -291,7 +306,8 @@ def save_policy(
     policy = (
         alias_resolution.canonical_policy
         if alias_resolution is not None
-        else policy_repository.get_policy_by_slug(db, policy_slug)
+        else digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(db, policy_slug)
+        or policy_repository.get_policy_by_slug(db, policy_slug)
     )
     if policy is None:
         return None
@@ -399,7 +415,8 @@ def remove_saved_policy(
     policy = (
         alias_resolution.canonical_policy
         if alias_resolution is not None
-        else policy_repository.get_policy_by_slug(db, policy_slug)
+        else digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(db, policy_slug)
+        or policy_repository.get_policy_by_slug(db, policy_slug)
     )
     if policy is None:
         return None

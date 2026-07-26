@@ -94,6 +94,45 @@ describe("Travel Hunter app — policies & trip picker", () => {
     }
   });
 
+  it("shows digital resident policies as always-issued instead of deadline-unknown on the list", async () => {
+    const policies: Policy[] = [
+      {
+        ...examplePolicyDetail,
+        id: "travelmonth-dgtour-miryang",
+        slug: "travelmonth-dgtour-miryang",
+        label: "DG",
+        tag: "지역할인",
+        title: "[밀양] 디지털관광주민증 혜택",
+        org: "밀양 지자체 · 한국관광공사",
+        region: "경남",
+        deadline: "",
+        amount: "지역 제휴 혜택",
+        summary: "디지털관광주민증 발급 지역의 제휴 혜택입니다.",
+        category: "지역할인",
+        officialUrl: "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48270",
+        applyUrl: null,
+        sourceType: "external",
+      },
+    ];
+    const listPoliciesSpy = vi
+      .spyOn(appDataApi, "listPolicies")
+      .mockResolvedValue(policies);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+
+      expect(await screen.findByText("[밀양] 디지털관광주민증 혜택")).toBeInTheDocument();
+      expect(document.body).toHaveTextContent("상시 발급");
+      expect(document.body).toHaveTextContent("경남 · 상시 발급 · 제휴처별 운영기간 확인");
+      expect(document.body).not.toHaveTextContent("마감일 확인 필요");
+      expect(document.body).not.toHaveTextContent("경남 · ~");
+    } finally {
+      listPoliciesSpy.mockRestore();
+    }
+  });
+
   it("discards draft filter changes when the sheet closes", async () => {
     const policies: Policy[] = [
       examplePolicyDetail,

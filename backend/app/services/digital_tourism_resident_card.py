@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date, datetime
-from urllib.parse import urlparse
+from html.parser import HTMLParser
+from urllib.parse import parse_qs, urlparse
 
 from app.data import digital_tourism_resident_card as data
 from app.data.source_provenance import CANONICAL_KEY_VERSION, logical_key_for_source
@@ -23,6 +25,183 @@ PARTICIPATING_REGIONS = data.PARTICIPATING_REGIONS
 PARTICIPATING_CITY_REGIONS = data.PARTICIPATING_CITY_REGIONS
 PARTICIPATING_CITIES = data.PARTICIPATING_CITIES
 REGIONAL_URLS = data.REGIONAL_URLS
+
+
+DGTOURCARD_CONTEXT_PATH = "/dgtourcard"
+REGIONAL_MEMBER_BENEFIT_ENDPOINT = (
+    "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/getRegnMbrbList.json"
+)
+REGIONAL_VISIT_TIP_ENDPOINT = (
+    "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/getRegnVstTipList.json"
+)
+REGIONAL_BENEFIT_PAGE_SIZE = 8
+MAX_DISPLAY_PARTNER_BENEFITS = 8
+
+
+class _HtmlTextStripper(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        text = " ".join(data.split())
+        if text:
+            self.parts.append(text)
+
+    def text(self) -> str:
+        return " ".join(self.parts).strip()
+
+
+def clean_dgtour_text(value: object) -> str:
+    raw = str(value or "").replace("\r", "\n")
+    if "<" in raw and ">" in raw:
+        stripper = _HtmlTextStripper()
+        stripper.feed(raw)
+        raw = stripper.text()
+    return " ".join(raw.split())
+
+
+def regional_url_codes_for_city(city: str | None) -> tuple[str, str] | None:
+    display_city = display_city_name(city)
+    for row_city, _region, mtpc_do_cd, signgu_cd in data.REGIONAL_URL_CODE_ROWS:
+        if row_city == display_city:
+            return mtpc_do_cd, signgu_cd
+    return None
+
+
+def regional_url_codes_from_url(url: str | None) -> tuple[str, str] | None:
+    if not url:
+        return None
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+    mtpc_do_cd = (query.get("mtpcDoCd") or [""])[0]
+    signgu_cd = (query.get("signguCd") or [""])[0]
+    if mtpc_do_cd and signgu_cd:
+        return mtpc_do_cd, signgu_cd
+    return None
+
+
+def partner_benefit_from_api_row(row: dict[str, object]) -> dict[str, object] | None:
+    member_id = clean_dgtour_text(row.get("mbrbId"))
+    name = clean_dgtour_text(row.get("mbrbNm"))
+    category_name = clean_dgtour_text(row.get("mbrbBnefClCdNm"))
+    summary = clean_dgtour_text(row.get("svcCn"))
+    detail = clean_dgtour_text(row.get("bnefCn"))
+    intro = clean_dgtour_text(row.get("mbrbIntroWordsCn"))
+    if not member_id or not name or not (summary or detail):
+        return None
+    benefit: dict[str, object] = {
+        "memberId": member_id,
+        "categoryCode": clean_dgtour_text(row.get("mbrbBnefClCd")),
+        "categoryName": category_name or "기타",
+        "name": name,
+        "intro": intro,
+        "summary": summary or detail,
+        "detail": detail or summary,
+    }
+    exposure_id = clean_dgtour_text(row.get("mbrbExpsrId"))
+    if exposure_id:
+        benefit["couponExposureId"] = exposure_id
+    usage_count = row.get("utztCnt")
+    if isinstance(usage_count, int):
+        benefit["usageCount"] = usage_count
+    total_count = row.get("totCnt")
+    if isinstance(total_count, int):
+        benefit["totalCount"] = total_count
+    return benefit
+
+
+def partner_benefits_from_api_rows(rows: Iterable[dict[str, object]]) -> list[dict[str, object]]:
+    benefits: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for row in rows:
+        benefit = partner_benefit_from_api_row(row)
+        if benefit is None:
+            continue
+        member_id = str(benefit["memberId"])
+        if member_id in seen:
+            continue
+        seen.add(member_id)
+        benefits.append(benefit)
+    return benefits
+
+
+def summarize_partner_benefit_categories(
+    benefits: Iterable[dict[str, object]],
+) -> dict[str, int]:
+    summary: dict[str, int] = {}
+    for benefit in benefits:
+        category = clean_dgtour_text(benefit.get("categoryName")) or "기타"
+        summary[category] = summary.get(category, 0) + 1
+    return dict(sorted(summary.items(), key=lambda item: (-item[1], item[0])))
+
+
+def partner_benefit_summary_text(city: str | None, benefits: list[dict[str, object]]) -> str:
+    display_city = display_city_name(city)
+    if not benefits:
+        return f"{display_city} 지역 제휴처별 숙박·식음·체험·관광지 혜택을 공식 안내에서 확인할 수 있습니다."
+    category_summary = summarize_partner_benefit_categories(benefits)
+    category_text = ", ".join(f"{name} {count}곳" for name, count in category_summary.items())
+    return f"{display_city} 제휴처 {len(benefits)}곳의 디지털관광주민증 혜택을 제공합니다. 주요 분야: {category_text}."
+
+
+def format_partner_benefit_for_display(benefit: dict[str, object]) -> str:
+    category = clean_dgtour_text(benefit.get("categoryName")) or "기타"
+    name = clean_dgtour_text(benefit.get("name"))
+    summary = clean_dgtour_text(benefit.get("summary"))
+    detail = clean_dgtour_text(benefit.get("detail"))
+    intro = clean_dgtour_text(benefit.get("intro"))
+    description = detail if detail and detail != summary else summary
+    intro_suffix = f" · {intro}" if intro and intro not in description else ""
+    if description:
+        return f"[{category}] {name}: {description}{intro_suffix}"
+    return f"[{category}] {name}{intro_suffix}"
+
+
+def apply_partner_benefit_enrichment(
+    source: ExternalBenefitSource,
+    partner_benefits: list[dict[str, object]],
+) -> ExternalBenefitSource:
+    payload = dict(source.raw_payload if isinstance(source.raw_payload, dict) else {})
+    payload["partnerBenefits"] = partner_benefits
+    payload["partnerBenefitSummary"] = {
+        "totalCount": len(partner_benefits),
+        "categoryCounts": summarize_partner_benefit_categories(partner_benefits),
+        "displayLimit": MAX_DISPLAY_PARTNER_BENEFITS,
+    }
+    payload["collectionMode"] = (
+        "allowlist-materialized+partner-benefit-api"
+        if partner_benefits
+        else payload.get("collectionMode", "allowlist-materialized")
+    )
+    raw_detail_parts = [partner_benefit_summary_text(source.city, partner_benefits)]
+    raw_detail_parts.extend(
+        format_partner_benefit_for_display(benefit)
+        for benefit in partner_benefits[:MAX_DISPLAY_PARTNER_BENEFITS]
+    )
+    return source.model_copy(
+        update={
+            "raw_payload": payload,
+            "raw_detail_text": "\n".join(raw_detail_parts),
+            "field_completeness": 95 if partner_benefits else source.field_completeness,
+        }
+    )
+
+
+def apply_partner_benefit_enrichment_by_city(
+    sources: Iterable[ExternalBenefitSource],
+    benefits_by_city: dict[str, list[dict[str, object]]],
+) -> list[ExternalBenefitSource]:
+    enriched: list[ExternalBenefitSource] = []
+    for source in sources:
+        city = display_city_name(source.city)
+        enriched.append(
+            apply_partner_benefit_enrichment(
+                source,
+                benefits_by_city.get(city, []),
+            )
+        )
+    return enriched
 
 SUPPORT_CONTENT_TEXT = "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
 DEFAULT_BENEFIT_TEXT = f"{SUPPORT_CONTENT_TEXT}을 이용할 수 있습니다."
@@ -89,6 +268,27 @@ def city_from_title(title: str) -> str:
     if title.endswith(TITLE_SUFFIX):
         return display_city_name(title[: -len(TITLE_SUFFIX)].strip())
     return ""
+
+
+def canonical_policy_slug_for_city(city: str | None) -> str | None:
+    display_city = display_city_name(city)
+    if not is_participating_city(display_city):
+        return None
+    return f"dgtour-{display_city}"
+
+
+def city_from_policy_slug(slug: str | None) -> str:
+    if not slug or not slug.startswith("dgtour-"):
+        return ""
+    suffix = slug.removeprefix("dgtour-").strip()
+    if not suffix:
+        return ""
+    if "-" in suffix:
+        city_candidate, numeric_suffix = suffix.rsplit("-", 1)
+        if numeric_suffix.isdigit():
+            suffix = city_candidate
+    city = display_city_name(suffix)
+    return city if is_participating_city(city) else ""
 
 
 def is_visitkorea_dgtourcard_url(url: str | None) -> bool:

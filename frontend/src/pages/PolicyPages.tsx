@@ -7,7 +7,7 @@ import { useSession } from "../app/session";
 import { PolicyListCard } from "../components/cards";
 import { Button, EmptyState, ErrorState, IconButton, LinkButton, LoadingState, SurfaceCard, Tag, Toast } from "../components/ui";
 import { getDeadlinePolicies, getPolicyVisual } from "../data/displayConfig";
-import { UNKNOWN_DEADLINE_LABEL, daysUntilPolicyDeadline, dday, formatDottedPolicyDeadline, isSafePolicyDeadline } from "../utils";
+import { daysUntilPolicyDeadline, dday, formatPolicyDeadlineNotice, formatPolicyDeadlineTag, formatPolicyPeriodSummary, isDigitalTourismResidentCardPolicy, isSafePolicyDeadline } from "../utils";
 import { canUsePolicyActions } from "../utils/policyCapabilities";
 import { shareLinkWithFallback } from "../utils/share";
 
@@ -461,18 +461,19 @@ function getPolicyRequirementSections(policy: Policy): PolicyRequirementSection[
 }
 
 function getPolicyPeriodLabel(policy: Policy) {
-  if (!isSafePolicyDeadline(policy.deadline)) return UNKNOWN_DEADLINE_LABEL;
-  return `시작일 확인 필요 · ${formatDottedPolicyDeadline(policy.deadline)} 마감`;
+  return formatPolicyPeriodSummary(policy);
 }
 
-function getDeadlineTagLabel(deadline: string) {
-  return isSafePolicyDeadline(deadline) ? `${dday(deadline)} 마감` : UNKNOWN_DEADLINE_LABEL;
+function getDeadlineTagLabel(policy: Policy) {
+  return formatPolicyDeadlineTag(policy);
 }
 
-function getDeadlineWarningText(deadline: string) {
-  return isSafePolicyDeadline(deadline)
-    ? `${dday(deadline)} · 서둘러 신청하세요`
-    : `${UNKNOWN_DEADLINE_LABEL} · 공식 안내에서 기간을 확인하세요`;
+function getDeadlineTagTone(policy: Policy) {
+  return isDigitalTourismResidentCardPolicy(policy) ? "green" : "warning";
+}
+
+function getDeadlineWarningText(policy: Policy) {
+  return formatPolicyDeadlineNotice(policy);
 }
 
 function getPolicyDisplayTag(policy: Policy) {
@@ -769,7 +770,7 @@ function PolicyPreviewList({ policies }: { policies: Policy[] }) {
               {policy.region} · {policy.amount}
             </span>
           </div>
-          <Tag tone="warning">{dday(policy.deadline)}</Tag>
+          <Tag tone={isDigitalTourismResidentCardPolicy(policy) ? "green" : "warning"}>{formatPolicyDeadlineTag(policy)}</Tag>
         </Link>
       ))}
     </div>
@@ -985,7 +986,7 @@ export function PolicyDetailPage() {
         <div className="title-block">
           <div className="row">
             <Tag>{getPolicyDisplayTag(policy)}</Tag>
-            <Tag tone="warning">{getDeadlineTagLabel(policy.deadline)}</Tag>
+            <Tag tone={getDeadlineTagTone(policy)}>{getDeadlineTagLabel(policy)}</Tag>
           </div>
           <h1>{policy.title}</h1>
           <div className="meta">
@@ -1003,7 +1004,11 @@ export function PolicyDetailPage() {
             <div className="price">{getPolicyAmountLabel(policy)}</div>
             <div className="policy-benefit-grid">
               {benefitSections.map((section) => (
-                <SurfaceCard tone={section.title.includes("혜택") ? "benefit" : "default"} className="policy-benefit-group" key={`${section.title}-${section.items.join("|")}`}>
+                <SurfaceCard
+                  tone={section.title.includes("혜택") ? "benefit" : "default"}
+                  className={`policy-benefit-group${section.title.includes("혜택") ? " policy-benefit-group--core" : ""}`}
+                  key={`${section.title}-${section.items.join("|")}`}
+                >
                   <div className="policy-benefit-title">{section.title}</div>
                   <ul>
                     {section.items.map((item) => (
@@ -1031,13 +1036,13 @@ export function PolicyDetailPage() {
                 </SurfaceCard>
               ))}
             </div>
-            <div className="warning-text">{getDeadlineWarningText(policy.deadline)}</div>
+            <div className="warning-text">{getDeadlineWarningText(policy)}</div>
           </section>
         ) : (
           <section className="section-block">
             <h3>📅 기간</h3>
             <div>{getPolicyPeriodLabel(policy)}</div>
-            <div className="warning-text">{getDeadlineWarningText(policy.deadline)}</div>
+            <div className="warning-text">{getDeadlineWarningText(policy)}</div>
           </section>
         )}
 

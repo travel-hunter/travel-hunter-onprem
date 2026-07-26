@@ -162,6 +162,9 @@ describe("Travel Hunter app — policy detail", () => {
 
       expect(await screen.findByRole("heading", { name: "구조화 상세 정책" })).toBeInTheDocument();
       expect(screen.getByText("최대 7만원")).toBeInTheDocument();
+      expect(screen.getByText("핵심 혜택").closest(".policy-benefit-group")).toHaveClass(
+        "policy-benefit-group--core",
+      );
       expect(screen.getByText("신청 기간")).toBeInTheDocument();
       expect(screen.getByText("여행 기간")).toBeInTheDocument();
       expect(screen.getByText("쿠폰 발급 기간")).toBeInTheDocument();
@@ -753,7 +756,7 @@ describe("Travel Hunter app — policy detail", () => {
     }
   });
 
-  it("uses the dgtour summary instead of repeating generic benefit text", async () => {
+  it("uses the dgtour summary and renders it as always-issued instead of deadline-unknown", async () => {
     const dgtourPolicy: Policy = {
       id: "dgtour-밀양-1",
       slug: "dgtour-밀양-1",
@@ -762,7 +765,7 @@ describe("Travel Hunter app — policy detail", () => {
       title: "밀양 디지털관광주민증 혜택",
       org: "한국관광공사",
       region: "경남",
-      deadline: "2026-12-31",
+      deadline: "",
       amount: "혜택 제공",
       summary:
         "디지털관광주민증 소지자 대상 밀양(경남) 지역 방문 시 혜택을 제공합니다.",
@@ -770,7 +773,7 @@ describe("Travel Hunter app — policy detail", () => {
       category: "지역할인",
       requirements: ["디지털관광주민증 발급자", "경남 방문"],
       documents: ["디지털관광주민증"],
-      officialUrl: "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+      officialUrl: "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48270",
       applyUrl: null,
       sourceType: "external",
     };
@@ -795,6 +798,10 @@ describe("Travel Hunter app — policy detail", () => {
           "디지털관광주민증 소지자 대상 밀양(경남) 지역 방문 시 혜택을 제공합니다.",
         ),
       ).toBeInTheDocument();
+      expect(screen.getByText("상시 발급")).toBeInTheDocument();
+      expect(screen.getByText("상시 발급 · 제휴처별 운영기간 확인")).toBeInTheDocument();
+      expect(document.body).toHaveTextContent("별도 신청 마감일 없이 발급 후 이용할 수 있습니다.");
+      expect(document.body).not.toHaveTextContent("마감일 확인 필요");
       expect(supportSection).not.toHaveTextContent("혜택 제공 혜택");
     } finally {
       getPolicySpy.mockRestore();

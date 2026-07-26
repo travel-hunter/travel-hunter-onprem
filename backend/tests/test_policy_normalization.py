@@ -1652,6 +1652,151 @@ def test_promoting_local_half_trip_hides_legacy_dgtour_seed_policies(
     assert db.query(Policy).filter(Policy.slug.like("travelmonth-%")).one().status == "active"
 
 
+
+def test_promoting_digital_tourism_prefers_hidden_canonical_slug_over_active_legacy_seed(
+    db: Session,
+) -> None:
+    from app.services import digital_tourism_resident_card as dgtour
+    from app.services import policies as policy_service
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    hidden_canonical = Policy(
+        slug="dgtour-영광",
+        title="[영광] 디지털관광주민증 혜택",
+        organization="한국관광공사",
+        policy_type="지역할인",
+        description="hidden canonical",
+        benefit_detail="지역 제휴 혜택",
+        target_condition="디지털관광주민증 발급자",
+        region="전남",
+        status="hidden",
+        source_category=dgtour.SOURCE_CATEGORY,
+        source_canonical_key=dgtour.canonical_key_for_city("영광"),
+    )
+    active_legacy = Policy(
+        slug="dgtour-영광-8",
+        title="[영광] 디지털관광주민증 혜택",
+        organization="한국관광공사",
+        policy_type="지역할인",
+        description="active legacy",
+        benefit_detail="지역 제휴 혜택",
+        target_condition="디지털관광주민증 발급자",
+        region="전남",
+        status="active",
+        source_category=dgtour.SOURCE_CATEGORY,
+        source_canonical_key=dgtour.canonical_key_for_city("영광"),
+    )
+    db.add_all([hidden_canonical, active_legacy])
+    db.flush()
+    rows = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name=dgtour.SOURCE_NAME,
+                source_url=dgtour.SOURCE_URL,
+                source_category=dgtour.SOURCE_CATEGORY,
+                external_id="digital-yeonggwang-canonical",
+                canonical_key=dgtour.canonical_key_for_city("영광"),
+                logical_key="digital-tourism-resident-card:2026:전남:영광",
+                detail_url=dgtour.official_url_for_city("영광"),
+                collected_page_url=dgtour.SOURCE_URL,
+                title="[영광] 디지털관광주민증 혜택",
+                organizer_text="영광 지자체 · 한국관광공사",
+                organizers=["영광 지자체", "한국관광공사"],
+                region="전남",
+                city="영광",
+                benefit_text=dgtour.DEFAULT_BENEFIT_TEXT,
+                benefit_value_text=dgtour.DEFAULT_BENEFIT_VALUE_TEXT,
+                extracted_amount_krw=None,
+                extracted_discount_percent=None,
+                benefit_value_type="mixed",
+                raw_payload={
+                    "partnerBenefits": [
+                        {
+                            "memberId": "yeonggwang-1",
+                            "categoryName": "관광지",
+                            "name": "영광 관광지",
+                            "summary": "입장 할인",
+                            "detail": "입장료 1,000원 할인",
+                        }
+                    ],
+                    "partnerBenefitSummary": {
+                        "totalCount": 1,
+                        "categoryCounts": {"관광지": 1},
+                        "displayLimit": 8,
+                    },
+                },
+            )
+        ],
+    )
+
+    promote_external_benefits_to_policies(db)
+    db.flush()
+
+    assert hidden_canonical.status == "active"
+    assert hidden_canonical.slug == "dgtour-영광"
+    assert hidden_canonical.external_source_record_id == rows[0].id
+    assert active_legacy.status == "hidden"
+
+    canonical_payload = policy_service.get_policy("dgtour-영광", db)
+    legacy_payload = policy_service.get_policy("dgtour-영광-8", db)
+    assert canonical_payload is not None
+    assert legacy_payload is not None
+    assert canonical_payload["slug"] == "dgtour-영광"
+    assert legacy_payload["slug"] == "dgtour-영광"
+
+def test_promoting_local_half_trip_does_not_hide_canonical_digital_tourism_policy(
+    db: Session,
+) -> None:
+    from app.services import digital_tourism_resident_card as dgtour
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    rows = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                canonical_key="active-half-trip-with-canonical-dgtour",
+                external_id="active-half-trip-with-canonical-dgtour",
+                source_category="local_half_trip",
+            ),
+            make_source(
+                source_name=dgtour.SOURCE_NAME,
+                source_url=dgtour.SOURCE_URL,
+                source_category=dgtour.SOURCE_CATEGORY,
+                external_id="digital-hadong-preserve",
+                canonical_key=dgtour.canonical_key_for_city("하동"),
+                logical_key="digital-tourism-resident-card:2026:경남:하동",
+                title="[하동] 디지털관광주민증 혜택",
+                region="경남",
+                city="하동",
+                benefit_text=dgtour.DEFAULT_BENEFIT_TEXT,
+                benefit_value_text=dgtour.DEFAULT_BENEFIT_VALUE_TEXT,
+                extracted_amount_krw=None,
+                extracted_discount_percent=None,
+                benefit_value_type="mixed",
+                raw_payload={
+                    "partnerBenefits": [
+                        {
+                            "memberId": "hadong-preserve-1",
+                            "categoryName": "체험",
+                            "name": "하동 체험",
+                            "summary": "체험 할인",
+                            "detail": "체험 2,000원 할인",
+                        }
+                    ]
+                },
+            ),
+        ],
+    )
+
+    result = promote_external_benefits_to_policies(db)
+
+    assert result.promoted_count == 2
+    digital_policy = db.query(Policy).filter(Policy.external_source_record_id == rows[1].id).one()
+    assert digital_policy.slug == "dgtour-하동"
+    assert digital_policy.status == "active"
+
+
 def test_frozen_reviewed_policy_is_excluded_from_normalizer_writers(db: Session) -> None:
     record = upsert_external_source_records(
         db,
@@ -1862,3 +2007,158 @@ def test_promoting_digital_tourism_uses_regional_visitkorea_url_not_half_trip(
     assert seed.benefit_detail == dgtour.DEFAULT_BENEFIT_VALUE_TEXT
     assert "반값여행" not in str(seed.structured_detail)
     assert "50% 환급" not in str(seed.structured_detail)
+
+
+def test_promoting_digital_tourism_uses_stable_city_slug_and_old_slug_aliases(
+    db: Session,
+) -> None:
+    from app.services import digital_tourism_resident_card as dgtour
+    from app.services import policies as policy_service
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    seed = Policy(
+        slug="travelmonth-999",
+        title="[가평] 디지털관광주민증 혜택",
+        organization="한국관광공사",
+        policy_type="지역할인",
+        description="seed",
+        benefit_detail="지역 제휴 혜택",
+        target_condition="디지털관광주민증 발급자",
+        region="경기",
+        status="active",
+        source_category=dgtour.SOURCE_CATEGORY,
+        source_canonical_key=dgtour.canonical_key_for_city("가평"),
+    )
+    db.add(seed)
+    db.flush()
+    rows = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name=dgtour.SOURCE_NAME,
+                source_url=dgtour.SOURCE_URL,
+                source_category=dgtour.SOURCE_CATEGORY,
+                external_id="digital-gapyeong",
+                canonical_key=dgtour.canonical_key_for_city("가평"),
+                logical_key="digital-tourism-resident-card:2026:경기:가평",
+                detail_url=dgtour.official_url_for_city("가평"),
+                collected_page_url=dgtour.SOURCE_URL,
+                title="[가평] 디지털관광주민증 혜택",
+                organizer_text="가평 지자체 · 한국관광공사",
+                organizers=["가평 지자체", "한국관광공사"],
+                region="경기",
+                city="가평",
+                benefit_text=dgtour.DEFAULT_BENEFIT_TEXT,
+                benefit_value_text=dgtour.DEFAULT_BENEFIT_VALUE_TEXT,
+                extracted_amount_krw=None,
+                extracted_discount_percent=None,
+                benefit_value_type="mixed",
+                raw_payload={
+                    "partnerBenefits": [
+                        {
+                            "memberId": "gapyeong-1",
+                            "categoryName": "숙박",
+                            "name": "가평 숙소",
+                            "summary": "숙박 할인",
+                            "detail": "숙박 10% 할인",
+                        }
+                    ],
+                    "partnerBenefitSummary": {
+                        "totalCount": 1,
+                        "categoryCounts": {"숙박": 1},
+                        "displayLimit": 8,
+                    },
+                },
+            )
+        ],
+    )
+
+    result = promote_external_benefits_to_policies(db)
+
+    assert result.promoted_count == 1
+    assert seed.external_source_record_id == rows[0].id
+    assert seed.slug == "dgtour-가평"
+    assert len(seed.structured_detail["supportContent"]) == 2
+
+    canonical_payload = policy_service.get_policy("dgtour-가평", db)
+    legacy_payload = policy_service.get_policy(f"travelmonth-{rows[0].id}", db)
+
+    assert canonical_payload is not None
+    assert legacy_payload is not None
+    assert canonical_payload["slug"] == "dgtour-가평"
+    assert legacy_payload["slug"] == "dgtour-가평"
+    assert legacy_payload["structuredDetail"]["supportContent"][1]["description"].startswith("[숙박] 가평 숙소")
+
+
+def test_promoting_legacy_numbered_dgtour_slug_renames_to_city_slug_and_keeps_alias(
+    db: Session,
+) -> None:
+    from app.services import digital_tourism_resident_card as dgtour
+    from app.services import policies as policy_service
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    seed = Policy(
+        slug="dgtour-하동-3",
+        title="[하동] 디지털관광주민증 혜택",
+        organization="한국관광공사",
+        policy_type="지역할인",
+        description="seed",
+        benefit_detail="지역 제휴 혜택",
+        target_condition="디지털관광주민증 발급자",
+        region="경남",
+        status="active",
+        source_category=dgtour.SOURCE_CATEGORY,
+        source_canonical_key=dgtour.canonical_key_for_city("하동"),
+    )
+    db.add(seed)
+    db.flush()
+    upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_name=dgtour.SOURCE_NAME,
+                source_url=dgtour.SOURCE_URL,
+                source_category=dgtour.SOURCE_CATEGORY,
+                external_id="digital-hadong-canonical",
+                canonical_key=dgtour.canonical_key_for_city("하동"),
+                logical_key="digital-tourism-resident-card:2026:경남:하동",
+                detail_url=dgtour.HADONG_REGIONAL_URL,
+                collected_page_url=dgtour.SOURCE_URL,
+                title="[하동] 디지털관광주민증 혜택",
+                organizer_text="하동 지자체 · 한국관광공사",
+                organizers=["하동 지자체", "한국관광공사"],
+                region="경남",
+                city="하동",
+                benefit_text=dgtour.DEFAULT_BENEFIT_TEXT,
+                benefit_value_text=dgtour.DEFAULT_BENEFIT_VALUE_TEXT,
+                extracted_amount_krw=None,
+                extracted_discount_percent=None,
+                benefit_value_type="mixed",
+                raw_payload={
+                    "partnerBenefits": [
+                        {
+                            "memberId": "hadong-1",
+                            "categoryName": "체험",
+                            "name": "하동 체험",
+                            "summary": "체험 할인",
+                            "detail": "체험 2,000원 할인",
+                        }
+                    ],
+                    "partnerBenefitSummary": {
+                        "totalCount": 1,
+                        "categoryCounts": {"체험": 1},
+                        "displayLimit": 8,
+                    },
+                },
+            )
+        ],
+    )
+
+    promote_external_benefits_to_policies(db)
+
+    assert seed.slug == "dgtour-하동"
+    assert len(seed.structured_detail["supportContent"]) == 2
+    old_slug_payload = policy_service.get_policy("dgtour-하동-3", db)
+    assert old_slug_payload is not None
+    assert old_slug_payload["slug"] == "dgtour-하동"
+    assert old_slug_payload["structuredDetail"]["supportContent"][1]["description"].startswith("[체험] 하동 체험")

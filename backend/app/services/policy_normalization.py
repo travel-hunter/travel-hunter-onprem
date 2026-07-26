@@ -53,6 +53,11 @@ def _representative_deadline_for_record(
 
 
 def _policy_slug_for_external_record(record: ExternalSourceRecord) -> str:
+    if record.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY:
+        city = _digital_tourism_city(record)
+        canonical_slug = dgtour_identity.canonical_policy_slug_for_city(city)
+        if canonical_slug:
+            return canonical_slug
     return f"{external_source_repository.EXTERNAL_POLICY_SLUG_PREFIX}{record.id}"
 
 
@@ -132,6 +137,15 @@ def _get_policy_for_external_record(
         if logical_campaign_matches:
             return logical_campaign_matches[0]
     if record.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY and record.logical_key is not None:
+        canonical_slug = _policy_slug_for_external_record(record)
+        canonical_match = db.scalar(
+            select(Policy).where(
+                Policy.slug == canonical_slug,
+                Policy.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY,
+            )
+        )
+        if canonical_match is not None:
+            return canonical_match
         logical_matches = list(
             db.scalars(
                 select(Policy)
@@ -208,7 +222,9 @@ def _assign_policy_from_external_record(
     benefit_detail = record.benefit_value_text or benefit_value.value_text or record.benefit_text
     if record.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY:
         benefit_detail = dgtour_identity.DEFAULT_BENEFIT_VALUE_TEXT
-    if not policy.slug:
+    if record.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY:
+        policy.slug = _policy_slug_for_external_record(record)
+    elif not policy.slug:
         policy.slug = _policy_slug_for_external_record(record)
     policy.title = record.title
     policy.organization = record.organizer_text or record.source_name
@@ -382,5 +398,11 @@ def _hide_legacy_dgtour_seed_policies(db: Session) -> None:
     ).all()
     for policy in legacy_policies:
         if policy.slug in frozen_slugs:
+            continue
+        if (
+            policy.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY
+            and policy.external_source_record_id is not None
+            and dgtour_identity.is_participating_city(dgtour_identity.city_from_title(policy.title or ""))
+        ):
             continue
         policy.status = "hidden"

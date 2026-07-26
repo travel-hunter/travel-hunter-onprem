@@ -1,5 +1,40 @@
 export const UNKNOWN_DEADLINE_LABEL = "마감일 확인 필요";
 
+export const ALWAYS_AVAILABLE_POLICY_LABEL = "상시 발급";
+export const DIGITAL_TOURISM_PERIOD_LABEL = "상시 발급 · 제휴처별 운영기간 확인";
+export const DIGITAL_TOURISM_PERIOD_NOTICE =
+  "별도 신청 마감일 없이 발급 후 이용할 수 있습니다. 제휴처별 할인율, 운영 기간, 이용 조건은 공식 안내에서 확인하세요.";
+
+type PolicyDeadlineDisplayContext = {
+  title?: string | null;
+  officialUrl?: string | null;
+  deadline?: string | null;
+};
+
+export function isDigitalTourismResidentCardPolicy(policy: PolicyDeadlineDisplayContext): boolean {
+  const title = policy.title ?? "";
+  const officialUrl = policy.officialUrl ?? "";
+  return title.includes("디지털관광주민증") || officialUrl.includes("/dgtourcard/biz/regn/regnMain.do");
+}
+
+export function formatPolicyDeadlineTag(policy: PolicyDeadlineDisplayContext): string {
+  if (isDigitalTourismResidentCardPolicy(policy)) return ALWAYS_AVAILABLE_POLICY_LABEL;
+  return isSafePolicyDeadline(policy.deadline) ? `${dday(policy.deadline)} 마감` : UNKNOWN_DEADLINE_LABEL;
+}
+
+export function formatPolicyPeriodSummary(policy: PolicyDeadlineDisplayContext): string {
+  if (isDigitalTourismResidentCardPolicy(policy)) return DIGITAL_TOURISM_PERIOD_LABEL;
+  if (!isSafePolicyDeadline(policy.deadline)) return UNKNOWN_DEADLINE_LABEL;
+  return `시작일 확인 필요 · ${formatDottedPolicyDeadline(policy.deadline)} 마감`;
+}
+
+export function formatPolicyDeadlineNotice(policy: PolicyDeadlineDisplayContext): string {
+  if (isDigitalTourismResidentCardPolicy(policy)) return DIGITAL_TOURISM_PERIOD_NOTICE;
+  return isSafePolicyDeadline(policy.deadline)
+    ? `${dday(policy.deadline)} · 서둘러 신청하세요`
+    : `${UNKNOWN_DEADLINE_LABEL} · 공식 안내에서 기간을 확인하세요`;
+}
+
 function parseIsoDateParts(value: string): { year: number; month: number; day: number } | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
   if (!match) return null;

@@ -32,6 +32,7 @@ from app.services import email as email_service
 from app.services import itinerary_recommendations
 from app.services import local_half_trip_display
 from app.services import stay_discount_aliases
+from app.services import digital_tourism_policy_aliases
 from app.services.kakao_local import KakaoLocalClient, build_kakao_local_client
 from app.services.policy_semantics import (
     benefit_display_amount,
@@ -725,6 +726,12 @@ def _resolve_policy_for_request_slug(
         if not is_public_policy(policy):
             return None, None
         return policy, alias_resolution.alias_area
+    digital_policy = digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(
+        db,
+        policy_slug,
+    )
+    if digital_policy is not None:
+        return digital_policy, None
     return policy_repository.get_policy_by_slug(db, policy_slug), None
 
 

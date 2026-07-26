@@ -275,7 +275,7 @@ def test_collect_external_benefits_from_live_sources_reports_partial_success_for
     ]
 
 
-def test_collect_live_sources_materializes_digital_tourism_without_network_fetch(
+def test_collect_live_sources_enriches_digital_tourism_from_partner_api(
     monkeypatch,
 ) -> None:
     from app.services import digital_tourism_resident_card as dgtour
@@ -283,7 +283,7 @@ def test_collect_live_sources_materializes_digital_tourism_without_network_fetch
     from app.services.external_benefit_collection import SourceDefinition
 
     fetched_urls: list[str] = []
-    upserted_categories: list[str] = []
+    upserted_sources = []
 
     monkeypatch.setattr(
         external_benefit_collection,
@@ -303,10 +303,25 @@ def test_collect_live_sources_materializes_digital_tourism_without_network_fetch
 
     def fake_upsert(db_arg, sources):
         rows = list(sources)
-        upserted_categories.extend(source.source_category for source in rows)
+        upserted_sources.extend(rows)
         return rows
 
     monkeypatch.setattr(external_benefit_collection, "fetch_external_source_html", fake_fetch)
+    monkeypatch.setattr(
+        external_benefit_collection,
+        "collect_digital_tourism_partner_benefits_by_city",
+        lambda *, timeout: {
+            "하동": [
+                {
+                    "memberId": "hadong-1",
+                    "categoryName": "식음료",
+                    "name": "하동 제휴 카페",
+                    "summary": "음료 할인",
+                    "detail": "음료 1,000원 할인",
+                }
+            ]
+        },
+    )
     monkeypatch.setattr(
         external_benefit_collection.external_source_repository,
         "upsert_external_source_records",
@@ -327,4 +342,7 @@ def test_collect_live_sources_materializes_digital_tourism_without_network_fetch
     assert fetched_urls == []
     assert result.outcome == "success"
     assert result.parsed_count == 52
-    assert upserted_categories == [dgtour.SOURCE_CATEGORY] * 52
+    assert [source.source_category for source in upserted_sources] == [dgtour.SOURCE_CATEGORY] * 52
+    hadong = next(source for source in upserted_sources if source.city == "하동")
+    assert hadong.raw_payload["partnerBenefits"][0]["name"] == "하동 제휴 카페"
+    assert "하동 제휴처 1곳" in hadong.raw_detail_text

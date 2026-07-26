@@ -1,14 +1,14 @@
-﻿import { Heart } from "lucide-react";
+import { Heart } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Policy, Trip } from "../api";
 import { getPolicyMoodIcon, getPolicyMoodTone, getTripRegionEmojiFromTitle } from "../data/displayConfig";
-import { dday } from "../utils";
+import { formatPolicyDeadlineTag, formatPolicyPeriodSummary } from "../utils";
 import { canUsePolicyActions } from "../utils/policyCapabilities";
 import { SurfaceCard, Tag } from "./ui";
 
-function compactDeadline(deadline: string) {
-  return `~${deadline.split("-").join(".")}`;
+function compactPolicyPeriod(policy: Policy) {
+  return formatPolicyPeriodSummary(policy);
 }
 
 function tripRegionEmoji(trip: Trip) {
@@ -59,12 +59,12 @@ export function PolicyListCard({
         <div className="policy-list-copy">
           <div className="policy-list-badges">
             <span>{policy.amount}</span>
-            <em>{dday(policy.deadline)}</em>
+            <em>{formatPolicyDeadlineTag(policy)}</em>
           </div>
           <h3>{policy.title}</h3>
           <div className="policy-list-meta">
             <span aria-hidden="true">📍</span>
-            {policy.region} · {compactDeadline(policy.deadline)}
+            {policy.region} · {compactPolicyPeriod(policy)}
           </div>
         </div>
       </Link>
