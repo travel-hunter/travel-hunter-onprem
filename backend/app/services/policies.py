@@ -89,6 +89,7 @@ def policy_to_api(policy: PolicyModel) -> dict[str, object]:
         "title": title,
         "org": policy.organization or "",
         "region": policy.region,
+        "startDate": policy.start_date.isoformat() if policy.start_date else None,
         "deadline": policy.end_date.isoformat() if policy.end_date else "",
         "amount": amount,
         "summary": policy.policy_comment or policy.description or "",
@@ -206,6 +207,9 @@ def external_source_record_to_policy_api(
         "title": title,
         "org": record.organizer_text or record.source_name,
         "region": record.region or "전국",
+        "startDate": representative_deadline.start_date.isoformat()
+        if representative_deadline.start_date
+        else None,
         "deadline": representative_deadline.deadline.isoformat()
         if representative_deadline.deadline
         else "",

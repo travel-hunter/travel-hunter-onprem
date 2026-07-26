@@ -766,6 +766,7 @@ Account linking policy:
     "title": "디지털관광주민증",
     "org": "한국관광공사",
     "region": "전국",
+    "startDate": "2026-01-01",
     "deadline": "2026-12-31",
     "amount": "최대 30만원",
     "summary": "여행지 할인 혜택 제공",
@@ -803,7 +804,7 @@ Account linking policy:
 }
 ```
 
-정책 `deadline`은 기존 public string 필드를 유지한다. ISO 날짜 문자열은 backend 기간 evidence selector가 선택한 안전한 대표 신청/발급/사용 마감일이고, 빈 문자열(`""`)은 안전한 대표 마감일이 없어 화면에서 확인 필요로 다뤄야 한다는 뜻이다. source 원문의 명확한 시작/종료일은 top-level `startDate`/`endDate`를 새로 추가하지 않고 `structuredDetail.periods[*].startDate` / `endDate`에 보존한다. DB `policies.end_date`도 첫 pass에서는 안전한 대표 마감일만 저장하며, 기본값성 또는 미분류 raw `end_date`는 public `deadline`으로 노출하지 않는다.
+정책 `deadline`은 기존 public string 필드를 유지한다. ISO 날짜 문자열은 backend 기간 evidence selector가 선택한 안전한 대표 신청/발급/사용 마감일이고, 빈 문자열(`""`)은 안전한 대표 마감일이 없다는 뜻이다. top-level `startDate`는 같은 selector가 안전하게 확정한 대표 시작일이면 ISO 문자열로 내려주고, 확인되지 않으면 `null`로 둔다. frontend 목록 카드는 확인되지 않은 시작일을 “시작일 확인 필요”로 보충하지 않고, 확정된 날짜만 표시한다. source 원문의 명확한 시작/종료일은 `structuredDetail.periods[*].startDate` / `endDate`에도 보존한다. DB `policies.end_date`도 첫 pass에서는 안전한 대표 마감일만 저장하며, 기본값성 또는 미분류 raw `end_date`는 public `deadline`으로 노출하지 않는다.
 
 `actionStatus`는 생략 또는 `null`이면 저장/일정 연결 가능 상태로 간주한다. migration gap 동안 상세 조회만 허용되는 raw fallback 정책은 `"infoOnly"`를 반환하며, 프론트엔드는 저장/일정 연결 action을 차단하고 공식 원문 확인 안내만 제공한다.
 `external_source_records.source_category` 중 정책 승격 대상은 `local_half_trip`, `stay_discount`이다. `local_half_trip`은 신청접수중과 준비중을 공개 승격 후보로 보되, source-specific evidence correction이 `hidden/needs_review`를 지정한 행은 public 정책으로 노출하지 않는다. `stay_discount`는 하나의 canonical 정책으로 저장/중복 방지하고, public 목록과 추천 후보에서만 eligible area alias로 확장한다. `regional_benefit`과 `traffic_benefit`은 legacy source evidence로 남기며 목적지/지역 추천 점수와 public 정책 승격에서 제외한다. 일정 상세 정책 추천은 정규화된 공개 정책 및 `stay_discount` alias 후보에 대해 지역/일정 날짜/카테고리/여행 스타일 태그만 사용하는 deterministic scoring을 적용한다.

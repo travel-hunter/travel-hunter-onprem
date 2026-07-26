@@ -61,6 +61,7 @@ export type Policy = {
   title: string;
   org: string;
   region: string;
+  startDate?: string | null;
   deadline: string;
   amount: string;
   summary: string;

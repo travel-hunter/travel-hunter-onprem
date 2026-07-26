@@ -2,23 +2,20 @@
 
 ## Current status
 
-- Active task/status: 대한민국 반값여행(`local_half_trip`) public 게시글 4개 중 강진/영광은 공식 상세 DOM 자동 추출을 개선하고, 합천/완도는 공식 페이지 기반 수동 보정 데이터를 병행해 로컬 API에 반영 완료했다.
-- Scope guard: DB schema/API DTO shape는 변경하지 않았다. `structuredDetail`의 기존 5개 섹션(`supportContent`, `periods`, `applicationTarget`, `requiredDocuments`, `notes`) 안에서 데이터 품질만 보강했다.
+- Active task/status: `/policies` 정책 카드 기간 메타에서 확인되지 않은 시작일을 “시작일 확인 필요”로 보충하지 않도록 로컬 수정 완료했다.
+- Scope guard: public Policy DTO에 `startDate: string | null`을 추가해 backend가 안전하게 확정한 대표 시작일만 내려준다. 확인되지 않은 시작일은 `null`이며, frontend는 확정된 시작일/마감일만 표시한다.
 
 ## Recent validation
 
-- PASS: `cd backend && ../.venv/bin/python -m pytest tests/test_dgtourcard_parser.py tests/test_policy_semantic_mapping.py tests/test_external_benefit_collection.py tests/test_policy_normalization.py -q` — 99 passed, 1 warning.
-- PASS: `cd backend && ../.venv/bin/python -m pytest` — 641 passed, 17 skipped, 1 warning.
-- PASS: `cd backend && ../.venv/bin/alembic upgrade head --sql >/tmp/alembic-halftrip.sql` — SQL generation completed.
-- PASS: `docker compose -f compose.yaml build backend && docker compose -f compose.yaml up -d backend` — local backend image rebuilt and restarted.
-- PASS: `docker compose -f compose.yaml exec -T backend python -m app.scripts.collect_travelmonth_once --timeout 25` — outcome success, parsed 81, `local_half_trip` parsed/upserted 12; optional `traffic_benefit` remains 404/source_unavailable.
-- PASS: local API audit for `travelmonth-23`, `travelmonth-24`, `travelmonth-25`, `travelmonth-31` — all return populated support/application target/period/document/note sections; 합천/완도 no longer use generic 신청대상/서류 fallback. 화면 노출 문구에서 `KTO`, `수집 원문`, `공식 메인 기준` 같은 내부 출처 표현을 제거했다.
-- PASS: `cd frontend && npm run typecheck && npx vitest run src/app/__tests__/policy-detail.test.tsx` — typecheck passed, 21 passed.
+- PASS: `cd frontend && npm run typecheck && npx vitest run src/app/__tests__/policies.test.tsx src/app/__tests__/policy-detail.test.tsx` — typecheck passed, 35 tests passed.
+- PASS: `cd frontend && npm run build` — Vite production build completed.
+- PASS: `cd backend && ../.venv/bin/python -m pytest tests/test_policy_db_service.py tests/test_policy_normalization.py -q` — 88 passed, 1 warning.
+- PASS: `docker compose -f compose.yaml build backend frontend && docker compose -f compose.yaml up -d backend frontend` — local backend/frontend rebuilt and restarted; backend healthy, frontend bound to 4173.
+- PASS: local smoke `http://127.0.0.1:8000/api/health`, `http://127.0.0.1:4173/policies`, `http://127.0.0.1:8000/api/policies` — HTTP 200; policy API count 141; API payload contains no “시작일 확인 필요” string.
 
 ## Active risks
 
-- 합천/완도는 공식 페이지 DOM이 표준 필드 구조가 아니므로 수동 보정 manifest에 의존한다. 공식 사이트 문구가 바뀌면 manifest 재검토가 필요하다.
-- 강진 공식 `지원내용`은 원문 행 수가 많아 핵심 혜택 카드가 길어질 수 있다. 프론트 표시 밀도는 별도 UX 조정 대상으로 남겨둔다.
+- `deadline`은 기존 호환 필드라서 마감일 자체가 없으면 배지에는 “마감일 확인 필요”가 남을 수 있다. 이번 수정 범위는 카드 메타의 “시작일 확인 필요” 제거다.
 
 ## Cleanup Policy
 
