@@ -337,15 +337,6 @@ export function MyPage() {
               ›
             </span>
           </button>
-          <button className="prototype-menu-row" onClick={() => setAccountDialogType("password")} type="button">
-            <span className="prototype-menu-icon" aria-hidden="true">
-              <KeyRound size={18} />
-            </span>
-            <strong>비밀번호 관리</strong>
-            <span className="prototype-menu-chevron" aria-hidden="true">
-              ›
-            </span>
-          </button>
           <button className="prototype-menu-row" onClick={() => setInfoSheetType("terms")} type="button">
             <span className="prototype-menu-icon" aria-hidden="true">
               <FileText size={18} />
@@ -360,6 +351,15 @@ export function MyPage() {
               <ShieldCheck size={18} />
             </span>
             <strong>개인정보처리방침</strong>
+            <span className="prototype-menu-chevron" aria-hidden="true">
+              ›
+            </span>
+          </button>
+          <button className="prototype-menu-row" onClick={() => setAccountDialogType("password")} type="button">
+            <span className="prototype-menu-icon" aria-hidden="true">
+              <KeyRound size={18} />
+            </span>
+            <strong>비밀번호 관리</strong>
             <span className="prototype-menu-chevron" aria-hidden="true">
               ›
             </span>
