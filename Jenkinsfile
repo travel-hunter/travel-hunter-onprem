@@ -8,7 +8,7 @@ pipeline {
         COMPOSE_FILE = "compose.tunnel.yaml"
 
         //slack 알림 채널
-        SLACK_CHANNEL = "#jenkins"
+        SLACK_CHANNEL = "#travel-hunter-build"
     }
 
     stages {
