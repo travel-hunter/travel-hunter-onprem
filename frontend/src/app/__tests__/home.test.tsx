@@ -51,11 +51,18 @@ describe("Travel Hunter app — home", () => {
       expect(policyLinks[0]).toHaveClass("prototype-home-policy-card");
       expect(
         policyLinks[0].querySelector(".prototype-home-policy-summary"),
-      ).toHaveTextContent(/\S/);
+      ).toBeNull();
       expect(
         policyLinks[0].querySelector(".prototype-home-policy-condition"),
       ).toHaveTextContent(/^조건: \S/);
-      expect(policyLinks[0].querySelector("small")).toHaveTextContent(/D-|상시|마감/);
+      expect(
+        policyLinks[0].querySelector(".prototype-home-policy-deadline"),
+      ).toHaveTextContent(/D-|상시|마감/);
+      expect(
+        policyLinks[0].querySelector(".prototype-home-policy-benefit"),
+      ).toHaveTextContent(/\S/);
+      expect(policyLinks[0].querySelector("small")).toHaveTextContent("상세 보기");
+      expect(policyLinks[0].querySelector("small")).toHaveTextContent("바로 확인");
       expect(policyLinks[0].querySelector("small")).not.toHaveTextContent("·");
       expect(
         within(policyLinks[0]).queryByRole("button", { name: /신청|공식/ }),
@@ -65,6 +72,63 @@ describe("Travel Hunter app — home", () => {
     expect(benefitList).not.toHaveAttribute("data-dragging");
     expect(document.body).not.toHaveTextContent("이번 주 혜택은 최대 3개만 보여줘요");
     expect(screen.getByText("자세히 보기 →")).toBeInTheDocument();
+  });
+
+  it("shows digital resident policies as always-issued on the home hero and weekly cards", async () => {
+    const policies: Policy[] = [
+      {
+        ...examplePolicyDetail,
+        id: "dgtour-hadong",
+        slug: "dgtour-하동",
+        title: "[하동] 디지털관광주민증 혜택",
+        org: "하동 지자체 · 한국관광공사",
+        region: "경남",
+        deadline: "",
+        startDate: null,
+        amount: "지역 제휴 혜택",
+        summary: "하동 디지털관광주민증 제휴 혜택입니다.",
+        category: "지역할인",
+        requirements: ["디지털관광주민증 발급 여행자"],
+        officialUrl:
+          "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48850",
+        applyUrl: null,
+        sourceType: "external",
+      },
+      {
+        ...examplePolicyDetail,
+        id: "travelmonth-23",
+        slug: "travelmonth-23",
+        title: "[강진] 대한민국 반값여행 지원",
+        region: "전남",
+        deadline: "2026-08-31",
+        startDate: "2026-06-01",
+        amount: "최대 20만원 환급",
+        summary: "강진 여행 환급 혜택입니다.",
+        category: "지역할인",
+      },
+    ];
+    const listPoliciesSpy = vi
+      .spyOn(appDataApi, "listPolicies")
+      .mockResolvedValue(policies);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/home");
+
+      expect(
+        await screen.findAllByText("[하동] 디지털관광주민증 혜택"),
+      ).not.toHaveLength(0);
+      expect(document.body).toHaveTextContent("상시 발급");
+      expect(document.body).toHaveTextContent("제휴처별 운영기간 확인");
+      expect(document.body).toHaveTextContent("지역 제휴 혜택");
+      expect(document.body).toHaveTextContent("상세 보기");
+      expect(document.body).toHaveTextContent("바로 확인");
+      expect(document.body).not.toHaveTextContent("마감일 확인 필요");
+      expect(document.body).not.toHaveTextContent("신청 마감 상시");
+    } finally {
+      listPoliciesSpy.mockRestore();
+    }
   });
 
   it("shows safe concise condition labels on weekly benefit cards", async () => {
