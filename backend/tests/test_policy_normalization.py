@@ -2106,7 +2106,7 @@ def test_promoting_digital_tourism_uses_stable_city_slug_and_old_slug_aliases(
     assert result.promoted_count == 1
     assert seed.external_source_record_id == rows[0].id
     assert seed.slug == "dgtour-가평"
-    assert len(seed.structured_detail["supportContent"]) == 2
+    assert len(seed.structured_detail["supportContent"]) == 3
 
     canonical_payload = policy_service.get_policy("dgtour-가평", db)
     legacy_payload = policy_service.get_policy(f"travelmonth-{rows[0].id}", db)
@@ -2115,7 +2115,9 @@ def test_promoting_digital_tourism_uses_stable_city_slug_and_old_slug_aliases(
     assert legacy_payload is not None
     assert canonical_payload["slug"] == "dgtour-가평"
     assert legacy_payload["slug"] == "dgtour-가평"
-    assert legacy_payload["structuredDetail"]["supportContent"][1]["description"].startswith("[숙박] 가평 숙소")
+    assert legacy_payload["structuredDetail"]["supportContent"][1]["title"] == "카테고리별 인기 혜택"
+    assert legacy_payload["structuredDetail"]["supportContent"][2]["description"].startswith("🏨 가평 숙소")
+    assert legacy_payload["structuredDetail"]["supportContent"][2]["url"].endswith("mbrbId=gapyeong-1")
 
 
 def test_promoting_legacy_numbered_dgtour_slug_renames_to_city_slug_and_keeps_alias(
@@ -2185,8 +2187,10 @@ def test_promoting_legacy_numbered_dgtour_slug_renames_to_city_slug_and_keeps_al
     promote_external_benefits_to_policies(db)
 
     assert seed.slug == "dgtour-하동"
-    assert len(seed.structured_detail["supportContent"]) == 2
+    assert len(seed.structured_detail["supportContent"]) == 3
     old_slug_payload = policy_service.get_policy("dgtour-하동-3", db)
     assert old_slug_payload is not None
     assert old_slug_payload["slug"] == "dgtour-하동"
-    assert old_slug_payload["structuredDetail"]["supportContent"][1]["description"].startswith("[체험] 하동 체험")
+    assert old_slug_payload["structuredDetail"]["supportContent"][1]["title"] == "카테고리별 인기 혜택"
+    assert old_slug_payload["structuredDetail"]["supportContent"][2]["description"].startswith("🎡 하동 체험")
+    assert old_slug_payload["structuredDetail"]["supportContent"][2]["url"].endswith("mbrbId=hadong-1")

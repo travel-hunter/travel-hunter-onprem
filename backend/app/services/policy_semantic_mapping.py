@@ -383,6 +383,13 @@ def _digital_partner_summary(payload: dict[str, object]) -> dict[str, object]:
     return summary if isinstance(summary, dict) else {}
 
 
+def _digital_partner_category_highlights(payload: dict[str, object]) -> list[dict[str, object]]:
+    highlights = payload.get("partnerBenefitCategoryHighlights")
+    if not isinstance(highlights, list):
+        return []
+    return [highlight for highlight in highlights if isinstance(highlight, dict)]
+
+
 def _digital_partner_summary_description(
     *,
     city: str,
@@ -403,7 +410,7 @@ def _digital_partner_summary_description(
     )
     city_text = dgtour_identity.display_city_name(city)
     if total > 0 and category_text:
-        return f"{city_text} 제휴처 {total}곳의 숙박·식음·체험·관광지 혜택을 제공합니다. 주요 분야: {category_text}."
+        return f"{city_text} 제휴처 {total}곳의 숙박, 식음, 체험, 관광지 혜택을 제공합니다. 주요 분야: {category_text}."
     if total > 0:
         return f"{city_text} 제휴처 {total}곳의 디지털관광주민증 혜택을 제공합니다."
     return dgtour_identity.SUPPORT_CONTENT_TEXT
@@ -427,19 +434,33 @@ def _append_digital_partner_benefits(
 
     _append(
         detail["supportContent"],
-        title="혜택 요약",
+        title="핵심 혜택",
         description=_digital_partner_summary_description(
             city=city,
             benefits=benefits,
             payload=payload,
         ),
     )
-    for benefit in benefits[: dgtour_identity.MAX_DISPLAY_PARTNER_BENEFITS]:
+    highlights = _digital_partner_category_highlights(payload)
+    if not highlights:
+        highlights = dgtour_identity.partner_benefit_category_highlights(benefits)
+    if highlights:
         _append(
             detail["supportContent"],
-            title="제휴처 혜택",
-            description=dgtour_identity.format_partner_benefit_for_display(benefit),
+            title="카테고리별 인기 혜택",
+            description="인기순 대표 제휴처와 주요 혜택을 카테고리별로 정리했습니다.",
         )
+    for highlight in highlights:
+        representative = highlight.get("representative")
+        description = dgtour_identity.format_partner_benefit_highlight_for_display(highlight)
+        if not description:
+            continue
+        item = {"title": "카테고리별 인기 혜택", "description": description}
+        if isinstance(representative, dict):
+            url = dgtour_identity.official_member_benefit_url(representative)
+            if url:
+                item["url"] = url
+        detail["supportContent"].append(item)
 
 def _digital_tourism_resident_card(record: ExternalSourceRecord) -> ExternalSourceSemanticMapping:
     payload = record.raw_payload if isinstance(record.raw_payload, dict) else {}

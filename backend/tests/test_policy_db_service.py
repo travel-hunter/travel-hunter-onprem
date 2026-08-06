@@ -94,6 +94,29 @@ def test_policy_to_api_includes_structured_detail_when_present() -> None:
     assert payload["structuredDetail"] == policy.structured_detail
 
 
+def test_policy_to_api_preserves_structured_detail_description_line_breaks() -> None:
+    policy = make_policy()
+    policy.structured_detail = {
+        "supportContent": [
+            {
+                "title": "카테고리별 인기 혜택",
+                "description": "🍽️ 로우풀: 음료 구매시 아메리카노 리필 1회\n호수뷰와 마운틴뷰가 조화로운 대형카페",
+                "url": "https://korean.visitkorea.or.kr/dgtourcard/biz/mbrb/mbrbPtcl.do?mbrbId=test",
+            }
+        ],
+        "applicationTarget": [],
+        "periods": [],
+        "requiredDocuments": [],
+        "notes": [],
+    }
+
+    payload = policy_service.policy_to_api(policy)
+
+    assert payload["structuredDetail"]["supportContent"][0]["description"] == (
+        "🍽️ 로우풀: 음료 구매시 아메리카노 리필 1회\n호수뷰와 마운틴뷰가 조화로운 대형카페"
+    )
+
+
 def test_policy_to_api_projects_requirements_from_authoritative_structured_conditions() -> None:
     policy = make_policy()
     policy.target_condition = "과거 할인·기간 composite는 재사용하면 안 됨"

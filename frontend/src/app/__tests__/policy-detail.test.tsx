@@ -120,7 +120,15 @@ describe("Travel Hunter app — policy detail", () => {
       requirements: [],
       documents: ["기존 서류 fallback"],
       structuredDetail: {
-        supportContent: [{ title: "혜택", description: "숙박비를 최대 7만원 할인", amount: "최대 7만원" }],
+        supportContent: [
+          { title: "핵심 혜택", description: "합천 제휴처 17곳의 혜택을 제공합니다." },
+          { title: "카테고리별 인기 혜택", description: "인기순 대표 제휴처와 주요 혜택을 카테고리별로 정리했습니다." },
+          {
+            title: "카테고리별 인기 혜택",
+            description: "🍽️ 로우풀: 음료 구매시 아메리카노 리필 1회\n호수뷰와 마운틴뷰가 조화로운 대형카페",
+            url: "https://korean.visitkorea.or.kr/dgtourcard/biz/mbrb/mbrbPtcl.do?mbrbId=cdb03f3e-180d-11ef-b16c-0242ac130002",
+          },
+        ],
         applicationTarget: [{ title: "대상", description: "비수도권 숙박 예약자" }],
         periods: [
           {
@@ -161,7 +169,20 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/structured-policy");
 
       expect(await screen.findByRole("heading", { name: "구조화 상세 정책" })).toBeInTheDocument();
-      expect(screen.getByText("최대 7만원")).toBeInTheDocument();
+      expect(screen.getByText("합천 제휴처 17곳의 혜택을 제공합니다.")).toBeInTheDocument();
+      expect(screen.getByText("카테고리별 인기 혜택")).toBeInTheDocument();
+      const benefitLink = screen.getByRole("link", {
+        name: /로우풀 음료 구매시 아메리카노 리필 1회 호수뷰와 마운틴뷰가 조화로운 대형카페/,
+      });
+      expect(benefitLink).toHaveAttribute(
+        "href",
+        "https://korean.visitkorea.or.kr/dgtourcard/biz/mbrb/mbrbPtcl.do?mbrbId=cdb03f3e-180d-11ef-b16c-0242ac130002",
+      );
+      expect(benefitLink).toHaveAttribute("target", "_blank");
+      expect(benefitLink).toHaveAttribute("rel", expect.stringContaining("noreferrer"));
+      expect(within(benefitLink).getByText("🍽️ 로우풀")).toHaveClass("policy-benefit-link-title");
+      expect(within(benefitLink).getByText("음료 구매시 아메리카노 리필 1회")).toHaveClass("policy-benefit-link-description");
+      expect(within(benefitLink).getByText("호수뷰와 마운틴뷰가 조화로운 대형카페")).toHaveClass("policy-benefit-link-place-description");
       expect(screen.getByText("핵심 혜택").closest(".policy-benefit-group")).toHaveClass(
         "policy-benefit-group--core",
       );

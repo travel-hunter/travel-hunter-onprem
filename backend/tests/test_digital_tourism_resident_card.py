@@ -146,8 +146,179 @@ def test_partner_benefit_rows_are_normalized_for_payload_and_display() -> None:
         }
     ]
     assert dgtour.format_partner_benefit_for_display(benefits[0]).startswith(
-        "[관람] 평창올림픽플라자: 대인 15,000원 > 8,000원"
+        "🎟️ 평창올림픽플라자: 관람료 할인\n올림픽 레거시 전시장"
     )
+
+
+def test_partner_benefit_category_highlights_pick_popular_representatives_in_display_order() -> None:
+    benefits = [
+        {
+            "memberId": "stay-1",
+            "categoryCode": "STAYNG",
+            "categoryName": "숙박",
+            "name": "합천휴테마파크",
+            "intro": "합천호와 인접한 캠핑장",
+            "summary": "평일 이용료 10% 할인",
+            "usageCount": 19,
+            "totalCount": 10,
+        },
+        {
+            "memberId": "food-1",
+            "categoryCode": "FDRK",
+            "categoryName": "식음료",
+            "name": "로우풀",
+            "intro": "호수뷰와 마운틴뷰가 조화로운 대형카페",
+            "summary": "음료 구매시 아메리카노 리필 1회",
+            "usageCount": 200,
+            "totalCount": 3,
+        },
+        {
+            "memberId": "food-2",
+            "categoryCode": "FDRK",
+            "categoryName": "식음료",
+            "name": "대식한우명가",
+            "intro": "합천소고기 맛집",
+            "summary": "음료수 1병 제공",
+            "usageCount": 48,
+            "totalCount": 3,
+        },
+        {
+            "memberId": "food-3",
+            "categoryCode": "FDRK",
+            "categoryName": "식음료",
+            "name": "3.3국밥",
+            "intro": "합천돼지국밥",
+            "summary": "음료수 1병 제공",
+            "usageCount": 27,
+            "totalCount": 3,
+        },
+        {
+            "memberId": "view-1",
+            "categoryCode": "VWNG",
+            "categoryName": "관람",
+            "name": "합천영상테마파크",
+            "intro": "시대물 오픈세트장",
+            "summary": "입장료 1,000원 할인",
+            "usageCount": 1986,
+            "totalCount": 1,
+        },
+    ]
+
+    highlights = dgtour.partner_benefit_category_highlights(benefits)
+
+    assert [item["categoryName"] for item in highlights] == ["식음료", "숙박", "관람"]
+    assert highlights[0]["representative"]["name"] == "로우풀"
+    assert highlights[0]["remainingCount"] == 2
+    assert highlights[1]["representative"]["name"] == "합천휴테마파크"
+    assert highlights[1]["remainingCount"] == 0
+    assert dgtour.format_partner_benefit_highlight_for_display(highlights[0]) == (
+        "🍽️ 로우풀: 음료 구매시 아메리카노 리필 1회\n호수뷰와 마운틴뷰가 조화로운 대형카페"
+    )
+    assert dgtour.format_partner_benefit_highlight_for_display(highlights[2]) == (
+        "🎟️ 합천영상테마파크: 입장료 1,000원 할인\n시대물 오픈세트장"
+    )
+
+
+def test_partner_benefit_highlight_display_omits_middle_dot_and_count_suffix() -> None:
+    highlight = {
+        "categoryCode": "FDRK",
+        "categoryName": "식음료",
+        "totalCount": 3,
+        "remainingCount": 2,
+        "representative": {
+            "memberId": "cdb03f3e-180d-11ef-b16c-0242ac130002",
+            "categoryCode": "FDRK",
+            "categoryName": "식음료",
+            "name": "로우풀",
+            "intro": "호수뷰와 마운틴뷰가 조화로운 대형카페",
+            "summary": "음료 구매시 아메리카노 리필 1회",
+        },
+    }
+
+    text = dgtour.format_partner_benefit_highlight_for_display(highlight)
+
+    assert text == "🍽️ 로우풀: 음료 구매시 아메리카노 리필 1회\n호수뷰와 마운틴뷰가 조화로운 대형카페"
+    assert "·" not in text
+    assert "외 2개 혜택" not in text
+
+
+def test_official_member_benefit_url_uses_member_id() -> None:
+    benefit = {"memberId": "cdb03f3e-180d-11ef-b16c-0242ac130002"}
+
+    assert dgtour.official_member_benefit_url(benefit) == (
+        "https://korean.visitkorea.or.kr/dgtourcard/biz/mbrb/mbrbPtcl.do?"
+        "mbrbId=cdb03f3e-180d-11ef-b16c-0242ac130002"
+    )
+
+
+def test_official_member_benefit_url_returns_none_without_member_id() -> None:
+    assert dgtour.official_member_benefit_url({"name": "로우풀"}) is None
+
+
+def test_fetch_partner_benefits_requests_each_category_by_popular_order() -> None:
+    from app.services.external_benefit_collection import fetch_digital_tourism_partner_benefits
+
+    class FakeResponse:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self._payload
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.payloads: list[dict[str, object]] = []
+
+        def post(self, _url: str, *, data: dict[str, object], **_kwargs: object) -> FakeResponse:
+            self.payloads.append(dict(data))
+            category = str(data["mbrbBnefClCd"])
+            rows = {
+                "FDRK": [
+                    {
+                        "totCnt": 1,
+                        "mbrbId": "food-1",
+                        "mbrbBnefClCd": "FDRK",
+                        "mbrbBnefClCdNm": "식음료",
+                        "mbrbNm": "로우풀",
+                        "svcCn": "음료 리필",
+                        "utztCnt": 200,
+                    }
+                ],
+                "STAYNG": [],
+                "VWNG": [],
+                "EXPRN": [],
+                "SHPN": [],
+                "FEST": [],
+                "TRNS": [],
+                "ETC": [],
+            }[category]
+            return FakeResponse({"resultList": rows, "pageNo": int(data["pageNo"])})
+
+    client = FakeClient()
+
+    benefits = fetch_digital_tourism_partner_benefits(
+        city="합천",
+        mtpc_do_cd="48",
+        signgu_cd="48890",
+        client=client,
+    )
+
+    assert [payload["mbrbBnefClCd"] for payload in client.payloads] == [
+        "FDRK",
+        "STAYNG",
+        "VWNG",
+        "EXPRN",
+        "SHPN",
+        "FEST",
+        "TRNS",
+        "ETC",
+    ]
+    assert {payload["orderDiv"] for payload in client.payloads} == {"UTZT"}
+    assert benefits[0]["categoryName"] == "식음료"
+    assert benefits[0]["usageCount"] == 200
 
 
 def test_apply_partner_benefit_enrichment_stores_full_list_and_summary() -> None:
@@ -188,4 +359,21 @@ def test_apply_partner_benefit_enrichment_stores_full_list_and_summary() -> None
         "displayLimit": dgtour.MAX_DISPLAY_PARTNER_BENEFITS,
     }
     assert "하동 제휴처 2곳" in enriched.raw_detail_text
-    assert "[식음료] 하동 카페" in enriched.raw_detail_text
+    assert enriched.raw_payload["partnerBenefitCategoryHighlights"] == [
+        {
+            "categoryCode": "FDRK",
+            "categoryName": "식음료",
+            "totalCount": 1,
+            "remainingCount": 0,
+            "representative": benefits[0],
+        },
+        {
+            "categoryCode": "STAYNG",
+            "categoryName": "숙박",
+            "totalCount": 1,
+            "remainingCount": 0,
+            "representative": benefits[1],
+        },
+    ]
+    assert "🍽️ 하동 카페: 음료 할인\n카페" in enriched.raw_detail_text
+    assert "·" not in enriched.raw_detail_text

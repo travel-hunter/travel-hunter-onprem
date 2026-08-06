@@ -42,6 +42,10 @@ def _clean_text(value: object) -> str:
     return " ".join(str(value or "").split())
 
 
+def _clean_multiline_text(value: object) -> str:
+    lines = [_clean_text(part) for part in str(value or "").replace("\r", "\n").split("\n")]
+    return "\n".join(line for line in lines if line)
+
 def _date_text(value: date | None) -> str | None:
     return value.isoformat() if value is not None else None
 
@@ -97,7 +101,7 @@ def normalize_structured_detail(value: object) -> dict[str, list[dict[str, Any]]
                     if safe_url is not None:
                         cleaned_item[key_text] = safe_url
                     continue
-                text = _clean_text(item_value)
+                text = _clean_multiline_text(item_value) if key_text == "description" else _clean_text(item_value)
                 if text:
                     cleaned_item[key_text] = text
             if cleaned_item:
