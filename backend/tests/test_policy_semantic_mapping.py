@@ -433,14 +433,14 @@ def test_digital_tourism_mapper_outputs_digital_only_sections() -> None:
     assert result.mapper_status == "mapped"
     assert result.target_condition == "하동 디지털관광주민증을 발급한 여행자"
     assert _descriptions(result, "supportContent") == [
-        "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+        "디지털관광주민증 발급 지역의 숙박, 식음, 체험, 관광지 제휴 혜택"
     ]
     assert _descriptions(result, "applicationTarget") == [
         "하동 디지털관광주민증을 발급한 여행자",
         "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다.",
     ]
     assert _descriptions(result, "requiredDocuments") == [
-        "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+        "별도 제출 서류 없음, 디지털관광주민증 발급 및 제시 기준으로 적용"
     ]
     assert _descriptions(result, "notes") == [
         "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요.",
@@ -452,6 +452,62 @@ def test_digital_tourism_mapper_outputs_digital_only_sections() -> None:
 
 
 
+def test_digital_tourism_mapper_splits_summary_and_clickable_category_highlights() -> None:
+    record = _record(
+        source_category="digital_tourism_resident_card",
+        raw_payload={
+            "partnerBenefits": [
+                {
+                    "memberId": "cdb03f3e-180d-11ef-b16c-0242ac130002",
+                    "categoryCode": "FDRK",
+                    "categoryName": "식음료",
+                    "name": "로우풀",
+                    "intro": "호수뷰와 마운틴뷰가 조화로운 대형카페",
+                    "summary": "음료 구매시 아메리카노 리필 1회",
+                    "usageCount": 200,
+                }
+            ],
+            "partnerBenefitSummary": {
+                "totalCount": 1,
+                "categoryCounts": {"식음료": 1},
+                "displayLimit": 8,
+            },
+            "partnerBenefitCategoryHighlights": [
+                {
+                    "categoryCode": "FDRK",
+                    "categoryName": "식음료",
+                    "totalCount": 1,
+                    "remainingCount": 0,
+                    "representative": {
+                        "memberId": "cdb03f3e-180d-11ef-b16c-0242ac130002",
+                        "categoryCode": "FDRK",
+                        "categoryName": "식음료",
+                        "name": "로우풀",
+                        "intro": "호수뷰와 마운틴뷰가 조화로운 대형카페",
+                        "summary": "음료 구매시 아메리카노 리필 1회",
+                        "usageCount": 200,
+                    },
+                }
+            ],
+        },
+    )
+    record.title = "[합천] 디지털관광주민증 혜택"
+    record.city = "합천"
+
+    result = _map(record)
+    support = result.structured_detail["supportContent"]
+
+    assert support[0]["title"] == "핵심 혜택"
+    assert support[1]["title"] == "카테고리별 인기 혜택"
+    assert support[2]["description"] == "🍽️ 로우풀: 음료 구매시 아메리카노 리필 1회\n호수뷰와 마운틴뷰가 조화로운 대형카페"
+    assert support[2]["url"] == (
+        "https://korean.visitkorea.or.kr/dgtourcard/biz/mbrb/mbrbPtcl.do?"
+        "mbrbId=cdb03f3e-180d-11ef-b16c-0242ac130002"
+    )
+    assert "·" not in str(support)
+    assert "외 1개 혜택" not in str(support)
+
+
 def test_digital_tourism_mapper_uses_partner_benefits_for_rich_support_content() -> None:
     record = _record(
         source_category="digital_tourism_resident_card",
@@ -459,26 +515,79 @@ def test_digital_tourism_mapper_uses_partner_benefits_for_rich_support_content()
             "partnerBenefits": [
                 {
                     "memberId": "pc-1",
+                    "categoryCode": "VWNG",
                     "categoryName": "관람",
                     "name": "평창올림픽플라자",
                     "intro": "올림픽 레거시 전시장",
                     "summary": "관람료 할인",
                     "detail": "대인 15,000원 > 8,000원",
+                    "usageCount": 466,
+                    "totalCount": 1,
                 },
                 {
                     "memberId": "pc-2",
+                    "categoryCode": "EXPRN",
                     "categoryName": "체험",
                     "name": "대관령코스터",
                     "intro": "체험시설",
-                    "summary": "이용권 할인",
+                    "summary": "이용권 20% 할인",
                     "detail": "이용권 20% 할인",
+                    "usageCount": 20,
+                    "totalCount": 3,
+                },
+                {
+                    "memberId": "pc-3",
+                    "categoryCode": "EXPRN",
+                    "categoryName": "체험",
+                    "name": "대관령목장",
+                    "intro": "목장 체험",
+                    "summary": "체험료 할인",
+                    "detail": "체험료 할인",
+                    "usageCount": 10,
+                    "totalCount": 3,
                 },
             ],
             "partnerBenefitSummary": {
-                "totalCount": 2,
-                "categoryCounts": {"관람": 1, "체험": 1},
+                "totalCount": 4,
+                "categoryCounts": {"관람": 1, "체험": 3},
                 "displayLimit": 8,
             },
+            "partnerBenefitCategoryHighlights": [
+                {
+                    "categoryCode": "VWNG",
+                    "categoryName": "관람",
+                    "totalCount": 1,
+                    "remainingCount": 0,
+                    "representative": {
+                        "memberId": "pc-1",
+                        "categoryCode": "VWNG",
+                        "categoryName": "관람",
+                        "name": "평창올림픽플라자",
+                        "intro": "올림픽 레거시 전시장",
+                        "summary": "관람료 할인",
+                        "detail": "대인 15,000원 > 8,000원",
+                        "usageCount": 466,
+                        "totalCount": 1,
+                    },
+                },
+                {
+                    "categoryCode": "EXPRN",
+                    "categoryName": "체험",
+                    "totalCount": 3,
+                    "remainingCount": 2,
+                    "representative": {
+                        "memberId": "pc-2",
+                        "categoryCode": "EXPRN",
+                        "categoryName": "체험",
+                        "name": "대관령코스터",
+                        "intro": "체험시설",
+                        "summary": "이용권 20% 할인",
+                        "detail": "이용권 20% 할인",
+                        "usageCount": 20,
+                        "totalCount": 3,
+                    },
+                },
+            ],
         },
     )
     record.title = "[평창] 디지털관광주민증 혜택"
@@ -487,9 +596,13 @@ def test_digital_tourism_mapper_uses_partner_benefits_for_rich_support_content()
     result = _map(record)
     descriptions = _descriptions(result, "supportContent")
 
-    assert descriptions[0] == "평창 제휴처 2곳의 숙박·식음·체험·관광지 혜택을 제공합니다. 주요 분야: 관람 1곳, 체험 1곳."
-    assert descriptions[1].startswith("[관람] 평창올림픽플라자: 대인 15,000원 > 8,000원")
-    assert descriptions[2].startswith("[체험] 대관령코스터: 이용권 20% 할인")
+    assert descriptions[0] == "평창 제휴처 4곳의 숙박, 식음, 체험, 관광지 혜택을 제공합니다. 주요 분야: 관람 1곳, 체험 3곳."
+    assert descriptions[1] == "인기순 대표 제휴처와 주요 혜택을 카테고리별로 정리했습니다."
+    assert descriptions[2] == "🎟️ 평창올림픽플라자: 관람료 할인\n올림픽 레거시 전시장"
+    assert descriptions[3] == "🎡 대관령코스터: 이용권 20% 할인\n체험시설"
+    assert len(descriptions) == 4
+    assert "·" not in str(descriptions)
+    assert "외 2개 혜택" not in str(descriptions)
 
 def test_digital_tourism_mapper_does_not_stringify_payload_note_lists() -> None:
     record = _record(

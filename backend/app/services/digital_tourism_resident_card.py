@@ -36,6 +36,35 @@ REGIONAL_VISIT_TIP_ENDPOINT = (
 )
 REGIONAL_BENEFIT_PAGE_SIZE = 8
 MAX_DISPLAY_PARTNER_BENEFITS = 8
+PARTNER_BENEFIT_CATEGORY_ORDER = (
+    ("FDRK", "식음료"),
+    ("STAYNG", "숙박"),
+    ("VWNG", "관람"),
+    ("EXPRN", "체험"),
+    ("SHPN", "쇼핑"),
+    ("FEST", "축제"),
+    ("TRNS", "교통"),
+    ("ETC", "기타"),
+)
+_PARTNER_BENEFIT_CATEGORY_RANK = {
+    name: index for index, (_code, name) in enumerate(PARTNER_BENEFIT_CATEGORY_ORDER)
+}
+_PARTNER_BENEFIT_CATEGORY_CODE_BY_NAME = {
+    name: code for code, name in PARTNER_BENEFIT_CATEGORY_ORDER
+}
+_PARTNER_BENEFIT_CATEGORY_LABELS = {
+    "식음료": "🍽️",
+    "숙박": "🏨",
+    "관람": "🎟️",
+    "체험": "🎡",
+    "쇼핑": "🛍️",
+    "축제": "🎉",
+    "교통": "🚌",
+    "기타": "📌",
+}
+MEMBER_BENEFIT_DETAIL_URL_PREFIX = (
+    "https://korean.visitkorea.or.kr/dgtourcard/biz/mbrb/mbrbPtcl.do?mbrbId="
+)
 
 
 class _HtmlTextStripper(HTMLParser):
@@ -133,29 +162,103 @@ def summarize_partner_benefit_categories(
     for benefit in benefits:
         category = clean_dgtour_text(benefit.get("categoryName")) or "기타"
         summary[category] = summary.get(category, 0) + 1
-    return dict(sorted(summary.items(), key=lambda item: (-item[1], item[0])))
+    return dict(
+        sorted(
+            summary.items(),
+            key=lambda item: (
+                _PARTNER_BENEFIT_CATEGORY_RANK.get(item[0], len(_PARTNER_BENEFIT_CATEGORY_RANK)),
+                item[0],
+            ),
+        )
+    )
+
+
+def _partner_benefit_usage_count(benefit: dict[str, object]) -> int:
+    value = benefit.get("usageCount")
+    return value if isinstance(value, int) else 0
+
+
+def _partner_benefit_category_total(benefits: list[dict[str, object]]) -> int:
+    return len(benefits)
+
+
+def partner_benefit_category_highlights(
+    benefits: Iterable[dict[str, object]],
+) -> list[dict[str, object]]:
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for benefit in benefits:
+        category = clean_dgtour_text(benefit.get("categoryName")) or "기타"
+        grouped.setdefault(category, []).append(benefit)
+
+    highlights: list[dict[str, object]] = []
+    for category, category_benefits in sorted(
+        grouped.items(),
+        key=lambda item: (
+            _PARTNER_BENEFIT_CATEGORY_RANK.get(item[0], len(_PARTNER_BENEFIT_CATEGORY_RANK)),
+            item[0],
+        ),
+    ):
+        sorted_benefits = sorted(
+            category_benefits,
+            key=lambda benefit: (-_partner_benefit_usage_count(benefit), clean_dgtour_text(benefit.get("name"))),
+        )
+        representative = sorted_benefits[0]
+        total_count = _partner_benefit_category_total(sorted_benefits)
+        category_code = clean_dgtour_text(representative.get("categoryCode"))
+        if not category_code:
+            category_code = _PARTNER_BENEFIT_CATEGORY_CODE_BY_NAME.get(category, "")
+        highlights.append(
+            {
+                "categoryCode": category_code,
+                "categoryName": category,
+                "totalCount": total_count,
+                "remainingCount": max(0, total_count - 1),
+                "representative": representative,
+            }
+        )
+    return highlights
 
 
 def partner_benefit_summary_text(city: str | None, benefits: list[dict[str, object]]) -> str:
     display_city = display_city_name(city)
     if not benefits:
-        return f"{display_city} 지역 제휴처별 숙박·식음·체험·관광지 혜택을 공식 안내에서 확인할 수 있습니다."
+        return f"{display_city} 지역 제휴처별 숙박, 식음, 체험, 관광지 혜택을 공식 안내에서 확인할 수 있습니다."
     category_summary = summarize_partner_benefit_categories(benefits)
     category_text = ", ".join(f"{name} {count}곳" for name, count in category_summary.items())
     return f"{display_city} 제휴처 {len(benefits)}곳의 디지털관광주민증 혜택을 제공합니다. 주요 분야: {category_text}."
 
 
+def partner_benefit_category_label(category: str | None) -> str:
+    normalized = clean_dgtour_text(category) or "기타"
+    return _PARTNER_BENEFIT_CATEGORY_LABELS.get(normalized, "📌")
+
+
 def format_partner_benefit_for_display(benefit: dict[str, object]) -> str:
     category = clean_dgtour_text(benefit.get("categoryName")) or "기타"
+    category_label = partner_benefit_category_label(category)
     name = clean_dgtour_text(benefit.get("name"))
-    summary = clean_dgtour_text(benefit.get("summary"))
-    detail = clean_dgtour_text(benefit.get("detail"))
+    summary = clean_dgtour_text(benefit.get("summary")) or clean_dgtour_text(benefit.get("detail"))
     intro = clean_dgtour_text(benefit.get("intro"))
-    description = detail if detail and detail != summary else summary
-    intro_suffix = f" · {intro}" if intro and intro not in description else ""
+    if summary and intro:
+        return f"{category_label} {name}: {summary}\n{intro}"
+    description = summary or intro
     if description:
-        return f"[{category}] {name}: {description}{intro_suffix}"
-    return f"[{category}] {name}{intro_suffix}"
+        return f"{category_label} {name}: {description}"
+    return f"{category_label} {name}"
+
+
+def format_partner_benefit_highlight_for_display(highlight: dict[str, object]) -> str:
+    representative = highlight.get("representative")
+    if not isinstance(representative, dict):
+        return ""
+    return format_partner_benefit_for_display(representative)
+
+
+def official_member_benefit_url(benefit: dict[str, object]) -> str | None:
+    member_id = clean_dgtour_text(benefit.get("memberId"))
+    if not member_id:
+        return None
+    return f"{MEMBER_BENEFIT_DETAIL_URL_PREFIX}{member_id}"
 
 
 def apply_partner_benefit_enrichment(
@@ -164,11 +267,13 @@ def apply_partner_benefit_enrichment(
 ) -> ExternalBenefitSource:
     payload = dict(source.raw_payload if isinstance(source.raw_payload, dict) else {})
     payload["partnerBenefits"] = partner_benefits
+    highlights = partner_benefit_category_highlights(partner_benefits)
     payload["partnerBenefitSummary"] = {
         "totalCount": len(partner_benefits),
         "categoryCounts": summarize_partner_benefit_categories(partner_benefits),
         "displayLimit": MAX_DISPLAY_PARTNER_BENEFITS,
     }
+    payload["partnerBenefitCategoryHighlights"] = highlights
     payload["collectionMode"] = (
         "allowlist-materialized+partner-benefit-api"
         if partner_benefits
@@ -176,8 +281,9 @@ def apply_partner_benefit_enrichment(
     )
     raw_detail_parts = [partner_benefit_summary_text(source.city, partner_benefits)]
     raw_detail_parts.extend(
-        format_partner_benefit_for_display(benefit)
-        for benefit in partner_benefits[:MAX_DISPLAY_PARTNER_BENEFITS]
+        text
+        for text in (format_partner_benefit_highlight_for_display(highlight) for highlight in highlights)
+        if text
     )
     return source.model_copy(
         update={
@@ -203,13 +309,13 @@ def apply_partner_benefit_enrichment_by_city(
         )
     return enriched
 
-SUPPORT_CONTENT_TEXT = "디지털관광주민증 발급 지역의 숙박·식음·체험·관광지 제휴 혜택"
+SUPPORT_CONTENT_TEXT = "디지털관광주민증 발급 지역의 숙박, 식음, 체험, 관광지 제휴 혜택"
 DEFAULT_BENEFIT_TEXT = f"{SUPPORT_CONTENT_TEXT}을 이용할 수 있습니다."
 DEFAULT_BENEFIT_VALUE_TEXT = "지역 제휴 혜택"
 USAGE_CONDITION_TEXT = (
     "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
 )
-REQUIRED_DOCUMENTS_TEXT = "별도 제출 서류 없음 · 디지털관광주민증 발급/제시 기준으로 적용"
+REQUIRED_DOCUMENTS_TEXT = "별도 제출 서류 없음, 디지털관광주민증 발급 및 제시 기준으로 적용"
 OFFICIAL_CONFIRMATION_NOTE = "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
 BENEFIT_VARIATION_NOTE = "지역별 제휴처와 혜택은 변동될 수 있습니다."
 FORBIDDEN_HALF_TRIP_URLS = {
@@ -367,7 +473,7 @@ def materialize_participating_region_sources(
                 detail_url=official_url,
                 collected_page_url=SOURCE_URL,
                 title=title_with_city_prefix(city),
-                organizer_text=f"{city} 지자체 · 한국관광공사",
+                organizer_text=f"{city} 지자체, 한국관광공사",
                 organizers=[f"{city} 지자체", "한국관광공사"],
                 region=region,
                 city=city,

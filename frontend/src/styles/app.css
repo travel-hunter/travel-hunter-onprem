@@ -5719,9 +5719,9 @@
 
 .prototype-policy-detail-screen .price {
   color: #9a6b00;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 800;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .prototype-policy-detail-screen .policy-benefit-grid {
@@ -5742,8 +5742,9 @@
 
 .prototype-policy-detail-screen .policy-benefit-title {
   color: #7a5400;
-  font-size: 12px;
-  font-weight: 900;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 .prototype-policy-detail-screen .policy-benefit-group ul {
@@ -5758,9 +5759,9 @@
   position: relative;
   padding-left: 13px;
   color: #4f4a3d;
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.45;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.55;
   overflow-wrap: anywhere;
   word-break: keep-all;
 }
@@ -5771,6 +5772,55 @@
   left: 0;
   color: #d48b00;
   content: "•";
+}
+
+.prototype-policy-detail-screen .policy-benefit-link {
+  color: inherit;
+  font-weight: 850;
+  text-decoration: none;
+}
+.prototype-policy-detail-screen .policy-benefit-link,
+.prototype-policy-detail-screen .policy-benefit-link-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.prototype-policy-detail-screen .policy-benefit-link-title {
+  color: #35280f;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.prototype-policy-detail-screen .policy-benefit-link-description {
+  color: #5f5542;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.prototype-policy-detail-screen .policy-benefit-link-place-description {
+  color: #7a7161;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.55;
+}
+
+
+.prototype-policy-detail-screen .policy-benefit-link:hover,
+.prototype-policy-detail-screen .policy-benefit-link:focus-visible {
+  color: #7a5400;
+  text-decoration: underline;
+}
+
+.prototype-policy-detail-screen .policy-benefit-link::after {
+  content: none;
+}
+
+.prototype-policy-detail-screen .policy-benefit-link .policy-benefit-link-title::after {
+  margin-left: 4px;
+  content: "↗";
+  font-size: 0.85em;
 }
 
 .prototype-policy-detail-screen .warning-text {

@@ -165,47 +165,48 @@ def fetch_digital_tourism_partner_benefits(
     http_client = client or httpx.Client(timeout=timeout, follow_redirects=True, headers=DEFAULT_HEADERS)
     try:
         rows: list[dict[str, object]] = []
-        page_no = 1
-        total_count: int | None = None
-        while True:
-            payload = {
-                "mtpcDoCd": mtpc_do_cd,
-                "signguCd": signgu_cd,
-                "mbrbBnefClCd": "all",
-                "pageNo": str(page_no),
-                "tipPageNo": "1",
-                "orderDiv": "DATE",
-            }
-            response = http_client.post(
-                dgtour_identity.REGIONAL_MEMBER_BENEFIT_ENDPOINT,
-                data=payload,
-                headers={
-                    **DEFAULT_HEADERS,
-                    "Accept": "application/json, text/javascript, */*; q=0.01",
-                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Origin": "https://korean.visitkorea.or.kr",
-                    "Referer": dgtour_identity.official_url_for_city(city) or dgtour_identity.SOURCE_URL,
-                },
-                timeout=timeout,
-                follow_redirects=True,
-            )
-            response.raise_for_status()
-            result = response.json()
-            page_rows = result.get("resultList") if isinstance(result, dict) else None
-            if not isinstance(page_rows, list):
-                break
-            typed_page_rows = [row for row in page_rows if isinstance(row, dict)]
-            rows.extend(typed_page_rows)
-            if total_count is None:
-                total_count = _digital_tourism_total_count(typed_page_rows)
-            if not typed_page_rows:
-                break
-            if total_count is None:
-                break
-            if page_no >= max(1, ceil(total_count / dgtour_identity.REGIONAL_BENEFIT_PAGE_SIZE)):
-                break
-            page_no += 1
+        for category_code, _category_name in dgtour_identity.PARTNER_BENEFIT_CATEGORY_ORDER:
+            page_no = 1
+            total_count: int | None = None
+            while True:
+                payload = {
+                    "mtpcDoCd": mtpc_do_cd,
+                    "signguCd": signgu_cd,
+                    "mbrbBnefClCd": category_code,
+                    "pageNo": str(page_no),
+                    "tipPageNo": "1",
+                    "orderDiv": "UTZT",
+                }
+                response = http_client.post(
+                    dgtour_identity.REGIONAL_MEMBER_BENEFIT_ENDPOINT,
+                    data=payload,
+                    headers={
+                        **DEFAULT_HEADERS,
+                        "Accept": "application/json, text/javascript, */*; q=0.01",
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Origin": "https://korean.visitkorea.or.kr",
+                        "Referer": dgtour_identity.official_url_for_city(city) or dgtour_identity.SOURCE_URL,
+                    },
+                    timeout=timeout,
+                    follow_redirects=True,
+                )
+                response.raise_for_status()
+                result = response.json()
+                page_rows = result.get("resultList") if isinstance(result, dict) else None
+                if not isinstance(page_rows, list):
+                    break
+                typed_page_rows = [row for row in page_rows if isinstance(row, dict)]
+                rows.extend(typed_page_rows)
+                if total_count is None:
+                    total_count = _digital_tourism_total_count(typed_page_rows)
+                if not typed_page_rows:
+                    break
+                if total_count is None:
+                    break
+                if page_no >= max(1, ceil(total_count / dgtour_identity.REGIONAL_BENEFIT_PAGE_SIZE)):
+                    break
+                page_no += 1
         return dgtour_identity.partner_benefits_from_api_rows(rows)
     finally:
         if close_client:

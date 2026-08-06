@@ -2,21 +2,25 @@
 
 ## Current status
 
-- Active task/status: 모바일 로그인 화면에서 카톡 인앱 브라우저, iOS Safari, 작은 Android 화면 높이에서 하단 소셜 로그인 버튼이 잘리고 스크롤되지 않던 문제를 수정했다.
-- Scope guard: 인증 API/OAuth 시작 경로/로그인 폼 동작은 유지하고, public 로그인 shell의 viewport 높이와 overflow CSS만 조정했다.
+- Active task/status: 디지털관광주민증 정책 상세 지원내용에서 인기 혜택의 업체명, 혜택 설명, 장소 소개를 각각 분리해 표시하고, 본문 폰트 크기를 모바일 가독성 기준으로 재조정했다.
+- Scope guard: DB 스키마는 변경하지 않고, 기존 `partnerBenefits` 원본 payload를 유지하면서 `structuredDetail.supportContent[*].url`에 공식 제휴처 상세 URL을 포함하도록 API 계약을 갱신했다.
 
 ## Recent validation
 
-- PASS: `cd frontend && npx playwright test e2e-backend/backend-mode.spec.ts -g "login page remains scrollable" --config=playwright.backend.config.ts` — 390x560 모바일 viewport에서 문서 스크롤과 구글 로그인 버튼 접근 확인.
-- PASS: Docker frontend rebuild/restart 후 `http://127.0.0.1:4173/login` Playwright smoke — 390x560 viewport에서 `documentScrollHeight=693`, `scrollY=133`, 구글 버튼 visible.
-- PASS: `cd frontend && npx vitest run src/app/__tests__/auth.test.tsx` — 10 tests passed.
-- PASS: `cd frontend && npm run build` — typecheck and Vite production build passed.
-- PASS: `cd frontend && npm run test:mojibake` — no mojibake-like frontend text found.
-- BLOCKED: `cd frontend && npm test` — test wrapper fails before frontend vitest because current Python 3.14 environment cannot run `python -m alembic` (`No module named alembic.__main__`). Direct vitest then shows 2 existing unrelated failures in policy document/trip creation expectations.
+- PASS: `docker compose -f compose.yaml run --rm -v "$PWD/backend/app:/app/app:ro" -v "$PWD/backend/tests:/app/tests:ro" backend python -m pytest tests/test_digital_tourism_resident_card.py tests/test_policy_semantic_mapping.py tests/test_policy_normalization.py -q` — 96 passed, 1 existing StarletteDeprecationWarning.
+- PASS: `cd frontend && npx vitest run src/app/__tests__/policy-detail.test.tsx -t "renders structured detail sections when the policy provides structuredDetail"` — title/description split regression passed.
+- PASS: `docker compose -f compose.yaml run --rm -v "$PWD/backend/app:/app/app:ro" -v "$PWD/backend/tests:/app/tests:ro" backend python -m pytest tests/test_digital_tourism_resident_card.py tests/test_policy_semantic_mapping.py tests/test_policy_normalization.py tests/test_policy_db_service.py -q` — 142 passed, 1 existing StarletteDeprecationWarning.
+- PASS: `cd frontend && npx vitest run src/app/__tests__/policy-detail.test.tsx` — 21 passed.
+- PASS: `cd frontend && npm run typecheck` and `cd frontend && npm run build`.
+- PASS: `docker compose -f compose.yaml build backend && docker compose -f compose.yaml up -d backend && docker compose -f compose.yaml run --rm backend python scripts/normalize_external_policies.py` — `promoted_or_repaired=55`.
+- PASS: `docker compose -f compose.yaml build frontend && docker compose -f compose.yaml up -d frontend` — local `http://127.0.0.1:4173` rebuilt.
+- PASS: `http://127.0.0.1:8000/api/policies/dgtour-%ED%95%A9%EC%B2%9C` — 대표 혜택이 `🍽️ 로우풀`, `🏨 합천휴테마파크`처럼 이모지만 남고 카테고리명은 제거됨.
+- PASS: Playwright authenticated smoke at `http://127.0.0.1:4173/policies/dgtour-%ED%95%A9%EC%B2%9C` — 로우풀 title/benefit/place split verified, benefit weight 700, place weight 550; screenshot `/tmp/dgtour-hapcheon-benefit-bold-place-normal.png`.
 
 ## Active risks
 
-- 실제 iPhone Safari/카톡 인앱 브라우저는 로컬 Playwright가 완전히 동일하게 에뮬레이션하지 못하므로, 배포 전 실기기에서 `/login` 하단 구글 버튼까지 스크롤되는지 한 번 확인해야 한다.
+- 공식 VisitKorea API는 합천 `all` 목록에서 페이지 경계 중복 항목을 포함해 `totCnt=18`을 내려주지만, 고유 `memberId` 기준 실제 표시 대상은 17곳이다. 현재 구현은 중복을 제거한 고유 업체 수를 표시한다.
+- 개발서버 반영 후 기존 persisted structured detail 갱신을 위해 외부 수집 또는 `scripts/normalize_external_policies.py` 실행이 필요하다.
 
 ## Cleanup Policy
 
