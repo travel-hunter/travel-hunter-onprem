@@ -32,19 +32,7 @@ def select_current_stay_discount_record(records: Iterable[RecordT]) -> RecordT |
     ]
     if not candidates:
         return None
-
-    logical_campaign_matches = [
-        record
-        for record in candidates
-        if getattr(record, "logical_key", None) == STAY_DISCOUNT_CAMPAIGN_KEY
-        or (
-            getattr(record, "logical_key", None) is None
-            and record.canonical_key == STAY_DISCOUNT_CAMPAIGN_KEY
-        )
-    ]
-    if not logical_campaign_matches:
-        return max(candidates, key=_current_snapshot_rank)
-    return max(logical_campaign_matches, key=_current_snapshot_rank)
+    return max(candidates, key=_current_snapshot_rank)
 
 
 def _normalized_datetime(value: datetime | None) -> datetime:

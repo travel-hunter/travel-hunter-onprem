@@ -116,6 +116,8 @@ def test_parse_ktostay_population_decline_areas_and_common_fields() -> None:
     assert record.source_url == "https://ktostay.visitkorea.or.kr/"
     assert record.detail_url == "https://ktostay.visitkorea.or.kr/"
     assert record.collected_page_url == "https://ktostay.visitkorea.or.kr/"
+    assert record.logical_key == "stay-discount:2026-summer"
+    assert record.canonical_key_version == "snapshot-v1"
     assert record.status == "active"
     assert record.freshness_status == "fresh"
     assert record.start_date == date(2026, 6, 11)
@@ -139,6 +141,27 @@ def test_parse_ktostay_population_decline_areas_and_common_fields() -> None:
     assert len(payload["discountTiers"]) == 4
     assert "14만원 이상" in str(payload["discountTiers"][-1])
     assert record.contact_text is None
+
+
+def test_parse_ktostay_latest_august_period_includes_campaign_provenance() -> None:
+    html = KTOSTAY_HTML.replace("~7.31", "~8.17").replace("(금)", "(월)")
+
+    records = parse_stay_discount_benefits(
+        html,
+        collected_page_url="https://ktostay.visitkorea.or.kr/",
+        fetched_at=datetime(2026, 8, 6, tzinfo=UTC),
+        today=date(2026, 8, 6),
+    )
+
+    assert len(records) == 1
+    record = records[0]
+    assert record.logical_key == "stay-discount:2026-summer"
+    assert record.canonical_key_version == "snapshot-v1"
+    assert record.start_date == date(2026, 6, 11)
+    assert record.end_date == date(2026, 8, 17)
+    assert "8.17" in str(record.raw_payload["issuePeriod"])
+    assert "8.17" in str(record.raw_payload["stayPeriod"])
+    assert record.raw_payload["eligibleAreaCount"] == 85
 
 
 def test_parse_ktostay_keeps_typed_evidence_without_rebuilding_contact_text() -> None:
