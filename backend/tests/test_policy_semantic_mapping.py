@@ -166,6 +166,21 @@ def test_stay_mapper_strictly_splits_support_periods_target_documents_notes() ->
     assert not set(periods) & set(conditions + notices)
 
 
+def test_stay_mapper_maps_latest_august_periods_to_structured_detail() -> None:
+    result = _map(_record())
+
+    assert result.mapper_status == "mapped"
+    assert [
+        item["endDate"] for item in result.structured_detail["periods"]
+    ] == ["2026-08-17", "2026-08-17"]
+    assert _descriptions(result, "supportContent") == [
+        "7만원 미만 국내 숙박상품 예약 시 2만원 할인",
+        "7만원 이상 국내 숙박상품 예약 시 3만원 할인",
+        "14만원 미만 국내 숙박상품 예약 시 5만원 할인",
+        "14만원 이상 국내 숙박상품 예약 시 7만원 할인",
+    ]
+
+
 def test_stay_mapper_rejects_malformed_tiers_without_reclassifying_raw_blob() -> None:
     payload = dict(STAY_PAYLOAD)
     payload["discountTiers"] = ["VIP 고객에게 상황에 따라 큰 혜택 제공"]

@@ -5,6 +5,7 @@ from datetime import date, datetime
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
+from app.data.source_provenance import CANONICAL_KEY_VERSION, logical_key_for_source
 from app.schemas.external_sources import ExternalBenefitSource
 from app.services.travelmonth_normalizer import (
     calculate_field_completeness,
@@ -303,6 +304,13 @@ def _build_record(
         source_category=SOURCE_CATEGORY,
         external_id=stable_hash(canonical_text),
         canonical_key=stable_hash(canonical_text),
+        logical_key=logical_key_for_source(
+            source_category=SOURCE_CATEGORY,
+            region=None,
+            city=None,
+            campaign_year=today.year,
+        ),
+        canonical_key_version=CANONICAL_KEY_VERSION,
         detail_url=detail_url,
         collected_page_url=collected_page_url,
         title=title if "숙박" in title else f"{title} 숙박 할인",

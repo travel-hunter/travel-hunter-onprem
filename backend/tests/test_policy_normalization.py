@@ -12,7 +12,10 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.routes import policies as policy_routes
 from app.db.base import Base
-from app.data.stay_discount_campaign import STAY_DISCOUNT_CAMPAIGN_KEY
+from app.data.stay_discount_campaign import (
+    STAY_DISCOUNT_CAMPAIGN_KEY,
+    select_current_stay_discount_record,
+)
 from app.main import app
 from app.models import (
     ExternalSourceRecord,
@@ -675,6 +678,29 @@ def test_post_0028_single_snapshot_promotes_new_stay_snapshot_into_policy_23(
     assert db.query(Policy).filter(Policy.slug == f"travelmonth-{current_record.id}").count() == 0
     assert db.query(TripPolicy).one().policy_id == 23
     assert db.query(UserSavedPolicy).one().policy_id == 23
+
+
+def test_stay_selector_prefers_newer_missing_logical_key_snapshot() -> None:
+    old_record = ExternalSourceRecord(
+        id=33,
+        source_category="stay_discount",
+        canonical_key="old-stay-snapshot",
+        logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
+        end_date=date(2026, 7, 31),
+        last_fetched_at=datetime(2026, 7, 2, 5, 18, 15),
+        last_verified_at=datetime(2026, 7, 2, 5, 18, 15),
+    )
+    new_record = ExternalSourceRecord(
+        id=139,
+        source_category="stay_discount",
+        canonical_key="new-stay-snapshot",
+        logical_key=None,
+        end_date=date(2026, 8, 17),
+        last_fetched_at=datetime(2026, 8, 6, 13, 29, 24),
+        last_verified_at=datetime(2026, 8, 6, 13, 29, 24),
+    )
+
+    assert select_current_stay_discount_record([old_record, new_record]) is new_record
 
 
 def test_stay_logical_campaign_with_zero_policy_matches_creates_one_policy(
