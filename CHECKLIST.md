@@ -2,26 +2,22 @@
 
 ## Current status
 
-- Active task/status: 2026 대한민국 숙박세일 페스타 공식 기간 변경분을 수집, 최신 스냅샷 선택, 정책 alias 상세 표시에 반영했다.
-- Scope guard: DB schema와 API shape는 변경하지 않고 기존 `stay_discount` canonical 정책과 alias projection 계약을 유지했다.
+- Active task/status: `/home` 이번 주 혜택 정책 카드 A안 가독성 개선을 적용했고, 후속으로 카드 본문 요약 문단을 제거해 `제목 → 핵심 혜택 → 기간/조건` 흐름으로 압축했다.
+- Scope guard: frontend-only display change; API DTO, backend schema, 정책 수집/정규화 동작은 변경하지 않았다.
 
 ## Recent validation
 
-- PASS: RED 확인 — parser provenance 테스트와 missing-logical-key 최신 snapshot selector 테스트가 각각 의도대로 실패했고, semantic mapper 최신 기간 테스트는 기존 mapper가 이미 처리해 통과했다.
-- PASS: `docker compose -f compose.yaml run --rm --no-deps -v "$PWD/backend/app:/app/app:ro" -v "$PWD/backend/tests:/app/tests:ro" backend python -m pytest tests/test_travelmonth_stay_parser.py::test_parse_ktostay_latest_august_period_includes_campaign_provenance tests/test_policy_normalization.py::test_stay_selector_prefers_newer_missing_logical_key_snapshot tests/test_policy_semantic_mapping.py::test_stay_mapper_maps_latest_august_periods_to_structured_detail -q` — 3 passed, 1 existing StarletteDeprecationWarning.
-- PASS: `docker compose -f compose.yaml run --rm --no-deps -v "$PWD/backend/app:/app/app:ro" -v "$PWD/backend/tests:/app/tests:ro" backend python -m pytest tests/test_travelmonth_stay_parser.py tests/test_policy_semantic_mapping.py tests/test_policy_normalization.py -q` — 90 passed, 1 existing StarletteDeprecationWarning.
-- PASS: `docker compose -f compose.yaml run --rm --no-deps -v "$PWD/backend/app:/app/app:ro" -v "$PWD/backend/tests:/app/tests:ro" backend python -m pytest tests/test_policy_db_service.py tests/test_external_source_repository.py tests/test_region_recommendations.py tests/test_travel_areas.py -q` — 86 passed.
-- BLOCKED: full backend pytest with correct frontend/alembic/backend binds has 1 unrelated existing failure in `tests/test_local_half_trip_five_semantics_migration.py::test_frozen_migration_semantics_equal_runtime_mapper_for_scoped_records`; failure is half-trip frozen migration Korean copy mismatch, not `stay_discount` behavior.
-- PASS: `docker compose -f compose.yaml build backend && docker compose -f compose.yaml up -d backend` — local backend image rebuilt and restarted.
-- PASS: live external collection service — `stay_discount` parsed 1, created/updated 1; latest row `id=139` now has `logical_key=stay-discount:2026-summer`, `canonical_key_version=snapshot-v1`, `end_date=2026-08-17`.
-- PASS: `docker exec -w /app travel-hunter-onprem-backend-1 python scripts/normalize_external_policies.py` — `promoted_or_repaired=55`.
-- PASS: Local API alias detail check — `stay-discount-gangwon-goseong`, `stay-discount-jeonnam-gangjin`, `stay-discount-gyeongnam-hapcheon` all return `startDate=2026-06-11`, `deadline=2026-08-17`, period end dates `['2026-08-17', '2026-08-17']`.
+- PASS: `cd frontend && npx vitest run src/app/__tests__/home.test.tsx src/app/__tests__/policies.test.tsx` — 28 passed.
+- PASS: `cd frontend && npm run typecheck`.
+- PASS: `cd frontend && npm run build`.
+- PASS: `docker compose -f compose.yaml build frontend`.
+- PASS: `docker compose -f compose.yaml up -d frontend` 후 `curl -I --max-time 5 http://127.0.0.1:4173/home` — `HTTP/1.1 200 OK`.
+- BLOCKED: `cd frontend && npm test`는 `python3.14: No module named alembic.__main__` 로컬 backend-test wrapper 환경 문제로 중단된다. 동일 변경 범위는 직접 Vitest로 검증했다.
 
 ## Active risks
 
-- 공식 페이지 DOM이 다시 바뀌면 live parser fixture 보강이 필요할 수 있다.
-- 전체 backend suite의 기존 half-trip frozen migration snapshot 불일치는 별도 정리가 필요하다.
-- 개발서버 반영 후 최신 이미지에서 외부 수집 1회와 `scripts/normalize_external_policies.py` 실행이 필요하다.
+- 실제 모바일 카드 텍스트 밀도는 로컬 브라우저 폭 360/390/430px에서 최종 육안 확인이 필요하다.
+- `npm test` wrapper의 로컬 Alembic/Python 3.14 문제는 별도 환경 정리가 필요하다. 관련 검증은 직접 Vitest/typecheck/build로 대체했다.
 
 ## Cleanup Policy
 
