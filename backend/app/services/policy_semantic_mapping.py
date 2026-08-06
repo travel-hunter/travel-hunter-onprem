@@ -40,8 +40,13 @@ def _text(value: object) -> str:
     return " ".join(str(value or "").split())
 
 
+def _display_description_text(value: object) -> str:
+    text = _text(value)
+    return re.sub(r"^(?:[:：ㆍ·•*\-–—]+\s*)+", "", text).strip()
+
+
 def _append(items: list[dict[str, object]], *, title: str, description: str, **extra: object) -> None:
-    description = _text(description)
+    description = _display_description_text(description)
     if not description or any(item.get("description") == description for item in items):
         return
     items.append({"title": title, "description": description, **extra})

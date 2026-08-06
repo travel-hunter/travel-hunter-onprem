@@ -391,6 +391,31 @@ def test_local_half_trip_uses_detail_support_documents_and_notes() -> None:
     ]
 
 
+def test_local_half_trip_strips_raw_bullet_prefixes_from_support_content() -> None:
+    record = _record(
+        source_category="local_half_trip",
+        raw_payload={
+            "participantTarget": "강진군 외 지역에 거주하는 사전신청 관광객 누구나",
+            "supportDetail": (
+                ": 총 3만 원 이상 소비 시, 사용금액의 50% 최대 10만 원까지 지원\n"
+                ": 총 5만 원 이상 소비 시, 사용금액의 50% 최대 20만 원까지 지원\n"
+                "ㆍ18만 원 소비 시 12만 5천 원 지원\n"
+                "ㆍ20만 원 소비 시 14만 원 지원"
+            ),
+        },
+    )
+    record.city = "강진"
+
+    result = _map(record)
+
+    support_descriptions = _descriptions(result, "supportContent")
+    assert "총 3만 원 이상 소비 시, 사용금액의 50% 최대 10만 원까지 지원" in support_descriptions
+    assert "총 5만 원 이상 소비 시, 사용금액의 50% 최대 20만 원까지 지원" in support_descriptions
+    assert "18만 원 소비 시 12만 5천 원 지원" in support_descriptions
+    assert "20만 원 소비 시 14만 원 지원" in support_descriptions
+    assert not any(description.startswith((":", "ㆍ", "·")) for description in support_descriptions)
+
+
 def test_local_half_trip_public_manual_correction_enriches_hapcheon_and_wando() -> None:
     hapcheon = _record(source_category="local_half_trip", raw_payload={})
     hapcheon.id = 25
