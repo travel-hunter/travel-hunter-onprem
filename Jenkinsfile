@@ -1,6 +1,12 @@
 pipeline {
     agent { label 'deploy' }
 
+        options {
+        disableConcurrentBuilds()
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '50', daysToKeepStr: '30'))
+        timestamps()
+    }
     environment {
         PROJECT_DIR = "/home/deploy/travel-hunter-onprem"
         BRANCH_NAME = "develop"
