@@ -1,7 +1,7 @@
 pipeline {
     agent { label 'deploy' }
 
-        options {
+    options {
         disableConcurrentBuilds()
         timeout(time: 30, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '50', daysToKeepStr: '30'))
@@ -122,11 +122,12 @@ pipeline {
                     echo "===== 내부 Caddy 테스트 ====="
                     cd ${PROJECT_DIR}
 
-                    docker run --rm --network travel-hunter-onprem_default curlimages/curl:latest \
+                    docker run --rm --network travel-hunter-onprem_default curlimages/curl:8.11.1 \
                       -I -H "Host: dev.travel-hunter.co.kr" http://caddy:80
 
                     echo "===== 외부 도메인 테스트 ====="
-                    curl -I https://dev.travel-hunter.co.kr || true
+                    curl -fsS -o /dev/null -I https://dev.travel-hunter.co.kr || \
+                      { echo "⚠️ 외부 도메인 응답 없음"; exit 1; }
                 '''
             }
         }
