@@ -1,14 +1,11 @@
 services:
   jenkins:
     build:
-      context: ./deploy/jenkins
+      context: .
       dockerfile: Dockerfile
     container_name: jenkins
     restart: unless-stopped
     user: root
-    ports:
-      - "9000:8080"
-      - "50000:50000"
     volumes:
       - jenkins_home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
@@ -17,3 +14,5 @@ services:
 
 volumes:
   jenkins_home:
+    external: true
+    name: travel-hunter-onprem_jenkins_home
