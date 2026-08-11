@@ -18,6 +18,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  AlertTriangle,
   Car,
   ChevronLeft,
   GripVertical,
@@ -739,6 +740,42 @@ function updateTimelinePlaceTime(
   return next;
 }
 
+function placeTimeMinutes(time: string | undefined): number | null {
+  if (!time) return null;
+  const match = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function displayedPlaceWarningKey(place: DisplayedPlace): string | null {
+  return place.id ?? place.previewTimelineId ?? null;
+}
+
+function timeOrderWarningPlaceIds(places: DisplayedPlace[]): Set<string> {
+  const warningIds = new Set<string>();
+  let previousMinutes: number | null = null;
+
+  for (const place of places) {
+    const currentMinutes = placeTimeMinutes(place.time);
+    const key = displayedPlaceWarningKey(place);
+    if (
+      currentMinutes !== null &&
+      previousMinutes !== null &&
+      currentMinutes < previousMinutes &&
+      key
+    ) {
+      warningIds.add(key);
+    }
+    if (currentMinutes !== null) previousMinutes = currentMinutes;
+  }
+
+  return warningIds;
+}
+
 function findTripPlaceById(
   trip: Trip,
   placeId: string,
@@ -1012,6 +1049,7 @@ export function ItineraryDetailPage() {
   const displayedPlaces: DisplayedPlace[] = isPreviewActive
     ? (recommendationPreview.timeline[visibleDay] ?? [])
     : dayPlaces;
+  const timeWarningPlaceIds = timeOrderWarningPlaceIds(displayedPlaces);
   const selectedPreviewMapPlace = isPreviewActive
     ? (previewDayPlaces.find(
         (place) => place.previewId === selectedMapPlaceId,
@@ -2399,6 +2437,12 @@ export function ItineraryDetailPage() {
                       place.previewId ??
                       `${place.time}-${place.label}`
                     }
+                    hasTimeOrderWarning={Boolean(
+                      displayedPlaceWarningKey(place) &&
+                        timeWarningPlaceIds.has(
+                          displayedPlaceWarningKey(place)!,
+                        ),
+                    )}
                     onCancelRecommendationPreviewPlace={
                       cancelRecommendationPreviewPlace
                     }
@@ -2854,6 +2898,7 @@ function SortablePlaceItem({
   currentDay,
   dayNumbers,
   disabled,
+  hasTimeOrderWarning,
   isMoving,
   isPreviewMode,
   onCancelRecommendationPreviewPlace,
@@ -2873,6 +2918,7 @@ function SortablePlaceItem({
   currentDay: number;
   dayNumbers: number[];
   disabled: boolean;
+  hasTimeOrderWarning: boolean;
   isMoving: boolean;
   isPreviewMode: boolean;
   onCancelRecommendationPreviewPlace: (previewId: string) => void;
@@ -3029,7 +3075,23 @@ function SortablePlaceItem({
         ) : (
           <div className="place-copy">
             <div className="place-prototype-meta">
-              {place.time && <span>{place.time}</span>}
+              {place.time && (
+                <span className="place-time-with-warning">
+                  <span>{place.time}</span>
+                  {hasTimeOrderWarning && canEditTrip && !isPreviewMode && (
+                    <button
+                      type="button"
+                      className="place-time-warning-button"
+                      aria-label={`${place.label} 방문 시간 확인`}
+                      title="앞 장소보다 이른 시간입니다. 방문 시간을 확인해 주세요."
+                      onClick={() => onEdit(place)}
+                    >
+                      <AlertTriangle size={13} aria-hidden="true" />
+                      <span>시간 확인</span>
+                    </button>
+                  )}
+                </span>
+              )}
               <em aria-hidden="true">{getPlaceEmoji(place)}</em>
             </div>
             <h4>{place.label}</h4>
