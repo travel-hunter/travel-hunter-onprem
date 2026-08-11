@@ -186,6 +186,96 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
+  it("marks saved places whose visit time is earlier than the previous place", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "130",
+      revision: 3,
+      title: "시간 확인 여행",
+      days: {
+        1: [
+          { id: "time-a", time: "11:00", label: "늦은 장소", meta: "오전" },
+          { id: "time-b", time: "10:00", label: "이른 장소", meta: "오전" },
+          {
+            id: "time-c",
+            time: "10:00",
+            label: "같은 시간 장소",
+            meta: "오전",
+          },
+        ],
+        2: [
+          {
+            id: "time-d",
+            time: "09:00",
+            label: "다른 Day 장소",
+            meta: "오전",
+          },
+        ],
+      },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/130?day=1");
+
+      await waitFor(() =>
+        expect(screen.getAllByText("시간 확인 여행").length).toBeGreaterThan(0),
+      );
+      expect(
+        screen.getByRole("button", { name: "이른 장소 방문 시간 확인" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "늦은 장소 방문 시간 확인" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "같은 시간 장소 방문 시간 확인" }),
+      ).not.toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
+  it("opens the existing place editor when the time warning is clicked", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "131",
+      revision: 4,
+      title: "시간 수정 진입 여행",
+      days: {
+        1: [
+          { id: "edit-a", time: "12:00", label: "점심 장소", meta: "식사" },
+          { id: "edit-b", time: "11:00", label: "오전 장소", meta: "관광" },
+        ],
+        2: [],
+      },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/131?day=1");
+
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "오전 장소 방문 시간 확인",
+        }),
+      );
+
+      expect(
+        await screen.findByRole("heading", { name: "장소 수정" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("방문 시간")).toBeInTheDocument();
+      expect(screen.getByDisplayValue("오전 장소")).toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
   it("moves saved places across days by keyboard but hides reorder handles for viewers", async () => {
     const editorTrip: Trip = {
       ...getPreviewTrip(),
