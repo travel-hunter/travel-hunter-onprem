@@ -497,7 +497,6 @@ function PrototypePolicyCard({ policy }: { policy: Policy }) {
 
       <small>
         <span>상세 보기</span>
-        <span>바로 확인</span>
       </small>
     </Link>
   );

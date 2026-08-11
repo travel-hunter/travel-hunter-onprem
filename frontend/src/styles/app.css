@@ -2487,7 +2487,7 @@
   grid-column: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 10px;
   border-top: 1px solid #ececf1;
   padding-top: 10px;
@@ -2497,7 +2497,7 @@
   line-height: 1.35;
 }
 
-.prototype-home-policy-card small span:last-child {
+.prototype-home-policy-card small span {
   flex: 0 0 auto;
   color: #0f766e;
   font-weight: 950;

@@ -62,7 +62,9 @@ describe("Travel Hunter app — home", () => {
         policyLinks[0].querySelector(".prototype-home-policy-benefit"),
       ).toHaveTextContent(/\S/);
       expect(policyLinks[0].querySelector("small")).toHaveTextContent("상세 보기");
-      expect(policyLinks[0].querySelector("small")).toHaveTextContent("바로 확인");
+      expect(policyLinks[0].querySelector("small")).not.toHaveTextContent(
+        "바로 확인",
+      );
       expect(policyLinks[0].querySelector("small")).not.toHaveTextContent("·");
       expect(
         within(policyLinks[0]).queryByRole("button", { name: /신청|공식/ }),
@@ -123,7 +125,7 @@ describe("Travel Hunter app — home", () => {
       expect(document.body).toHaveTextContent("제휴처별 운영기간 확인");
       expect(document.body).toHaveTextContent("지역 제휴 혜택");
       expect(document.body).toHaveTextContent("상세 보기");
-      expect(document.body).toHaveTextContent("바로 확인");
+      expect(document.body).not.toHaveTextContent("바로 확인");
       expect(document.body).not.toHaveTextContent("마감일 확인 필요");
       expect(document.body).not.toHaveTextContent("신청 마감 상시");
     } finally {
