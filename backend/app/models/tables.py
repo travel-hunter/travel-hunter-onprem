@@ -210,7 +210,6 @@ class Policy(Base):
     external_source_record_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("external_source_records.id", ondelete="SET NULL"),
-        unique=True,
         index=True,
     )
     source_url: Mapped[str | None] = mapped_column(String(500))

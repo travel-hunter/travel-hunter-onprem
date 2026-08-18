@@ -79,8 +79,10 @@ _CITY_SLUGS = {
     "담양군": "damyang",
     "보성군": "boseong",
     "신안군": "sinan",
+    "순천시": "suncheon",
     "영광군": "yeonggwang",
     "영암군": "yeongam",
+    "여수시": "yeosu",
     "완도군": "wando",
     "장성군": "jangseong",
     "장흥군": "jangheung",
@@ -148,7 +150,26 @@ class StayDiscountAliasRecord:
 
 
 def is_stay_discount_canonical_policy(policy: PolicyModel) -> bool:
-    return (policy.source_category or "") == SOURCE_CATEGORY and policy.external_source_record_id is not None
+    return (
+        (policy.source_category or "") == SOURCE_CATEGORY
+        and policy.external_source_record_id is not None
+        and not is_stay_discount_area_slug(policy.slug)
+    )
+
+
+def is_stay_discount_area_slug(slug: str | None) -> bool:
+    return bool(slug and slug.startswith(f"{ALIAS_PREFIX}-"))
+
+
+def is_stay_discount_area_policy(policy: PolicyModel) -> bool:
+    return (policy.source_category or "") == SOURCE_CATEGORY and is_stay_discount_area_slug(
+        policy.slug
+    )
+
+
+def area_source_canonical_key(record_key: str | None, alias_slug: str) -> str:
+    base_key = (record_key or ALIAS_PREFIX).strip() or ALIAS_PREFIX
+    return f"{base_key}:{alias_slug}"
 
 
 def _section_descriptions(structured_detail: object, section: str) -> list[str]:

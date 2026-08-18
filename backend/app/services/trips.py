@@ -700,9 +700,6 @@ def _list_recommended_policy_candidates(db: Session) -> list[dict[str, object]]:
         ):
             continue
         if stay_discount_aliases.is_stay_discount_canonical_policy(policy):
-            alias_areas = stay_discount_aliases.alias_areas_for_policy(db, policy)
-            if alias_areas:
-                candidates.extend(_stay_alias_to_trip_policy_candidate(policy, area) for area in alias_areas)
             continue
         external_record = (
             external_source_repository.get_external_source_record_by_id(
@@ -720,6 +717,9 @@ def _resolve_policy_for_request_slug(
     db: Session,
     policy_slug: str,
 ) -> tuple[Policy | None, stay_discount_aliases.StayDiscountAliasArea | None]:
+    policy = policy_repository.get_policy_by_slug(db, policy_slug)
+    if policy is not None:
+        return policy, None
     alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
     if alias_resolution is not None:
         policy = alias_resolution.canonical_policy
@@ -732,7 +732,7 @@ def _resolve_policy_for_request_slug(
     )
     if digital_policy is not None:
         return digital_policy, None
-    return policy_repository.get_policy_by_slug(db, policy_slug), None
+    return None, None
 
 
 def _trip_role_for_user(trip: Trip, user: User | None) -> str:

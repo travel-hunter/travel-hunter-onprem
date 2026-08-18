@@ -1335,7 +1335,7 @@ CREATE INDEX ix_pending_social_signups_token_hash ON public.pending_social_signu
 -- Name: ix_policies_external_source_record_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX ix_policies_external_source_record_id ON public.policies USING btree (external_source_record_id);
+CREATE INDEX ix_policies_external_source_record_id ON public.policies USING btree (external_source_record_id);
 
 
 --

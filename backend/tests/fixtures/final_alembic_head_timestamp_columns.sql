@@ -405,7 +405,7 @@ CREATE INDEX ix_policies_source_name ON policies (source_name);
 
 CREATE INDEX ix_policies_source_category ON policies (source_category);
 
-CREATE UNIQUE INDEX ix_policies_external_source_record_id ON policies (external_source_record_id);
+CREATE INDEX ix_policies_external_source_record_id ON policies (external_source_record_id);
 
 CREATE INDEX ix_policies_source_canonical_key ON policies (source_canonical_key);
 

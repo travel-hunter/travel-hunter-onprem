@@ -2,24 +2,26 @@
 
 ## Current status
 
-- Active task/status: Trips recommendation preview action bar now matches the `main > section` width while keeping the visit-time editor above the fixed bottom bar.
-- Scope guard: 변경 범위는 `/trips/:tripId` 추천 일정 미리보기 UI와 관련 frontend regression test로 제한한다.
+- Active task/status: 숙박세일페스타 정책 저장구조를 canonical alias 투영에서 지역별 실제 `policies` row 기준으로 전환했다.
+- Scope guard: 변경 범위는 stay_discount 정책 정규화, 정책/일정 연결 API, 링크 보정 스크립트, 관련 계약/DB 문서로 제한한다.
 
 ## Recent validation
 
-- PASS: RED 확인 — `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx --testNamePattern "recommendation preview|추천"` failed before implementation on missing `선택 저장`, local time save, and centered notice behavior.
-- PASS: Browser RED 확인 — mocked Playwright smoke showed action bar width mismatch before this fix: 1024px viewport had section 760px vs action bar 1009px, and 1440px had section 820px vs action bar 1425px.
-- PASS: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx` — 35 passed.
-- PASS: `cd frontend && npm run typecheck`.
-- PASS: `cd frontend && npm run build`.
-- PASS: Mocked Playwright smoke at `http://127.0.0.1:4175/trips/124?day=1` for 360/390/430/1024/1440px showed action bar x/width matching `main > section`, 13px gap above the bottom action bar for the floating time editor, visible `저장` button, and no console/page issues. Screenshots saved outside repo: `/tmp/trips-actionbar-pr-390.png`, `/tmp/trips-actionbar-pr-1024.png`.
-- PASS: `git diff --check -- frontend/src/pages/itinerary/ItineraryDetailPage.tsx frontend/src/styles/app.css frontend/src/app/__tests__/trip-detail.test.tsx CHECKLIST.md`.
-- PASS: UTF-8/U+FFFD check for changed Korean-bearing files.
+- PASS: RED 확인 — `python -m pytest tests/test_policy_normalization.py::test_policies_external_source_record_id_is_not_unique -q` failed before schema model change.
+- PASS: RED 확인 — `python -m pytest tests/test_policy_normalization.py::test_promotes_active_fresh_stay_discount_as_area_policy_rows -q` failed before stay_discount area row normalization.
+- PASS: `cd backend && python -m pytest tests/test_policy_normalization.py -q` — 44 passed.
+- PASS: `cd backend && python -m pytest tests/test_policy_db_service.py -q` — 46 passed.
+- PASS: `cd backend && python -m pytest tests/test_trip_db_service.py -q` — 84 passed.
+- PASS: `cd backend && python -m pytest tests/test_stay_discount_area_link_migration.py -q` — 1 passed.
+- PASS: `cd backend && python -m pytest` — 660 passed, 17 skipped.
+- PASS: `cd backend && alembic upgrade head --sql` output includes `0035_stay_discount_area_policy_identity`, dropping the unique index and recreating `ix_policies_external_source_record_id` as non-unique.
+- PASS: `git diff --check`.
+- PASS: UTF-8/U+FFFD check for changed and untracked files — 19 files OK.
 
 ## Active risks
 
-- No backend/API contract change is included.
-- Browser plugin was not available in this session; rendered validation used regular Playwright.
+- Frontend typecheck/build was not rerun because no frontend source changed.
+- Existing canonical trip/user links lose the original requested alias slug in DB; the migration script picks the best matching area policy from trip context, otherwise the first area row.
 
 ## Cleanup Policy
 
