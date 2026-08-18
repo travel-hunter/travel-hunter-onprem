@@ -14,8 +14,8 @@
 - PASS: `cd backend && python -m pytest tests/test_trip_db_service.py -q` — 84 passed.
 - PASS: `cd backend && python -m pytest tests/test_stay_discount_area_link_migration.py -q` — 1 passed.
 - PASS: `cd backend && python -m pytest tests/test_db_schema.py -q` — 4 passed.
-- PASS: `cd backend && python -m pytest tests/test_policy_normalization.py tests/test_policy_db_service.py tests/test_trip_db_service.py tests/test_stay_discount_area_link_migration.py -q` — 175 passed.
-- PASS: `cd backend && python -m pytest` — 661 passed, 17 skipped.
+- PASS: `cd backend && python -m pytest tests/test_policy_normalization.py tests/test_policy_db_service.py tests/test_trip_db_service.py tests/test_stay_discount_area_link_migration.py -q` — 176 passed.
+- PASS: `cd backend && python -m pytest` — 662 passed, 17 skipped.
 - PASS: `cd backend && alembic upgrade head --sql` output includes `0035_stay_policy_identity`, dropping the unique index and recreating `ix_policies_external_source_record_id` as non-unique.
 - PENDING: dev 서버 Alembic 적용, 숙박세일 지역 정책 정규화, trip policy 링크 보정 스크립트 실행.
 - PASS: `git diff --check`.
@@ -26,6 +26,7 @@
 - Frontend typecheck/build was not rerun because no frontend source changed.
 - Existing canonical trip/user links lose the original requested alias slug in DB; the migration script picks the best matching area policy from trip context, otherwise the first area row.
 - Alembic revision ID는 dev DB의 `alembic_version.version_num varchar(32)` 제한을 넘어가면 배포 중 실패하므로 32자 이하로 유지해야 한다.
+- 중복 수집 canonical 숙박세일 source에 같은 source id의 지역 row가 없으면, 링크 보정 스크립트는 active 숙박세일 지역 row 전체에서 일정 문맥에 맞는 지역 정책을 고른다.
 
 ## Cleanup Policy
 
