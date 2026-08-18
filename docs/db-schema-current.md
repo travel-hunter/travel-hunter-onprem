@@ -3,11 +3,11 @@
 ## 기준
 
 - 기준일: 2026-08-18
-- 기준 Alembic head: `0035_stay_discount_area_policy_identity`
+- 기준 Alembic head: `0035_stay_policy_identity`
 - PostgreSQL: 16.14 (`postgres:16-alpine` fresh container)
 - SQL snapshot: `docs/db-schema-current.sql`
 - ERD/관계 시각화: `docs/db-erd.md`
-- 생성 방식: 이전 schema-only snapshot에 Alembic head `0027_source_provenance_keys`의 offline SQL diff를 반영했고, 이후 data-only semantic migration과 `0035_stay_discount_area_policy_identity`의 index 변경을 반영했다. Fresh DB pg_dump 재생성은 별도 검증으로 다시 수행할 수 있다. Schema 변경은 Alembic 기준으로 추적하고, 관계/핵심 컬럼 요약은 `docs/db-erd.md`가 제공한다.
+- 생성 방식: 이전 schema-only snapshot에 Alembic head `0027_source_provenance_keys`의 offline SQL diff를 반영했고, 이후 data-only semantic migration과 `0035_stay_policy_identity`의 index 변경을 반영했다. Fresh DB pg_dump 재생성은 별도 검증으로 다시 수행할 수 있다. Schema 변경은 Alembic 기준으로 추적하고, 관계/핵심 컬럼 요약은 `docs/db-erd.md`가 제공한다.
 
 이 문서는 현재 앱이 사용하는 PostgreSQL schema의 기준 문서다. 초기 SQL 기준본 이후 Alembic migration `0002`~`0035`가 적용된 현재 구조를 설명한다. 테이블 관계, 핵심 컬럼, 제약/index, 문서 drift는 `docs/db-erd.md`를 함께 본다.
 
@@ -101,9 +101,9 @@ Migration metadata:
 - `0027_source_provenance_keys`: 외부 원문의 snapshot `canonical_key`와 nullable, non-unique `logical_key`를 분리하고 key 버전(`canonical_key_version`)을 추가한다. 기존 레코드는 source_category/지역/기간 기반으로 가능한 범위에서 backfill한다.
 - `0029_stay_discount_semantics`: 숙박세일페스타 semantic data-only 보정이다. 새 schema object는 추가하지 않는다.
 - `0030_half_trip_five_semantics`: scoped 대한민국 반값여행 5섹션 semantic data-only 보정이다. 새 schema object는 추가하지 않는다.
-- `0035_stay_discount_area_policy_identity`: 숙박세일페스타 지역별 public 정책 row가 같은 원문 `external_source_records.id`를 공유할 수 있도록 `policies.external_source_record_id` index를 non-unique로 바꾼다.
+- `0035_stay_policy_identity`: 숙박세일페스타 지역별 public 정책 row가 같은 원문 `external_source_records.id`를 공유할 수 있도록 `policies.external_source_record_id` index를 non-unique로 바꾼다.
 
-현재 `docs/db-schema-current.sql`은 기존 schema-only snapshot에서 Alembic `0027_source_provenance_keys` diff와 `0035_stay_discount_area_policy_identity` index 변경을 반영한 schema reference이며, data-only migration은 schema object 변경이 없다. 향후 schema migration이 추가되면 같은 절차로 다시 생성한다.
+현재 `docs/db-schema-current.sql`은 기존 schema-only snapshot에서 Alembic `0027_source_provenance_keys` diff와 `0035_stay_policy_identity` index 변경을 반영한 schema reference이며, data-only migration은 schema object 변경이 없다. 향후 schema migration이 추가되면 같은 절차로 다시 생성한다.
 
 ## `notification_deliveries`
 

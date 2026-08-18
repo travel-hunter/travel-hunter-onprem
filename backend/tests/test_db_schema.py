@@ -1,5 +1,11 @@
+import ast
+from pathlib import Path
+
 import app.models  # noqa: F401
 from app.db.base import Base
+
+
+ALEMBIC_VERSION_NUM_MAX_LENGTH = 32
 
 
 def test_current_schema_tables_are_registered() -> None:
@@ -170,3 +176,28 @@ def test_policies_external_source_record_id_is_not_unique() -> None:
     policies = Base.metadata.tables["policies"]
 
     assert policies.c["external_source_record_id"].unique is not True
+
+
+def test_alembic_revision_ids_fit_version_table() -> None:
+    versions_dir = Path(__file__).parents[1] / "alembic" / "versions"
+    revisions: list[tuple[str, str]] = []
+
+    for migration_path in sorted(versions_dir.glob("*.py")):
+        module = ast.parse(migration_path.read_text(encoding="utf-8"))
+        for node in module.body:
+            if not isinstance(node, ast.AnnAssign | ast.Assign):
+                continue
+            target = node.target if isinstance(node, ast.AnnAssign) else node.targets[0]
+            if not isinstance(target, ast.Name) or target.id != "revision":
+                continue
+            value = node.value
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                revisions.append((migration_path.name, value.value))
+                break
+
+    assert revisions
+    assert [
+        (filename, revision)
+        for filename, revision in revisions
+        if len(revision) > ALEMBIC_VERSION_NUM_MAX_LENGTH
+    ] == []

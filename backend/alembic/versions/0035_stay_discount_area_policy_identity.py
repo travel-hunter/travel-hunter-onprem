@@ -1,6 +1,6 @@
 """allow stay discount area policies per source record
 
-Revision ID: 0035_stay_discount_area_policy_identity
+Revision ID: 0035_stay_policy_identity
 Revises: 0034_dgtour_detail_urls
 Create Date: 2026-08-18
 """
@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from alembic import op
 
 
-revision: str = "0035_stay_discount_area_policy_identity"
+revision: str = "0035_stay_policy_identity"
 down_revision: str | None = "0034_dgtour_detail_urls"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
