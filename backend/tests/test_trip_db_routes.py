@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
@@ -49,8 +50,8 @@ def invite_payload(trip_id: str = "7") -> dict[str, object]:
     return {
         "id": "9",
         "tripId": trip_id,
-        "inviteToken": "abc",
-        "inviteUrl": "http://127.0.0.1:5173/invites/abc/accept",
+        "inviteToken": "editor-token",
+        "inviteUrl": "http://127.0.0.1:5173/invites/editor-token/accept",
         "expiresAt": "2026-06-30T00:00:00Z",
         "createdAt": "2026-05-04T00:00:00Z",
         "acceptedAt": None,
@@ -60,13 +61,6 @@ def invite_payload(trip_id: str = "7") -> dict[str, object]:
         "alreadyMember": False,
     }
 
-
-
-
-def invite_links_payload(trip_id: str = "7") -> dict[str, object]:
-    viewer = {**invite_payload(trip_id), "id": "10", "inviteToken": "viewer-token", "inviteUrl": "http://127.0.0.1:5173/invites/viewer-token/accept", "role": "viewer"}
-    editor = {**invite_payload(trip_id), "id": "11", "inviteToken": "editor-token", "inviteUrl": "http://127.0.0.1:5173/invites/editor-token/accept", "role": "editor"}
-    return {"tripId": trip_id, "viewer": viewer, "editor": editor}
 
 def clear_overrides() -> None:
     app.dependency_overrides.pop(trip_routes.get_optional_db, None)
@@ -572,22 +566,23 @@ def test_db_recommendation_and_invite_routes(monkeypatch) -> None:
     monkeypatch.setattr(
         trip_routes.trip_service,
         "get_invite_state",
-        lambda db, current_user, trip_id: invite_links_payload(trip_id)
+        lambda db, current_user, trip_id: invite_payload(trip_id)
         if db is fake_db and current_user is user and trip_id == "7"
         else None,
     )
     monkeypatch.setattr(
         trip_routes.trip_service,
         "confirm_invite_sent",
-        lambda db, current_user, trip_id, role="editor": {**invite_payload(trip_id), "invited": True, "role": role}
-        if db is fake_db and current_user is user and trip_id == "7"
+        lambda db, current_user, trip_id, role="editor": {**invite_payload(trip_id), "invited": True, "role": "editor"}
+        if db is fake_db and current_user is user and trip_id == "7" and role == "editor"
         else None,
     )
 
     try:
         recommendations = client.get("/api/trips/7/recommendations")
         invite = client.get("/api/trips/7/invite")
-        confirm = client.post("/api/trips/7/invite", json={"role": "viewer"})
+        confirm = client.post("/api/trips/7/invite")
+        viewer_confirm = client.post("/api/trips/7/invite", json={"role": "viewer"})
     finally:
         clear_overrides()
 
@@ -596,12 +591,12 @@ def test_db_recommendation_and_invite_routes(monkeypatch) -> None:
     assert "sourceType" in recommendations.json()[0]
     assert invite.status_code == 200
     assert invite.json()["tripId"] == "7"
-    assert invite.json()["viewer"]["role"] == "viewer"
-    assert invite.json()["editor"]["role"] == "editor"
-    assert invite.json()["viewer"]["inviteToken"] != invite.json()["editor"]["inviteToken"]
+    assert invite.json()["role"] == "editor"
+    assert invite.json()["inviteToken"] == "editor-token"
     assert confirm.status_code == 200
     assert confirm.json()["invited"] is True
-    assert confirm.json()["role"] == "viewer"
+    assert confirm.json()["role"] == "editor"
+    assert viewer_confirm.status_code == 422
 
 
 def test_db_trip_place_search_route_returns_candidates(monkeypatch) -> None:
@@ -662,7 +657,7 @@ def test_db_trip_invite_email_route_returns_delivery_status(monkeypatch) -> None
     try:
         response = client.post(
             "/api/trips/7/invite/email",
-            json={"email": "friend@example.com", "role": "viewer"},
+            json={"email": "friend@example.com"},
         )
     finally:
         clear_overrides()
@@ -670,7 +665,26 @@ def test_db_trip_invite_email_route_returns_delivery_status(monkeypatch) -> None
     assert response.status_code == 200
     assert response.json()["deliveryStatus"] == "sent"
     assert response.json()["invite"]["tripId"] == "7"
-    assert response.json()["invite"]["role"] == "viewer"
+    assert response.json()["invite"]["role"] == "editor"
+
+
+def test_db_trip_invite_email_route_rejects_viewer_role(monkeypatch) -> None:
+    fake_db = object()
+    user = make_user()
+    install_db_route_dependencies(monkeypatch, fake_db, user)
+    send_invite_email = Mock()
+    monkeypatch.setattr(trip_routes.trip_service, "send_invite_email", send_invite_email)
+
+    try:
+        response = client.post(
+            "/api/trips/7/invite/email",
+            json={"email": "friend@example.com", "role": "viewer"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 422
+    assert not send_invite_email.called
 
 
 def test_db_trip_invite_email_route_returns_404_for_non_owner(monkeypatch) -> None:

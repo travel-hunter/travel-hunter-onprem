@@ -1345,11 +1345,18 @@ def _invite_accept_url(invite_token: str) -> str:
     return f"{settings.frontend_base_url()}/invites/{invite_token}/accept"
 
 
-INVITE_ROLES: tuple[str, str] = ("viewer", "editor")
+INVITE_ROLE = "editor"
+
+
+def _require_editor_invite_role(role: str | None) -> str:
+    invite_role = role or INVITE_ROLE
+    if invite_role != INVITE_ROLE:
+        raise TripServiceError(422, "Only editor invites are supported")
+    return INVITE_ROLE
 
 
 def _ensure_invite(db: Session, trip: Trip, user: User, role: str | None = None) -> TripInvite:
-    invite_role = role or "editor"
+    invite_role = _require_editor_invite_role(role)
     now = security.utc_now_naive()
     invite = trip_repository.get_latest_active_invite(
         db,
@@ -1392,19 +1399,6 @@ def invite_to_api(
     }
 
 
-def invite_links_to_api(
-    *,
-    trip_id: int,
-    viewer: TripInvite | None,
-    editor: TripInvite | None,
-) -> dict[str, object]:
-    return {
-        "tripId": str(trip_id),
-        "viewer": invite_to_api(viewer, trip_id=trip_id) if viewer is not None else None,
-        "editor": invite_to_api(editor, trip_id=trip_id) if editor is not None else None,
-    }
-
-
 def get_invite_state(
     db: Session,
     user: User,
@@ -1413,10 +1407,9 @@ def get_invite_state(
     trip = _resolve_editable_trip(db, trip_handle, user)
     if trip is None:
         return None
-    viewer = _ensure_invite(db, trip, user, "viewer")
-    editor = _ensure_invite(db, trip, user, "editor")
+    invite = _ensure_invite(db, trip, user, INVITE_ROLE)
     db.commit()
-    return invite_links_to_api(trip_id=trip.id, viewer=viewer, editor=editor)
+    return invite_to_api(invite, trip_id=trip.id)
 
 
 def confirm_invite_sent(

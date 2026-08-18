@@ -229,6 +229,7 @@ def get_active_invite_by_token(db: Session, *, invite_token: str, now) -> TripIn
         .options(selectinload(TripInvite.trip).selectinload(Trip.members))
         .where(TripInvite.invite_token == invite_token)
         .where(TripInvite.expires_at > now)
+        .where(TripInvite.role == "editor")
     )
     return db.scalar(statement)
 

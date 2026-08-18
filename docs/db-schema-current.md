@@ -78,7 +78,7 @@ Migration metadata:
 - `policies.apply_url`
 - `policies.structured_detail`
 - `trip_invites.role`
-  - 초대 token에 고정되는 권한(`viewer`/`editor`)이다. 같은 일정에서 role별 active invite가 공존할 수 있으며, 다른 role 링크 생성은 기존 token의 role을 변경하지 않는다.
+  - 초대 token에 고정되는 권한이다. 현재 신규 초대 생성/수락 계약은 `editor`만 지원하며, 기존 viewer 초대 token은 editor로 승급하지 않고 수락되지 않는다. 기존 `trip_members.role="viewer"` 멤버는 계속 읽기 전용으로 남는다.
 - `trips.status`
 - `trips.revision`
 

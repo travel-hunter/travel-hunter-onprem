@@ -73,7 +73,7 @@
 
 | 기능 | 사용자 동작 | 연결 |
 |---|---|---|
-| 초대 링크/email 생성 | `/friend-invite?tripId=...`에서 owner/editor가 viewer/editor 권한별 링크 카드를 확인하고, 각 권한 전용 링크를 복사하거나 email 초대를 보낸다. viewer/editor는 서로 다른 token/URL을 쓰며 이미 공유한 링크의 role은 다른 권한 링크 생성으로 바뀌지 않는다. 백엔드가 반환하는 `inviteUrl`은 `TRAVEL_HUNTER_PUBLIC_BASE_URL` 기준 `/invites/{token}/accept` 공개 수락 경로를 사용하며, email 본문에는 일정 상세를 담지 않는다. SMTP 미설정/실패 시 해당 권한 링크 복사 fallback을 안내한다. | `trip_invites.role`, `TRAVEL_HUNTER_PUBLIC_BASE_URL`, SMTP env |
+| 초대 링크/email 생성 | `/friend-invite?tripId=...`에서 owner/editor가 editor 권한 링크를 확인하고 복사하거나 email 초대를 보낸다. viewer 초대 링크는 더 이상 생성·표시·수락하지 않는다. 기존 viewer 멤버는 읽기 전용으로 남는다. 백엔드가 반환하는 `inviteUrl`은 `TRAVEL_HUNTER_PUBLIC_BASE_URL` 기준 `/invites/{token}/accept` 공개 수락 경로를 사용하며, email 본문에는 일정 상세를 담지 않는다. SMTP 미설정/실패 시 초대 링크 복사 fallback을 안내한다. | `trip_invites.role`, `TRAVEL_HUNTER_PUBLIC_BASE_URL`, SMTP env |
 | 초대 수락 | `/invites/:token/accept`로 진입해 로그인 후 초대를 수락한다. 비로그인 사용자는 로그인/가입 후 redirect로 원래 초대 링크에 복귀하고, 만료/오류 상태는 새 초대 링크 요청 안내를 표시한다. 새 참여자는 owner + 수락된 member 기준 실제 참여자 10명까지만 추가하며, 기존 참여자의 재수락은 멤버 중복 생성 없이 허용한다. | `trip_invites.accepted_at`, `trip_members` |
 | 권한 적용 | owner/editor만 장소를 편집하고 viewer는 읽기 전용으로 본다. | trip service authorization |
 | 상세 작업흐름 | 링크 기반 초대, 로그인/가입 후 수락, 중복 수락, 상세 일정 편집 권한, 장소 저장 충돌, email 초대와 예외 흐름은 별도 workflow spec을 따른다. | `docs/specs/invite-trip-edit-workflow.md` |

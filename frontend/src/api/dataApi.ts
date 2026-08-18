@@ -9,8 +9,6 @@ import {
   ExternalCollectionOpsHealth,
   ExternalCollectionRunResponse,
   InviteEmailResult,
-  InviteLinksState,
-  InviteRole,
   InviteState,
   PlaceSearchCandidate,
   Policy,
@@ -209,7 +207,6 @@ export type TripStatusUpdateRequest = {
 
 export type SendInviteEmailRequest = {
   email: string;
-  role?: InviteRole;
 };
 
 export type AppDataApi = {
@@ -257,8 +254,8 @@ export type AppDataApi = {
   removePolicyFromTrip: (tripId: string, policySlug: string) => Promise<TripPolicyResponse>;
   listRecommendations: (tripId: string) => Promise<Recommendation[]>;
   searchTripPlaces: (tripId: string, options: TripPlaceSearchOptions) => Promise<PlaceSearchCandidate[]>;
-  getInviteState: (tripId: string) => Promise<InviteLinksState>;
-  confirmInviteSent: (tripId: string, role?: InviteRole) => Promise<InviteState>;
+  getInviteState: (tripId: string) => Promise<InviteState>;
+  confirmInviteSent: (tripId: string) => Promise<InviteState>;
   sendInviteEmail: (tripId: string, request: SendInviteEmailRequest) => Promise<InviteEmailResult>;
   acceptInvite: (inviteToken: string) => Promise<InviteState>;
   listAdminUsers: (options?: { q?: string; onboardingCompleted?: boolean; limit?: number; offset?: number }) => Promise<AdminUserListResponse>;

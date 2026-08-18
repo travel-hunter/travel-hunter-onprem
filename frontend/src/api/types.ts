@@ -341,7 +341,7 @@ export type TravelAreaRecommendationResponse = {
   emptyReason: "unsupported_sido" | "no_match" | null;
 };
 
-export type InviteRole = "viewer" | "editor";
+export type InviteRole = "editor";
 export type InviteEmailDeliveryStatus = "sent" | "notConfigured" | "failed";
 
 export type InviteState = {
@@ -356,12 +356,6 @@ export type InviteState = {
   copied: boolean;
   role: InviteRole;
   alreadyMember: boolean;
-};
-
-export type InviteLinksState = {
-  tripId: string;
-  viewer: InviteState | null;
-  editor: InviteState | null;
 };
 
 export type InviteEmailResult = {

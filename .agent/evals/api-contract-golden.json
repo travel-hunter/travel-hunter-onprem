@@ -903,12 +903,12 @@
         "acceptedAt": "string|null",
         "invited": "boolean",
         "copied": "boolean",
-        "role": "string enum(viewer|editor)",
+        "role": "string enum(editor)",
         "alreadyMember": "boolean"
       },
       "serverCopiedValue": false,
       "invitedMeaning": "true when a valid invite token exists or the current request created/confirmed one",
-      "roleBehavior": "POST /api/trips/{tripId}/invite accepts optional viewer/editor role and defaults to editor"
+      "roleBehavior": "POST /api/trips/{tripId}/invite returns an editor invite, accepts omitted or editor role, and rejects viewer role with 422"
     },
     {
       "method": "POST",
@@ -916,7 +916,7 @@
       "status": 200,
       "requestFields": {
         "email": "string",
-        "role": "string enum(viewer|editor) optional default editor"
+        "role": "string enum(editor) optional default editor"
       },
       "requiredFields": {
         "invite": "InviteState",
@@ -939,10 +939,10 @@
         "acceptedAt": "string",
         "invited": "boolean",
         "copied": "boolean",
-        "role": "string enum(viewer|editor)",
+        "role": "string enum(editor)",
         "alreadyMember": "boolean"
       },
-      "dbModeBehavior": "Requires bearer auth, marks trip_invites.accepted_at, inserts trip_members idempotently with the invite role, returns alreadyMember=true without downgrading existing members, and rejects new members with 409 Trip participant limit reached when actual owner/member participants already total 10."
+      "dbModeBehavior": "Requires bearer auth, accepts active editor invite tokens only, marks trip_invites.accepted_at, inserts trip_members idempotently with the invite role, returns alreadyMember=true without downgrading existing members, rejects legacy viewer invite tokens as not found, and rejects new members with 409 Trip participant limit reached when actual owner/member participants already total 10."
     },
     {
       "method": "GET",

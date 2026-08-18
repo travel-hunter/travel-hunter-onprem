@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
-InviteRole = Literal["viewer", "editor"]
+InviteRole = Literal["editor"]
 TripRole = Literal["owner", "editor", "viewer"]
 TripStatus = Literal["draft", "confirmed"]
 RecommendationSourceType = Literal["freshCandidate", "savedSummary"]
@@ -126,12 +126,6 @@ class InviteState(BaseModel):
     copied: bool
     role: InviteRole = "editor"
     alreadyMember: bool = False
-
-
-class InviteLinksState(BaseModel):
-    tripId: str
-    viewer: InviteState | None = None
-    editor: InviteState | None = None
 
 
 class ConfirmInviteRequest(BaseModel):
