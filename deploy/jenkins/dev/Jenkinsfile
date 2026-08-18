@@ -11,7 +11,7 @@ pipeline {
         PROJECT_DIR = "/home/deploy/travel-hunter-onprem"
         BRANCH_NAME = "develop"
         ENV_FILE = "deploy/.env.prod"
-        COMPOSE_FILE = "compose.tunnel.yaml"
+        COMPOSE_FILE = "compose.yaml"
 
         //slack 알림 채널
         SLACK_CHANNEL = "#travel-hunter-build"
