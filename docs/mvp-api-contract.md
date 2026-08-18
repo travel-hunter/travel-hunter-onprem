@@ -1178,38 +1178,22 @@ AI 추천 장소 목록 조회.
 
 ### GET /trips/{trip_id}/invite
 
-초대 링크 상태 조회. owner 또는 editor만 가능. viewer/editor 권한별 링크를 동시에 반환한다. 기존 active invite는 현재 저장된 role의 전용 링크로 보존되고, 반대 role 링크가 없으면 새 token을 만든다.
+초대 링크 상태 조회. owner 또는 editor만 가능. editor 권한 초대 링크 하나를 반환한다. viewer 초대 링크는 생성하거나 반환하지 않는다.
 
-**Response 200** → `InviteLinksState`
+**Response 200** → `InviteState`
 ```json
 {
+  "id": "uuid-editor",
   "tripId": "1",
-  "viewer": {
-    "id": "uuid-viewer",
-    "tripId": "1",
-    "inviteToken": "<viewer-token>",
-    "inviteUrl": "https://<domain>/invites/<viewer-token>/accept",
-    "expiresAt": "2026-05-25T00:00:00",
-    "createdAt": "2026-05-19T00:00:00",
-    "acceptedAt": null,
-    "invited": false,
-    "copied": false,
-    "role": "viewer",
-    "alreadyMember": false
-  },
-  "editor": {
-    "id": "uuid-editor",
-    "tripId": "1",
-    "inviteToken": "<editor-token>",
-    "inviteUrl": "https://<domain>/invites/<editor-token>/accept",
-    "expiresAt": "2026-05-25T00:00:00",
-    "createdAt": "2026-05-19T00:00:00",
-    "acceptedAt": null,
-    "invited": false,
-    "copied": false,
-    "role": "editor",
-    "alreadyMember": false
-  }
+  "inviteToken": "<editor-token>",
+  "inviteUrl": "https://<domain>/invites/<editor-token>/accept",
+  "expiresAt": "2026-05-25T00:00:00",
+  "createdAt": "2026-05-19T00:00:00",
+  "acceptedAt": null,
+  "invited": false,
+  "copied": false,
+  "role": "editor",
+  "alreadyMember": false
 }
 ```
 
@@ -1220,14 +1204,14 @@ AI 추천 장소 목록 조회.
 
 ### POST /trips/{trip_id}/invite
 
-선택한 role의 초대 링크 생성 또는 확인. owner 또는 editor만 가능. 같은 trip에서 viewer/editor 링크는 서로 다른 token이며, 다른 role의 기존 token/role을 덮어쓰지 않는다.
+editor 초대 링크 생성 또는 확인. owner 또는 editor만 가능. viewer 초대 링크는 더 이상 생성하지 않는다.
 
 **Request** (optional)
 ```json
-{ "role": "viewer" }
+{ "role": "editor" }
 ```
 
-`role` 허용 값: `"viewer" | "editor"` (기본값: `"editor"`)
+`role`은 생략 가능하며, 포함할 경우 `"editor"`만 허용한다. `role="viewer"`는 422를 반환한다.
 
 **Response 200** → `InviteState`
 
@@ -1238,17 +1222,16 @@ AI 추천 장소 목록 조회.
 
 ### POST /trips/{trip_id}/invite/email
 
-선택한 role의 전용 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 editor만 가능. email 본문에는 일정 상세를 포함하지 않고 “트래블헌터 일정 초대입니다 / 로그인 또는 회원가입 후 수락할 수 있습니다 / 초대가 만료됐으면 다시 요청하세요” 수준의 안전 안내와 초대 링크만 포함한다.
+editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 editor만 가능. email 본문에는 일정 상세를 포함하지 않고 “트래블헌터 일정 초대입니다 / 로그인 또는 회원가입 후 수락할 수 있습니다 / 초대가 만료됐으면 다시 요청하세요” 수준의 안전 안내와 초대 링크만 포함한다.
 
 **Request**
 ```json
 {
-  "email": "friend@example.com",
-  "role": "editor"
+  "email": "friend@example.com"
 }
 ```
 
-`role` 허용 값: `"viewer" | "editor"` (기본값: `"editor"`)
+`role`은 생략 가능하며, 포함할 경우 `"editor"`만 허용한다. `role="viewer"`는 422를 반환한다.
 
 **Response 200**
 ```json
@@ -1299,7 +1282,7 @@ AI 추천 장소 목록 조회.
 **Response 200** → `InviteState`
 
 **Errors**
-- 404: 초대 토큰 없음 또는 만료
+- 404: 초대 토큰 없음, 만료, 또는 더 이상 지원하지 않는 viewer 초대 토큰
 - 409: 실제 참여자 10명 초과 (`Trip participant limit reached`)
 
 ---

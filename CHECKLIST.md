@@ -2,23 +2,28 @@
 
 ## Current status
 
-- Active task/status: 일정 상세 장소 카드에서 방문 시간이 이전 장소보다 이른 경우 `시간 확인` 경고와 수정 진입점을 표시하도록 구현했다.
-- Scope guard: frontend-only display change; API DTO, backend schema, trip move 동작은 변경하지 않았다.
+- Active task/status: 친구 초대 흐름을 editor-only로 정리했다. `/friend-invite`는 편집 링크 하나만 표시하고, 초대 생성/메일/수락 API도 editor 초대만 허용한다.
+- Scope guard: 기존 `trip_members.role="viewer"` 멤버의 읽기 전용 권한은 유지한다. 새 viewer 초대 생성, 표시, 메일 발송, 토큰 수락만 비활성화했다.
 
 ## Recent validation
 
-- PASS: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx` — 33 passed.
+- PASS: `cd backend && .venv/bin/python -m pytest tests/test_trip_db_routes.py::test_db_recommendation_and_invite_routes tests/test_trip_db_service.py -k "invite" tests/test_invite_db_routes.py tests/test_trip_auth_edge_cases.py -q` — 24 passed, 75 deselected.
+- PASS: `cd backend && .venv/bin/alembic upgrade head --sql`.
 - PASS: `cd frontend && npm run typecheck`.
+- PASS: `cd frontend && npx vitest run invite-oauth.test.tsx` — 22 passed.
 - PASS: `cd frontend && npm run build`.
-- PASS: UTF-8/U+FFFD check for changed files.
+- PASS: `docker compose -f compose.yaml config`.
+- PASS: `python3 -m json.tool .agent/evals/api-contract-golden.json`.
 - PASS: `git diff --check`.
-- BLOCKED: `cd frontend && npm test`는 `python3.14: No module named alembic.__main__` 로컬 backend-test wrapper 환경 문제로 Vitest 진입 전 중단된다. 동일 변경 범위는 직접 Vitest/typecheck/build로 검증했다.
+- PASS: UTF-8/U+FFFD check for changed Korean-bearing files.
+- PASS: Mocked Playwright preview smokes confirmed one editor invite card, removed card helper copy, and title copy `여수·순천 3일 여행에 함께할 친구를 초대하세요`.
+- BLOCKED: `cd backend && .venv/bin/python -m pytest -q` currently fails outside this change scope in `tests/test_local_half_trip_five_semantics_migration.py::test_frozen_migration_semantics_equal_runtime_mapper_for_scoped_records`.
+- BLOCKED: `cd frontend && npm test -- invite-oauth.test.tsx --runInBand` is blocked by the local compose DB Alembic state: `Can't locate revision identified by '0034_dgtour_detail_urls'`.
 
 ## Active risks
 
-- 경고는 같은 Day 안의 표시 순서와 `HH:mm` 시간만 기준으로 계산한다. 이동 시간, 체류 시간, 영업시간까지 자동 판단하지 않는다.
-- 로컬 브라우저에서 실제 카드 밀도와 모바일 줄바꿈 최종 육안 확인이 필요하다.
-- `npm test` wrapper의 로컬 Alembic/Python 3.14 문제는 별도 환경 정리가 필요하다.
+- Legacy active viewer invite rows may remain in the database, but token lookup ignores non-editor invites so those URLs behave as missing or expired.
+- The frontend `npm test` wrapper still needs the local compose DB migration state fixed before it can be used as a broad gate.
 
 ## Cleanup Policy
 
