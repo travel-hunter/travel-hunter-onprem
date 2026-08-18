@@ -1223,6 +1223,49 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
+  it("renders recommendation preview time editor as a floating panel above the action bar", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "124",
+      revision: 3,
+      title: "하단 시간 수정 여행",
+      days: {
+        1: [
+          { id: "existing-time-a", time: "09:00", label: "첫 장소", meta: "제주 제주시" },
+          { id: "existing-time-b", time: "11:00", label: "둘째 장소", meta: "제주 서귀포시" },
+          { id: "existing-time-c", time: "13:00", label: "셋째 장소", meta: "제주 서귀포시" },
+        ],
+        2: [],
+      },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const recommendationsSpy = vi.spyOn(appDataApi, "listRecommendations").mockResolvedValue([
+      { id: "preview-bottom", title: "하단 추천 장소", label: "📍", meta: "추천", reason: "추천", suggestedDay: 1 },
+    ]);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/124");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: /추천 일정만들기/ }));
+
+      const timeEditors = document.querySelectorAll(".preview-time-edit");
+      const bottomTimeEditor = timeEditors[timeEditors.length - 1] as HTMLElement;
+      await user.click(within(bottomTimeEditor).getByText("수정"));
+
+      const picker = within(bottomTimeEditor)
+        .getByLabelText("방문 시간 선택")
+        .closest(".place-time-picker");
+      expect(picker).toHaveClass("recommendation-preview-floating-time-picker");
+      expect(within(bottomTimeEditor).getByRole("button", { name: "저장" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "선택 저장" })).toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
+      recommendationsSpy.mockRestore();
+    }
+  });
+
   it("assigns category-based times to recommendation preview cards", async () => {
     const trip: Trip = { ...getPreviewTrip(), id: "112", revision: 1, title: "추천 시간 여행", days: { 1: [], 2: [] } };
     const recommendations: Recommendation[] = [

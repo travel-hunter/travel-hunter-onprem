@@ -3056,6 +3056,11 @@ function SortablePlaceItem({
     >
       <summary>수정</summary>
       <PlaceTimePicker
+        className={
+          isPreviewMode
+            ? "recommendation-preview-floating-time-picker"
+            : undefined
+        }
         disabled={disabled}
         value={previewTimeValue}
         onChange={(time) => onPreviewTimeDraftChange(place, time)}
@@ -3254,11 +3259,13 @@ function SortablePlaceItem({
 }
 
 function PlaceTimePicker({
+  className,
   disabled,
   onChange,
   onSave,
   value,
 }: {
+  className?: string;
   disabled: boolean;
   onChange: (time: string) => void;
   onSave?: () => void;
@@ -3285,7 +3292,11 @@ function PlaceTimePicker({
   };
 
   return (
-    <div className="field place-time-picker">
+    <div
+      className={["field place-time-picker", className]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <span>방문 시간</span>
       <div
         className="time-picker-control"
