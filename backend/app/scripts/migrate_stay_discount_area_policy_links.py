@@ -66,12 +66,26 @@ class _MutableResult:
 
 
 def _area_policies_for_canonical(db: Session, canonical_policy: Policy) -> list[Policy]:
-    return list(
+    same_source_area_policies = list(
         db.scalars(
             select(Policy)
             .where(
                 Policy.source_category == stay_discount_aliases.SOURCE_CATEGORY,
                 Policy.external_source_record_id == canonical_policy.external_source_record_id,
+                Policy.slug.like(f"{stay_discount_aliases.ALIAS_PREFIX}-%"),
+            )
+            .order_by(Policy.id)
+        ).all()
+    )
+    if same_source_area_policies:
+        return same_source_area_policies
+
+    return list(
+        db.scalars(
+            select(Policy)
+            .where(
+                Policy.source_category == stay_discount_aliases.SOURCE_CATEGORY,
+                Policy.status == "active",
                 Policy.slug.like(f"{stay_discount_aliases.ALIAS_PREFIX}-%"),
             )
             .order_by(Policy.id)
