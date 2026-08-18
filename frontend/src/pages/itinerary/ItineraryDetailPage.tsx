@@ -1005,6 +1005,14 @@ export function ItineraryDetailPage() {
   const [draggingPlaceId, setDraggingPlaceId] = useState<string | null>(null);
   const [moveError, setMoveError] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [recommendationSelectionNotice, setRecommendationSelectionNotice] =
+    useState<string | null>(null);
+  const [openPreviewTimeEditId, setOpenPreviewTimeEditId] = useState<
+    string | null
+  >(null);
+  const [previewTimeDrafts, setPreviewTimeDrafts] = useState<
+    Record<string, string>
+  >({});
   const [placeDetail, setPlaceDetail] = useState<{
     dayNumber: number;
     place: ItineraryPlace;
@@ -1208,6 +1216,9 @@ export function ItineraryDetailPage() {
       showEditPermissionRequired();
       return;
     }
+    setOpenPreviewTimeEditId(null);
+    setPreviewTimeDrafts({});
+    setRecommendationSelectionNotice(null);
     setRecommendationPreview({
       status: "loading",
       places: [],
@@ -1359,6 +1370,8 @@ export function ItineraryDetailPage() {
         timeline: {},
         error: "",
       });
+      setOpenPreviewTimeEditId(null);
+      setPreviewTimeDrafts({});
       setSelectedMapPlaceId((currentPlaceId) =>
         currentPlaceId && savedPreviewIds.has(currentPlaceId)
           ? null
@@ -1406,6 +1419,41 @@ export function ItineraryDetailPage() {
     }
   };
 
+  const togglePreviewTimeEdit = (place: DisplayedPlace, open: boolean) => {
+    const editId = displayedPlaceSortableId(place);
+    if (!editId) return;
+    if (!open) {
+      setOpenPreviewTimeEditId((currentId) =>
+        currentId === editId ? null : currentId,
+      );
+      return;
+    }
+    setOpenPreviewTimeEditId(editId);
+    setPreviewTimeDrafts((current) => ({
+      ...current,
+      [editId]: place.time ?? "",
+    }));
+  };
+
+  const updatePreviewTimeDraft = (place: DisplayedPlace, time: string) => {
+    const editId = displayedPlaceSortableId(place);
+    if (!editId) return;
+    setPreviewTimeDrafts((current) => ({
+      ...current,
+      [editId]: time,
+    }));
+  };
+
+  const savePreviewTimeDraft = (place: DisplayedPlace) => {
+    const editId = displayedPlaceSortableId(place);
+    if (!editId) return;
+    updateRecommendationPreviewPlaceTime(
+      place,
+      previewTimeDrafts[editId] ?? place.time ?? "",
+    );
+    setOpenPreviewTimeEditId(null);
+  };
+
   const saveRecommendationPreviewPlace = (previewId: string) => {
     const previewPlace = recommendationPreview.places.find(
       (place) => place.previewId === previewId,
@@ -1440,8 +1488,8 @@ export function ItineraryDetailPage() {
         ),
       };
     });
-    setNotice(`${previewPlace.label} 후보를 저장 대상으로 선택했어요.`);
-    window.setTimeout(() => setNotice(null), 1800);
+    setRecommendationSelectionNotice("해당 후보를 저장했어요");
+    window.setTimeout(() => setRecommendationSelectionNotice(null), 1800);
   };
 
   const cancelRecommendationPreviewPlace = (previewId: string) => {
@@ -1470,6 +1518,9 @@ export function ItineraryDetailPage() {
       timeline: {},
       error: "",
     });
+    setOpenPreviewTimeEditId(null);
+    setPreviewTimeDrafts({});
+    setRecommendationSelectionNotice(null);
     setSelectedMapPlaceId((currentPlaceId) =>
       currentPlaceId &&
       recommendationPreview.places.some(
@@ -2449,6 +2500,9 @@ export function ItineraryDetailPage() {
                     onDelete={requestDeletePlace}
                     onEdit={openEditPlace}
                     onMove={movePlaceTo}
+                    onPreviewTimeDraftChange={updatePreviewTimeDraft}
+                    onPreviewTimeEditSave={savePreviewTimeDraft}
+                    onPreviewTimeEditToggle={togglePreviewTimeEdit}
                     onSelectRecommendationPreviewPlace={
                       selectRecommendationPreviewMapPlace
                     }
@@ -2458,7 +2512,8 @@ export function ItineraryDetailPage() {
                     place={place}
                     placeNumber={index + 1}
                     places={displayedPlaces}
-                    onPreviewTimeChange={updateRecommendationPreviewPlaceTime}
+                    openPreviewTimeEditId={openPreviewTimeEditId}
+                    previewTimeDrafts={previewTimeDrafts}
                     trip={trip}
                   />
                 ))}
@@ -2467,6 +2522,11 @@ export function ItineraryDetailPage() {
           </>
         )}
       </DndContext>
+      {recommendationSelectionNotice && (
+        <div className="recommendation-preview-center-notice" role="status">
+          {recommendationSelectionNotice}
+        </div>
+      )}
       {isPreviewActive && (
         <aside
           className="recommendation-preview-action-bar"
@@ -2488,7 +2548,7 @@ export function ItineraryDetailPage() {
               void commitRecommendationPreview({ saveAllCandidates: false })
             }
           >
-            완료
+            선택 저장
           </button>
           <button
             className="btn sm primary"
@@ -2905,11 +2965,15 @@ function SortablePlaceItem({
   onDelete,
   onEdit,
   onMove,
-  onPreviewTimeChange,
+  onPreviewTimeDraftChange,
+  onPreviewTimeEditSave,
+  onPreviewTimeEditToggle,
   onSaveRecommendationPreviewPlace,
   onSelectRecommendationPreviewPlace,
+  openPreviewTimeEditId,
   place,
   previewDayPlaceCounts,
+  previewTimeDrafts,
   placeNumber,
   places,
   trip,
@@ -2929,11 +2993,15 @@ function SortablePlaceItem({
     dayNumber: number,
     position: number,
   ) => Promise<void>;
-  onPreviewTimeChange: (place: DisplayedPlace, time: string) => void;
+  onPreviewTimeDraftChange: (place: DisplayedPlace, time: string) => void;
+  onPreviewTimeEditSave: (place: DisplayedPlace) => void;
+  onPreviewTimeEditToggle: (place: DisplayedPlace, open: boolean) => void;
   onSaveRecommendationPreviewPlace: (previewId: string) => void;
   onSelectRecommendationPreviewPlace: (previewId: string) => void;
+  openPreviewTimeEditId: string | null;
   place: DisplayedPlace;
   previewDayPlaceCounts: Record<number, number>;
+  previewTimeDrafts: Record<string, string>;
   placeNumber: number;
   places: DisplayedPlace[];
   trip: Trip;
@@ -2968,6 +3036,33 @@ function SortablePlaceItem({
     .filter(Boolean)
     .join(" ");
   const sortableListeners = listeners ?? {};
+  const timeEditId = displayedPlaceSortableId(place);
+  const isTimeEditOpen = Boolean(
+    timeEditId && openPreviewTimeEditId === timeEditId,
+  );
+  const previewTimeValue =
+    timeEditId &&
+    Object.prototype.hasOwnProperty.call(previewTimeDrafts, timeEditId)
+      ? previewTimeDrafts[timeEditId]
+      : (place.time ?? "");
+  const renderPreviewTimeEdit = () => (
+    <details
+      className="preview-time-edit"
+      aria-label={`${place.label} 시간 수정`}
+      open={isTimeEditOpen}
+      onToggle={(event) =>
+        onPreviewTimeEditToggle(place, event.currentTarget.open)
+      }
+    >
+      <summary>수정</summary>
+      <PlaceTimePicker
+        disabled={disabled}
+        value={previewTimeValue}
+        onChange={(time) => onPreviewTimeDraftChange(place, time)}
+        onSave={() => onPreviewTimeEditSave(place)}
+      />
+    </details>
+  );
   const moveWithKeyboard = (
     event: KeyboardEvent<HTMLButtonElement>,
   ): boolean => {
@@ -3113,17 +3208,7 @@ function SortablePlaceItem({
             >
               {place.isRecommendationSelected ? "저장됨" : "저장"}
             </button>
-            <details
-              className="preview-time-edit"
-              aria-label={`${place.label} 시간 수정`}
-            >
-              <summary>수정</summary>
-              <PlaceTimePicker
-                disabled={disabled}
-                value={place.time ?? ""}
-                onChange={(time) => onPreviewTimeChange(place, time)}
-              />
-            </details>
+            {renderPreviewTimeEdit()}
             <button
               className="btn sm line"
               type="button"
@@ -3140,17 +3225,7 @@ function SortablePlaceItem({
         ) : canEditTrip ? (
           <div className="place-actions">
             {isPreviewMode ? (
-              <details
-                className="preview-time-edit"
-                aria-label={`${place.label} 시간 수정`}
-              >
-                <summary>수정</summary>
-                <PlaceTimePicker
-                  disabled={disabled}
-                  value={place.time ?? ""}
-                  onChange={(time) => onPreviewTimeChange(place, time)}
-                />
-              </details>
+              renderPreviewTimeEdit()
             ) : (
               <button
                 className="btn sm ghost"
@@ -3181,10 +3256,12 @@ function SortablePlaceItem({
 function PlaceTimePicker({
   disabled,
   onChange,
+  onSave,
   value,
 }: {
   disabled: boolean;
   onChange: (time: string) => void;
+  onSave?: () => void;
   value: string;
 }) {
   const parsed = parsePlaceTime(value);
@@ -3283,6 +3360,16 @@ function PlaceTimePicker({
           >
             시간 비우기
           </button>
+          {onSave && (
+            <button
+              type="button"
+              className="btn sm primary"
+              onClick={onSave}
+              disabled={disabled}
+            >
+              저장
+            </button>
+          )}
         </div>
       </div>
     </div>

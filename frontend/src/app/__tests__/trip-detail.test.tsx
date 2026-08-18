@@ -1115,7 +1115,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.click(screen.getByRole("button", { name: "성산일출봉 후보 저장" }));
       expect(addPlaceSpy).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "성산일출봉 후보 저장" })).toHaveTextContent("저장됨");
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect(addPlaceSpy).toHaveBeenCalledWith("102", 1, expect.objectContaining({ label: "성산일출봉", time: "10:00", meta: "관광명소", category: "관광명소", categoryCode: "AT4", expectedRevision: 4 }));
@@ -1161,7 +1161,11 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       const existingTimeEdit = document.querySelectorAll(".preview-time-edit")[0] as HTMLElement;
       await user.click(within(existingTimeEdit).getByText("수정"));
       await user.click(within(existingTimeEdit).getByRole("button", { name: "방문 시간 1시간 증가" }));
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      const existingTimelineItem = document.querySelector('[data-place-id="existing-time-1"]') as HTMLElement;
+      expect(existingTimelineItem).toHaveTextContent("09:00");
+      await user.click(within(existingTimeEdit).getByRole("button", { name: "저장" }));
+      expect(existingTimelineItem).toHaveTextContent("10:00");
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(updatePlaceSpy).toHaveBeenCalledTimes(1));
       expect(updatePlaceSpy).toHaveBeenCalledWith("121", "existing-time-1", expect.objectContaining({ time: "10:00", expectedRevision: 8 }));
@@ -1173,6 +1177,49 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       recommendationsSpy.mockRestore();
       updatePlaceSpy.mockRestore();
       addPlaceSpy.mockRestore();
+    }
+  });
+
+  it("keeps only the latest recommendation preview time editor open", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "123",
+      revision: 3,
+      title: "시간 수정 단일 창 여행",
+      days: {
+        1: [
+          { id: "existing-time-a", time: "09:00", label: "첫 장소", meta: "제주 제주시" },
+          { id: "existing-time-b", time: "11:00", label: "둘째 장소", meta: "제주 서귀포시" },
+        ],
+        2: [],
+      },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const recommendationsSpy = vi.spyOn(appDataApi, "listRecommendations").mockResolvedValue([
+      { id: "preview-one", title: "추천 장소", label: "📍", meta: "추천", reason: "추천", suggestedDay: 1 },
+    ]);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/123");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: /추천 일정만들기/ }));
+
+      const timeEditors = document.querySelectorAll(".preview-time-edit");
+      expect(timeEditors.length).toBeGreaterThanOrEqual(2);
+
+      await user.click(within(timeEditors[0] as HTMLElement).getByText("수정"));
+      expect(timeEditors[0]).toHaveAttribute("open");
+      expect(timeEditors[1]).not.toHaveAttribute("open");
+
+      await user.click(within(timeEditors[1] as HTMLElement).getByText("수정"));
+
+      expect(timeEditors[0]).not.toHaveAttribute("open");
+      expect(timeEditors[1]).toHaveAttribute("open");
+    } finally {
+      getTripSpy.mockRestore();
+      recommendationsSpy.mockRestore();
     }
   });
 
@@ -1403,9 +1450,14 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.getByRole("button", { name: "전체 저장" })).toBeInTheDocument();
 
       await user.click(await screen.findByRole("button", { name: "오설록 후보 저장" }));
+      const candidateStatus = screen
+        .getByText("해당 후보를 저장했어요")
+        .closest('[role="status"]');
+      expect(candidateStatus).toHaveTextContent("해당 후보를 저장했어요");
+      expect(candidateStatus).toHaveClass("recommendation-preview-center-notice");
       expect(addPlaceSpy).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "오설록 후보 저장" })).toHaveTextContent("저장됨");
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect(deletePlaceSpy).not.toHaveBeenCalled();
@@ -1482,12 +1534,12 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.queryByLabelText("우도 방문 시간")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("우도 메모")).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "우도 후보 저장" }));
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       expect(await screen.findByText(/다른 사용자가 먼저 일정을 수정/)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "우도 후보 저장" })).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(2));
       expect(addPlaceSpy).toHaveBeenLastCalledWith("106", 1, expect.objectContaining({ label: "우도", time: "10:00", meta: "섬", expectedRevision: 31 }));
@@ -1519,13 +1571,13 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.queryByLabelText("동백정원 방문 시간")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("동백정원 메모")).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "동백정원 후보 저장" }));
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect((await screen.findAllByText(/저장되지 않은 미리보기 입력은 그대로 보존/)).length).toBeGreaterThan(0);
       expect(screen.getByRole("button", { name: "동백정원 후보 저장" })).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(2));
       expect(addPlaceSpy).toHaveBeenNthCalledWith(1, "107", 1, expect.objectContaining({ label: "동백정원", time: "10:00", meta: "꽃", expectedRevision: 40 }));
