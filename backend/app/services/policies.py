@@ -101,7 +101,10 @@ def policy_to_api(policy: PolicyModel) -> dict[str, object]:
         **policy_url_fields_for_policy(policy),
         "sourceType": source_type,
     }
-    if stay_discount_aliases.is_stay_discount_canonical_policy(policy):
+    if (
+        stay_discount_aliases.is_stay_discount_canonical_policy(policy)
+        or stay_discount_aliases.is_stay_discount_area_policy(policy)
+    ):
         stay_discount_aliases.apply_detail_display_fields(
             payload,
             benefit_amount=policy.benefit_amount,
@@ -238,39 +241,24 @@ def external_source_record_to_policy_api(
 def list_policies(db: Session | None = None) -> list[dict[str, object]]:
     if db is None:
         raise RuntimeError("DB session is required.")
-    payloads: list[dict[str, object]] = []
-    policies = policy_repository.list_policies(db)
-    current_stay_policy = stay_discount_aliases.select_current_stay_discount_policy(
-        db,
-        [policy for policy in policies if stay_discount_aliases.is_stay_discount_canonical_policy(policy)],
-    )
-    for policy in policies:
-        if stay_discount_aliases.is_stay_discount_canonical_policy(policy):
-            if policy is not current_stay_policy:
-                continue
-            alias_areas = stay_discount_aliases.alias_areas_for_policy(db, policy)
-            if alias_areas:
-                payloads.extend(
-                    _policy_to_stay_discount_alias_api(policy, area)
-                    for area in alias_areas
-                )
-            continue
-        payloads.append(policy_to_api(policy))
-    return payloads
+    return [policy_to_api(policy) for policy in policy_repository.list_policies(db)]
 
 
 def get_policy(policy_slug: str, db: Session | None = None) -> dict[str, object] | None:
     if db is None:
         raise RuntimeError("DB session is required.")
 
-    alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
-    if alias_resolution is not None:
-        policy = alias_resolution.canonical_policy
-        if not is_public_policy(policy):
-            return None
-        if alias_resolution.alias_area is None:
+    policy = policy_repository.get_policy_by_slug_any_status(db, policy_slug)
+    if policy is not None:
+        if is_public_policy(policy):
             return policy_to_api(policy)
-        return _policy_detail_with_alias(policy, alias_resolution.alias_area)
+        digital_alias_policy = digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(
+            db,
+            policy_slug,
+        )
+        if digital_alias_policy is not None and is_public_policy(digital_alias_policy):
+            return policy_to_api(digital_alias_policy)
+        return None
 
     digital_alias_policy = digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(
         db,
@@ -281,11 +269,14 @@ def get_policy(policy_slug: str, db: Session | None = None) -> dict[str, object]
             return None
         return policy_to_api(digital_alias_policy)
 
-    policy = policy_repository.get_policy_by_slug_any_status(db, policy_slug)
-    if policy is not None:
+    alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
+    if alias_resolution is not None:
+        policy = alias_resolution.canonical_policy
         if not is_public_policy(policy):
             return None
-        return policy_to_api(policy)
+        if alias_resolution.alias_area is None:
+            return policy_to_api(policy)
+        return _policy_detail_with_alias(policy, alias_resolution.alias_area)
 
     external_record = external_source_repository.get_external_source_record_by_policy_slug(
         db,
@@ -306,13 +297,13 @@ def save_policy(
     if user is None:
         raise RuntimeError("User is required.")
 
-    alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
     policy = (
-        alias_resolution.canonical_policy
-        if alias_resolution is not None
-        else digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(db, policy_slug)
-        or policy_repository.get_policy_by_slug(db, policy_slug)
+        policy_repository.get_policy_by_slug(db, policy_slug)
+        or digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(db, policy_slug)
     )
+    if policy is None:
+        alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
+        policy = alias_resolution.canonical_policy if alias_resolution is not None else None
     if policy is None:
         return None
 
@@ -415,13 +406,13 @@ def remove_saved_policy(
     if user is None:
         raise RuntimeError("User is required.")
 
-    alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
     policy = (
-        alias_resolution.canonical_policy
-        if alias_resolution is not None
-        else digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(db, policy_slug)
-        or policy_repository.get_policy_by_slug(db, policy_slug)
+        policy_repository.get_policy_by_slug(db, policy_slug)
+        or digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(db, policy_slug)
     )
+    if policy is None:
+        alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
+        policy = alias_resolution.canonical_policy if alias_resolution is not None else None
     if policy is None:
         return None
 

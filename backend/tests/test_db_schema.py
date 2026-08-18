@@ -164,3 +164,9 @@ def test_current_schema_decision_columns_are_registered() -> None:
     assert "trips_days" not in Base.metadata.tables
     assert "trips_members" not in Base.metadata.tables
     assert "trips_policies" not in Base.metadata.tables
+
+
+def test_policies_external_source_record_id_is_not_unique() -> None:
+    policies = Base.metadata.tables["policies"]
+
+    assert policies.c["external_source_record_id"].unique is not True

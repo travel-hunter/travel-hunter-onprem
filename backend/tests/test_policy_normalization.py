@@ -550,7 +550,9 @@ def test_promotion_is_idempotent_by_external_source_record_id(db: Session) -> No
     assert len(db.query(Policy).filter(Policy.external_source_record_id == rows[0].id).all()) == 1
 
 
-def test_post_0027_stay_promotion_preserves_public_slug_and_hidden_snapshot(db: Session) -> None:
+def test_post_0027_stay_promotion_hides_canonical_survivor_and_hidden_snapshot(
+    db: Session,
+) -> None:
     legacy_record, current_record = upsert_external_source_records(
         db,
         [
@@ -602,14 +604,14 @@ def test_post_0027_stay_promotion_preserves_public_slug_and_hidden_snapshot(db: 
     assert survivor.slug == "travelmonth-33"
     assert survivor.external_source_record_id == current_record.id
     assert survivor.title == "Current stay campaign"
-    assert survivor.status == "active"
+    assert survivor.status == "hidden"
     assert retired.slug == "travelmonth-35"
     assert retired.external_source_record_id is None
     assert retired.status == "hidden"
     assert legacy_record.id != current_record.id
 
 
-def test_post_0028_single_snapshot_promotes_new_stay_snapshot_into_policy_23(
+def test_post_0028_single_snapshot_updates_existing_stay_canonical_as_hidden(
     db: Session,
 ) -> None:
     legacy_record, current_record = upsert_external_source_records(
@@ -674,7 +676,7 @@ def test_post_0028_single_snapshot_promotes_new_stay_snapshot_into_policy_23(
     assert survivor.external_source_record_id == current_record.id
     assert survivor.source_canonical_key == current_record.canonical_key
     assert survivor.title == "Current stay campaign"
-    assert survivor.status == "active"
+    assert survivor.status == "hidden"
     assert db.query(Policy).filter(Policy.slug == f"travelmonth-{current_record.id}").count() == 0
     assert db.query(TripPolicy).one().policy_id == 23
     assert db.query(UserSavedPolicy).one().policy_id == 23
@@ -1331,7 +1333,7 @@ def test_promotion_derives_missing_percent_value_from_title(db: Session) -> None
     assert policy.policy_comment == "행사 기간 중 온라인 체험상품 예약 결제 후 사용 완료 참여자 26년 4월 중순부터 5월 말"
 
 
-def test_promotes_active_fresh_stay_discount_as_lodging_policy(db: Session) -> None:
+def test_promotes_active_fresh_stay_discount_as_area_policy_rows(db: Session) -> None:
     rows = upsert_external_source_records(
         db,
         [
@@ -1343,10 +1345,17 @@ def test_promotes_active_fresh_stay_discount_as_lodging_policy(db: Session) -> N
                 canonical_key="stay-discount",
                 logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
                 external_id="stay-discount",
-                title="숙박세일 페스타 7만원 할인",
+                title="2026 대한민국 숙박세일 페스타 숙박 할인",
+                region="비수도권·인구감소지역",
                 benefit_text="숙박상품 2/3/5/7만원 할인권",
                 benefit_value_text="2/3/5/7만원 할인권",
                 extracted_amount_krw=70000,
+                raw_payload={
+                    "eligibleAreas": [
+                        {"sido": "전남", "cities": ["강진군", "순천시"]},
+                    ],
+                    "eligibleAreaCount": 2,
+                },
             )
         ],
     )
@@ -1355,12 +1364,22 @@ def test_promotes_active_fresh_stay_discount_as_lodging_policy(db: Session) -> N
 
     promote_external_benefits_to_policies(db)
 
-    policy = get_policy_by_slug(db, f"travelmonth-{rows[0].id}")
-    assert policy is not None
-    assert policy.source_category == "stay_discount"
-    assert policy.policy_type == "숙박"
-    assert policy.benefit_amount == 70000
-    assert policy.official_url == "https://example.com/detail"
+    canonical = get_policy_by_slug_any_status(db, f"travelmonth-{rows[0].id}")
+    gangjin = get_policy_by_slug_any_status(db, "stay-discount-jeonnam-gangjin")
+    suncheon = get_policy_by_slug_any_status(db, "stay-discount-jeonnam-suncheon")
+    assert canonical is not None
+    assert canonical.status == "hidden"
+    assert gangjin is not None
+    assert gangjin.status == "active"
+    assert gangjin.external_source_record_id == rows[0].id
+    assert gangjin.slug == "stay-discount-jeonnam-gangjin"
+    assert gangjin.title == "[강진] 2026 대한민국 숙박세일 페스타 숙박 할인"
+    assert gangjin.region == "전남"
+    assert gangjin.policy_type == "숙박"
+    assert gangjin.benefit_amount == 70000
+    assert gangjin.source_canonical_key == "stay-discount:stay-discount-jeonnam-gangjin"
+    assert suncheon is not None
+    assert suncheon.status == "active"
 
 
 def test_skips_inactive_or_stale_records(db: Session) -> None:

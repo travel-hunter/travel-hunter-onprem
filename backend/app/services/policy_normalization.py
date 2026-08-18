@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
 import logging
@@ -11,6 +12,7 @@ from app.models import ExternalSourceRecord, Policy
 from app.repositories import external_sources as external_source_repository
 from app.services.policies import _external_policy_category
 from app.services import digital_tourism_resident_card as dgtour_identity
+from app.services import stay_discount_aliases
 from app.services.legacy_dgtour_reconciliation import frozen_legacy_dgtour_slugs
 from app.services.policy_periods import (
     PeriodEvidence,
@@ -124,6 +126,10 @@ def _get_policy_for_external_record(
                 .where(
                     Policy.source_category == STAY_DISCOUNT_SOURCE_CATEGORY,
                     Policy.status != "hidden",
+                    or_(
+                        Policy.slug.is_(None),
+                        Policy.slug.not_like(f"{stay_discount_aliases.ALIAS_PREFIX}-%"),
+                    ),
                     ExternalSourceRecord.logical_key == record.logical_key,
                 )
                 .order_by(Policy.id)
@@ -196,6 +202,45 @@ def _get_policy_for_external_record(
             Policy.external_source_record_id.is_(None),
         )
     )
+
+
+def _get_stay_discount_canonical_policy(
+    db: Session,
+    record: ExternalSourceRecord,
+) -> Policy | None:
+    canonical_slug = _policy_slug_for_external_record(record)
+    by_slug = db.scalar(
+        select(Policy).where(
+            Policy.slug == canonical_slug,
+            Policy.source_category == STAY_DISCOUNT_SOURCE_CATEGORY,
+        )
+    )
+    if by_slug is not None:
+        return by_slug
+    if record.logical_key is not None:
+        return _get_policy_for_external_record(
+            db,
+            record,
+            match_stay_logical_campaign=True,
+        )
+    if record.id is None:
+        return None
+    return db.scalar(
+        select(Policy)
+        .where(
+            Policy.external_source_record_id == record.id,
+            Policy.source_category == STAY_DISCOUNT_SOURCE_CATEGORY,
+            or_(
+                Policy.slug.is_(None),
+                Policy.slug.not_like(f"{stay_discount_aliases.ALIAS_PREFIX}-%"),
+            ),
+        )
+        .order_by(Policy.id)
+    )
+
+
+def _get_policy_by_slug(db: Session, slug: str) -> Policy | None:
+    return db.scalar(select(Policy).where(Policy.slug == slug))
 
 
 def _assign_policy_from_external_record(
@@ -277,6 +322,76 @@ def _assign_policy_from_external_record(
     return policy
 
 
+def _assign_stay_discount_area_policy(
+    policy: Policy,
+    record: ExternalSourceRecord,
+    alias_area: stay_discount_aliases.StayDiscountAliasArea,
+) -> Policy:
+    semantic_mapping = map_external_source_semantics(record)
+    benefit_value = extract_benefit_value(record.benefit_text or "", title=record.title)
+    benefit_detail = record.benefit_value_text or benefit_value.value_text or record.benefit_text
+    representative_deadline = _representative_deadline_for_record(record)
+    structured_payload: dict[str, object] = {
+        "structuredDetail": deepcopy(semantic_mapping.structured_detail)
+    }
+    stay_discount_aliases.apply_alias_structured_detail(structured_payload, alias_area)
+    structured_detail = structured_payload.get("structuredDetail")
+
+    policy.status = semantic_mapping.policy_status or "active"
+    policy.slug = alias_area.slug
+    policy.title = stay_discount_aliases.alias_title(record.title, alias_area)
+    policy.organization = record.organizer_text or record.source_name
+    policy.policy_type = _external_policy_category(record)
+    policy.description = record.raw_detail_text or record.benefit_text
+    policy.benefit_amount = record.extracted_amount_krw or benefit_value.amount_krw
+    policy.benefit_detail = benefit_detail
+    policy.target_condition = semantic_mapping.target_condition
+    policy.region = alias_area.sido
+    policy.start_date = representative_deadline.start_date
+    policy.end_date = representative_deadline.deadline
+    policy.official_url = _official_url_for_external_record(record)
+    policy.apply_url = None
+    policy.policy_comment = record.benefit_text[:300] if record.benefit_text else None
+    policy.policy_period = None
+    policy.source_type = record.source_type
+    policy.source_name = record.source_name
+    policy.source_category = record.source_category
+    policy.external_source_record_id = record.id
+    policy.source_url = _source_url_for_external_record(record)
+    policy.source_canonical_key = stay_discount_aliases.area_source_canonical_key(
+        record.canonical_key,
+        alias_area.slug,
+    )
+    policy.normalized_at = record.last_fetched_at
+    policy.last_verified_at = record.last_verified_at
+    policy.verification_status = semantic_mapping.verification_status or record.freshness_status
+    policy.structured_detail = (
+        structured_detail if isinstance(structured_detail, dict) else semantic_mapping.structured_detail
+    )
+    return policy
+
+
+def _promote_stay_discount_record(
+    db: Session,
+    record: ExternalSourceRecord,
+) -> int:
+    canonical_policy = _get_stay_discount_canonical_policy(db, record)
+    if canonical_policy is None:
+        canonical_policy = Policy()
+        db.add(canonical_policy)
+    _assign_policy_from_external_record(canonical_policy, record)
+    canonical_policy.status = "hidden"
+
+    alias_areas = stay_discount_aliases.alias_areas_for_record(record)
+    for alias_area in alias_areas:
+        area_policy = _get_policy_by_slug(db, alias_area.slug)
+        if area_policy is None:
+            area_policy = Policy()
+            db.add(area_policy)
+        _assign_stay_discount_area_policy(area_policy, record, alias_area)
+    return max(1, len(alias_areas))
+
+
 def _hide_duplicate_digital_tourism_policies(policy: Policy) -> None:
     if policy.id is None or policy.source_category != DIGITAL_TOURISM_SOURCE_CATEGORY:
         return
@@ -311,6 +426,9 @@ def _hide_policy_for_external_record(
     db: Session,
     record: ExternalSourceRecord,
 ) -> bool:
+    if record.source_category == STAY_DISCOUNT_SOURCE_CATEGORY:
+        return _hide_stay_discount_policies_for_record(db, record)
+
     policy = None
     if record.id is not None:
         policy = db.scalar(
@@ -350,17 +468,44 @@ def _hide_policy_for_external_record(
     return True
 
 
+def _hide_stay_discount_policies_for_record(
+    db: Session,
+    record: ExternalSourceRecord,
+) -> bool:
+    if record.id is None:
+        return False
+    policies = list(
+        db.scalars(
+            select(Policy).where(
+                Policy.source_category == STAY_DISCOUNT_SOURCE_CATEGORY,
+                Policy.external_source_record_id == record.id,
+            )
+        ).all()
+    )
+    for policy in policies:
+        policy.status = "hidden"
+        policy.source_type = record.source_type
+        policy.source_name = record.source_name
+        policy.source_category = record.source_category
+        policy.external_source_record_id = record.id
+        policy.source_url = _source_url_for_external_record(record)
+        policy.source_canonical_key = (
+            stay_discount_aliases.area_source_canonical_key(record.canonical_key, policy.slug)
+            if stay_discount_aliases.is_stay_discount_area_policy(policy)
+            else record.canonical_key
+        )
+        policy.normalized_at = record.last_fetched_at
+        policy.last_verified_at = record.last_verified_at
+        policy.verification_status = record.freshness_status
+    return bool(policies)
+
+
 def promote_external_benefits_to_policies(db: Session) -> PolicyPromotionResult:
     records = external_source_repository.list_policy_promotion_records(db)
     resolved_stay_policies = {
-        record: _get_policy_for_external_record(
-            db,
-            record,
-            match_stay_logical_campaign=True,
-        )
+        record: _get_stay_discount_canonical_policy(db, record)
         for record in records
         if record.source_category == STAY_DISCOUNT_SOURCE_CATEGORY
-        and record.logical_key is not None
     }
     resolved_digital_policies = {
         record: _get_policy_for_external_record(db, record)
@@ -372,8 +517,10 @@ def promote_external_benefits_to_policies(db: Session) -> PolicyPromotionResult:
     promoted_categories: set[str] = set()
     for record in records:
         if record in resolved_stay_policies:
-            policy = resolved_stay_policies[record]
-        elif record in resolved_digital_policies:
+            promoted_count += _promote_stay_discount_record(db, record)
+            promoted_categories.add(record.source_category)
+            continue
+        if record in resolved_digital_policies:
             policy = resolved_digital_policies[record]
         else:
             policy = _get_policy_for_external_record(db, record)
