@@ -9,8 +9,8 @@ from app.models import ExternalSourceRecord
 
 
 STAY_PAYLOAD = {
-    "issuePeriod": "2026.6.11(목)~8.17(월) 매일 오전 10시부터 선착순 발급 (단, 기한 내 소진 시 발급 불가)",
-    "stayPeriod": "2026. 6.11(목)~8.17(월)",
+    "issuePeriod": "2026.6.11(목)~8.31(월) 매일 오전 10시부터 선착순 발급 (단, 기한 내 소진 시 발급 불가)",
+    "stayPeriod": "2026. 6.11(목)~8.31(월)",
     "usageArea": "비수도권 인구감소지역(85개 지자체)",
     "usagePlace": "국내숙박 업소 / 대실 사용 불가",
     "usageMethod": "참여 온라인 여행사를 통한 숙박 할인권 발급 후 사용 / 1인 1매 사용(선착순)",
@@ -172,7 +172,7 @@ def test_stay_mapper_maps_latest_august_periods_to_structured_detail() -> None:
     assert result.mapper_status == "mapped"
     assert [
         item["endDate"] for item in result.structured_detail["periods"]
-    ] == ["2026-08-17", "2026-08-17"]
+    ] == ["2026-08-31", "2026-08-31"]
     assert _descriptions(result, "supportContent") == [
         "7만원 미만 국내 숙박상품 예약 시 2만원 할인",
         "7만원 이상 국내 숙박상품 예약 시 3만원 할인",
@@ -206,7 +206,7 @@ def test_stay_mapper_rejects_malformed_tiers_without_reclassifying_raw_blob() ->
         ("issuePeriod", "날짜 미정"),
         ("stayPeriod", "추후 공지"),
         ("issuePeriod", "2026.6.11부터 선착순 발급"),
-        ("stayPeriod", "2026.8.17까지 입실"),
+        ("stayPeriod", "2026.8.31까지 입실"),
         ("discountTiers", STAY_PAYLOAD["discountTiers"][:3]),
         ("discountTiers", [*STAY_PAYLOAD["discountTiers"], STAY_PAYLOAD["discountTiers"][0]]),
         (

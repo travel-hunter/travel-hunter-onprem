@@ -126,7 +126,7 @@ def test_policy_to_api_projects_requirements_from_authoritative_structured_condi
             {"title": "신청대상", "description": "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자"},
         ],
         "periods": [
-            {"title": "발급 기간", "description": "2026.6.11~8.17", "type": "application"}
+            {"title": "발급 기간", "description": "2026.6.11~8.31", "type": "application"}
         ],
         "requiredDocuments": [],
         "notes": [{"title": "비고", "description": "예산 소진 시 조기 종료"}],
@@ -775,9 +775,9 @@ def make_stay_policy() -> PolicyModel:
         description="숙박 할인권 안내",
         benefit_amount=70000,
         benefit_detail="2/3/5/7만원 할인권",
-        target_condition="발급기간: 2026.6.11~7.31\n사용방법: 참여 온라인 여행사에서 발급",
+        target_condition="발급기간: 2026.6.11~8.31\n사용방법: 참여 온라인 여행사에서 발급",
         region="비수도권 인구감소지역",
-        end_date=date(2026, 7, 31),
+        end_date=date(2026, 8, 31),
         official_url="https://ktostay.visitkorea.or.kr/",
         apply_url=None,
         policy_comment="비수도권 인구감소지역 85개 지자체 숙박 할인",
@@ -801,8 +801,8 @@ def make_stay_policy() -> PolicyModel:
             {"title": "신청대상", "description": "할인권 발급 후 지정 기간 내 입실 가능한 사용자"},
         ],
         "periods": [
-            {"title": "쿠폰 발급 기간", "description": "2026.6.11~8.17", "type": "application"},
-            {"title": "입실 기간", "description": "2026.6.11~8.17", "type": "usage"},
+            {"title": "쿠폰 발급 기간", "description": "2026.6.11~8.31", "type": "application"},
+            {"title": "입실 기간", "description": "2026.6.11~8.31", "type": "usage"},
         ],
         "requiredDocuments": [
             {
@@ -835,7 +835,7 @@ def make_stay_record() -> ExternalSourceRecord:
         region="비수도권 인구감소지역",
         is_nationwide=False,
         status="active",
-        end_date=date(2026, 7, 31),
+        end_date=date(2026, 8, 31),
         benefit_text="2/3/5/7만원 할인권",
         benefit_value_text="2/3/5/7만원 할인권",
         extracted_amount_krw=70000,
@@ -845,8 +845,8 @@ def make_stay_record() -> ExternalSourceRecord:
         field_completeness=90,
         freshness_status="fresh",
         raw_payload={
-            "issuePeriod": "2026.6.11(목)~8.17(월) 매일 오전 10시부터 선착순 발급",
-            "stayPeriod": "2026.6.11(목)~8.17(월)",
+            "issuePeriod": "2026.6.11(목)~8.31(월) 매일 오전 10시부터 선착순 발급",
+            "stayPeriod": "2026.6.11(목)~8.31(월)",
             "usageArea": "비수도권 인구감소지역(85개 지자체)",
             "usagePlace": "국내숙박 업소 / 대실 사용 불가",
             "usageMethod": "참여 온라인 여행사를 통한 숙박 할인권 발급 후 사용 / 1인 1매 사용(선착순)",
@@ -899,7 +899,7 @@ def make_two_stay_campaigns():
     current_policy.id = 23
     current_policy.slug = "travelmonth-33"
     current_policy.external_source_record_id = 35
-    current_policy.end_date = date(2026, 8, 17)
+    current_policy.end_date = date(2026, 8, 31)
     legacy_policy = make_stay_policy()
     legacy_policy.id = 26
     legacy_policy.slug = "travelmonth-35"
@@ -908,7 +908,7 @@ def make_two_stay_campaigns():
     current_record = make_stay_record()
     current_record.id = 35
     current_record.canonical_key = STAY_DISCOUNT_CAMPAIGN_KEY
-    current_record.end_date = date(2026, 8, 17)
+    current_record.end_date = date(2026, 8, 31)
     legacy_record = make_stay_record()
     legacy_record.id = 33
     legacy_record.canonical_key = "legacy-period-hash"
@@ -967,7 +967,7 @@ def test_stay_discount_list_and_detail_select_current_source_on_survivor_policy(
     survivor = make_stay_area_policy()
     survivor.id = 23
     survivor.external_source_record_id = 35
-    survivor.end_date = date(2026, 8, 17)
+    survivor.end_date = date(2026, 8, 31)
 
     monkeypatch.setattr(
         policy_service.policy_repository,
@@ -992,7 +992,7 @@ def test_stay_discount_list_and_detail_select_current_source_on_survivor_policy(
 
     assert [item["slug"] for item in payload] == ["stay-discount-gangwon-goseong"]
     assert detail is not None
-    assert detail["deadline"] == "2026-08-17"
+    assert detail["deadline"] == "2026-08-31"
 
 
 def test_stay_discount_list_hides_canonical_when_alias_payload_missing(monkeypatch) -> None:
@@ -1060,8 +1060,8 @@ def test_stay_discount_alias_requirements_follow_persisted_structured_conditions
             {"title": "혜택 적용 조건", "description": "1박 이상"},
         ],
         "periods": [
-            {"title": "발급 기간", "description": "2026.6.11~8.17", "type": "application"},
-            {"title": "입실 기간", "description": "2026.6.11~8.17", "type": "usage"},
+            {"title": "발급 기간", "description": "2026.6.11~8.31", "type": "application"},
+            {"title": "입실 기간", "description": "2026.6.11~8.31", "type": "usage"},
         ],
         "requiredDocuments": [],
         "notes": [{"title": "비고", "description": "예산 소진 시 조기 종료"}],
