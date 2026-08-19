@@ -20,7 +20,9 @@ export function isDigitalTourismResidentCardPolicy(policy: PolicyDeadlineDisplay
 
 export function formatPolicyDeadlineTag(policy: PolicyDeadlineDisplayContext): string {
   if (isDigitalTourismResidentCardPolicy(policy)) return ALWAYS_AVAILABLE_POLICY_LABEL;
-  return isSafePolicyDeadline(policy.deadline) ? `${dday(policy.deadline)} 마감` : UNKNOWN_DEADLINE_LABEL;
+  if (!isSafePolicyDeadline(policy.deadline)) return UNKNOWN_DEADLINE_LABEL;
+  const ddayLabel = dday(policy.deadline);
+  return ddayLabel === "마감" ? ddayLabel : `${ddayLabel} 마감`;
 }
 
 export function formatPolicyPeriodSummary(policy: PolicyDeadlineDisplayContext): string {
