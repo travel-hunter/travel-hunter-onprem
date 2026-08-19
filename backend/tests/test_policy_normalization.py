@@ -571,7 +571,7 @@ def test_post_0027_stay_promotion_hides_canonical_survivor_and_hidden_snapshot(
                 logical_key="stay-discount:2026-summer",
                 canonical_key_version="snapshot-v1",
                 title="Current stay campaign",
-                end_date=date(2026, 8, 17),
+                end_date=date(2026, 8, 31),
             ),
         ],
     )
@@ -632,7 +632,7 @@ def test_post_0028_single_snapshot_updates_existing_stay_canonical_as_hidden(
                 logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
                 canonical_key_version="snapshot-v1",
                 title="Current stay campaign",
-                end_date=date(2026, 8, 17),
+                end_date=date(2026, 8, 31),
             ),
         ],
     )
@@ -688,18 +688,18 @@ def test_stay_selector_prefers_newer_missing_logical_key_snapshot() -> None:
         source_category="stay_discount",
         canonical_key="old-stay-snapshot",
         logical_key=STAY_DISCOUNT_CAMPAIGN_KEY,
-        end_date=date(2026, 7, 31),
-        last_fetched_at=datetime(2026, 7, 2, 5, 18, 15),
-        last_verified_at=datetime(2026, 7, 2, 5, 18, 15),
+        end_date=date(2026, 8, 17),
+        last_fetched_at=datetime(2026, 8, 6, 13, 29, 24),
+        last_verified_at=datetime(2026, 8, 6, 13, 29, 24),
     )
     new_record = ExternalSourceRecord(
         id=139,
         source_category="stay_discount",
         canonical_key="new-stay-snapshot",
         logical_key=None,
-        end_date=date(2026, 8, 17),
-        last_fetched_at=datetime(2026, 8, 6, 13, 29, 24),
-        last_verified_at=datetime(2026, 8, 6, 13, 29, 24),
+        end_date=date(2026, 8, 31),
+        last_fetched_at=datetime(2026, 8, 19, 9, 0, 0),
+        last_verified_at=datetime(2026, 8, 19, 9, 0, 0),
     )
 
     assert select_current_stay_discount_record([old_record, new_record]) is new_record
