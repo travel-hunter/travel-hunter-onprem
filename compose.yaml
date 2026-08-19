@@ -6,8 +6,6 @@ services:
     restart: unless-stopped
 
   backend:
-    build:
-      context: ./backend
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-staging}
