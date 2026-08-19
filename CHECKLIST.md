@@ -15,6 +15,7 @@
 - PASS: `cd backend && /home/hp/projects/travel-hunter-onprem/.venv/bin/python -m pytest tests/test_travelmonth_stay_parser.py tests/test_policy_semantic_mapping.py tests/test_policy_normalization.py tests/test_policy_db_service.py -q` — 136 passed.
 - PASS: `cd backend && /home/hp/projects/travel-hunter-onprem/.venv/bin/python -m pytest -k "stay_discount or travelmonth_stay or external_collection" -q` — 64 passed, 10 skipped.
 - PASS: `cd backend && /home/hp/projects/travel-hunter-onprem/.venv/bin/python -m pytest tests/test_external_benefit_collection.py tests/test_ops_routes.py -q` — 18 passed.
+- PASS: `cd backend && /home/hp/projects/travel-hunter-onprem/.venv/bin/python -m pytest -q` — 662 passed, 17 skipped.
 - PASS: `git diff --check`.
 - PASS: UTF-8/U+FFFD scan for `.py`, `.md`, `.json`, `.tsx`, `.ts`, `.css` files.
 
