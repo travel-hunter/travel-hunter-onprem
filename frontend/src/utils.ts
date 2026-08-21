@@ -1,3 +1,5 @@
+import { getKstDateInputValue } from "./utils/dateDefaults";
+
 export const UNKNOWN_DEADLINE_LABEL = "마감일 확인 필요";
 
 export const ALWAYS_AVAILABLE_POLICY_LABEL = "상시 발급";
@@ -71,16 +73,26 @@ export function policyDeadlineTime(deadline: string | null | undefined): number 
   return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 23, 59, 59)).getTime();
 }
 
+const MILLISECONDS_PER_DAY = 86_400_000;
+
+function isoDatePartsToUtcTime(parts: { year: number; month: number; day: number }): number {
+  return Date.UTC(parts.year, parts.month - 1, parts.day);
+}
+
 export function daysUntilPolicyDeadline(deadline: string | null | undefined, now = new Date()): number | null {
-  const time = policyDeadlineTime(deadline);
-  if (time === Number.MAX_SAFE_INTEGER) return null;
-  return Math.ceil((time - now.getTime()) / 86400000);
+  const deadlineParts = deadline ? parseIsoDateParts(deadline) : null;
+  const todayParts = parseIsoDateParts(getKstDateInputValue(now));
+  if (!deadlineParts || !todayParts) return null;
+  return (
+    isoDatePartsToUtcTime(deadlineParts) - isoDatePartsToUtcTime(todayParts)
+  ) / MILLISECONDS_PER_DAY;
 }
 
 export function dday(deadline: string | null | undefined) {
   const days = daysUntilPolicyDeadline(deadline);
   if (days === null) return UNKNOWN_DEADLINE_LABEL;
-  return days >= 0 ? `D-${days}` : "마감";
+  if (days < 0) return "마감";
+  return days === 0 ? "D-day" : `D-${days}`;
 }
 
 export function formatCompactPolicyDeadline(deadline: string | null | undefined) {
