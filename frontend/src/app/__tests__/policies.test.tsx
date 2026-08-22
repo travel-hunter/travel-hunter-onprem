@@ -892,6 +892,11 @@ describe("Travel Hunter app — policies & trip picker", () => {
 
   it("keeps the trip-attached state scoped to the selected policy", async () => {
     const originalGetPolicy = appDataApi.getPolicy.bind(appDataApi);
+    const previewTrip = {
+      ...getPreviewTrip(),
+      id: "policy-scope-trip",
+      title: "제주 3일 여행",
+    };
     const otherPolicy: Policy = {
       id: "city-pass",
       slug: "city-pass",
@@ -917,6 +922,19 @@ describe("Travel Hunter app — policies & trip picker", () => {
           ? Promise.resolve(otherPolicy)
           : originalGetPolicy(slug),
       );
+    const listTripsSpy = vi
+      .spyOn(appDataApi, "listTrips")
+      .mockResolvedValue([previewTrip]);
+    const addPolicyToTripSpy = vi
+      .spyOn(appDataApi, "addPolicyToTrip")
+      .mockResolvedValue({
+        tripId: previewTrip.id,
+        policyId: examplePolicySlug,
+        added: true,
+      });
+    const getTripSpy = vi
+      .spyOn(appDataApi, "getTrip")
+      .mockResolvedValue(previewTrip);
 
     try {
       await login();
@@ -955,6 +973,9 @@ describe("Travel Hunter app — policies & trip picker", () => {
       ).not.toBeInTheDocument();
     } finally {
       getPolicySpy.mockRestore();
+      listTripsSpy.mockRestore();
+      addPolicyToTripSpy.mockRestore();
+      getTripSpy.mockRestore();
     }
   });
 });
