@@ -70,6 +70,9 @@ def test_seed_dgtour_active_policies_use_official_participating_regions_and_urls
         title = str(policy["title"])
         city = title[1 : title.index("]")] if title.startswith("[") and "]" in title else ""
         assert city in official.PARTICIPATING_CITY_REGIONS
+        canonical_slug = official.canonical_policy_slug_for_city(city)
+        assert canonical_slug is not None
+        assert policy["slug"] == canonical_slug
         official_url = str(policy.get("officialUrl") or "")
         assert official.is_visitkorea_dgtourcard_url(official_url)
         assert "haenam50.kr" not in official_url
