@@ -260,6 +260,8 @@ export type Trip = {
   status: "draft" | "confirmed";
   revision: number;
   dates: string;
+  startDate: string;
+  endDate: string;
   people: string[];
   participantCount: number;
   expectedSaving: string;

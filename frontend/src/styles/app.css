@@ -6058,9 +6058,13 @@
 }
 
 .prototype-trip-list-screen .itinerary-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex: 0 0 auto;
 }
 
+.prototype-trip-list-screen .trip-edit-btn,
 .prototype-trip-list-screen .trip-delete-btn {
   display: inline-flex;
   align-items: center;
@@ -6075,6 +6079,13 @@
   color: #ff5e5b;
   font-size: 11px;
   font-weight: 800;
+}
+
+.prototype-trip-list-screen .trip-edit-btn {
+  border-color: #d8e0ec;
+  background: #fff;
+  color: #1f2a44;
+  text-decoration: none;
 }
 
 .prototype-trip-list-screen .trip-delete-btn:disabled {
@@ -6507,6 +6518,211 @@
 .prototype-date-fields {
   display: grid;
   gap: 12px;
+}
+
+.prototype-date-fields-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.trip-date-range-card {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  border: 1px solid #d4d4dc;
+  border-radius: 16px;
+  padding: 14px;
+  color: #1a1a2e;
+  background: #fff;
+  text-align: left;
+}
+
+.trip-date-range-card span {
+  color: #6f7287;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trip-date-range-card strong {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.trip-date-range-card em {
+  color: #ff5e5b;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.trip-date-calendar {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #ececf1;
+  border-radius: 16px;
+  padding: 14px;
+  background: #fff;
+}
+
+.trip-date-calendar-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.trip-date-calendar-head strong {
+  text-align: center;
+}
+
+.trip-date-calendar-head button,
+.trip-date-calendar-done {
+  min-height: 36px;
+  border: 1px solid #d8e0ec;
+  border-radius: 999px;
+  padding: 0 12px;
+  background: #fff;
+  color: #1f2a44;
+  font-weight: 900;
+}
+
+.trip-date-calendar-guide {
+  margin: 0;
+  color: #6f7287;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trip-date-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.trip-date-weekday {
+  min-height: 28px;
+  display: grid;
+  place-items: center;
+  color: #8c8ca1;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.trip-date-day {
+  min-height: 38px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #1a1a2e;
+  font-weight: 800;
+}
+
+.trip-date-day.outside-month {
+  color: #b8bcc8;
+}
+
+.trip-date-day.in-range {
+  background: rgba(255, 94, 91, 0.12);
+}
+
+.trip-date-day.range-start,
+.trip-date-day.range-end {
+  color: #fff;
+  background: #ff5e5b;
+  font-weight: 900;
+}
+
+.prototype-trip-edit-screen {
+  background: var(--surface-app);
+}
+
+.trip-edit-form {
+  display: grid;
+  gap: 14px;
+  margin: 0 16px 24px;
+  border: 1px solid var(--border-card);
+  border-radius: 24px;
+  padding: 18px;
+  background: #fff;
+  box-shadow: var(--shadow-trip-card);
+}
+
+.trip-edit-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.trip-date-overflow-options {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d8e0ec;
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.trip-date-overflow-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+}
+
+.prototype-trip-hero-edit {
+  width: fit-content;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8px;
+  border: 1px solid #d8e0ec;
+  border-radius: 999px;
+  padding: 0 12px;
+  background: #fff;
+  color: #1f2a44;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.place-basket {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d8e0ec;
+  border-radius: 16px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.place-basket-list {
+  display: grid;
+  gap: 8px;
+}
+
+.place-basket-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+}
+
+.place-basket-row span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.place-basket-row em,
+.place-basket-row small {
+  color: #6f7287;
+  font-style: normal;
+  font-size: 12px;
 }
 
 .prototype-date-fields label,

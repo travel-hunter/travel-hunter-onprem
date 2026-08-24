@@ -191,6 +191,11 @@ export type TripPlaceMutationRequest = TripPlaceRequest & {
   expectedRevision: number;
 };
 
+export type TripPlacesBatchRequest = {
+  expectedRevision: number;
+  places: TripPlaceRequest[];
+};
+
 export type TripPlaceUpdateRequest = Partial<TripPlaceRequest> & {
   expectedRevision: number;
 };
@@ -203,6 +208,14 @@ export type TripPlaceMoveRequest = {
 
 export type TripStatusUpdateRequest = {
   status: "draft" | "confirmed";
+};
+
+export type TripSettingsUpdateRequest = {
+  expectedRevision: number;
+  title?: string;
+  startDate?: string;
+  endDate?: string;
+  overflowPlaceStrategy?: "moveToLastDay" | "delete";
 };
 
 export type SendInviteEmailRequest = {
@@ -247,6 +260,8 @@ export type AppDataApi = {
   getTrip: (tripId: string) => Promise<Trip>;
   updateTripStatus: (tripId: string, status: TripStatusUpdateRequest) => Promise<Trip>;
   addTripPlace: (tripId: string, dayNumber: number, place: TripPlaceMutationRequest) => Promise<Trip>;
+  addTripPlaces: (tripId: string, dayNumber: number, request: TripPlacesBatchRequest) => Promise<Trip>;
+  updateTripSettings: (tripId: string, settings: TripSettingsUpdateRequest) => Promise<Trip>;
   updateTripPlace: (tripId: string, placeId: string, place: TripPlaceUpdateRequest) => Promise<Trip>;
   moveTripPlace: (tripId: string, placeId: string, move: TripPlaceMoveRequest) => Promise<Trip>;
   deleteTripPlace: (tripId: string, placeId: string, expectedRevision: number) => Promise<Trip>;

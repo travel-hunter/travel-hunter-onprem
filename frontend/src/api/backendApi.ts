@@ -29,7 +29,9 @@ import {
   SignupVerifyResponse,
   TripPlaceMoveRequest,
   TripPlaceMutationRequest,
+  TripPlacesBatchRequest,
   TripPlaceSearchOptions,
+  TripSettingsUpdateRequest,
   TripPlaceUpdateRequest,
   TripPolicyResponse,
   TripStatusUpdateRequest,
@@ -145,6 +147,10 @@ export const backendApi: AppDataApi = {
   getTrip: (tripId: string): Promise<Trip> => apiClient.get<Trip>(`/api/trips/${tripId}`),
   updateTripStatus: (tripId: string, status: TripStatusUpdateRequest): Promise<Trip> => apiClient.patch<Trip>(`/api/trips/${tripId}/status`, status),
   addTripPlace: (tripId: string, dayNumber: number, place: TripPlaceMutationRequest): Promise<Trip> => apiClient.post<Trip>(`/api/trips/${tripId}/days/${dayNumber}/places`, place),
+  addTripPlaces: (tripId: string, dayNumber: number, request: TripPlacesBatchRequest): Promise<Trip> =>
+    apiClient.post<Trip>(`/api/trips/${tripId}/days/${dayNumber}/places/batch`, request),
+  updateTripSettings: (tripId: string, settings: TripSettingsUpdateRequest): Promise<Trip> =>
+    apiClient.patch<Trip>(`/api/trips/${tripId}/settings`, settings),
   updateTripPlace: (tripId: string, placeId: string, place: TripPlaceUpdateRequest): Promise<Trip> => apiClient.patch<Trip>(`/api/trips/${tripId}/places/${placeId}`, place),
   moveTripPlace: (tripId: string, placeId: string, move: TripPlaceMoveRequest): Promise<Trip> => apiClient.patch<Trip>(`/api/trips/${tripId}/places/${placeId}/move`, move),
   deleteTripPlace: (tripId: string, placeId: string, expectedRevision: number): Promise<Trip> =>
