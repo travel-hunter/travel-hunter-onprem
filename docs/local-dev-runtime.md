@@ -2,39 +2,74 @@
 
 ## Purpose
 
-Use this runtime while frontend UI work is still changing frequently.
+Use this runtime for local code review, regression testing, and final UI checks
+before asking for development-server or production-server work.
 
 The development default is:
 
-- PostgreSQL and FastAPI backend run in Docker.
-- React frontend runs through Vite dev server on port `5173`.
-- Docker frontend on port `4173` is reserved for final production-build verification.
+- PostgreSQL, FastAPI backend, and React frontend all run in Docker Compose.
+- React frontend is served from the Docker production-build preview on port `4173`.
+- Vite dev server on port `5173` is optional for fast UI iteration only, not the
+  default review runtime.
 - LAN/classroom sharing is not enabled during normal development.
 
-## Default Development Flow
+## Default Local Review Runtime
 
-Start only the database and backend containers:
+Start the same three-container stack used by the handoff workflow:
 
 ```powershell
-cd C:\Users\HP\Documents\프로젝트\진행중\travel-hunter-app
-docker compose up -d db backend
-docker compose ps
+cd C:\dev\travel-hunter\travel-hunter-onprem
+docker compose --env-file .env -p travel-hunter-onprem -f compose.local.yaml up -d --build db backend frontend
+docker compose --env-file .env -p travel-hunter-onprem -f compose.local.yaml ps
 ```
 
-Confirm backend health:
+Apply schema and seed data against the local Docker PostgreSQL database:
+
+```powershell
+cd C:\dev\travel-hunter\travel-hunter-onprem
+docker compose --env-file .env -p travel-hunter-onprem -f compose.local.yaml run --rm backend alembic upgrade head
+docker compose --env-file .env -p travel-hunter-onprem -f compose.local.yaml run --rm backend python -m app.db.seed
+```
+
+Confirm backend health and frontend rendering:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/health
-```
-
-Start the frontend in dev mode:
-
-```powershell
-cd C:\Users\HP\Documents\프로젝트\진행중\travel-hunter-app\frontend
-npm run dev
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4173/
 ```
 
 Open the app:
+
+```text
+http://127.0.0.1:4173/
+```
+
+### Isolated Worktree Runtime
+
+The default commands assume the current repository directory is clean and is the source intended for review. When that root worktree contains unrelated dirty work or is behind the target branch, create or reuse a clean isolated worktree and run all three services from that one directory.
+
+Use the same explicit project name and root env file for every command:
+
+```powershell
+cd C:\dev\travel-hunter\travel-hunter-onprem\.superpowers\worktrees\develop-runtime
+docker compose --env-file C:\dev\travel-hunter\travel-hunter-onprem\.env -p travel-hunter-onprem -f compose.local.yaml up -d --build --force-recreate db backend frontend
+```
+
+Do not run the same `travel-hunter-onprem` Compose project alternately from the root worktree and an isolated worktree. That mixes container `project.config_files` and `project.working_dir` provenance. Before review, inspect all three container labels and confirm they point to one worktree.
+
+The isolated worktree changes code provenance only. It does not copy development-server policy data or enable Kakao Maps/Local, OAuth, or SMTP credentials.
+
+## Optional Fast UI Iteration
+
+```powershell
+cd C:\dev\travel-hunter\travel-hunter-onprem
+docker compose --env-file .env -p travel-hunter-onprem -f compose.local.yaml up -d db backend
+
+cd C:\dev\travel-hunter\travel-hunter-onprem\frontend
+npm.cmd run dev
+```
+
+Use this optional flow only when changing frontend UI rapidly:
 
 ```text
 http://127.0.0.1:5173/
@@ -42,17 +77,21 @@ http://127.0.0.1:5173/
 
 ## Why This Is The Default
 
-Vite dev server updates the browser almost immediately after saving frontend files.
+The Docker frontend uses the same production-build path that reviewers see in
+the containerized runtime.
 
-Running `docker compose up -d --build frontend` for every UI change is slower because it performs a production build, image export, and container restart. Use it only when checking final Docker behavior.
+Vite dev server updates the browser almost immediately after saving frontend
+files, but it is not the default evidence path for local code review because it
+does not prove the Docker frontend image.
 
-## Final Docker Frontend Check
+## Rebuild Frontend After UI Changes
 
-After the UI work is ready, run:
+After UI work changes, rebuild and restart the Docker frontend before visual
+review:
 
 ```powershell
-cd C:\Users\HP\Documents\프로젝트\진행중\travel-hunter-app
-docker compose up -d --build frontend
+cd C:\dev\travel-hunter\travel-hunter-onprem
+docker compose --env-file .env -p travel-hunter-onprem -f compose.local.yaml up -d --build frontend
 ```
 
 Then check:
@@ -84,7 +123,7 @@ cd backend
   --provider-id local-google-$(date +%s)
 ```
 
-Open the printed URL in the local frontend. By default the helper uses `http://127.0.0.1:5173`, matching the Vite dev server. If you are checking the Docker production frontend on `4173`, either set `TRAVEL_HUNTER_PUBLIC_BASE_URL=http://127.0.0.1:4173` before running the helper or replace the port in the printed URL.
+Open the printed URL in the local frontend. By default the helper uses `http://127.0.0.1:4173`, matching the Docker frontend. If you intentionally switch to the optional Vite frontend on `5173`, temporarily set `TRAVEL_HUNTER_PUBLIC_BASE_URL=http://127.0.0.1:5173` before running the helper or replace the port in the printed URL.
 
 The latest generated URL is also saved to `.omx/tmp/dev-auth-helper/latest-url.txt` unless `--no-file` is passed. Use a fresh test email/provider id for each run; the helper rejects already-created users/social accounts so existing accounts are not modified accidentally.
 
@@ -103,14 +142,16 @@ shell history, screenshots, or handoff notes.
   unless you are intentionally setting up that server with reviewed production
   or staging values.
 - Docker Compose loads backend env in this order:
-  1. `backend/compose.defaults.env`
-  2. optional `backend/.env.local`
-  3. explicit non-secret values in `compose.yaml`
-- `backend/compose.defaults.env` sets safe Docker defaults such as
+  1. root `.env` for Compose variable interpolation
+  2. explicit non-secret defaults in `compose.local.yaml`
+  3. optional process environment overrides
+- `compose.local.yaml` sets safe Docker defaults such as
   `TRAVEL_HUNTER_PUBLIC_BASE_URL=http://127.0.0.1:4173` and disabled Kakao
   Local settings.
-- `backend/.env.local` can override `TRAVEL_HUNTER_PUBLIC_BASE_URL` for auth
-  links, for example when you are using the Vite frontend on `5173`.
+- For the default three-container review runtime, keep
+  `TRAVEL_HUNTER_PUBLIC_BASE_URL=http://127.0.0.1:4173`.
+- If you intentionally switch to the optional Vite flow, temporarily override
+  `TRAVEL_HUNTER_PUBLIC_BASE_URL=http://127.0.0.1:5173` for auth links.
 - `backend/.env.local` can provide auth integration variables such as
   `SMTP_*`, `GOOGLE_*`, and OAuth `KAKAO_*`.
 - `backend/.env.local` can also opt in Kakao Local settings such as
@@ -128,14 +169,14 @@ Success boundary for this local opt-in is intentionally narrow:
 
 ## Port Standard
 
-- `5173`: Vite dev frontend, fast UI iteration.
-- `4173`: Docker production frontend, final verification.
+- `4173`: Docker production frontend, default local review runtime.
+- `5173`: optional Vite dev frontend, fast UI iteration only.
 - `8000`: FastAPI backend.
 - `55432`: PostgreSQL exposed from Docker.
 
 ## Local Timezone Behavior
 
-This pass changed only the local `compose.yaml` runtime to use KST for database and backend checks:
+The local `compose.local.yaml` runtime uses KST for database and backend checks:
 
 - PostgreSQL starts with `timezone=Asia/Seoul` and `log_timezone=Asia/Seoul`.
 - The `db` and `backend` services set `TZ=Asia/Seoul`.
@@ -158,13 +199,13 @@ Alembic revision `0024_local_kst_time_shift` is a guarded local data-adjustment 
 
 Do not enable LAN/classroom sharing during normal UI development.
 
-When development is complete and other people need to view the app from their devices, use the Cloudflare Tunnel flow described in `compose.tunnel.yaml` and `deploy/.env.tunnel.example`. That step may require public hostname, CORS, and secret/env settings.
+When development is complete and other people need to view the app from their devices, use the Cloudflare Tunnel wrapper flow in `compose.yaml` with an approved runtime env file. That step may require public hostname, CORS, and secret/env settings.
 
 ## Quick Checks
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5173/
 Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/health
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4173/
 ```
 
 ## Kakao Local Candidate Smoke
@@ -172,20 +213,32 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/health
 With `KAKAO_LOCAL_ENABLED=true` and `KAKAO_LOCAL_REST_API_KEY` configured, this checks representative travel areas against Kakao Local and prints only counts/metadata/sample titles:
 
 ```powershell
-cd C:\Users\HP\Documents\프로젝트\진행중\travel-hunter-app\backend
-python -m app.scripts.smoke_kakao_local_candidates --min-candidates 6
+cd C:\dev\travel-hunter\travel-hunter-onprem\backend
+.\.venv\Scripts\python.exe -m app.scripts.smoke_kakao_local_candidates --min-candidates 6
 ```
 
 Without Kakao Local credentials, the same command runs catalog fallback smoke. To require live Kakao Local credentials, add `--require-kakao`.
 
-Before committing frontend work:
+## Local Code Review Gate
+
+Use this sequence before reporting local review/test evidence:
 
 ```powershell
-cd C:\Users\HP\Documents\프로젝트\진행중\travel-hunter-app\frontend
-npm run typecheck
-npm test -- --run
-npm run build
+cd C:\dev\travel-hunter\travel-hunter-onprem
+docker compose --env-file .env -p travel-hunter-onprem -f compose.local.yaml config
+docker compose --env-file .env -p travel-hunter-onprem -f compose.local.yaml up -d --build db backend frontend
+docker compose --env-file .env -p travel-hunter-onprem -f compose.local.yaml run --rm backend alembic upgrade head
+docker compose --env-file .env -p travel-hunter-onprem -f compose.local.yaml run --rm backend python -m app.db.seed
 
-cd ..
+cd C:\dev\travel-hunter\travel-hunter-onprem
+docker compose --env-file .env -p travel-hunter-onprem -f compose.local.yaml run --rm backend python -m pytest
+
+cd C:\dev\travel-hunter\travel-hunter-onprem\frontend
+npm.cmd run typecheck
+npm.cmd test
+npm.cmd run test:e2e:containers
+npm.cmd run build
+
+cd C:\dev\travel-hunter\travel-hunter-onprem
 git diff --check
 ```
