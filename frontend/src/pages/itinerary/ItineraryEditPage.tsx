@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { appDataApi, isApiError, type Trip } from "../../api";
 import { useAsyncResource } from "../../api/useAsyncResource";
 import { Button, ErrorState, LoadingState, TopBar } from "../../components/ui";
+import { normalizeTripDateRange } from "../../utils/dateDefaults";
 
 type OverflowPlaceStrategy = "moveToLastDay" | "delete";
 
@@ -63,7 +64,14 @@ export function ItineraryEditPage() {
     );
   }
 
-  const nextDayCount = dayCountFromDateInputs(startDate, endDate);
+  // 두 입력이 서로 독립이라 입력 도중에 맞바꾸면 방금 고친 칸이 튄다.
+  // 화면에는 입력한 그대로 두고, 미리보기와 저장에만 정규화한 범위를 쓴다.
+  const { startDate: normalizedStartDate, endDate: normalizedEndDate } =
+    normalizeTripDateRange(startDate, endDate);
+  const nextDayCount = dayCountFromDateInputs(
+    normalizedStartDate,
+    normalizedEndDate,
+  );
   const dayNumbers = Object.keys(trip.days).map(Number).sort((a, b) => a - b);
   const overflowPlaceCount =
     nextDayCount != null && nextDayCount < dayNumbers.length
@@ -75,7 +83,10 @@ export function ItineraryEditPage() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmedTitle = title.trim();
-    const dayCount = dayCountFromDateInputs(startDate, endDate);
+    const dayCount = dayCountFromDateInputs(
+      normalizedStartDate,
+      normalizedEndDate,
+    );
     if (!trimmedTitle) {
       setFormError("일정 제목을 입력해 주세요.");
       return;
@@ -91,8 +102,8 @@ export function ItineraryEditPage() {
       const updatedTrip = await appDataApi.updateTripSettings(trip.id, {
         expectedRevision: trip.revision,
         title: trimmedTitle,
-        startDate,
-        endDate,
+        startDate: normalizedStartDate,
+        endDate: normalizedEndDate,
         overflowPlaceStrategy,
       });
       navigate(`/trips/${encodeURIComponent(updatedTrip.id)}`, {
