@@ -97,6 +97,7 @@ export function ItineraryCard({
   onDelete?: (trip: Trip) => void;
 }) {
   const detailPath = `/trips/${trip.id}`;
+  const editPath = `/trips/${trip.id}/edit`;
   const totalPlaces = Object.values(trip.days).reduce((sum, places) => sum + places.length, 0);
   const dayCount = Object.keys(trip.days).length || 1;
   const participantNames = tripParticipantNames(trip);
@@ -115,6 +116,11 @@ export function ItineraryCard({
             <h4>{trip.title}</h4>
           </Link>
           <div className="itinerary-actions">
+            {trip.currentUserRole !== "viewer" && (
+              <Link className="trip-edit-btn" to={editPath} aria-label={`${trip.title} 편집`}>
+                편집
+              </Link>
+            )}
             {onDelete && (
               <button className="trip-delete-btn" disabled={isDeleting} onClick={() => onDelete(trip)} type="button">
                 {isDeleting ? "삭제 중" : "삭제"}

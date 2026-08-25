@@ -23,10 +23,12 @@ from app.models import (
 from app.models import User as UserModel
 from app.repositories import policies as policy_repository
 from app.schemas.trip import (
+    CreateTripPlacesRequest,
     CreateTripPlaceRequest,
     CreateTripRequest,
     MoveTripPlaceRequest,
     SendInviteEmailRequest,
+    UpdateTripSettingsRequest,
     UpdateTripPlaceRequest,
     UpdateTripStatusRequest,
 )
@@ -848,6 +850,60 @@ def test_update_trip_status_persists_confirmed_status(monkeypatch) -> None:
     assert fake_db.commits == 1
 
 
+def test_update_trip_settings_changes_title_only(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    monkeypatch.setattr(trip_service.trip_repository, "get_accessible_trip_by_id", lambda *_args, **_kwargs: trip)
+
+    payload = trip_service.update_trip_settings(
+        fake_db,
+        user,
+        "7",
+        UpdateTripSettingsRequest(expectedRevision=1, title="Updated Jeju trip"),
+    )
+
+    assert trip.title == "Updated Jeju trip"
+    assert trip.start_date == date(2026, 6, 15)
+    assert trip.end_date == date(2026, 6, 17)
+    assert payload["title"] == "Updated Jeju trip"
+    assert payload["revision"] == 2
+    assert fake_db.commits == 1
+
+
+def test_update_trip_settings_changes_title_and_dates(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    monkeypatch.setattr(trip_service.trip_repository, "get_accessible_trip_by_id", lambda *_args, **_kwargs: trip)
+
+    def add_trip_day_stub(_db, *, trip_id, day_number, date_value):
+        day = TripDay(id=day_number + 10, trip_id=trip_id, day_number=day_number, date=date_value)
+        day.places = []
+        return day
+
+    monkeypatch.setattr(trip_service.trip_repository, "add_trip_day", add_trip_day_stub)
+
+    payload = trip_service.update_trip_settings(
+        fake_db,
+        user,
+        "7",
+        UpdateTripSettingsRequest(
+            expectedRevision=1,
+            title="Updated Jeju trip",
+            startDate=date(2026, 6, 15),
+            endDate=date(2026, 6, 16),
+        ),
+    )
+
+    assert trip.title == "Updated Jeju trip"
+    assert trip.start_date == date(2026, 6, 15)
+    assert trip.end_date == date(2026, 6, 16)
+    assert [day.day_number for day in trip.days] == [1, 2]
+    assert payload["title"] == "Updated Jeju trip"
+    assert fake_db.commits == 1
+
+
 def test_viewer_member_cannot_update_trip_status(monkeypatch) -> None:
     fake_db = FakeDb()
     user = make_user(2)
@@ -1146,6 +1202,118 @@ def test_add_place_to_trip_day_persists_place_and_returns_updated_trip(monkeypat
     assert added["sourceProvider"] == "kakao_local"
     assert added["externalPlaceId"] == "food-1"
     assert fake_db.commits == 1
+
+
+def test_add_places_to_trip_day_persists_batch_atomically(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    added: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "get_accessible_trip_by_id",
+        lambda db, trip_id, user_id: trip
+        if db is fake_db and trip_id == 7 and user_id == 1
+        else None,
+    )
+
+    def add_place_stub(_db, **kwargs):
+        added.append(kwargs)
+        place = TripPlace(
+            id=len(added) + 1,
+            trip_day_id=kwargs["trip_day_id"],
+            place_name=kwargs["place_name"],
+            visit_time=kwargs["visit_time"],
+            order_num=kwargs["order_num"],
+            memo=kwargs["memo"],
+        )
+        place.address = kwargs["address"]
+        place.category_group_code = kwargs["category_group_code"]
+        place.category_group_name = kwargs["category_group_name"]
+        place.place_url = kwargs["place_url"]
+        place.source_provider = kwargs["source_provider"]
+        place.external_place_id = kwargs["external_place_id"]
+        trip.days[0].places.append(place)
+        return place
+
+    monkeypatch.setattr(trip_service.trip_repository, "add_trip_place", add_place_stub)
+
+    payload = trip_service.add_places_to_trip_day(
+        fake_db,
+        user,
+        "7",
+        1,
+        CreateTripPlacesRequest(
+            expectedRevision=1,
+            places=[
+                {
+                    "time": "",
+                    "label": "Cafe stop",
+                    "meta": "Dessert",
+                    "address": "Gangwon road 1",
+                    "category": "Food",
+                    "categoryCode": "FD6",
+                    "placeUrl": "http://place.map.kakao.com/food-1",
+                    "sourceProvider": "kakao",
+                    "externalPlaceId": "food-1",
+                },
+                {"label": "Beach stop", "meta": "Sea"},
+            ],
+        ),
+    )
+
+    assert [item["place_name"] for item in added] == ["Cafe stop", "Beach stop"]
+    assert [item["order_num"] for item in added] == [2, 3]
+    assert added[0]["visit_time"] is None
+    assert added[0]["category_group_code"] == "FD6"
+    assert added[0]["source_provider"] == "kakao"
+    assert payload["revision"] == 2
+    assert fake_db.commits == 1
+
+
+def test_add_places_to_trip_day_rejects_stale_revision_without_writes(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    added: list[dict[str, object]] = []
+
+    monkeypatch.setattr(trip_service.trip_repository, "get_accessible_trip_by_id", lambda *_args, **_kwargs: trip)
+    monkeypatch.setattr(trip_service.trip_repository, "bump_trip_revision_if_current", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(trip_service.trip_repository, "add_trip_place", lambda _db, **kwargs: added.append(kwargs))
+
+    with pytest.raises(trip_service.TripServiceError) as error:
+        trip_service.add_places_to_trip_day(
+            fake_db,
+            user,
+            "7",
+            1,
+            CreateTripPlacesRequest(expectedRevision=99, places=[{"label": "Cafe stop"}]),
+        )
+
+    assert error.value.status_code == 409
+    assert added == []
+    assert fake_db.commits == 0
+
+
+def test_add_places_to_trip_day_uses_specific_missing_day_error(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    monkeypatch.setattr(trip_service.trip_repository, "get_accessible_trip_by_id", lambda *_args, **_kwargs: trip)
+
+    with pytest.raises(trip_service.TripServiceError) as error:
+        trip_service.add_places_to_trip_day(
+            fake_db,
+            user,
+            "7",
+            99,
+            CreateTripPlacesRequest(expectedRevision=1, places=[{"label": "Cafe stop"}]),
+        )
+
+    assert error.value.status_code == 404
+    assert error.value.detail == "Trip day not found"
+    assert fake_db.commits == 0
 
 
 class FakeRecommendationProvider:
@@ -2402,6 +2570,59 @@ def test_create_trip_uses_request_date_range_for_dates_and_days(monkeypatch) -> 
         {"trip_id": 11, "day_number": 6, "date_value": date(2026, 7, 17)},
         {"trip_id": 11, "day_number": 7, "date_value": date(2026, 7, 18)},
     ]
+
+
+def test_create_trip_accepts_one_day_date_range(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    captured = install_create_trip_stubs(monkeypatch)
+
+    trip_service.create_trip(
+        fake_db,
+        user,
+        CreateTripRequest(
+            region="Busan",
+            style="Food",
+            startDate=date(2026, 7, 12),
+            endDate=date(2026, 7, 12),
+        ),
+    )
+
+    assert captured["create_trip"]["start_date"] == date(2026, 7, 12)
+    assert captured["create_trip"]["end_date"] == date(2026, 7, 12)
+    assert captured["trip_days"] == [
+        {"trip_id": 11, "day_number": 1, "date_value": date(2026, 7, 12)}
+    ]
+
+
+def test_create_trip_accepts_long_date_range(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    captured = install_create_trip_stubs(monkeypatch)
+
+    trip_service.create_trip(
+        fake_db,
+        user,
+        CreateTripRequest(
+            region="Busan",
+            style="Food",
+            startDate=date(2026, 7, 12),
+            endDate=date(2026, 7, 21),
+        ),
+    )
+
+    assert captured["create_trip"]["start_date"] == date(2026, 7, 12)
+    assert captured["create_trip"]["end_date"] == date(2026, 7, 21)
+    assert [day["day_number"] for day in captured["trip_days"]] == list(range(1, 11))
+
+
+def test_create_trip_rejects_reversed_date_range() -> None:
+    with pytest.raises(ValidationError):
+        CreateTripRequest(
+            region="Busan",
+            startDate=date(2026, 7, 13),
+            endDate=date(2026, 7, 12),
+        )
 
 
 def test_create_trip_links_policy_when_policy_slug_is_present(monkeypatch) -> None:

@@ -1,6 +1,6 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { PublicLayout, ServiceLayout } from "../components/AppLayout";
-import { AiResultsPage, FriendInvitePage, ItineraryCreatePage, ItineraryDetailPage, ItineraryListPage } from "../pages/ItineraryPages";
+import { AiResultsPage, FriendInvitePage, ItineraryCreatePage, ItineraryDetailPage, ItineraryEditPage, ItineraryListPage } from "../pages/ItineraryPages";
 import { ForgotPasswordPage, LoginPage, NicknameSetupPage, OAuthCallbackPage, OAuthStartPage, ResetPasswordPage, SignupPage, SignupVerifyPage, SocialSignupAgreementPage } from "../pages/AuthPages";
 import { AppliedPolicyLinksPage } from "../pages/AppliedPolicyLinksPage";
 import { HomePage } from "../pages/HomePage";
@@ -51,6 +51,7 @@ export function App() {
           <Route path="/policies/:policyId" element={<PolicyDetailPage />} />
           <Route path="/trips" element={<ItineraryListPage />} />
           <Route path="/trips/new" element={<ItineraryCreatePage />} />
+          <Route path="/trips/:tripId/edit" element={<ItineraryEditPage />} />
           <Route path="/trips/:tripId" element={<ItineraryDetailPage />} />
           <Route path="/ai-results" element={<AiResultsPage />} />
           <Route path="/friend-invite" element={<FriendInvitePage />} />

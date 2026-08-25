@@ -21,6 +21,7 @@ import {
   getYeonggwangTravelAreaResponse,
 } from "../../test/fixtures";
 import { login, renderAppRoute } from "../../test/renderAppRoute";
+import { addDaysToDateInput, getKstDateInputValue } from "../../utils/dateDefaults";
 
 describe("Travel Hunter app — trip creation", () => {
   it("shows all 17 broad regions when choosing a new trip region", async () => {
@@ -268,6 +269,11 @@ describe("Travel Hunter app — trip creation", () => {
           "active",
         ),
       );
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: /부산 전체/ })).toHaveClass(
+          "active",
+        ),
+      );
       await user.click(screen.getByRole("button", { name: "다음" }));
       const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
       await user.clear(titleInput);
@@ -285,6 +291,73 @@ describe("Travel Hunter app — trip creation", () => {
       );
       await waitFor(() => expect(getTripSpy).toHaveBeenCalledWith("45"));
     } finally {
+      createTripSpy.mockRestore();
+      getTripSpy.mockRestore();
+    }
+  });
+
+  it("does not append a late auto-selected travel-area title after the user edits the title", async () => {
+    await login();
+    cleanup();
+    let resolveTravelAreas: (
+      response: ReturnType<typeof getBusanTravelAreaResponse>,
+    ) => void = () => undefined;
+    const pendingTravelAreas = new Promise<ReturnType<
+      typeof getBusanTravelAreaResponse
+    >>((resolve) => {
+      resolveTravelAreas = resolve;
+    });
+    const travelAreasSpy = vi
+      .spyOn(appDataApi, "listTravelAreaRecommendations")
+      .mockReturnValue(pendingTravelAreas);
+    const createdTrip: Trip = {
+      ...getPreviewTrip(),
+      id: "145",
+      title: "부산 추천 여행",
+      dates: "2026.06.15 - 06.17",
+      days: { 1: [], 2: [], 3: [] },
+    };
+    const createTripSpy = vi
+      .spyOn(appDataApi, "createTrip")
+      .mockResolvedValue(createdTrip);
+    const getTripSpy = vi
+      .spyOn(appDataApi, "getTrip")
+      .mockResolvedValue(createdTrip);
+
+    try {
+      renderAppRoute("/trips/new?region=%EB%B6%80%EC%82%B0");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: /부산/ })).toHaveClass(
+          "active",
+        ),
+      );
+      resolveTravelAreas(getBusanTravelAreaResponse());
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: /부산 전체/ })).toHaveClass(
+          "active",
+        ),
+      );
+      await user.click(screen.getByRole("button", { name: "다음" }));
+      const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
+      await user.clear(titleInput);
+      await user.type(titleInput, "부산 추천 여행");
+      expect(titleInput).toHaveValue("부산 추천 여행");
+      await user.click(screen.getByRole("button", { name: "일정 생성" }));
+
+      await waitFor(() =>
+        expect(createTripSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "부산 추천 여행",
+            region: "부산 전체",
+            travelAreaId: "busan-all",
+          }),
+        ),
+      );
+      await waitFor(() => expect(getTripSpy).toHaveBeenCalledWith("145"));
+    } finally {
+      travelAreasSpy.mockRestore();
       createTripSpy.mockRestore();
       getTripSpy.mockRestore();
     }
@@ -856,6 +929,50 @@ describe("Travel Hunter app — trip creation", () => {
     }
   });
 
+  it("blocks creating a trip when the calendar end date is before the start date", async () => {
+    await login();
+    cleanup();
+    const travelAreasSpy = vi
+      .spyOn(appDataApi, "listTravelAreaRecommendations")
+      .mockResolvedValue(getJejuTravelAreaResponse());
+    const createTripSpy = vi
+      .spyOn(appDataApi, "createTrip")
+      .mockResolvedValue(getPreviewTrip());
+    const user = userEvent.setup();
+    const today = getKstDateInputValue();
+    const tomorrow = addDaysToDateInput(today, 1);
+
+    try {
+      renderAppRoute("/trips/new");
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "다음" })).toBeEnabled(),
+      );
+      await user.click(screen.getByRole("button", { name: "다음" }));
+      await user.click(screen.getByTestId("trip-date-range-trigger"));
+      await user.click(
+        within(screen.getByTestId("trip-date-range-calendar")).getByRole(
+          "button",
+          { name: tomorrow },
+        ),
+      );
+      await user.click(
+        within(screen.getByTestId("trip-date-range-calendar")).getByRole(
+          "button",
+          { name: today },
+        ),
+      );
+
+      expect(
+        screen.getAllByText("End date must be on or after the start date."),
+      ).toHaveLength(2);
+      expect(screen.getByRole("button", { name: "일정 생성" })).toBeDisabled();
+      expect(createTripSpy).not.toHaveBeenCalled();
+    } finally {
+      createTripSpy.mockRestore();
+      travelAreasSpy.mockRestore();
+    }
+  });
+
   it("explains that course preference is required before creating a trip", async () => {
     const profileSpy = vi
       .spyOn(appDataApi, "getProfile")
@@ -925,6 +1042,14 @@ describe("Travel Hunter app — trip creation", () => {
         expect(screen.getByRole("button", { name: "다음" })).toBeEnabled(),
       );
       await user.click(screen.getByRole("button", { name: "다음" }));
+      await user.click(screen.getByRole("button", { name: /변경/ }));
+      const styleDialog = screen.getByRole("dialog", {
+        name: "코스 취향 선택",
+      });
+      await user.click(within(styleDialog).getByRole("button", { name: "맛집" }));
+      await user.click(
+        within(styleDialog).getByRole("button", { name: "선택 완료" }),
+      );
       fireEvent.click(screen.getByRole("button", { name: "일정 생성" }));
 
       expect(

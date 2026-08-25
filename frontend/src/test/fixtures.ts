@@ -41,6 +41,8 @@ export function getPreviewTrip(): Trip {
     status: "confirmed",
     revision: 1,
     dates: "2026.06.12 - 06.13",
+    startDate: "2026-06-12",
+    endDate: "2026-06-13",
     people: ["여행자"],
     participantCount: 1,
     expectedSaving: "0원",

@@ -900,9 +900,9 @@ Frontend behavior: `/trips` participant UI uses `people.length` and `people` nam
 }
 ```
 
-- `durationDays`: 2~7 범위
+- `durationDays`: 1일 이상. 상한은 API validation에서 제한하지 않는다.
 - `participantCount`: optional legacy/back-compat field. 1~10. Planned travel party size only; it is stored separately from real member/invite list `people`. The current `/trips/new` frontend does not ask for or send this value.
-- `startDate`/`endDate`: 함께 제공하거나 모두 생략. 기간은 2~7일.
+- `startDate`/`endDate`: 함께 제공하거나 모두 생략. 제공 시 `endDate`는 `startDate`와 같거나 이후여야 하며, 1일 일정과 7일 초과 일정도 유효하다.
 
 **Response 200** → `Trip`. 새로 생성된 응답의 `days`는 예를 들어 3일 일정이면 `{"1": [], "2": [], "3": []}`처럼 빈 Day 배열만 포함한다. `recommendedPolicies`는 일정 지역에 맞는 정책 추천일 수 있지만, `days` 안의 장소와 `GET /trips/{trip_id}/recommendations`의 saved summary를 create 시점에 seed하지 않는다.
 
@@ -917,6 +917,34 @@ Frontend behavior: `/trips` participant UI uses `people.length` and `people` nam
 **Errors**
 - 404: 일정 없음 또는 접근 권한 없음
 
+---
+
+### PATCH /trips/{trip_id}/settings
+
+Whole-trip edit. Owner/editor only. This updates trip title and/or canonical trip dates without parsing presentation-only `Trip.dates`.
+
+**Request**
+```json
+{
+  "expectedRevision": 1,
+  "title": "Updated Jeju trip",
+  "startDate": "2026-07-12",
+  "endDate": "2026-07-18",
+  "overflowPlaceStrategy": "moveToLastDay"
+}
+```
+
+- `expectedRevision`: required optimistic revision.
+- `title`: optional, non-empty after trim when provided.
+- `startDate`/`endDate`: optional pair. If provided, `endDate` must be on or after `startDate`; one-day and 7+ day ranges are valid.
+- `overflowPlaceStrategy`: required when shortening could leave places outside the new date range. `moveToLastDay` moves overflow places to the final remaining day; `delete` removes overflow-day places.
+
+**Response 200** → `Trip`
+
+**Errors**
+- 403: viewer cannot edit
+- 404: trip not found
+- 409: stale revision
 ---
 
 ### DELETE /trips/{trip_id}
@@ -1029,6 +1057,43 @@ Optional request fields:
 - 404: 일정 없음 또는 day 없음
 - 409: 다른 사용자가 먼저 장소를 변경해 revision 불일치
 
+---
+
+### POST /trips/{trip_id}/days/{day_number}/places/batch
+
+Adds multiple selected place-search candidates to one trip day with a single optimistic revision check and one revision increment. Owner/editor only. The frontend add-place sheet is search-only: users select one or more search results into a basket, then save the basket through this endpoint.
+
+**Request**
+```json
+{
+  "expectedRevision": 1,
+  "places": [
+    {
+      "label": "Basket cafe",
+      "time": "",
+      "meta": "1 Basket road",
+      "address": "1 Basket road",
+      "latitude": 33.45,
+      "longitude": 126.57,
+      "category": "Cafe",
+      "categoryCode": "CE7",
+      "placeUrl": "https://place.map.kakao.com/123",
+      "sourceProvider": "kakao",
+      "externalPlaceId": "123"
+    }
+  ]
+}
+```
+
+- `expectedRevision`: required, current `Trip.revision` value.
+- `places`: required, 1~50 items. Each item uses the same camelCase place metadata fields as single-place add; `label` is required.
+
+**Response 200** → `Trip`
+
+**Errors**
+- 403: viewer cannot add
+- 404: trip not found or day not found
+- 409: stale revision
 ---
 
 ### PATCH /trips/{trip_id}/places/{place_id}
@@ -1354,6 +1419,8 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | status | string | `"draft" \| "confirmed"` |
 | revision | number | 장소 add/update/move/delete optimistic conflict 처리용 일정 버전. 변경 성공 시 1 증가 |
 | dates | string | 날짜 표시 문자열 |
+| startDate | string | Canonical ISO trip start date (`YYYY-MM-DD`). Edit prefills must use this field instead of parsing `dates`. |
+| endDate | string | Canonical ISO trip end date (`YYYY-MM-DD`). |
 | people | string[] | 실제 참여자 닉네임 목록. owner와 수락된 member 표시 이름을 중복 제거해 제공한다. `/trips` 화면의 참여 인원 수 기준이다. |
 | participantCount | number | Legacy planned travel party size, separate from real member/invite list `people`. 실제 참여자 수 표시 기준으로 사용하지 않는다. |
 | expectedSaving | string | 예상 절약 금액 표시 |

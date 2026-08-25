@@ -58,3 +58,103 @@ describe("backendApi account methods", () => {
     );
   });
 });
+
+describe("backendApi trip mutation methods", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setApiAccessToken(null);
+  });
+
+  const tripResponse = {
+    id: "7",
+    title: "Updated trip",
+    status: "draft",
+    revision: 2,
+    dates: "2026.06.15 - 06.20",
+    startDate: "2026-06-15",
+    endDate: "2026-06-20",
+    people: ["Test User"],
+    participantCount: 1,
+    expectedSaving: "0원",
+    linkedPolicies: [],
+    recommendedPolicies: [],
+    days: { 1: [] },
+    currentUserRole: "owner",
+  };
+
+  it("patches trip settings through the contract endpoint", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(tripResponse), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      backendApi.updateTripSettings("7", {
+        expectedRevision: 1,
+        title: "Updated trip",
+        startDate: "2026-06-15",
+        endDate: "2026-06-20",
+        overflowPlaceStrategy: "moveToLastDay",
+      }),
+    ).resolves.toMatchObject({ id: "7", title: "Updated trip" });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/trips/7/settings`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          expectedRevision: 1,
+          title: "Updated trip",
+          startDate: "2026-06-15",
+          endDate: "2026-06-20",
+          overflowPlaceStrategy: "moveToLastDay",
+        }),
+      }),
+    );
+  });
+
+  it("posts multiple places through the batch endpoint", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(tripResponse), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      backendApi.addTripPlaces("7", 2, {
+        expectedRevision: 4,
+        places: [
+          {
+            time: "",
+            label: "Cafe stop",
+            meta: "Dessert",
+            sourceProvider: "kakao",
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ id: "7" });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/trips/7/days/2/places/batch`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          expectedRevision: 4,
+          places: [
+            {
+              time: "",
+              label: "Cafe stop",
+              meta: "Dessert",
+              sourceProvider: "kakao",
+            },
+          ],
+        }),
+      }),
+    );
+  });
+});
