@@ -115,9 +115,9 @@ export function ItineraryCard({
           <Link className="itinerary-title-link" to={detailPath}>
             <h4>{trip.title}</h4>
           </Link>
-          <div className="itinerary-actions">
+          <div className="itinerary-actions itinerary-card-management">
             {trip.currentUserRole !== "viewer" && (
-              <Link className="trip-edit-btn" to={editPath} aria-label={`${trip.title} 편집`}>
+              <Link className="itinerary-card-edit" to={editPath} aria-label={`${trip.title} 편집`}>
                 편집
               </Link>
             )}

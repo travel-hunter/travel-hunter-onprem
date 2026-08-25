@@ -463,6 +463,12 @@ describe("Travel Hunter app — trips list", () => {
       await screen.findByText("부산 4일 여행");
       expect(screen.getByText("경주 3일 여행")).toBeInTheDocument();
       expect(document.querySelectorAll(".itinerary-card")).toHaveLength(2);
+      expect(
+        document.querySelectorAll(
+          ".itinerary-actions.itinerary-card-management",
+        ),
+      ).toHaveLength(2);
+      expect(document.querySelectorAll(".itinerary-card-edit")).toHaveLength(2);
       expect(screen.getByText("4명 참여 중")).toBeInTheDocument();
       expect(screen.getByText("나, 민수 외 2명")).toBeInTheDocument();
       expect(document.body).not.toHaveTextContent("실제");
