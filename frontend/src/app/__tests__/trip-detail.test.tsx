@@ -6,6 +6,8 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+// @ts-expect-error Vitest runs this assertion in Node, but this project does not install Node type declarations.
+import { readFileSync } from "node:fs";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -26,8 +28,531 @@ import {
 } from "../../test/fixtures";
 import { installAppKakaoSdkMock } from "../../test/kakaoMock";
 import { getLink, login, renderAppRoute } from "../../test/renderAppRoute";
+import {
+  crossDayPreviewLayout,
+  buildTimelineRenderItems,
+  buildTimelineSortableIds,
+  isCrossDayTimelineDrag,
+  isPointerInsideClientRect,
+  resolvePointerDayTarget,
+  resolvePointerVerifiedTimelineOverId,
+  resolvePlaceDragOverId,
+  resolveClosestTimelinePosition,
+  resolveTimelineDropTarget,
+  shouldForwardWindowWheelToAppScroll,
+  shouldUseDayRowDragOverlay,
+  shouldScheduleDaySwitch,
+} from "../../pages/itinerary/ItineraryDetailPage";
 
 describe("Travel Hunter app — trip detail & itinerary", () => {
+  it("forwards desktop window wheel only when the app container can scroll vertically", () => {
+    const classList = { contains: vi.fn(() => false) };
+    const appContainer = {
+      classList,
+      clientHeight: 600,
+      scrollHeight: 1200,
+      scrollTop: 100,
+    } as unknown as HTMLElement;
+
+    expect(
+      shouldForwardWindowWheelToAppScroll(
+        { defaultPrevented: false, deltaY: 80 },
+        appContainer,
+      ),
+    ).toBe(true);
+  });
+
+  it("does not forward wheel scrolling while itinerary drag scroll lock is active", () => {
+    const classList = {
+      contains: vi.fn((className: string) =>
+        className === "itinerary-place-drag-scroll-locked",
+      ),
+    };
+    const appContainer = {
+      classList,
+      clientHeight: 600,
+      scrollHeight: 1200,
+      scrollTop: 100,
+    } as unknown as HTMLElement;
+
+    expect(
+      shouldForwardWindowWheelToAppScroll(
+        { defaultPrevented: false, deltaY: 80 },
+        appContainer,
+      ),
+    ).toBe(false);
+  });
+
+  it("does not forward non-scrolling or already-handled wheel events", () => {
+    const classList = { contains: vi.fn(() => false) };
+    const appContainer = {
+      classList,
+      clientHeight: 600,
+      scrollHeight: 600,
+      scrollTop: 0,
+    } as unknown as HTMLElement;
+
+    expect(
+      shouldForwardWindowWheelToAppScroll(
+        { defaultPrevented: false, deltaY: 80 },
+        appContainer,
+      ),
+    ).toBe(false);
+    expect(
+      shouldForwardWindowWheelToAppScroll(
+        { defaultPrevented: true, deltaY: 80 },
+        {
+          ...appContainer,
+          scrollHeight: 1200,
+        } as unknown as HTMLElement,
+      ),
+    ).toBe(false);
+    expect(
+      shouldForwardWindowWheelToAppScroll(
+        { defaultPrevented: false, deltaY: 0 },
+        {
+          ...appContainer,
+          scrollHeight: 1200,
+        } as unknown as HTMLElement,
+      ),
+    ).toBe(false);
+  });
+
+  it("maps the first and final cross-Day positions to marker-safe previews", () => {
+    expect(
+      crossDayPreviewLayout({ placeCount: 3, position: 1 }),
+    ).toEqual({
+      previewBeforeIndex: 0,
+      shiftedFromIndex: 0,
+      showEndPreview: false,
+    });
+    expect(
+      crossDayPreviewLayout({ placeCount: 3, position: 4 }),
+    ).toEqual({
+      previewBeforeIndex: null,
+      shiftedFromIndex: null,
+      showEndPreview: true,
+    });
+  });
+
+  it("inserts the active card once at the target Day ghost position", () => {
+    expect(
+      buildTimelineSortableIds({
+        activeSortableId: "place:move-me",
+        ghostPosition: 2,
+        sortableIds: ["place:target-a", "place:target-b", "place:target-c"],
+      }),
+    ).toEqual([
+      "place:target-a",
+      "place:move-me",
+      "place:target-b",
+      "place:target-c",
+    ]);
+  });
+
+  it("keeps the target Day sortable list unchanged without a ghost position", () => {
+    expect(
+      buildTimelineSortableIds({
+        activeSortableId: "place:move-me",
+        ghostPosition: null,
+        sortableIds: ["place:target-a", "place:target-b"],
+      }),
+    ).toEqual(["place:target-a", "place:target-b"]);
+  });
+
+  it("renders a target Day ghost between the resolved adjacent cards", () => {
+    expect(
+      buildTimelineRenderItems({
+        ghostPosition: 2,
+        items: ["target-a", "target-b", "target-c"],
+      }),
+    ).toEqual([
+      { type: "item", value: "target-a" },
+      { type: "ghost" },
+      { type: "item", value: "target-b" },
+      { type: "item", value: "target-c" },
+    ]);
+  });
+
+  it("resolves cross-day timeline card drops to the hovered place position", () => {
+    expect(
+      resolveTimelineDropTarget({
+        activeSortableId: "place:move-me",
+        dayNumbers: [1, 2, 3],
+        overId: "place:target-b",
+        sortableIdsByDay: {
+          1: ["place:move-me"],
+          2: ["place:target-a", "place:target-b", "place:target-c"],
+          3: [],
+        },
+        visibleDay: 1,
+      }),
+    ).toEqual({ dayNumber: 2, position: 2 });
+  });
+
+  it("resolves day-tab timeline drops to the end of the target day", () => {
+    expect(
+      resolveTimelineDropTarget({
+        activeSortableId: "place:move-me",
+        dayNumbers: [1, 2, 3],
+        overId: "day:3",
+        sortableIdsByDay: {
+          1: ["place:move-me"],
+          2: ["place:target-a"],
+          3: ["place:target-b", "place:target-c"],
+        },
+        visibleDay: 1,
+      }),
+    ).toEqual({ dayNumber: 3, position: 3 });
+  });
+
+  it("resolves explicit timeline insertion slots to the requested position", () => {
+    expect(
+      resolveTimelineDropTarget({
+        activeSortableId: "place:move-me",
+        dayNumbers: [1, 2, 3],
+        overId: "day-position:2:1",
+        sortableIdsByDay: {
+          1: ["place:move-me"],
+          2: ["place:target-a", "place:target-b"],
+          3: [],
+        },
+        visibleDay: 1,
+      }),
+    ).toEqual({ dayNumber: 2, position: 1 });
+  });
+
+  it("detects cross-day timeline drags after switching to the target day", () => {
+    expect(
+      isCrossDayTimelineDrag({
+        activeSortableId: "place:move-me",
+        sortableIdsByDay: {
+          1: ["place:move-me"],
+          2: ["place:target-a", "place:target-b"],
+        },
+        visibleDay: 2,
+      }),
+    ).toBe(true);
+
+    expect(
+      isCrossDayTimelineDrag({
+        activeSortableId: "place:move-me",
+        sortableIdsByDay: {
+          1: ["place:move-me", "place:target-a"],
+          2: ["place:target-b"],
+        },
+        visibleDay: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it("requires the pointer itself to be inside a Day tab before switching days", () => {
+    const dayTabRect = {
+      left: 100,
+      right: 180,
+      top: 40,
+      bottom: 72,
+    };
+
+    expect(isPointerInsideClientRect({ x: 120, y: 60 }, dayTabRect)).toBe(
+      true,
+    );
+    expect(isPointerInsideClientRect({ x: 120, y: 88 }, dayTabRect)).toBe(
+      false,
+    );
+    expect(isPointerInsideClientRect({ x: 92, y: 60 }, dayTabRect)).toBe(
+      false,
+    );
+    expect(isPointerInsideClientRect(null, dayTabRect)).toBe(false);
+    expect(isPointerInsideClientRect({ x: 120, y: 60 }, null)).toBe(false);
+  });
+
+  it("prioritizes the timeline first-position area over an adjacent Day tab", () => {
+    expect(
+      shouldScheduleDaySwitch({
+        pointer: { x: 124, y: 146 },
+        dayTabRect: { left: 80, right: 170, top: 104, bottom: 150 },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps Day switching available inside the Day button above the timeline", () => {
+    expect(
+      shouldScheduleDaySwitch({
+        pointer: { x: 124, y: 118 },
+        dayTabRect: { left: 80, right: 170, top: 104, bottom: 150 },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBe(true);
+  });
+
+  it("treats the gap between Day tabs as a neutral drag zone", () => {
+    const firstDayTabRect = {
+      left: 100,
+      right: 160,
+      top: 40,
+      bottom: 72,
+    };
+    const secondDayTabRect = {
+      left: 174,
+      right: 234,
+      top: 40,
+      bottom: 72,
+    };
+    const pointerBetweenTabs = { x: 167, y: 60 };
+
+    expect(
+      isPointerInsideClientRect(pointerBetweenTabs, firstDayTabRect),
+    ).toBe(false);
+    expect(
+      isPointerInsideClientRect(pointerBetweenTabs, secondDayTabRect),
+    ).toBe(false);
+  });
+
+  it("keeps the compact Day overlay in the gap between Day buttons", () => {
+    expect(
+      shouldUseDayRowDragOverlay({
+        pointer: { x: 167, y: 60 },
+        dayTabsRect: { left: 100, right: 234, top: 40, bottom: 72 },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBe(true);
+  });
+
+  it("uses the closest current-Day insertion position for a Day-row gap drop", () => {
+    expect(
+      resolveClosestTimelinePosition({
+        pointerY: 84,
+        itemRects: [
+          { top: 160, bottom: 232 },
+          { top: 244, bottom: 316 },
+          { top: 328, bottom: 400 },
+        ],
+      }),
+    ).toBe(1);
+    expect(
+      resolveClosestTimelinePosition({
+        pointerY: 290,
+        itemRects: [
+          { top: 160, bottom: 232 },
+          { top: 244, bottom: 316 },
+          { top: 328, bottom: 400 },
+        ],
+      }),
+    ).toBe(3);
+  });
+
+  it("rejects Day-tab drops when the pointer is outside the Day tab", () => {
+    const dayTabRects = {
+      3: {
+        left: 200,
+        right: 270,
+        top: 80,
+        bottom: 110,
+      },
+    };
+
+    expect(
+      resolvePointerVerifiedTimelineOverId({
+        dayNumbers: [1, 2, 3],
+        overId: "day:3",
+        pointer: { x: 220, y: 220 },
+        rectByDay: dayTabRects,
+      }),
+    ).toBeNull();
+    expect(
+      resolvePointerVerifiedTimelineOverId({
+        dayNumbers: [1, 2, 3],
+        overId: "day:3",
+        pointer: { x: 220, y: 90 },
+        rectByDay: dayTabRects,
+      }),
+    ).toBe("day:3");
+    expect(
+      resolvePointerVerifiedTimelineOverId({
+        dayNumbers: [1, 2, 3],
+        overId: "place:target-a",
+        pointer: { x: 220, y: 220 },
+        rectByDay: dayTabRects,
+      }),
+    ).toBe("place:target-a");
+  });
+
+  it("keeps a Day target when collision temporarily reports a timeline card", () => {
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 220, y: 92 },
+        rectByDay: {
+          1: { left: 80, right: 150, top: 80, bottom: 112 },
+          2: { left: 158, right: 228, top: 80, bottom: 112 },
+          3: { left: 236, right: 306, top: 80, bottom: 112 },
+        },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBe(2);
+  });
+
+  it("keeps the physical Day target when a drag frame has no collision target", () => {
+    expect(
+      resolvePlaceDragOverId({
+        collisionOverId: null,
+        pointerDayTarget: 3,
+        isOverDayRow: true,
+        visibleDay: 1,
+        closestVisibleDayPosition: 1,
+      }),
+    ).toBe("day:3");
+  });
+
+  it("resolves explicit timeline insertion slots for every visible gap", () => {
+    const sortableIdsByDay = {
+      1: ["place:a", "place:b", "place:c"],
+      2: ["place:d", "place:e"],
+    };
+
+    expect(
+      resolveTimelineDropTarget({
+        activeSortableId: "place:a",
+        dayNumbers: [1, 2],
+        overId: "day-position:1:2",
+        sortableIdsByDay,
+        visibleDay: 1,
+      }),
+    ).toEqual({ dayNumber: 1, position: 2 });
+
+    expect(
+      resolveTimelineDropTarget({
+        activeSortableId: "place:a",
+        dayNumbers: [1, 2],
+        overId: "day-position:2:3",
+        sortableIdsByDay,
+        visibleDay: 1,
+      }),
+    ).toEqual({ dayNumber: 2, position: 3 });
+  });
+
+  it("resolves cross-Day first, middle, and end slots without an active ghost", () => {
+    const sortableIdsByDay = {
+      1: ["place:move-me"],
+      2: ["place:target-a", "place:target-b"],
+    };
+
+    for (const [overId, position] of [
+      ["day-position:2:1", 1],
+      ["day-position:2:2", 2],
+      ["day-position:2:3", 3],
+    ] as const) {
+      expect(
+        resolveTimelineDropTarget({
+          activeSortableId: "place:move-me",
+          dayNumbers: [1, 2],
+          overId,
+          sortableIdsByDay,
+          visibleDay: 2,
+        }),
+      ).toEqual({ dayNumber: 2, position });
+    }
+  });
+
+  it("keeps the itinerary drag target and spacing affordance styles present", () => {
+    const css = readFileSync("src/styles/app.css", "utf8");
+
+    expect(css).toMatch(/\.timeline-insertion-slot\s*\{/);
+    expect(css).toMatch(/\.timeline-insertion-slot\.over\s*\{/);
+    expect(css).toMatch(/\.timeline-insertion-slot\s*\{[^}]*height:\s*0/s);
+    expect(css).toMatch(/\.timeline-insertion-slot\s*\{[^}]*opacity:\s*0/s);
+    expect(css).toMatch(
+      /\.timeline-insertion-slot\.over\s*\{[^}]*border-color:\s*transparent/s,
+    );
+    expect(css).toMatch(
+      /\.timeline-insertion-slot\.over\s*\{[^}]*background:\s*transparent/s,
+    );
+    expect(css).toMatch(
+      /\.timeline-insertion-slot\.over\s*\{[^}]*min-height:\s*44px/s,
+    );
+    expect(css).not.toMatch(
+      /\.timeline-insertion-slot\.cross-day\.over\s*\{[^}]*min-height:\s*72px/s,
+    );
+    expect(css).toMatch(
+      /\.timeline-insertion-slot\.cross-day\.over\s*\{[^}]*min-height:\s*0/s,
+    );
+    expect(css).toMatch(/\.timeline-cross-day-preview\s*\{/);
+    expect(css).toMatch(/--timeline-cross-day-preview-height/);
+    expect(css).not.toMatch(/\.timeline-cross-day-ghost-card\s*\{/);
+    expect(css).toMatch(
+      /\.itinerary-drag-boundary\s*\{[^}]*height:\s*16px/s,
+    );
+    expect(css).toMatch(
+      /\.itinerary-drag-boundary\s*\{[^}]*pointer-events:\s*none/s,
+    );
+    expect(css).toMatch(
+      /\.timeline-insertion-slot\.over\s*\{[^}]*opacity:\s*0/s,
+    );
+    expect(css).toMatch(/\.place-drag-overlay\s*\{/);
+    expect(css).toMatch(/itinerary-place-drag-scroll-locked/);
+    expect(css).toMatch(
+      /\.prototype-trip-detail-screen \.day-tab\.drop-target\s*\{[^}]*min-width:\s*76px/s,
+    );
+    expect(css).not.toMatch(
+      /\.prototype-trip-detail-screen \.day-tab\.drop-target em\s*\{/,
+    );
+    expect(css).toMatch(/\.timeline-sortable-card\s*\{/);
+    expect(css).toMatch(
+      /\.prototype-trip-detail-screen \.timeline-item\.dragging \.timeline-marker\s*\{[^}]*visibility:\s*visible/s,
+    );
+    expect(css).toMatch(
+      /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*min-height:\s*clamp\(360px,\s*calc\(100dvh - 480px\),\s*520px\)/s,
+    );
+  });
+
+  it("installs a non-passive window wheel bridge for desktop gutters", () => {
+    const source = readFileSync(
+      "src/pages/itinerary/ItineraryDetailPage.tsx",
+      "utf8",
+    );
+
+    expect(source).toContain('window.addEventListener("wheel"');
+    expect(source).toContain("shouldForwardWindowWheelToAppScroll");
+    expect(source).toContain("passive: false");
+    expect(source).toContain(".app-container");
+  });
+
+  it("keeps long trip day selectors visible by wrapping day tabs", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "155",
+      title: "15 day trip",
+      dates: "2026.09.01 - 09.15",
+      days: Object.fromEntries(
+        Array.from({ length: 15 }, (_, index) => [index + 1, []]),
+      ),
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/155");
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: /Day 15/ }),
+        ).toBeInTheDocument(),
+      );
+
+      const dayTabsCss = readFileSync("src/styles/app.css", "utf8");
+      expect(dayTabsCss).toMatch(
+        /\.prototype-trip-detail-screen \.day-tabs\s*\{[^}]*flex-wrap:\s*wrap/s,
+      );
+      expect(dayTabsCss).toMatch(
+        /\.prototype-trip-detail-screen \.day-tabs\s*\{[^}]*overflow-x:\s*visible/s,
+      );
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
   it("renders itinerary detail day tabs from trip data", async () => {
     const trip: Trip = {
       ...getPreviewTrip(),
@@ -1045,6 +1570,591 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
+  it("keeps the add-sheet search-only before a place selection", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "125",
+      title: "검색 전용 장소 추가 여행",
+      days: { 1: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockResolvedValue([]);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/125");
+      const user = userEvent.setup();
+
+      await user.click(await screen.findByRole("button", { name: /장소 추가/ }));
+
+      expect(screen.getByLabelText("장소 검색")).toBeInTheDocument();
+      expect(screen.queryByLabelText("장소명")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("메모")).not.toBeInTheDocument();
+
+      await user.type(screen.getByLabelText("장소 검색"), "등록되지 않은 장소");
+
+      await waitFor(() =>
+        expect(searchTripPlacesSpy).toHaveBeenCalledWith("125", {
+          query: "등록되지 않은 장소",
+        }),
+      );
+      expect(screen.queryByLabelText("장소명")).not.toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+    }
+  });
+
+  it("keeps selected place search candidates in an add-sheet place basket", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "126",
+      title: "장소 바구니 여행",
+      days: { 1: [], 2: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockImplementation(async (_tripId, request) => {
+        if (request.query.includes("성산")) {
+          return [
+            {
+              id: "search-a",
+              label: "성산일출봉",
+              title: "성산일출봉",
+              meta: "제주 서귀포시",
+              address: "제주 서귀포시 성산읍",
+              categoryCode: "AT4",
+              categoryName: "관광명소",
+              sourceProvider: "kakao",
+              externalPlaceId: "kakao-a",
+            },
+          ];
+        }
+        if (request.query.includes("시장")) {
+          return [
+            {
+              id: "search-b",
+              label: "동문시장",
+              title: "동문시장",
+              meta: "제주 제주시",
+              address: "제주 제주시 관덕로",
+              categoryCode: "FD6",
+              categoryName: "음식점",
+              sourceProvider: "kakao",
+              externalPlaceId: "kakao-b",
+            },
+          ];
+        }
+        return [];
+      });
+    const addPlaceSpy = vi.spyOn(appDataApi, "addTripPlace");
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/126");
+      const user = userEvent.setup();
+
+      await user.click(await screen.findByRole("button", { name: /장소 추가/ }));
+      const searchInput = screen.getByLabelText("장소 검색");
+      await user.type(searchInput, "성산");
+      await user.click(await screen.findByRole("button", { name: "성산일출봉 선택" }));
+
+      expect(screen.getByRole("dialog", { name: "장소 추가" })).toBeInTheDocument();
+      expect(searchInput).toHaveValue("");
+      expect(screen.queryByRole("button", { name: "성산일출봉 선택" })).not.toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("추가할 장소 1개");
+      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("관광명소");
+      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("제주 서귀포시 성산읍");
+      expect(screen.queryByLabelText("장소명")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("메모")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "1개 저장하기" })).toBeInTheDocument();
+
+      await user.type(searchInput, "시장");
+      await user.click(await screen.findByRole("button", { name: "동문시장 선택" }));
+      await user.type(searchInput, "성산");
+      await user.click(await screen.findByRole("button", { name: "성산일출봉 선택" }));
+
+      const basket = screen.getByRole("region", { name: "추가할 장소 목록" });
+      expect(basket).toHaveTextContent("추가할 장소 3개");
+      expect(within(basket).getAllByText("성산일출봉")).toHaveLength(2);
+      expect(within(basket).getByText("동문시장")).toBeInTheDocument();
+
+      const removeButton = within(basket).getAllByRole("button", { name: "성산일출봉 제거" })[0];
+      expect(removeButton).toHaveTextContent(/^제거$/);
+      await user.click(removeButton);
+
+      expect(basket).toHaveTextContent("추가할 장소 2개");
+      expect(within(basket).getAllByText("성산일출봉")).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "2개 저장하기" })).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "2개 저장하기" }));
+
+      expect(addPlaceSpy).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog", { name: "장소 추가" })).toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+      addPlaceSpy.mockRestore();
+    }
+  });
+
+  it("saves an add-sheet place basket with one batch request and closes the sheet", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "127",
+      revision: 7,
+      title: "Batch place trip",
+      days: { 1: [], 2: [] },
+      currentUserRole: "owner",
+    };
+    const savedTrip: Trip = {
+      ...trip,
+      revision: 8,
+      days: {
+        1: [
+          { id: "saved-a", time: "", label: "Alpha cafe", meta: "Cafe" },
+          { id: "saved-b", time: "", label: "Beta park", meta: "Park" },
+        ],
+        2: [],
+      },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockImplementation(async (_tripId, request) => {
+        if (request.query.includes("Alpha")) {
+          return [
+            {
+              id: "alpha",
+              label: "Alpha cafe",
+              title: "Alpha cafe",
+              meta: "Cafe",
+              address: "Alpha address",
+              categoryCode: "CE7",
+              categoryName: "Cafe",
+              sourceProvider: "kakao",
+              externalPlaceId: "kakao-alpha",
+            },
+          ];
+        }
+        if (request.query.includes("Beta")) {
+          return [
+            {
+              id: "beta",
+              label: "Beta park",
+              title: "Beta park",
+              meta: "Park",
+              address: "Beta address",
+              categoryCode: "AT4",
+              categoryName: "Park",
+              sourceProvider: "kakao",
+              externalPlaceId: "kakao-beta",
+            },
+          ];
+        }
+        return [];
+      });
+    const addPlacesSpy = vi
+      .spyOn(appDataApi, "addTripPlaces")
+      .mockResolvedValue(savedTrip);
+    const addPlaceSpy = vi.spyOn(appDataApi, "addTripPlace");
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/127");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(document.querySelector(".prototype-trip-action-add")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".prototype-trip-action-add")!);
+      const searchInput = document.querySelector<HTMLInputElement>(
+        'input[name="place-search"]',
+      )!;
+      await user.type(searchInput, "Alpha");
+      await waitFor(() =>
+        expect(document.querySelector(".place-search-results button")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".place-search-results button")!);
+      await user.type(searchInput, "Beta");
+      await waitFor(() =>
+        expect(document.querySelector(".place-search-results button")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".place-search-results button")!);
+      await user.click(screen.getByRole("button", { name: /2개 저장하기/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
+      expect(addPlaceSpy).not.toHaveBeenCalled();
+      expect(addPlacesSpy).toHaveBeenCalledWith("127", 1, {
+        expectedRevision: 7,
+        places: [
+          {
+            time: "",
+            label: "Alpha cafe",
+            meta: "Cafe",
+            address: "Alpha address",
+            latitude: null,
+            longitude: null,
+            category: "Cafe",
+            categoryCode: "CE7",
+            placeUrl: null,
+            sourceProvider: "kakao",
+            externalPlaceId: "kakao-alpha",
+          },
+          {
+            time: "",
+            label: "Beta park",
+            meta: "Park",
+            address: "Beta address",
+            latitude: null,
+            longitude: null,
+            category: "Park",
+            categoryCode: "AT4",
+            placeUrl: null,
+            sourceProvider: "kakao",
+            externalPlaceId: "kakao-beta",
+          },
+        ],
+      });
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "장소 추가" })).not.toBeInTheDocument(),
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+      addPlacesSpy.mockRestore();
+      addPlaceSpy.mockRestore();
+    }
+  });
+
+  it("keeps a place basket after a batch conflict and waits for explicit retry", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "128",
+      revision: 3,
+      title: "Batch conflict trip",
+      days: { 1: [], 2: [] },
+      currentUserRole: "owner",
+    };
+    const latestTrip: Trip = { ...trip, revision: 4 };
+    const savedTrip: Trip = {
+      ...latestTrip,
+      revision: 5,
+      days: { 1: [{ id: "saved-gamma", time: "", label: "Gamma beach", meta: "Beach" }], 2: [] },
+    };
+    const getTripSpy = vi
+      .spyOn(appDataApi, "getTrip")
+      .mockResolvedValueOnce(trip)
+      .mockResolvedValueOnce(latestTrip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockResolvedValue([
+        {
+          id: "gamma",
+          label: "Gamma beach",
+          title: "Gamma beach",
+          meta: "Beach",
+        },
+      ]);
+    const addPlacesSpy = vi
+      .spyOn(appDataApi, "addTripPlaces")
+      .mockRejectedValueOnce(new ApiError("conflict", { status: 409, statusText: "Conflict" }))
+      .mockResolvedValueOnce(savedTrip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/128");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(document.querySelector(".prototype-trip-action-add")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".prototype-trip-action-add")!);
+      const searchInput = document.querySelector<HTMLInputElement>(
+        'input[name="place-search"]',
+      )!;
+      await user.type(searchInput, "Gamma");
+      await waitFor(() =>
+        expect(document.querySelector(".place-search-results button")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".place-search-results button")!);
+      await user.click(screen.getByRole("button", { name: /1개 저장하기/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(screen.getByRole("dialog")).toHaveTextContent("Gamma beach"),
+      );
+      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("Gamma beach");
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
+      expect(addPlacesSpy).toHaveBeenCalledTimes(1);
+
+      await user.click(screen.getByRole("button", { name: /1개 저장하기/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(2));
+      expect(addPlacesSpy).toHaveBeenLastCalledWith(
+        "128",
+        1,
+        expect.objectContaining({ expectedRevision: 4 }),
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+      addPlacesSpy.mockRestore();
+    }
+  });
+
+  it("lets a user choose a current Day before retrying a missing Day batch save", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "129",
+      revision: 10,
+      title: "Missing day batch trip",
+      days: { 1: [], 2: [], 3: [] },
+      currentUserRole: "owner",
+    };
+    const latestTrip: Trip = {
+      ...trip,
+      revision: 11,
+      days: { 1: [], 2: [] },
+    };
+    const savedTrip: Trip = {
+      ...latestTrip,
+      revision: 12,
+      days: { 1: [], 2: [{ id: "saved-delta", time: "", label: "Delta museum", meta: "Museum" }] },
+    };
+    const getTripSpy = vi
+      .spyOn(appDataApi, "getTrip")
+      .mockResolvedValueOnce(trip)
+      .mockResolvedValueOnce(latestTrip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockResolvedValue([
+        {
+          id: "delta",
+          label: "Delta museum",
+          title: "Delta museum",
+          meta: "Museum",
+        },
+      ]);
+    const addPlacesSpy = vi
+      .spyOn(appDataApi, "addTripPlaces")
+      .mockRejectedValueOnce(
+        new ApiError("Trip day not found", {
+          status: 404,
+          statusText: "Not Found",
+          detail: "Trip day not found",
+        }),
+      )
+      .mockResolvedValueOnce(savedTrip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/129?day=3");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(document.querySelector(".prototype-trip-action-add")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".prototype-trip-action-add")!);
+      const searchInput = document.querySelector<HTMLInputElement>(
+        'input[name="place-search"]',
+      )!;
+      await user.type(searchInput, "Delta");
+      await waitFor(() =>
+        expect(document.querySelector(".place-search-results button")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".place-search-results button")!);
+      await user.click(screen.getByRole("button", { name: /1개 저장하기/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
+      expect(addPlacesSpy).toHaveBeenLastCalledWith("129", 3, expect.any(Object));
+      const recovery = await screen.findByRole("region", {
+        name: "batch place missing day recovery",
+      });
+      expect(within(recovery).getByRole("button", { name: /Day 1/ })).toBeInTheDocument();
+      expect(within(recovery).getByRole("button", { name: /Day 2/ })).toBeInTheDocument();
+      expect(within(recovery).queryByRole("button", { name: /Day 3/ })).not.toBeInTheDocument();
+      expect(addPlacesSpy).toHaveBeenCalledTimes(1);
+
+      await user.click(within(recovery).getByRole("button", { name: /Day 2/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(2));
+      expect(addPlacesSpy).toHaveBeenLastCalledWith(
+        "129",
+        2,
+        expect.objectContaining({ expectedRevision: 11 }),
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+      addPlacesSpy.mockRestore();
+    }
+  });
+
+  it("does not offer stale Day recovery when refreshing after a missing Day batch failure fails", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "129-refresh-failure",
+      revision: 10,
+      title: "Missing day refresh failure trip",
+      days: { 1: [], 2: [], 3: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi
+      .spyOn(appDataApi, "getTrip")
+      .mockResolvedValueOnce(trip)
+      .mockRejectedValueOnce(new ApiError("Trip not found", {
+        status: 404,
+        statusText: "Not Found",
+        detail: "Trip not found",
+      }));
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockResolvedValue([
+        {
+          id: "delta-refresh-failure",
+          label: "Delta museum",
+          title: "Delta museum",
+          meta: "Museum",
+        },
+      ]);
+    const addPlacesSpy = vi
+      .spyOn(appDataApi, "addTripPlaces")
+      .mockRejectedValueOnce(
+        new ApiError("Trip day not found", {
+          status: 404,
+          statusText: "Not Found",
+          detail: "Trip day not found",
+        }),
+      );
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/129-refresh-failure?day=3");
+      const user = userEvent.setup();
+
+      await user.click(
+        await screen.findByRole("button", { name: /장소 추가/ }),
+      );
+      const searchInput = screen.getByRole("textbox", { name: "장소 검색" });
+      await user.type(searchInput, "Delta");
+      await user.click(
+        await screen.findByRole("button", { name: "Delta museum 선택" }),
+      );
+      await user.click(screen.getByRole("button", { name: /1개 저장하기/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(getTripSpy).toHaveBeenCalledTimes(2));
+      expect(
+        screen.queryByRole("region", { name: "batch place missing day recovery" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent(
+        "Delta museum",
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+      addPlacesSpy.mockRestore();
+    }
+  });
+
+  it("does not show missing Day recovery for a generic trip 404 batch failure", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "130",
+      revision: 12,
+      title: "Generic batch 404 trip",
+      days: { 1: [], 2: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockResolvedValue([
+        {
+          id: "epsilon",
+          label: "Epsilon market",
+          title: "Epsilon market",
+          meta: "Market",
+        },
+      ]);
+    const addPlacesSpy = vi
+      .spyOn(appDataApi, "addTripPlaces")
+      .mockRejectedValue(
+        new ApiError("Trip not found", {
+          status: 404,
+          statusText: "Not Found",
+          detail: "Trip not found",
+        }),
+      );
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/130");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(document.querySelector(".prototype-trip-action-add")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".prototype-trip-action-add")!);
+      const searchInput = document.querySelector<HTMLInputElement>(
+        'input[name="place-search"]',
+      )!;
+      await user.type(searchInput, "Epsilon");
+      await waitFor(() =>
+        expect(document.querySelector(".place-search-results button")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".place-search-results button")!);
+      await user.click(screen.getByRole("button", { name: /1개 저장하기/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
+      expect(
+        screen.queryByRole("region", { name: "batch place missing day recovery" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent(
+        "Epsilon market",
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+      addPlacesSpy.mockRestore();
+    }
+  });
+
+  it("links to the trip edit page from the detail hero", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "104",
+      title: "Editable trip",
+      dates: "2026.06.15 - 06.17",
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/104");
+
+      const editLink = await screen.findByRole("link", { name: "일정 편집" });
+      expect(editLink).toHaveAttribute("href", "/trips/104/edit");
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
   it("shows unsaved recommendation preview cards in the timeline before save", async () => {
     const trip: Trip = {
       ...getPreviewTrip(),
@@ -1115,7 +2225,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.click(screen.getByRole("button", { name: "성산일출봉 후보 저장" }));
       expect(addPlaceSpy).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "성산일출봉 후보 저장" })).toHaveTextContent("저장됨");
-      await user.click(screen.getByRole("button", { name: "선택 저장" }));
+      await user.click(screen.getByRole("button", { name: "완료" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect(addPlaceSpy).toHaveBeenCalledWith("102", 1, expect.objectContaining({ label: "성산일출봉", time: "10:00", meta: "관광명소", category: "관광명소", categoryCode: "AT4", expectedRevision: 4 }));
@@ -1161,11 +2271,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       const existingTimeEdit = document.querySelectorAll(".preview-time-edit")[0] as HTMLElement;
       await user.click(within(existingTimeEdit).getByText("수정"));
       await user.click(within(existingTimeEdit).getByRole("button", { name: "방문 시간 1시간 증가" }));
-      const existingTimelineItem = document.querySelector('[data-place-id="existing-time-1"]') as HTMLElement;
-      expect(existingTimelineItem).toHaveTextContent("09:00");
-      await user.click(within(existingTimeEdit).getByRole("button", { name: "저장" }));
-      expect(existingTimelineItem).toHaveTextContent("10:00");
-      await user.click(screen.getByRole("button", { name: "선택 저장" }));
+      await user.click(screen.getByRole("button", { name: "완료" }));
 
       await waitFor(() => expect(updatePlaceSpy).toHaveBeenCalledTimes(1));
       expect(updatePlaceSpy).toHaveBeenCalledWith("121", "existing-time-1", expect.objectContaining({ time: "10:00", expectedRevision: 8 }));
@@ -1177,92 +2283,6 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       recommendationsSpy.mockRestore();
       updatePlaceSpy.mockRestore();
       addPlaceSpy.mockRestore();
-    }
-  });
-
-  it("keeps only the latest recommendation preview time editor open", async () => {
-    const trip: Trip = {
-      ...getPreviewTrip(),
-      id: "123",
-      revision: 3,
-      title: "시간 수정 단일 창 여행",
-      days: {
-        1: [
-          { id: "existing-time-a", time: "09:00", label: "첫 장소", meta: "제주 제주시" },
-          { id: "existing-time-b", time: "11:00", label: "둘째 장소", meta: "제주 서귀포시" },
-        ],
-        2: [],
-      },
-    };
-    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
-    const recommendationsSpy = vi.spyOn(appDataApi, "listRecommendations").mockResolvedValue([
-      { id: "preview-one", title: "추천 장소", label: "📍", meta: "추천", reason: "추천", suggestedDay: 1 },
-    ]);
-
-    try {
-      await login();
-      cleanup();
-      renderAppRoute("/trips/123");
-      const user = userEvent.setup();
-      await user.click(await screen.findByRole("button", { name: /추천 일정만들기/ }));
-
-      const timeEditors = document.querySelectorAll(".preview-time-edit");
-      expect(timeEditors.length).toBeGreaterThanOrEqual(2);
-
-      await user.click(within(timeEditors[0] as HTMLElement).getByText("수정"));
-      expect(timeEditors[0]).toHaveAttribute("open");
-      expect(timeEditors[1]).not.toHaveAttribute("open");
-
-      await user.click(within(timeEditors[1] as HTMLElement).getByText("수정"));
-
-      expect(timeEditors[0]).not.toHaveAttribute("open");
-      expect(timeEditors[1]).toHaveAttribute("open");
-    } finally {
-      getTripSpy.mockRestore();
-      recommendationsSpy.mockRestore();
-    }
-  });
-
-  it("renders recommendation preview time editor as a floating panel above the action bar", async () => {
-    const trip: Trip = {
-      ...getPreviewTrip(),
-      id: "124",
-      revision: 3,
-      title: "하단 시간 수정 여행",
-      days: {
-        1: [
-          { id: "existing-time-a", time: "09:00", label: "첫 장소", meta: "제주 제주시" },
-          { id: "existing-time-b", time: "11:00", label: "둘째 장소", meta: "제주 서귀포시" },
-          { id: "existing-time-c", time: "13:00", label: "셋째 장소", meta: "제주 서귀포시" },
-        ],
-        2: [],
-      },
-    };
-    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
-    const recommendationsSpy = vi.spyOn(appDataApi, "listRecommendations").mockResolvedValue([
-      { id: "preview-bottom", title: "하단 추천 장소", label: "📍", meta: "추천", reason: "추천", suggestedDay: 1 },
-    ]);
-
-    try {
-      await login();
-      cleanup();
-      renderAppRoute("/trips/124");
-      const user = userEvent.setup();
-      await user.click(await screen.findByRole("button", { name: /추천 일정만들기/ }));
-
-      const timeEditors = document.querySelectorAll(".preview-time-edit");
-      const bottomTimeEditor = timeEditors[timeEditors.length - 1] as HTMLElement;
-      await user.click(within(bottomTimeEditor).getByText("수정"));
-
-      const picker = within(bottomTimeEditor)
-        .getByLabelText("방문 시간 선택")
-        .closest(".place-time-picker");
-      expect(picker).toHaveClass("recommendation-preview-floating-time-picker");
-      expect(within(bottomTimeEditor).getByRole("button", { name: "저장" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "선택 저장" })).toBeInTheDocument();
-    } finally {
-      getTripSpy.mockRestore();
-      recommendationsSpy.mockRestore();
     }
   });
 
@@ -1493,14 +2513,9 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.getByRole("button", { name: "전체 저장" })).toBeInTheDocument();
 
       await user.click(await screen.findByRole("button", { name: "오설록 후보 저장" }));
-      const candidateStatus = screen
-        .getByText("해당 후보를 저장했어요")
-        .closest('[role="status"]');
-      expect(candidateStatus).toHaveTextContent("해당 후보를 저장했어요");
-      expect(candidateStatus).toHaveClass("recommendation-preview-center-notice");
       expect(addPlaceSpy).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "오설록 후보 저장" })).toHaveTextContent("저장됨");
-      await user.click(screen.getByRole("button", { name: "선택 저장" }));
+      await user.click(screen.getByRole("button", { name: "완료" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect(deletePlaceSpy).not.toHaveBeenCalled();
@@ -1577,12 +2592,12 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.queryByLabelText("우도 방문 시간")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("우도 메모")).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "우도 후보 저장" }));
-      await user.click(screen.getByRole("button", { name: "선택 저장" }));
+      await user.click(screen.getByRole("button", { name: "완료" }));
 
       expect(await screen.findByText(/다른 사용자가 먼저 일정을 수정/)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "우도 후보 저장" })).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "선택 저장" }));
+      await user.click(screen.getByRole("button", { name: "완료" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(2));
       expect(addPlaceSpy).toHaveBeenLastCalledWith("106", 1, expect.objectContaining({ label: "우도", time: "10:00", meta: "섬", expectedRevision: 31 }));
@@ -1614,13 +2629,13 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.queryByLabelText("동백정원 방문 시간")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("동백정원 메모")).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "동백정원 후보 저장" }));
-      await user.click(screen.getByRole("button", { name: "선택 저장" }));
+      await user.click(screen.getByRole("button", { name: "완료" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect((await screen.findAllByText(/저장되지 않은 미리보기 입력은 그대로 보존/)).length).toBeGreaterThan(0);
       expect(screen.getByRole("button", { name: "동백정원 후보 저장" })).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "선택 저장" }));
+      await user.click(screen.getByRole("button", { name: "완료" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(2));
       expect(addPlaceSpy).toHaveBeenNthCalledWith(1, "107", 1, expect.objectContaining({ label: "동백정원", time: "10:00", meta: "꽃", expectedRevision: 40 }));
