@@ -3511,17 +3511,17 @@
   margin: 0 0 4px;
 }
 
-.prototype-trip-detail-screen .timeline-item.dragging {
+.prototype-trip-detail-screen .timeline-slot.dragging {
   position: relative;
   z-index: 5;
 }
 
-.prototype-trip-detail-screen .timeline-item.dragging .place-detail {
+.prototype-trip-detail-screen .timeline-slot.dragging .place-detail {
   border-color: var(--primary-500);
   box-shadow: var(--shadow-md);
 }
 
-.prototype-trip-detail-screen .timeline-item.moving .place-detail {
+.prototype-trip-detail-screen .timeline-slot.moving .place-detail {
   border-color: rgba(255, 94, 91, 0.35);
   background: #fff5f4;
 }
@@ -7930,7 +7930,18 @@
   }
 }
 
+/* 번호 열을 카드 목록에서 떼어내 행 순서에 고정한다. 배지와 카드가 형제로
+   같은 행에 놓이므로 카드가 재정렬되거나 유령이 끼어들어도 배지는 제자리다.
+   row-gap은 쓰지 않는다 — 높이 0인 .timeline-insertion-slot이 행마다 끼어
+   있어 row-gap을 주면 카드 사이마다 간격이 덧붙는다. */
 .prototype-trip-detail-screen .timeline {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  /* min-height가 내용보다 크면 그리드 기본값(normal = stretch)이 남는 공간을
+     행에 분배해 카드 사이가 벌어진다. 블록일 때는 아래에 그냥 남았다. */
+  align-content: start;
+  column-gap: 12px;
   min-height: clamp(360px, calc(100dvh - 480px), 520px);
   margin-bottom: 16px;
   border: 0;
@@ -7946,6 +7957,7 @@
 }
 
 .timeline-insertion-slot {
+  grid-column: 1 / -1;
   height: 0;
   min-height: 0;
   border: 1px dashed transparent;
@@ -7958,18 +7970,15 @@
     min-height 0.16s ease;
 }
 
+/* 자리는 dnd-kit의 정렬 변형이 만든다. 슬롯이 같이 자라면 간격이 두 배가 되고
+   포인터가 지날 때마다 아래 카드가 통째로 밀려 화면이 흔들린다. */
 .timeline-insertion-slot.over {
-  height: 44px;
-  border-color: transparent;
-  background: transparent;
-  min-height: 44px;
-  margin-bottom: 0;
-  opacity: 0;
-}
-
-.timeline-insertion-slot.cross-day.over {
   height: 0;
   min-height: 0;
+  border-color: transparent;
+  background: transparent;
+  margin-bottom: 0;
+  opacity: 0;
 }
 
 .place-drag-overlay {
@@ -7998,6 +8007,10 @@
   transform-origin: bottom center;
 }
 
+/* 드래그 중에는 스크롤 체이닝(당겨서 새로고침 등)과 smooth 스크롤만 끈다.
+   overflow: hidden으로 스크롤 자체를 막으면 dnd-kit이 스크롤 가능한 조상을
+   못 찾아 자동 스크롤이 죽고 휠도 먹지 않는다. 진동은 되돌리기 리스너와
+   높이 캐시를 없앤 것으로 잡는다. */
 html.itinerary-place-drag-scroll-locked,
 body.itinerary-place-drag-scroll-locked,
 .app-container.itinerary-place-drag-scroll-locked {
@@ -8005,7 +8018,7 @@ body.itinerary-place-drag-scroll-locked,
   scroll-behavior: auto;
 }
 
-.prototype-trip-detail-screen .timeline.dnd-active .place-detail:not(.timeline-cross-day-preview) {
+.prototype-trip-detail-screen .timeline.dnd-active .place-detail:not(.timeline-ghost-card) {
   border-style: dashed;
 }
 
@@ -8014,56 +8027,31 @@ body.itinerary-place-drag-scroll-locked,
   min-width: 0;
 }
 
-.prototype-trip-detail-screen .timeline-item {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 12px;
+.prototype-trip-detail-screen .timeline-slot {
+  min-width: 0;
   margin-bottom: 12px;
 }
 
-.prototype-trip-detail-screen .timeline-item .time {
+.prototype-trip-detail-screen .timeline-slot .time {
   display: none;
 }
 
-.prototype-trip-detail-screen .timeline-item.dragging .timeline-marker {
-  visibility: visible;
-}
-
-.prototype-trip-detail-screen .timeline-item.dragging .timeline-sortable-card {
+.prototype-trip-detail-screen .timeline-slot.dragging .timeline-sortable-card {
   opacity: 0;
 }
 
-.prototype-trip-detail-screen .timeline {
-  --timeline-cross-day-preview-height: 72px;
-}
-
-.prototype-trip-detail-screen .timeline-cross-day-preview {
-  position: absolute;
-  z-index: 0;
-  inset: 0;
+/* 다른 날짜에서 끌고 온 카드의 자리표시. 실제 카드와 같은 흐름에 놓여
+   자리를 차지하므로 dnd-kit이 주변 카드를 같은 날짜와 동일하게 밀어낸다. */
+.prototype-trip-detail-screen .timeline-ghost-card {
   display: flex;
   align-items: center;
   gap: 10px;
   box-sizing: border-box;
-  min-height: var(--timeline-cross-day-preview-height);
-  border: 1px solid rgba(255, 94, 91, 0.35);
-  border-style: solid;
+  border: 1px dashed var(--primary-500);
   background: rgba(255, 94, 91, 0.08);
   color: #4f5568;
   opacity: 0.72;
   pointer-events: none;
-}
-
-.prototype-trip-detail-screen .timeline-sortable-card > .place-detail:not(.timeline-cross-day-preview) {
-  position: relative;
-  z-index: 1;
-}
-
-.prototype-trip-detail-screen .timeline-cross-day-preview-end {
-  position: relative;
-  inset: auto;
-  min-height: var(--timeline-cross-day-preview-height);
-  margin: 0 0 12px 40px;
 }
 
 .prototype-trip-detail-screen .timeline-marker {
@@ -8071,6 +8059,7 @@ body.itinerary-place-drag-scroll-locked,
   display: flex;
   justify-content: center;
   align-self: stretch;
+  margin-bottom: 12px;
 }
 
 .prototype-trip-detail-screen .timeline-marker::after {
@@ -8084,9 +8073,8 @@ body.itinerary-place-drag-scroll-locked,
   transform: translateX(-50%);
 }
 
-.prototype-trip-detail-screen
-  .timeline-item:last-child
-  .timeline-marker::after {
+/* :last-of-type은 태그 기준이라 삽입 슬롯 div에도 걸린다. 명시 클래스를 쓴다. */
+.prototype-trip-detail-screen .timeline-marker.last::after {
   display: none;
 }
 

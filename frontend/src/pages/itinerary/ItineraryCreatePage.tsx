@@ -10,11 +10,14 @@ import {
   tripCreatePrimaryRegions,
   tripCreatePrimaryRegionValues,
 } from "../../data/displayConfig";
-import { getDefaultTripDateRange } from "../../utils/dateDefaults";
+import {
+  getDefaultTripDateRange,
+  normalizeTripDateRange,
+} from "../../utils/dateDefaults";
 
 const TRIP_CREATE_TOTAL_STEPS = 2;
 const broadTravelAreaRegions = new Set<string>(tripCreatePrimaryRegionValues);
-const calendarWeekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const calendarWeekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
 const NO_TRAVEL_AREA_HEADING = "세부 지역 선택";
 type TripCreateStep = 1 | 2;
 type DatePickerAnchor = "start" | "end";
@@ -71,7 +74,7 @@ function addMonths(date: Date, months: number): Date {
 }
 
 function formatCalendarMonth(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  return `${date.getFullYear()}년 ${date.getMonth() + 1}월`;
 }
 
 function buildCalendarDays(month: Date): Date[] {
@@ -210,9 +213,9 @@ export function ItineraryCreatePage() {
   const dayCount = tripDateDayCount(startDate, endDate);
   const dateRangeError =
     dayCount === null
-      ? "Select start and end dates."
+      ? "첫날과 마지막 날을 선택하세요."
       : dayCount < 1
-        ? "End date must be on or after the start date."
+        ? "마지막 날은 첫날과 같거나 뒤여야 해요."
         : "";
   const linkedPolicyLabel = linkablePolicySlug
     ? linkablePolicySlug.startsWith("travelmonth-")
@@ -497,7 +500,11 @@ export function ItineraryCreatePage() {
     applyTravelArea(area, { syncUrl: true });
   };
 
-  const updateDates = (nextStartDate: string, nextEndDate: string) => {
+  const updateDates = (rawStartDate: string, rawEndDate: string) => {
+    // 달력 클릭과 네이티브 날짜 입력이 모두 이 함수를 지난다. 여기서 한 번
+    // 정규화하면 UI에서 일수가 음수가 될 길이 없어진다.
+    const { startDate: nextStartDate, endDate: nextEndDate } =
+      normalizeTripDateRange(rawStartDate, rawEndDate);
     const previousAutoTitle = generatedTripTitle(selectedRegion, dayCount);
     const nextDayCount = tripDateDayCount(nextStartDate, nextEndDate);
     setStartDate(nextStartDate);
@@ -741,11 +748,11 @@ export function ItineraryCreatePage() {
                 onClick={openDatePicker}
                 type="button"
               >
-                <span>Travel dates</span>
+                <span>여행 날짜</span>
                 <strong data-testid="trip-date-range-summary">
                   {startDate} ~ {endDate}
                 </strong>
-                <em>{dayCount ? `${dayCount} days` : "Select dates"}</em>
+                <em>{dayCount ? `${dayCount}일` : "날짜를 선택하세요"}</em>
               </button>
               <div className="prototype-date-fields prototype-date-fields-hidden">
                 <label>
@@ -771,7 +778,7 @@ export function ItineraryCreatePage() {
               </div>
               {isDatePickerOpen && (
                 <div
-                  aria-label="Travel date range"
+                  aria-label="여행 날짜 범위"
                   className="trip-date-calendar"
                   data-testid="trip-date-range-calendar"
                   id="trip-date-range-picker"
@@ -779,23 +786,23 @@ export function ItineraryCreatePage() {
                 >
                   <div className="trip-date-calendar-head">
                     <button
-                      aria-label="Previous month"
+                      aria-label="이전 달"
                       onClick={() => setCalendarMonth((current) => addMonths(current, -1))}
                       type="button"
                     >
-                      Prev
+                      이전
                     </button>
                     <strong>{formatCalendarMonth(calendarMonth)}</strong>
                     <button
-                      aria-label="Next month"
+                      aria-label="다음 달"
                       onClick={() => setCalendarMonth((current) => addMonths(current, 1))}
                       type="button"
                     >
-                      Next
+                      다음
                     </button>
                   </div>
                   <p className="trip-date-calendar-guide">
-                    {datePickerAnchor === "start" ? "Select start date" : "Select end date"}
+                    {datePickerAnchor === "start" ? "첫날을 선택하세요" : "마지막 날을 선택하세요"}
                   </p>
                   <div className="trip-date-calendar-grid" role="grid">
                     {calendarWeekdayLabels.map((label) => (

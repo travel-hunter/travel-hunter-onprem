@@ -929,7 +929,7 @@ describe("Travel Hunter app — trip creation", () => {
     }
   });
 
-  it("blocks creating a trip when the calendar end date is before the start date", async () => {
+  it("normalizes a reversed calendar selection into a forward date range", async () => {
     await login();
     cleanup();
     const travelAreasSpy = vi
@@ -962,11 +962,14 @@ describe("Travel Hunter app — trip creation", () => {
         ),
       );
 
+      // 역순으로 골라도 절댓값 범위가 된다. 음수 일수는 나올 수 없다.
       expect(
-        screen.getAllByText("End date must be on or after the start date."),
-      ).toHaveLength(2);
-      expect(screen.getByRole("button", { name: "일정 생성" })).toBeDisabled();
-      expect(createTripSpy).not.toHaveBeenCalled();
+        screen.queryByText("마지막 날은 첫날과 같거나 뒤여야 해요."),
+      ).toBeNull();
+      expect(screen.getByTestId("trip-date-range-summary")).toHaveTextContent(
+        `${today} ~ ${tomorrow}`,
+      );
+      expect(screen.getByRole("button", { name: "일정 생성" })).toBeEnabled();
     } finally {
       createTripSpy.mockRestore();
       travelAreasSpy.mockRestore();

@@ -69,6 +69,51 @@ describe("Travel Hunter app trip edit", () => {
     }
   });
 
+  it("saves a reversed edit date range as a forward range instead of failing", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "92",
+      title: "Reversed range trip",
+      revision: 3,
+      startDate: "2026-06-01",
+      endDate: "2026-06-03",
+      days: { 1: [], 2: [], 3: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const updateSettingsSpy = vi
+      .spyOn(appDataApi, "updateTripSettings")
+      .mockResolvedValue({ ...trip, revision: 4 });
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/92/edit");
+      const user = userEvent.setup();
+
+      const startInput = await screen.findByLabelText("Start date");
+      // 시작일을 종료일보다 뒤로 바꾼다 — 지금은 일수가 음수가 되어 저장이 막힌다.
+      await user.clear(startInput);
+      await user.type(startInput, "2026-06-10");
+      await user.click(
+        document.querySelector('button[type="submit"]') as HTMLButtonElement,
+      );
+
+      await waitFor(() =>
+        expect(updateSettingsSpy).toHaveBeenCalledWith("92", {
+          expectedRevision: 3,
+          title: trip.title,
+          startDate: "2026-06-03",
+          endDate: "2026-06-10",
+          overflowPlaceStrategy: "moveToLastDay",
+        }),
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      updateSettingsSpy.mockRestore();
+    }
+  });
+
   it("keeps viewer trips read-only on the direct edit route", async () => {
     const trip: Trip = {
       ...getPreviewTrip(),

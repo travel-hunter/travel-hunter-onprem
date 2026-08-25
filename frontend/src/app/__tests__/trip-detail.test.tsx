@@ -29,11 +29,20 @@ import {
 import { installAppKakaoSdkMock } from "../../test/kakaoMock";
 import { getLink, login, renderAppRoute } from "../../test/renderAppRoute";
 import {
-  crossDayPreviewLayout,
   buildTimelineRenderItems,
   buildTimelineSortableIds,
   isCrossDayTimelineDrag,
+  DAY_SWITCH_DELAY_MS,
+  DAY_TAB_POINTER_TOLERANCE_PX,
   isPointerInsideClientRect,
+  isPointerNearClientRect,
+  parseDayAreaDropId,
+  excludeActiveCollision,
+  preferSpecificDropTargets,
+  resolveSameDayInsertPosition,
+  resolveDayAreaOverId,
+  resolveDayZoneRect,
+  resolveGhostDropOverId,
   resolvePointerDayTarget,
   resolvePointerVerifiedTimelineOverId,
   resolvePlaceDragOverId,
@@ -62,7 +71,8 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     ).toBe(true);
   });
 
-  it("does not forward wheel scrolling while itinerary drag scroll lock is active", () => {
+  it("keeps forwarding wheel scrolling while a place drag is in progress", () => {
+    // 카드를 잡은 채로 휠을 굴려 일정 아래쪽을 볼 수 있어야 한다.
     const classList = {
       contains: vi.fn((className: string) =>
         className === "itinerary-place-drag-scroll-locked",
@@ -80,7 +90,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
         { defaultPrevented: false, deltaY: 80 },
         appContainer,
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("does not forward non-scrolling or already-handled wheel events", () => {
@@ -116,23 +126,6 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
         } as unknown as HTMLElement,
       ),
     ).toBe(false);
-  });
-
-  it("maps the first and final cross-Day positions to marker-safe previews", () => {
-    expect(
-      crossDayPreviewLayout({ placeCount: 3, position: 1 }),
-    ).toEqual({
-      previewBeforeIndex: 0,
-      shiftedFromIndex: 0,
-      showEndPreview: false,
-    });
-    expect(
-      crossDayPreviewLayout({ placeCount: 3, position: 4 }),
-    ).toEqual({
-      previewBeforeIndex: null,
-      shiftedFromIndex: null,
-      showEndPreview: true,
-    });
   });
 
   it("inserts the active card once at the target Day ghost position", () => {
@@ -287,7 +280,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     ).toBe(true);
   });
 
-  it("treats the gap between Day tabs as a neutral drag zone", () => {
+  it("reports strict containment misses for the gap between Day tabs", () => {
     const firstDayTabRect = {
       left: 100,
       right: 160,
@@ -377,6 +370,327 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
         rectByDay: dayTabRects,
       }),
     ).toBe("place:target-a");
+  });
+
+  it("counts a same-day insert position without the card being dragged", () => {
+    // 백엔드는 같은 날짜일 때 끌고 있는 카드를 먼저 빼고 position-1로 끼운다
+    // (services/trips.py move_trip_place). 세는 목록에서도 빼야 자리가 맞는다.
+    const items = [
+      { sortableId: "place:a", top: 100, bottom: 170 },
+      { sortableId: "place:b", top: 182, bottom: 252 },
+      { sortableId: "place:c", top: 264, bottom: 334 },
+    ];
+
+    // A를 끌어 B와 C 사이에 놓는다 → 남은 목록 [B, C]의 1번 자리
+    expect(
+      resolveSameDayInsertPosition({
+        items,
+        activeSortableId: "place:a",
+        pointerY: 258,
+      }),
+    ).toBe(2);
+    // 거의 안 움직였으면 제자리 그대로여야 한다
+    expect(
+      resolveSameDayInsertPosition({
+        items,
+        activeSortableId: "place:a",
+        pointerY: 140,
+      }),
+    ).toBe(1);
+    // 맨 아래로 내리면 마지막
+    expect(
+      resolveSameDayInsertPosition({
+        items,
+        activeSortableId: "place:a",
+        pointerY: 400,
+      }),
+    ).toBe(3);
+    // 다른 날짜에서 온 카드는 애초에 이 목록에 없다
+    expect(
+      resolveSameDayInsertPosition({
+        items,
+        activeSortableId: "place:z",
+        pointerY: 258,
+      }),
+    ).toBe(3);
+  });
+
+  it("drops the dragged card from its own collision candidates", () => {
+    // 슬롯의 판정 사각형은 원래 자리에 그대로 있어서, 짧게 끌면 포인터가
+    // 자기 슬롯 안이라 over === active가 되고 드롭이 통째로 무시됐다.
+    expect(
+      excludeActiveCollision(
+        [{ id: "place:move-me" }, { id: "day-area:2" }],
+        "place:move-me",
+      ),
+    ).toEqual([{ id: "day-area:2" }]);
+    expect(
+      excludeActiveCollision([{ id: "day-area:2" }], "place:move-me"),
+    ).toEqual([{ id: "day-area:2" }]);
+    expect(
+      excludeActiveCollision([{ id: "place:move-me" }], "place:move-me"),
+    ).toEqual([]);
+    expect(excludeActiveCollision([{ id: "day-area:2" }], null)).toEqual([
+      { id: "day-area:2" },
+    ]);
+  });
+
+  it("parses the whole-timeline drop area id", () => {
+    expect(parseDayAreaDropId("day-area:2")).toBe(2);
+    expect(parseDayAreaDropId("day-area:0")).toBe(0);
+    expect(parseDayAreaDropId("day:2")).toBeNull();
+    expect(parseDayAreaDropId("day-position:2:3")).toBeNull();
+    expect(parseDayAreaDropId(null)).toBeNull();
+  });
+
+  it("prefers a card over the whole-timeline area when both are hit", () => {
+    // pointerWithin은 겹치는 droppable을 모두 돌려준다. 큰 영역이 카드를
+    // 이기면 카드 사이 삽입 위치를 영영 못 고른다.
+    expect(
+      preferSpecificDropTargets([
+        { id: "day-area:2" },
+        { id: "place:target-b" },
+      ]),
+    ).toEqual([{ id: "place:target-b" }]);
+    expect(
+      preferSpecificDropTargets([
+        { id: "day-area:2" },
+        { id: "day-position:2:1" },
+      ]),
+    ).toEqual([{ id: "day-position:2:1" }]);
+  });
+
+  it("keeps the whole-timeline area when nothing more specific is hit", () => {
+    // 빈 날짜에는 이것 말고 맞출 게 없다.
+    expect(preferSpecificDropTargets([{ id: "day-area:2" }])).toEqual([
+      { id: "day-area:2" },
+    ]);
+    expect(preferSpecificDropTargets([])).toEqual([]);
+  });
+
+  it("turns a whole-timeline area drop into the closest insert position", () => {
+    expect(
+      resolveDayAreaOverId({ overId: "day-area:2", closestPosition: 3 }),
+    ).toBe("day-position:2:3");
+    // 빈 날짜는 resolveClosestTimelinePosition이 1을 돌려준다.
+    expect(
+      resolveDayAreaOverId({ overId: "day-area:4", closestPosition: 1 }),
+    ).toBe("day-position:4:1");
+    expect(
+      resolveDayAreaOverId({ overId: "place:target-b", closestPosition: 3 }),
+    ).toBe("place:target-b");
+    expect(
+      resolveDayAreaOverId({ overId: null, closestPosition: 3 }),
+    ).toBeNull();
+  });
+
+  it("turns a drop on the ghost placeholder into its resolved insert position", () => {
+    // 유령은 활성 카드의 id로 등록돼 있어 그대로 두면 resolveTimelineDropTarget이
+    // 자기 자신 방어로 null을 돌려주고 드롭이 통째로 무시된다.
+    expect(
+      resolveGhostDropOverId({
+        activeSortableId: "place:move-me",
+        overId: "place:move-me",
+        crossDayPreview: { dayNumber: 2, position: 3 },
+      }),
+    ).toBe("day-position:2:3");
+  });
+
+  it("leaves a normal drop target untouched", () => {
+    expect(
+      resolveGhostDropOverId({
+        activeSortableId: "place:move-me",
+        overId: "place:target-b",
+        crossDayPreview: { dayNumber: 2, position: 3 },
+      }),
+    ).toBe("place:target-b");
+    expect(
+      resolveGhostDropOverId({
+        activeSortableId: "place:move-me",
+        overId: "place:move-me",
+        crossDayPreview: null,
+      }),
+    ).toBe("place:move-me");
+  });
+
+  it("spans the Day zone from below the action buttons to the timeline top", () => {
+    expect(
+      resolveDayZoneRect({
+        actionsRect: { left: 559, right: 1347, top: 1120, bottom: 1160 },
+        dayTabsRect: { left: 559, right: 1347, top: 1183, bottom: 1221 },
+        timelineRect: { left: 559, right: 1347, top: 1259, bottom: 1690 },
+      }),
+    ).toEqual({ left: 559, right: 1347, top: 1160, bottom: 1259 });
+  });
+
+  it("falls back to the Day tab row when the neighbouring landmarks are missing", () => {
+    expect(
+      resolveDayZoneRect({
+        actionsRect: null,
+        dayTabsRect: { left: 559, right: 1347, top: 1183, bottom: 1221 },
+        timelineRect: null,
+      }),
+    ).toEqual({ left: 559, right: 1347, top: 1183, bottom: 1221 });
+    expect(
+      resolveDayZoneRect({
+        actionsRect: null,
+        dayTabsRect: null,
+        timelineRect: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("resolves the nearest Day tab anywhere inside the Day zone", () => {
+    const rectByDay = {
+      1: { left: 575, right: 624, top: 1189, bottom: 1213 },
+      2: { left: 630, right: 679, top: 1189, bottom: 1213 },
+      3: { left: 685, right: 734, top: 1189, bottom: 1213 },
+    };
+    const dayZoneRect = { left: 559, right: 1347, top: 1160, bottom: 1259 };
+    const timelineRect = { left: 559, right: 1347, top: 1259, bottom: 1690 };
+
+    // 장소추가 버튼 바로 아래 — 탭에서 29px 위. 기존 12px 여유로는 잡히지 않는다.
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 700, y: 1160 },
+        rectByDay,
+        timelineRect,
+        dayZoneRect,
+      }),
+    ).toBe(3);
+    // 탭과 타임라인 사이 죽은 구간 — 탭에서 45px 아래.
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 600, y: 1258 },
+        rectByDay,
+        timelineRect,
+        dayZoneRect,
+      }),
+    ).toBe(1);
+  });
+
+  it("still refuses a Day target inside the timeline even with a Day zone", () => {
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 700, y: 1300 },
+        rectByDay: {
+          1: { left: 575, right: 624, top: 1189, bottom: 1213 },
+          2: { left: 630, right: 679, top: 1189, bottom: 1213 },
+          3: { left: 685, right: 734, top: 1189, bottom: 1213 },
+        },
+        timelineRect: { left: 559, right: 1347, top: 1259, bottom: 1690 },
+        dayZoneRect: { left: 559, right: 1347, top: 1160, bottom: 1259 },
+      }),
+    ).toBeNull();
+  });
+
+  it("schedules a Day switch anywhere inside the Day zone", () => {
+    expect(
+      shouldScheduleDaySwitch({
+        pointer: { x: 700, y: 1170 },
+        dayTabRect: { left: 685, right: 734, top: 1189, bottom: 1213 },
+        timelineRect: { left: 559, right: 1347, top: 1259, bottom: 1690 },
+        dayZoneRect: { left: 559, right: 1347, top: 1160, bottom: 1259 },
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts a pointer just outside a Day tab edge as a hit", () => {
+    const dayTabRect = { left: 100, right: 176, top: 40, bottom: 64 };
+
+    expect(
+      isPointerNearClientRect(
+        { x: 120, y: 32 },
+        dayTabRect,
+        DAY_TAB_POINTER_TOLERANCE_PX,
+      ),
+    ).toBe(true);
+    expect(
+      isPointerNearClientRect(
+        { x: 120, y: 72 },
+        dayTabRect,
+        DAY_TAB_POINTER_TOLERANCE_PX,
+      ),
+    ).toBe(true);
+    expect(
+      isPointerNearClientRect(
+        { x: 120, y: 100 },
+        dayTabRect,
+        DAY_TAB_POINTER_TOLERANCE_PX,
+      ),
+    ).toBe(false);
+    expect(
+      isPointerNearClientRect(null, dayTabRect, DAY_TAB_POINTER_TOLERANCE_PX),
+    ).toBe(false);
+    expect(
+      isPointerNearClientRect(
+        { x: 120, y: 48 },
+        null,
+        DAY_TAB_POINTER_TOLERANCE_PX,
+      ),
+    ).toBe(false);
+  });
+
+  it("resolves a Day target when the pointer drifts just above the tab row", () => {
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 190, y: 72 },
+        rectByDay: {
+          1: { left: 80, right: 150, top: 80, bottom: 104 },
+          2: { left: 158, right: 228, top: 80, bottom: 104 },
+          3: { left: 236, right: 306, top: 80, bottom: 104 },
+        },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBe(2);
+  });
+
+  it("resolves the nearest Day tab when the pointer sits in the gap between tabs", () => {
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 156, y: 92 },
+        rectByDay: {
+          1: { left: 80, right: 150, top: 80, bottom: 104 },
+          2: { left: 158, right: 228, top: 80, bottom: 104 },
+          3: { left: 236, right: 306, top: 80, bottom: 104 },
+        },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBe(2);
+  });
+
+  it("still refuses a Day target while the pointer is inside the timeline", () => {
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 190, y: 136 },
+        rectByDay: {
+          1: { left: 80, right: 150, top: 80, bottom: 104 },
+          2: { left: 158, right: 228, top: 80, bottom: 104 },
+          3: { left: 236, right: 306, top: 80, bottom: 104 },
+        },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBeNull();
+  });
+
+  it("schedules a Day switch when the pointer hovers just above the Day tab", () => {
+    expect(
+      shouldScheduleDaySwitch({
+        pointer: { x: 124, y: 96 },
+        dayTabRect: { left: 80, right: 170, top: 104, bottom: 128 },
+        timelineRect: { left: 64, right: 820, top: 150, bottom: 760 },
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps the Day-switch delay short enough to feel immediate", () => {
+    expect(DAY_SWITCH_DELAY_MS).toBe(10);
   });
 
   it("keeps a Day target when collision temporarily reports a timeline card", () => {
@@ -469,18 +783,17 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     expect(css).toMatch(
       /\.timeline-insertion-slot\.over\s*\{[^}]*background:\s*transparent/s,
     );
+    // 자리는 dnd-kit이 만든다. 슬롯이 같이 자라면 간격이 두 배가 되고 화면이 흔들린다.
     expect(css).toMatch(
-      /\.timeline-insertion-slot\.over\s*\{[^}]*min-height:\s*44px/s,
+      /\.timeline-insertion-slot\.over\s*\{[^}]*min-height:\s*0/s,
     );
     expect(css).not.toMatch(
-      /\.timeline-insertion-slot\.cross-day\.over\s*\{[^}]*min-height:\s*72px/s,
+      /\.timeline-insertion-slot\.over\s*\{[^}]*min-height:\s*44px/s,
     );
-    expect(css).toMatch(
-      /\.timeline-insertion-slot\.cross-day\.over\s*\{[^}]*min-height:\s*0/s,
-    );
-    expect(css).toMatch(/\.timeline-cross-day-preview\s*\{/);
-    expect(css).toMatch(/--timeline-cross-day-preview-height/);
-    expect(css).not.toMatch(/\.timeline-cross-day-ghost-card\s*\{/);
+    // 수동 오프셋 미리보기는 SortableContext 편입으로 대체됐다.
+    expect(css).not.toMatch(/\.timeline-cross-day-preview\s*\{/);
+    expect(css).not.toMatch(/--timeline-cross-day-preview-height/);
+    expect(css).toMatch(/\.timeline-ghost-card\s*\{/);
     expect(css).toMatch(
       /\.itinerary-drag-boundary\s*\{[^}]*height:\s*16px/s,
     );
@@ -491,7 +804,12 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       /\.timeline-insertion-slot\.over\s*\{[^}]*opacity:\s*0/s,
     );
     expect(css).toMatch(/\.place-drag-overlay\s*\{/);
+    // 잠금이 스크롤 자체를 막으면 dnd-kit 자동 스크롤과 휠까지 죽는다.
+    // 진동은 되돌리기 리스너와 높이 캐시를 없앤 것으로 잡는다.
     expect(css).toMatch(/itinerary-place-drag-scroll-locked/);
+    expect(css).not.toMatch(
+      /\.app-container\.itinerary-place-drag-scroll-locked\s*\{[^}]*overflow:\s*hidden/s,
+    );
     expect(css).toMatch(
       /\.prototype-trip-detail-screen \.day-tab\.drop-target\s*\{[^}]*min-width:\s*76px/s,
     );
@@ -499,8 +817,26 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       /\.prototype-trip-detail-screen \.day-tab\.drop-target em\s*\{/,
     );
     expect(css).toMatch(/\.timeline-sortable-card\s*\{/);
+    // 번호 열을 카드 목록에서 떼어내 행 순서에 고정한다. 타임라인 자체가
+    // 2열 그리드가 되고, 배지와 카드가 형제로 같은 행에 놓인다.
     expect(css).toMatch(
-      /\.prototype-trip-detail-screen \.timeline-item\.dragging \.timeline-marker\s*\{[^}]*visibility:\s*visible/s,
+      /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*grid-template-columns:\s*28px/s,
+    );
+    // min-height가 크므로 남는 공간을 행에 분배하면 카드 사이가 벌어진다.
+    // 그리드 기본값(normal = stretch)을 start로 눌러야 한다.
+    expect(css).toMatch(
+      /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*align-content:\s*start/s,
+    );
+    // row-gap을 쓰면 높이 0인 삽입 슬롯 행마다 간격이 덧붙는다.
+    expect(css).not.toMatch(
+      /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*row-gap/s,
+    );
+    expect(css).toMatch(
+      /\.timeline-insertion-slot\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s,
+    );
+    // 배지가 밖으로 나가면서 이 규칙은 의미를 잃는다.
+    expect(css).not.toMatch(
+      /\.timeline-item\.dragging \.timeline-marker\s*\{/,
     );
     expect(css).toMatch(
       /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*min-height:\s*clamp\(360px,\s*calc\(100dvh - 480px\),\s*520px\)/s,
@@ -514,7 +850,22 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     );
 
     expect(source).toContain('window.addEventListener("wheel"');
+    // 스크롤을 의도적으로 허용하므로 시작 위치로 되돌리면 사용자를 낚아챈다.
+    expect(source).not.toContain("restorePlaceDragScrollPosition");
+    // 날짜가 바뀌면 문서 높이도 바뀐다. 시작 시점 높이를 캐시하면 어긋난다.
+    expect(source).not.toContain("bounds.contentHeight");
     expect(source).toContain("shouldForwardWindowWheelToAppScroll");
+    // 유령이 끼어들어 카드가 이동하면 droppable 좌표를 다시 재야 한다.
+    // 기본값(WhileDragging)은 드래그 시작 때 한 번만 재서 진동을 만든다.
+    expect(source).toContain("MeasuringStrategy.Always");
+    // 번호는 슬롯 순번이라 카드 컴포넌트가 알 필요가 없다.
+    expect(source).not.toContain("placeNumber");
+    // 유령도 슬롯 하나를 차지하므로 배지는 부모가 슬롯 순번으로 그린다.
+    // 유령 컴포넌트 자체는 카드 셀만 렌더한다.
+    expect(source).toMatch(/timeline-slot timeline-ghost/);
+    expect(source).not.toMatch(
+      /timeline-slot timeline-ghost[\s\S]{0,400}timeline-marker/,
+    );
     expect(source).toContain("passive: false");
     expect(source).toContain(".app-container");
   });

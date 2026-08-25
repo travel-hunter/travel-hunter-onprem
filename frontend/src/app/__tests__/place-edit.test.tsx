@@ -432,7 +432,7 @@ describe("Travel Hunter app — place editing", () => {
         screen.queryByRole("button", { name: "이동" }),
       ).not.toBeInTheDocument();
       const secondTimelineItem = document.querySelectorAll(
-        ".timeline-item",
+        ".timeline-slot",
       )[1] as HTMLElement;
       const cafeDragHandle = within(secondTimelineItem).getByRole("button", {
         name: "Cafe stop 순서 이동",
@@ -457,7 +457,7 @@ describe("Travel Hunter app — place editing", () => {
       );
 
       const firstTimelineItem = document.querySelectorAll(
-        ".timeline-item",
+        ".timeline-slot",
       )[0] as HTMLElement;
       const movedCafeDragHandle = within(firstTimelineItem).getByRole(
         "button",
@@ -517,7 +517,7 @@ describe("Travel Hunter app — place editing", () => {
 
       await waitFor(() => expect(document.body).toHaveTextContent("Cafe stop"));
       const secondTimelineItem = document.querySelectorAll(
-        ".timeline-item",
+        ".timeline-slot",
       )[1] as HTMLElement;
       const cafeDragHandle = within(secondTimelineItem).getByRole("button", {
         name: "Cafe stop 순서 이동",
