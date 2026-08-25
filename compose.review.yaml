@@ -1,0 +1,9 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      target: review
+    volumes:
+      - ./backend:/app:ro
+      - ./backend:/backend:ro
+      - ./frontend:/frontend:ro
