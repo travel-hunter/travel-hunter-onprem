@@ -5,7 +5,16 @@ from datetime import date
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Recommendation, Trip, TripDay, TripInvite, TripMember, TripPlace, TripPolicy
+from app.models import (
+    Policy,
+    Recommendation,
+    Trip,
+    TripDay,
+    TripInvite,
+    TripMember,
+    TripPlace,
+    TripPolicy,
+)
 
 
 def _trip_options():
@@ -146,12 +155,44 @@ def get_trip_member(db: Session, *, trip_id: int, user_id: int) -> TripMember | 
     return db.scalar(statement)
 
 
+def lock_trip_row(db: Session, *, trip_id: int) -> None:
+    """Trip 기본 행만 FOR UPDATE 로 잠근다.
+
+    정책 연결은 확인 후 삽입 구조라, 잠금이 없으면 서로 다른 숙박세일 정책을
+    동시에 요청했을 때 두 요청이 모두 "기존 없음"을 보고 각각 삽입한다.
+    DB 제약도 (trip_id, policy_id) 뿐이라 이를 막지 못한다.
+
+    접근 권한 조회는 eager-load 가 섞여 있어 잠금 대상으로 쓰기에 위험하다.
+    관계를 건드리지 않는 최소 조회로 잠근다. SQLite 는 FOR UPDATE 를 조용히
+    생략하므로 단위 테스트에서는 사실상 no-op 이다.
+    """
+    db.execute(select(Trip.id).where(Trip.id == trip_id).with_for_update())
+
+
 def get_trip_policy(db: Session, *, trip_id: int, policy_id: int) -> TripPolicy | None:
     statement = select(TripPolicy).where(
         TripPolicy.trip_id == trip_id,
         TripPolicy.policy_id == policy_id,
     )
     return db.scalar(statement)
+
+
+def has_trip_policy_in_source_category(
+    db: Session, *, trip_id: int, source_category: str
+) -> bool:
+    """일정에 해당 분류의 정책이 이미 붙어 있는지 본다.
+
+    Trip.policies 관계는 같은 세션에서 방금 추가한 링크를 반영하지 않을 수
+    있으므로 직접 조회한다.
+    """
+    statement = (
+        select(TripPolicy.id)
+        .join(Policy, Policy.id == TripPolicy.policy_id)
+        .where(TripPolicy.trip_id == trip_id)
+        .where(Policy.source_category == source_category)
+        .limit(1)
+    )
+    return db.scalar(statement) is not None
 
 
 def add_trip_policy(db: Session, *, trip_id: int, policy_id: int) -> TripPolicy:

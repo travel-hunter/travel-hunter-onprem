@@ -651,6 +651,11 @@ class FakeDb:
     def execute(self, *_args, **_kwargs):
         return SimpleNamespace(rowcount=1)
 
+    def scalar(self, *_args, **_kwargs):
+        # 이 더블을 쓰는 테스트들은 연결된 정책 조회를 검증하지 않는다.
+        # "아직 붙은 것이 없다"로 두어 원래 보던 경로가 그대로 흐르게 한다.
+        return None
+
     def commit(self) -> None:
         self.commits += 1
 
@@ -775,6 +780,187 @@ def test_add_policy_to_trip_rejects_hidden_policy_slug_in_db_path(sqlite_db_sess
     assert error.value.status_code == 404
     assert error.value.detail == "Policy not found"
     assert sqlite_db_session.query(TripPolicy).count() == 0
+
+
+def test_add_policy_to_trip_rejects_a_second_stay_discount_area(sqlite_db_session) -> None:
+    # 숙박세일 페스타는 지역마다 별도 정책 행이라 policy_id 중복 검사를 통과한다.
+    # 일정 하나에는 지역 하나만 붙어야 한다.
+    user = make_user(80, "Stay Discount User")
+    goseong = Policy(
+        id=810,
+        slug="stay-discount-gangwon-goseong",
+        title="[고성] 2026 대한민국 숙박세일 페스타 숙박 할인",
+        benefit_detail="최대 7만원",
+        region="강원",
+        status="active",
+        source_category="stay_discount",
+    )
+    samcheok = Policy(
+        id=811,
+        slug="stay-discount-gangwon-samcheok",
+        title="[삼척] 2026 대한민국 숙박세일 페스타 숙박 할인",
+        benefit_detail="최대 7만원",
+        region="강원",
+        status="active",
+        source_category="stay_discount",
+    )
+    trip = Trip(
+        id=812,
+        owner_id=user.id,
+        title="Stay discount trip",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 2),
+        region="강원",
+        status="draft",
+    )
+    sqlite_db_session.add_all([user, goseong, samcheok, trip])
+    sqlite_db_session.commit()
+
+    trip_service.add_policy_to_trip(
+        sqlite_db_session, user, str(trip.id), "stay-discount-gangwon-goseong"
+    )
+    assert sqlite_db_session.query(TripPolicy).count() == 1
+
+    with pytest.raises(trip_service.TripServiceError) as error:
+        trip_service.add_policy_to_trip(
+            sqlite_db_session, user, str(trip.id), "stay-discount-gangwon-samcheok"
+        )
+
+    assert error.value.status_code == 409
+    assert error.value.detail == "Trip already has a stay discount policy"
+    assert sqlite_db_session.query(TripPolicy).count() == 1
+
+
+def test_add_policy_to_trip_allows_re_adding_the_same_stay_discount_area(
+    sqlite_db_session,
+) -> None:
+    # 같은 지역을 다시 누르는 것은 오류가 아니다. 기존처럼 조용히 넘어간다.
+    user = make_user(81, "Same Area User")
+    goseong = Policy(
+        id=820,
+        slug="stay-discount-gangwon-goseong",
+        title="[고성] 2026 대한민국 숙박세일 페스타 숙박 할인",
+        benefit_detail="최대 7만원",
+        region="강원",
+        status="active",
+        source_category="stay_discount",
+    )
+    trip = Trip(
+        id=821,
+        owner_id=user.id,
+        title="Same area trip",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 2),
+        region="강원",
+        status="draft",
+    )
+    sqlite_db_session.add_all([user, goseong, trip])
+    sqlite_db_session.commit()
+
+    trip_service.add_policy_to_trip(
+        sqlite_db_session, user, str(trip.id), "stay-discount-gangwon-goseong"
+    )
+    trip_service.add_policy_to_trip(
+        sqlite_db_session, user, str(trip.id), "stay-discount-gangwon-goseong"
+    )
+
+    assert sqlite_db_session.query(TripPolicy).count() == 1
+
+
+def test_add_policy_to_trip_locks_the_trip_row_before_checking(
+    sqlite_db_session, monkeypatch
+) -> None:
+    # 확인과 삽입 사이에 다른 요청이 끼어들면 숙박세일이 둘 이상 붙는다.
+    # SQLite 는 FOR UPDATE 를 조용히 생략하므로 진짜 경쟁은 여기서 못 본다.
+    # 잠금이 확인보다 먼저 불리는지, 호출 순서만 고정한다.
+    # 실제 경쟁 재현은 tests/test_trip_policy_concurrency_postgres.py 가 맡는다.
+    user = make_user(83, "Lock Order User")
+    policy = Policy(
+        id=840,
+        slug="stay-discount-gangwon-goseong",
+        title="[고성] 2026 대한민국 숙박세일 페스타 숙박 할인",
+        benefit_detail="최대 7만원",
+        region="강원",
+        status="active",
+        source_category="stay_discount",
+    )
+    trip = Trip(
+        id=841,
+        owner_id=user.id,
+        title="Lock order trip",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 2),
+        region="강원",
+        status="draft",
+    )
+    sqlite_db_session.add_all([user, policy, trip])
+    sqlite_db_session.commit()
+
+    calls: list[str] = []
+    real_lock = trip_service.trip_repository.lock_trip_row
+    real_lookup = trip_service.trip_repository.get_trip_policy
+
+    def spy_lock(*args, **kwargs):
+        calls.append("lock")
+        return real_lock(*args, **kwargs)
+
+    def spy_lookup(*args, **kwargs):
+        calls.append("lookup")
+        return real_lookup(*args, **kwargs)
+
+    monkeypatch.setattr(trip_service.trip_repository, "lock_trip_row", spy_lock)
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_policy", spy_lookup)
+
+    trip_service.add_policy_to_trip(
+        sqlite_db_session, user, str(trip.id), "stay-discount-gangwon-goseong"
+    )
+
+    assert calls[:2] == ["lock", "lookup"]
+
+
+def test_add_policy_to_trip_allows_a_non_stay_discount_policy_alongside(
+    sqlite_db_session,
+) -> None:
+    # 규칙은 숙박세일에만 걸린다. 다른 종류는 여러 개 붙을 수 있어야 한다.
+    user = make_user(82, "Mixed Policy User")
+    goseong = Policy(
+        id=830,
+        slug="stay-discount-gangwon-goseong",
+        title="[고성] 2026 대한민국 숙박세일 페스타 숙박 할인",
+        benefit_detail="최대 7만원",
+        region="강원",
+        status="active",
+        source_category="stay_discount",
+    )
+    other = Policy(
+        id=831,
+        slug="local-half-trip-gangwon",
+        title="강원 반값여행",
+        benefit_detail="최대 20만원 환급",
+        region="강원",
+        status="active",
+        source_category="local_half_trip",
+    )
+    trip = Trip(
+        id=832,
+        owner_id=user.id,
+        title="Mixed policy trip",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 2),
+        region="강원",
+        status="draft",
+    )
+    sqlite_db_session.add_all([user, goseong, other, trip])
+    sqlite_db_session.commit()
+
+    trip_service.add_policy_to_trip(
+        sqlite_db_session, user, str(trip.id), "stay-discount-gangwon-goseong"
+    )
+    trip_service.add_policy_to_trip(
+        sqlite_db_session, user, str(trip.id), "local-half-trip-gangwon"
+    )
+
+    assert sqlite_db_session.query(TripPolicy).count() == 2
 
 
 def test_delete_trip_deletes_owned_numeric_trip_and_detaches_recommendations(monkeypatch) -> None:

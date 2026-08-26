@@ -13,10 +13,15 @@ import { shareLinkWithFallback } from "../utils/share";
 
 type TripSheetStatus = "closed" | "loading" | "empty" | "ready" | "submitting" | "error" | "success";
 
-function policyTripErrorMessage(error: unknown): string {
+export function policyTripErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   if (message.includes("Policy not found")) return "정책 정보를 찾을 수 없어요. 다시 확인해 주세요.";
   if (message.includes("Trip not found")) return "일정을 찾을 수 없어요. 다른 일정을 선택해 주세요.";
+  // 숙박세일은 지역마다 정책 행이 따로 있어 백엔드가 409로 막는다.
+  // 기본 문구("잠시 후 다시 시도")는 원인을 오해하게 만든다.
+  if (message.includes("Trip already has a stay discount policy")) {
+    return "숙박세일 페스타 정책은 일정당 하나만 연결할 수 있어요. 기존 정책을 먼저 해제해 주세요.";
+  }
   return "일정에 혜택을 담지 못했어요. 잠시 후 다시 시도해 주세요.";
 }
 

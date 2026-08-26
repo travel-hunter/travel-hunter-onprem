@@ -1349,6 +1349,22 @@ function placeTimeMinutes(time: string | undefined): number | null {
   return hour * 60 + minute;
 }
 
+/**
+ * 추천 미리보기의 시간 수정창은 한 번에 하나만 열린다. `<details>`는 자기
+ * 열림 상태를 스스로 들고 서로를 모르므로, 부모가 열린 카드 하나를 기억한다.
+ *
+ * 닫는 신호는 그 카드가 실제로 열려 있을 때만 반영한다. 그렇지 않으면
+ * 브라우저가 다른 카드에 보내는 닫힘 신호가 열린 창을 꺼버린다.
+ */
+export function resolveNextOpenTimeEditorId(
+  currentOpenId: string | null,
+  toggledId: string,
+  willOpen: boolean,
+): string | null {
+  if (willOpen) return toggledId;
+  return currentOpenId === toggledId ? null : currentOpenId;
+}
+
 function displayedPlaceWarningKey(place: DisplayedPlace): string | null {
   return place.id ?? place.previewTimelineId ?? null;
 }
@@ -1587,6 +1603,9 @@ export function ItineraryDetailPage() {
     useState<PlaceSaveEligibility>("empty");
   const [movingPlaceId, setMovingPlaceId] = useState<string | null>(null);
   const [draggingPlaceId, setDraggingPlaceId] = useState<string | null>(null);
+  // 추천 미리보기 시간 수정창은 한 번에 하나만 열린다. <details>가 서로를
+  // 모르므로 부모가 열린 카드를 하나 들고 있어야 한다.
+  const [openTimeEditorId, setOpenTimeEditorId] = useState<string | null>(null);
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
   const [isDragOverDayRow, setIsDragOverDayRow] = useState(false);
   const [crossDayDragPreview, setCrossDayDragPreview] = useState<
@@ -2334,6 +2353,7 @@ export function ItineraryDetailPage() {
         timeline: {},
         error: "",
       });
+      setOpenTimeEditorId(null);
       setSelectedMapPlaceId((currentPlaceId) =>
         currentPlaceId && savedPreviewIds.has(currentPlaceId)
           ? null
@@ -2445,6 +2465,7 @@ export function ItineraryDetailPage() {
       timeline: {},
       error: "",
     });
+    setOpenTimeEditorId(null);
     setSelectedMapPlaceId((currentPlaceId) =>
       currentPlaceId &&
       recommendationPreview.places.some(
@@ -3604,6 +3625,12 @@ export function ItineraryDetailPage() {
                   }
                   place={place}
                   places={displayedPlaces}
+                  openTimeEditorId={openTimeEditorId}
+                  onToggleTimeEditor={(cardId, willOpen) =>
+                    setOpenTimeEditorId((current) =>
+                      resolveNextOpenTimeEditorId(current, cardId, willOpen),
+                    )
+                  }
                   onPreviewTimeChange={updateRecommendationPreviewPlaceTime}
                   trip={trip}
                 />
@@ -3656,7 +3683,7 @@ export function ItineraryDetailPage() {
               void commitRecommendationPreview({ saveAllCandidates: false })
             }
           >
-            완료
+            {recommendationPreview.status === "saving" ? "저장 중" : "선택 저장"}
           </button>
           <button
             className="btn sm primary"
@@ -4296,6 +4323,8 @@ function SortablePlaceItem({
   onMove,
   onPreviewTimeChange,
   onSaveRecommendationPreviewPlace,
+  onToggleTimeEditor,
+  openTimeEditorId,
   onSelectRecommendationPreviewPlace,
   place,
   previewDayPlaceCounts,
@@ -4319,6 +4348,8 @@ function SortablePlaceItem({
   ) => Promise<void>;
   onPreviewTimeChange: (place: DisplayedPlace, time: string) => void;
   onSaveRecommendationPreviewPlace: (previewId: string) => void;
+  onToggleTimeEditor: (cardId: string, willOpen: boolean) => void;
+  openTimeEditorId: string | null;
   onSelectRecommendationPreviewPlace: (previewId: string) => void;
   place: DisplayedPlace;
   previewDayPlaceCounts: Record<number, number>;
@@ -4348,6 +4379,8 @@ function SortablePlaceItem({
     transform: sortableTransform,
     transition,
   };
+  // 시간 수정창 아코디언 식별자. 미리보기 카드와 기존 카드 모두 값이 있다.
+  const timeEditorCardId = displayedPlaceWarningKey(place);
   const className = [
     "timeline-slot",
     isDragging ? "dragging" : "",
@@ -4503,6 +4536,18 @@ function SortablePlaceItem({
             <details
               className="preview-time-edit"
               aria-label={`${place.label} 시간 수정`}
+              open={
+                timeEditorCardId
+                  ? openTimeEditorId === timeEditorCardId
+                  : undefined
+              }
+              onToggle={(event) => {
+                if (!timeEditorCardId) return;
+                onToggleTimeEditor(
+                  timeEditorCardId,
+                  (event.currentTarget as HTMLDetailsElement).open,
+                );
+              }}
             >
               <summary>수정</summary>
               <PlaceTimePicker
@@ -4530,6 +4575,18 @@ function SortablePlaceItem({
               <details
                 className="preview-time-edit"
                 aria-label={`${place.label} 시간 수정`}
+                open={
+                  timeEditorCardId
+                    ? openTimeEditorId === timeEditorCardId
+                    : undefined
+                }
+                onToggle={(event) => {
+                  if (!timeEditorCardId) return;
+                  onToggleTimeEditor(
+                    timeEditorCardId,
+                    (event.currentTarget as HTMLDetailsElement).open,
+                  );
+                }}
               >
                 <summary>수정</summary>
                 <PlaceTimePicker

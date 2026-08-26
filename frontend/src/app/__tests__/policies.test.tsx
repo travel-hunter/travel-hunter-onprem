@@ -14,6 +14,7 @@ import {
   type Trip,
 } from "../../api";
 import { App } from "../App";
+import { policyTripErrorMessage } from "../../pages/PolicyPages";
 import { AppProviders } from "../AppRoot";
 import {
   examplePolicyDetail,
@@ -29,6 +30,30 @@ import {
 import { getLink, login, renderAppRoute } from "../../test/renderAppRoute";
 
 describe("Travel Hunter app — policies & trip picker", () => {
+  it("explains that only one stay discount policy fits a trip", () => {
+    // 숙박세일은 지역마다 정책 행이 따로 있어 백엔드가 409로 막는다.
+    // 기본 문구는 "잠시 후 다시 시도"라 원인을 오해하게 만든다.
+    expect(
+      policyTripErrorMessage(
+        new Error("Trip already has a stay discount policy"),
+      ),
+    ).toBe(
+      "숙박세일 페스타 정책은 일정당 하나만 연결할 수 있어요. 기존 정책을 먼저 해제해 주세요.",
+    );
+  });
+
+  it("keeps the existing policy link error messages", () => {
+    expect(policyTripErrorMessage(new Error("Policy not found"))).toBe(
+      "정책 정보를 찾을 수 없어요. 다시 확인해 주세요.",
+    );
+    expect(policyTripErrorMessage(new Error("Trip not found"))).toBe(
+      "일정을 찾을 수 없어요. 다른 일정을 선택해 주세요.",
+    );
+    expect(policyTripErrorMessage(new Error("boom"))).toBe(
+      "일정에 혜택을 담지 못했어요. 잠시 후 다시 시도해 주세요.",
+    );
+  });
+
   it("filters policies from the unified filter sheet after applying", async () => {
     const policies: Policy[] = [
       examplePolicyDetail,

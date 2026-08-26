@@ -48,6 +48,7 @@ import {
   resolveGhostDropOverId,
   resolvePointerDayTarget,
   resolvePointerVerifiedTimelineOverId,
+  resolveNextOpenTimeEditorId,
   resolvePlaceDragOverId,
   resolveClosestTimelinePosition,
   resolveRaisedTimelineHeightLock,
@@ -510,6 +511,22 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     expect(
       resolveDayAreaOverId({ overId: null, closestPosition: 3 }),
     ).toBeNull();
+  });
+
+  it("keeps only one preview time editor open at a time", () => {
+    // <details>는 서로를 모른다. 부모가 열린 카드 하나를 기억해야 아코디언이 된다.
+    expect(resolveNextOpenTimeEditorId(null, "place:a", true)).toBe("place:a");
+    expect(resolveNextOpenTimeEditorId("place:a", "place:b", true)).toBe(
+      "place:b",
+    );
+  });
+
+  it("closes the preview time editor when the open one is toggled shut", () => {
+    expect(resolveNextOpenTimeEditorId("place:a", "place:a", false)).toBeNull();
+    // 이미 닫힌 다른 카드를 닫는 신호가 와도 열린 것을 건드리지 않는다.
+    expect(resolveNextOpenTimeEditorId("place:a", "place:b", false)).toBe(
+      "place:a",
+    );
   });
 
   it("pins the timeline height so a day switch cannot shrink the document", () => {
@@ -1020,6 +1037,12 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     expect(source).toContain("anchorRect: actionsElement");
     // 시트 등 중첩 스크롤러 위에서는 브리지가 손대지 않는다.
     expect(source).toContain("isWheelInsideNestedScroller(path)");
+    // 시간 수정창 아코디언은 부모가 열린 카드를 하나 들고 있어야 성립한다.
+    expect(source).toContain("resolveNextOpenTimeEditorId(current");
+    expect(source).toContain("openTimeEditorId");
+    // 동작은 이미 선택 저장인데 문구만 완료로 남아 있었다.
+    expect(source).toContain('"저장 중" : "선택 저장"');
+    expect(source).not.toMatch(/>\s*완료\s*</);
     // 드래그 중에는 타임라인 높이를 고정해 날짜 전환이 문서를 줄이지 못하게 한다.
     expect(source).toContain("resolveTimelineHeightLock");
     expect(source).toContain("timelineElement.style.minHeight");
@@ -2742,7 +2765,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.click(screen.getByRole("button", { name: "성산일출봉 후보 저장" }));
       expect(addPlaceSpy).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "성산일출봉 후보 저장" })).toHaveTextContent("저장됨");
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect(addPlaceSpy).toHaveBeenCalledWith("102", 1, expect.objectContaining({ label: "성산일출봉", time: "10:00", meta: "관광명소", category: "관광명소", categoryCode: "AT4", expectedRevision: 4 }));
@@ -2788,7 +2811,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       const existingTimeEdit = document.querySelectorAll(".preview-time-edit")[0] as HTMLElement;
       await user.click(within(existingTimeEdit).getByText("수정"));
       await user.click(within(existingTimeEdit).getByRole("button", { name: "방문 시간 1시간 증가" }));
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(updatePlaceSpy).toHaveBeenCalledTimes(1));
       expect(updatePlaceSpy).toHaveBeenCalledWith("121", "existing-time-1", expect.objectContaining({ time: "10:00", expectedRevision: 8 }));
@@ -3032,7 +3055,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.click(await screen.findByRole("button", { name: "오설록 후보 저장" }));
       expect(addPlaceSpy).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "오설록 후보 저장" })).toHaveTextContent("저장됨");
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect(deletePlaceSpy).not.toHaveBeenCalled();
@@ -3109,12 +3132,12 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.queryByLabelText("우도 방문 시간")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("우도 메모")).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "우도 후보 저장" }));
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       expect(await screen.findByText(/다른 사용자가 먼저 일정을 수정/)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "우도 후보 저장" })).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(2));
       expect(addPlaceSpy).toHaveBeenLastCalledWith("106", 1, expect.objectContaining({ label: "우도", time: "10:00", meta: "섬", expectedRevision: 31 }));
@@ -3146,13 +3169,13 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.queryByLabelText("동백정원 방문 시간")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("동백정원 메모")).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "동백정원 후보 저장" }));
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect((await screen.findAllByText(/저장되지 않은 미리보기 입력은 그대로 보존/)).length).toBeGreaterThan(0);
       expect(screen.getByRole("button", { name: "동백정원 후보 저장" })).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(2));
       expect(addPlaceSpy).toHaveBeenNthCalledWith(1, "107", 1, expect.objectContaining({ label: "동백정원", time: "10:00", meta: "꽃", expectedRevision: 40 }));
