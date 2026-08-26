@@ -55,31 +55,31 @@ policies.test.tsx  :: shows all saved trips in the policy trip picker
 
 실패 "건수"만 보지 않는다. 이 저장소의 프론트 스위트는 타이밍 한계에 걸려 있어 같은 코드로도 7~8건 사이를 오간다 (이전 세션에서 프로덕션 코드 고정 + 테스트 되돌림 실험으로 비논리적 변동임을 확인). **이름 목록의 차이로 판단한다.**
 
-### Task 2: cherry-pick 시도 및 충돌 해소
+### Task 2: cherry-pick 시도 및 충돌 해소 (완료)
 
-- [ ] `git cherry-pick 213619c` 실행. 충돌 예상.
-- [ ] `policies.test.tsx` — 충돌이 없으면 그대로 둔다.
-- [ ] `trip-create.test.tsx` — 충돌 구간에서:
+- [x] `git cherry-pick 213619c` 실행. 충돌 예상.
+- [x] `policies.test.tsx` — 충돌이 없으면 그대로 둔다.
+- [x] `trip-create.test.tsx` — 충돌 구간에서:
   - develop의 `부산 전체` 활성화 대기를 **남긴다**
   - 커밋의 `travelAreasSpy` + `renderAppRoute` 이동 + enabled 대기를 **더한다**
   - develop이 이미 동등한 개선을 가진 hunk는 develop 쪽을 채택한다
-- [ ] 충돌 마커(`<<<<<<<`)가 남아있지 않은지 grep으로 확인한다.
+- [x] 충돌 마커(`<<<<<<<`)가 남아있지 않은지 grep으로 확인한다.
 
-### Task 3: 타입 검사
+### Task 3: 타입 검사 (완료)
 
-- [ ] `npm run build` — `tsc` 통과 확인. 스파이 목 값의 타입이 맞는지 여기서 걸린다.
+- [x] `npm run build` — `tsc` 통과 확인. 스파이 목 값의 타입이 맞는지 여기서 걸린다.
 
-### Task 4: 전체 스위트 재실행
+### Task 4: 전체 스위트 재실행 (완료)
 
-- [ ] `npx vitest run` 전체. **일부 파일만 돌리지 않는다** (이전에 부분 실행 기준선 때문에 `place-edit.test.tsx` 회귀를 놓친 적 있음).
-- [ ] Task 1의 실패 이름 목록과 비교한다. 기대: `keeps the trip-attached state scoped to the selected policy`가 목록에서 사라져 **6건 이하**가 된다.
-- [ ] `trip-create.test.tsx`의 `preselects a travelAreaId`는 이 저장소에서 코드와 무관하게 나타났다 사라지는 것이 확인된 테스트다. **등장해도 회귀로 보지 않고, 사라져도 성과로 세지 않는다.**
-- [ ] 새로 생긴 실패가 있으면 **되돌리고 원인부터 조사한다.**
+- [x] `npx vitest run` 전체. **일부 파일만 돌리지 않는다** (이전에 부분 실행 기준선 때문에 `place-edit.test.tsx` 회귀를 놓친 적 있음).
+- [x] Task 1의 실패 이름 목록과 비교한다. 기대: `keeps the trip-attached state scoped to the selected policy`가 목록에서 사라져 **6건 이하**가 된다.
+- [x] `trip-create.test.tsx`의 `preselects a travelAreaId`는 이 저장소에서 코드와 무관하게 나타났다 사라지는 것이 확인된 테스트다. **등장해도 회귀로 보지 않고, 사라져도 성과로 세지 않는다.**
+- [x] 새로 생긴 실패가 있으면 **되돌리고 원인부터 조사한다.**
 
-### Task 5: 커밋
+### Task 5: 커밋 (완료)
 
-- [ ] `git commit` (cherry-pick 이어서). 원 커밋 저자/메시지를 유지하되, develop과 다르게 해소한 부분을 커밋 메시지에 적는다.
-- [ ] **push / PR은 하지 않는다.** Codex 담당.
+- [x] `git commit` (cherry-pick 이어서). 원 커밋 저자/메시지를 유지하되, develop과 다르게 해소한 부분을 커밋 메시지에 적는다.
+- [x] **push / PR은 하지 않는다.** Codex 담당.
 
 ---
 
@@ -102,3 +102,19 @@ npm run build           # tsc + 번들
 - 스위트 타이밍 한계 자체의 해결 (별도 작업)
 - push / PR / merge
 - 개발서버(192.168.32.15) 조작
+
+---
+
+## 결과 (2026-08-27)
+
+`04ed2d0` — 프론트 스위트 **288 passed / 7 failed → 289 passed / 6 failed**.
+
+- 해소: `policies.test.tsx :: keeps the trip-attached state scoped to the selected policy`
+- 새 실패: **없음**
+- 남은 6건: `mypage.test.tsx` 5건 + `policies.test.tsx :: shows all saved trips in the policy trip picker`
+  (후자는 이미 `listTrips` 목을 갖고 있어 다른 원인이다. 별도 조사 대상)
+
+`trip-create.test.tsx`의 충돌 2곳은 develop이 그 사이 테스트를 확장한 자리였다.
+develop의 `부산 전체` 활성화 대기와 `코스 취향 선택` 다이얼로그 단계를 모두 남기고
+커밋의 enabled 대기만 얹었다. 원 커밋의 나머지 trip-create hunk는 develop에 이미
+동등하게 반영돼 있어 재적용하지 않았다.
