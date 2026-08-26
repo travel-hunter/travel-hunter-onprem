@@ -376,6 +376,23 @@ export function shouldForwardWindowWheelToAppScroll(
   return true;
 }
 
+/**
+ * 휠이 앱 컨테이너보다 안쪽의 스크롤 가능한 요소에서 났는지 본다.
+ * 휠은 window까지 버블링되므로, 대상을 가리지 않으면 시트 위에서 굴려도
+ * 브리지가 기본 스크롤을 취소하고 뒤 화면을 스크롤한다.
+ *
+ * 특정 모달 클래스를 나열하지 않는다. 새 모달이 생길 때마다 재발한다.
+ */
+export function isWheelInsideNestedScroller(
+  path: { canScrollY: boolean; isAppContainer: boolean }[],
+): boolean {
+  for (const node of path) {
+    if (node.isAppContainer) return false;
+    if (node.canScrollY) return true;
+  }
+  return false;
+}
+
 function findSortableIdDay(
   sortableIdsByDay: Record<number, string[]>,
   sortableId: string,
@@ -564,6 +581,78 @@ export function shouldUseDayRowDragOverlay({
     isPointerInsideClientRect(pointer, dayTabsRect) &&
     !isPointerInsideTimelineArea(pointer, timelineRect)
   );
+}
+
+/**
+ * 드래그 중 타임라인에 걸 인라인 min-height. 날짜를 바꾸면 타임라인 내용이
+ * 통째로 교체되어 문서가 짧아질 수 있고, 그러면 브라우저가 scrollTop을 강제로
+ * 줄여 화면이 출렁인다. 이건 브라우저 레이아웃 동작이라 JS 스크롤 잠금으로는
+ * 막을 수 없다. 줄어드는 것만 막으면 되므로 max-height가 아니라 min-height다.
+ */
+export function resolveTimelineHeightLock(
+  timelineHeight: number | null,
+): string | null {
+  if (timelineHeight == null) return null;
+  if (!Number.isFinite(timelineHeight)) return null;
+  if (timelineHeight <= 0) return null;
+  return `${Math.max(1, Math.round(timelineHeight))}px`;
+}
+
+/**
+ * 드래그 한 번 동안 고정값은 절대 내려가지 않는다. 장소가 적은 날짜에서
+ * 시작해 많은 날짜를 거쳐 돌아오면 문서가 줄어 스크롤이 클램프되기 때문이다.
+ * 시작 시점 높이가 아니라 관측한 최대 높이를 유지한다.
+ */
+export function resolveRaisedTimelineHeightLock(
+  currentLock: string | null,
+  timelineHeight: number | null,
+): string | null {
+  const nextLock = resolveTimelineHeightLock(timelineHeight);
+  if (!nextLock) return currentLock || null;
+  const currentPx = Number.parseFloat(currentLock ?? "");
+  if (!Number.isFinite(currentPx)) return nextLock;
+  return Number.parseFloat(nextLock) > currentPx ? nextLock : currentLock;
+}
+
+/** dnd-kit 자동 스크롤이 발동하는 가장자리 폭. 컨테이너 높이 대비 비율이다. */
+export const PLACE_DRAG_AUTO_SCROLL_THRESHOLD = 0.2;
+
+/**
+ * 위쪽 자동 스크롤의 상한. Day 탭은 타임라인보다 위에 있어서, 탭을 겨냥해
+ * 카드를 위로 끌면 자동 스크롤이 헤더와 버튼 줄을 불러와 탭을 아래로 밀어낸다.
+ * 겨냥하던 대상이 움직이므로 삽입이 어려워진다.
+ *
+ * `anchorRect`가 멈춤 기준이다. 이 요소가 다 보이면 위로 더 갈 이유가 없으므로
+ * 막고, 화면 밖이면 보일 때까지는 허용한다 — 아래로 한참 내려간 상태에서
+ * 집었을 때 다른 날짜로 옮길 길이 막히면 안 되고, 모바일은 휠 대안도 없다.
+ *
+ * 기준은 Day 탭이 아니라 그 위의 장소추가 버튼 줄이다. Day 탭을 기준으로 하면
+ * 탭이 화면 맨 위 가장자리에 딱 붙어 겨냥이 빡빡하다.
+ *
+ * 아래쪽 자동 스크롤은 건드리지 않는다. 화면 밖 장소에 닿으려면 필요하다.
+ */
+export function shouldAllowPlaceDragAutoScroll({
+  pointerY,
+  containerRect,
+  anchorRect,
+  thresholdRatio,
+}: {
+  pointerY: number | null;
+  containerRect: Pick<DOMRect, "top" | "bottom"> | null;
+  anchorRect: Pick<DOMRect, "top" | "bottom"> | null;
+  thresholdRatio: number;
+}): boolean {
+  if (pointerY == null || !containerRect) return true;
+  if (!anchorRect) return true;
+  const containerHeight = containerRect.bottom - containerRect.top;
+  if (containerHeight <= 0) return true;
+  const isPointerInTopBand =
+    pointerY <= containerRect.top + containerHeight * thresholdRatio;
+  if (!isPointerInTopBand) return true;
+  const isAnchorFullyVisible =
+    anchorRect.top >= containerRect.top &&
+    anchorRect.bottom <= containerRect.bottom;
+  return !isAnchorFullyVisible;
 }
 
 export function resolveClosestTimelinePosition({
@@ -1797,6 +1886,16 @@ export function ItineraryDetailPage() {
     document.documentElement.classList.add("itinerary-place-drag-scroll-locked");
     document.body.classList.add("itinerary-place-drag-scroll-locked");
     appContainer?.classList.add("itinerary-place-drag-scroll-locked");
+    // 날짜를 바꿔도 문서가 짧아지지 않게 현재 높이를 바닥으로 고정한다.
+    const timelineElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-timeline]",
+    );
+    if (timelineElement) {
+      const lockedHeight = resolveTimelineHeightLock(
+        timelineElement.getBoundingClientRect().height,
+      );
+      if (lockedHeight) timelineElement.style.minHeight = lockedHeight;
+    }
   }, []);
   const unlockPlaceDragViewportScroll = useCallback(() => {
     if (!placeDragScrollLockRef.current) return;
@@ -1807,6 +1906,45 @@ export function ItineraryDetailPage() {
     );
     document.body.classList.remove("itinerary-place-drag-scroll-locked");
     appContainer?.classList.remove("itinerary-place-drag-scroll-locked");
+    // 인라인 값을 지우면 app.css의 min-height: clamp(...)가 다시 적용된다.
+    // 계산값이 바뀌므로 .timeline의 min-height 트랜지션이 걸린다.
+    const timelineElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-timeline]",
+    );
+    timelineElement?.style.removeProperty("min-height");
+  }, []);
+  /**
+   * 날짜가 바뀌면 타임라인 높이가 달라진다. 커졌으면 고정값을 올려서,
+   * 나중에 짧은 날짜로 돌아갔을 때 문서가 줄지 않게 한다.
+   */
+  const raiseTimelineHeightLock = useCallback(() => {
+    if (!placeDragScrollLockRef.current) return;
+    const timelineElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-timeline]",
+    );
+    if (!timelineElement) return;
+    const raised = resolveRaisedTimelineHeightLock(
+      timelineElement.style.minHeight || null,
+      timelineElement.getBoundingClientRect().height,
+    );
+    if (raised) timelineElement.style.minHeight = raised;
+  }, []);
+  useEffect(() => {
+    if (!draggingPlaceId) return;
+    raiseTimelineHeightLock();
+  }, [draggingPlaceId, visibleDay, raiseTimelineHeightLock]);
+  const canPlaceDragAutoScroll = useCallback((element: Element): boolean => {
+    // 멈춤 기준은 Day 탭이 아니라 그 위의 장소추가 버튼 줄이다. 버튼 줄까지
+    // 보이는 지점에서 멈춰야 Day 탭이 화면 위 가장자리에 붙지 않는다.
+    const actionsElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-actions]",
+    );
+    return shouldAllowPlaceDragAutoScroll({
+      pointerY: placeDragPointerRef.current?.y ?? null,
+      containerRect: element.getBoundingClientRect(),
+      anchorRect: actionsElement?.getBoundingClientRect() ?? null,
+      thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+    });
   }, []);
   const restrictPlaceDragToContent = useCallback<Modifier>(({ transform }) => {
     const bounds = placeDragContentBoundsRef.current;
@@ -1899,6 +2037,19 @@ export function ItineraryDetailPage() {
     const handleWindowWheel = (event: WheelEvent) => {
       const appContainer = document.querySelector<HTMLElement>(".app-container");
       if (!appContainer) return;
+      // 휠은 window까지 버블링된다. 시트처럼 안쪽에 스크롤러가 있으면
+      // 브리지가 기본 스크롤을 취소하고 뒤 화면을 스크롤해버린다.
+      const path: { canScrollY: boolean; isAppContainer: boolean }[] = [];
+      let node = event.target instanceof Element ? event.target : null;
+      while (node) {
+        path.push({
+          canScrollY: node.scrollHeight > node.clientHeight,
+          isAppContainer: node === appContainer,
+        });
+        if (node === appContainer) break;
+        node = node.parentElement;
+      }
+      if (isWheelInsideNestedScroller(path)) return;
       if (!shouldForwardWindowWheelToAppScroll(event, appContainer)) return;
 
       event.preventDefault();
@@ -3267,6 +3418,14 @@ export function ItineraryDetailPage() {
         /* 유령이 끼어들면 카드가 실제로 이동한다. 기본값(WhileDragging)은
            드래그 시작 때 한 번만 재므로 옛 좌표로 판정해 진동이 생긴다. */
         measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+        /* dnd-kit의 레이아웃 시프트 보정은 끄고(날짜 전환이 거대한 변화라
+           보정량이 커진다), 위쪽 자동 스크롤에는 상한을 둔다. threshold를
+           명시해야 shouldAllowPlaceDragAutoScroll과 기준이 일치한다. */
+        autoScroll={{
+          layoutShiftCompensation: false,
+          canScroll: canPlaceDragAutoScroll,
+          threshold: { x: 0, y: PLACE_DRAG_AUTO_SCROLL_THRESHOLD },
+        }}
         onDragStart={handlePlaceDragStart}
         onDragOver={handlePlaceDragOver}
         onDragCancel={handlePlaceDragCancel}
