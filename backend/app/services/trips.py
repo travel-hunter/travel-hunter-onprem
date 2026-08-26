@@ -1072,8 +1072,23 @@ def add_policy_to_trip(
     if policy is None:
         raise TripServiceError(404, "Policy not found")
 
+    # 확인과 삽입 사이에 다른 요청이 끼어들면 숙박세일이 둘 이상 붙는다.
+    # 잠금을 얻을 때까지 앞선 트랜잭션이 커밋을 마치지 못하므로, 아래 확인은
+    # 항상 최신 상태를 본다.
+    trip_repository.lock_trip_row(db, trip_id=trip.id)
     existing = trip_repository.get_trip_policy(db, trip_id=trip.id, policy_id=policy.id)
     if existing is None:
+        # 숙박세일 페스타는 지역마다 정책 행이 따로 있어 policy_id 중복 검사를
+        # 통과한다. 일정 하나에는 지역 하나만 붙는다. 같은 지역을 다시 누르면
+        # existing이 있어 여기까지 오지 않으므로 기존처럼 조용히 성공한다.
+        if (
+            policy.source_category or ""
+        ) == stay_discount_aliases.SOURCE_CATEGORY and trip_repository.has_trip_policy_in_source_category(
+            db,
+            trip_id=trip.id,
+            source_category=stay_discount_aliases.SOURCE_CATEGORY,
+        ):
+            raise TripServiceError(409, "Trip already has a stay discount policy")
         trip_repository.add_trip_policy(db, trip_id=trip.id, policy_id=policy.id)
         db.commit()
 
