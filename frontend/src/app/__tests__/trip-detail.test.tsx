@@ -34,7 +34,10 @@ import {
   isCrossDayTimelineDrag,
   DAY_SWITCH_DELAY_MS,
   DAY_TAB_POINTER_TOLERANCE_PX,
+  PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+  shouldAllowPlaceDragAutoScroll,
   isPointerInsideClientRect,
+  isWheelInsideNestedScroller,
   isPointerNearClientRect,
   parseDayAreaDropId,
   excludeActiveCollision,
@@ -47,6 +50,8 @@ import {
   resolvePointerVerifiedTimelineOverId,
   resolvePlaceDragOverId,
   resolveClosestTimelinePosition,
+  resolveRaisedTimelineHeightLock,
+  resolveTimelineHeightLock,
   resolveTimelineDropTarget,
   shouldForwardWindowWheelToAppScroll,
   shouldUseDayRowDragOverlay,
@@ -91,6 +96,29 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
         appContainer,
       ),
     ).toBe(true);
+  });
+
+  it("leaves the wheel alone inside a nested scroller such as an open sheet", () => {
+    // 휠은 window까지 버블링된다. 브리지가 대상을 안 가리면 시트 위에서 굴려도
+    // preventDefault로 기본 스크롤을 죽이고 뒤 화면을 스크롤한다.
+    expect(
+      isWheelInsideNestedScroller([
+        { canScrollY: false, isAppContainer: false },
+        { canScrollY: true, isAppContainer: false },
+        { canScrollY: true, isAppContainer: true },
+      ]),
+    ).toBe(true);
+  });
+
+  it("still bridges the wheel from the desktop gutter", () => {
+    // 앱 컨테이너에 닿기 전 스크롤러가 없으면 브리지가 원래 하던 일을 한다.
+    expect(
+      isWheelInsideNestedScroller([
+        { canScrollY: false, isAppContainer: false },
+        { canScrollY: true, isAppContainer: true },
+      ]),
+    ).toBe(false);
+    expect(isWheelInsideNestedScroller([])).toBe(false);
   });
 
   it("does not forward non-scrolling or already-handled wheel events", () => {
@@ -484,6 +512,112 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     ).toBeNull();
   });
 
+  it("pins the timeline height so a day switch cannot shrink the document", () => {
+    // 날짜를 바꾸면 타임라인 내용이 통째로 바뀌어 문서가 짧아질 수 있다.
+    // 그러면 브라우저가 scrollTop을 강제로 줄여 화면이 출렁인다.
+    // min-height로 줄어드는 것만 막는다. 늘어나는 것은 스크롤을 건드리지 않는다.
+    expect(resolveTimelineHeightLock(760.4)).toBe("760px");
+    expect(resolveTimelineHeightLock(0.6)).toBe("1px");
+  });
+
+  it("refuses to pin an unusable timeline height", () => {
+    expect(resolveTimelineHeightLock(null)).toBeNull();
+    expect(resolveTimelineHeightLock(0)).toBeNull();
+    expect(resolveTimelineHeightLock(-120)).toBeNull();
+    expect(resolveTimelineHeightLock(Number.NaN)).toBeNull();
+    expect(resolveTimelineHeightLock(Number.POSITIVE_INFINITY)).toBeNull();
+  });
+
+  it("stops scrolling further up once the action buttons are fully visible", () => {
+    // 장소추가 버튼 줄이 다 보이는 지점에서 멈춘다. Day 탭을 기준으로 하면
+    // 탭이 화면 맨 위 가장자리에 딱 붙어 겨냥이 빡빡하다.
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: 60,
+        containerRect: { top: 0, bottom: 900 },
+        anchorRect: { top: 300, bottom: 340 },
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(false);
+  });
+
+  it("still scrolls up while the action buttons are off screen", () => {
+    // 아래로 한참 내려간 상태에서 카드를 집으면 버튼 줄이 화면 밖이다.
+    // 그때까지 막으면 다른 날짜로 옮길 방법이 없다. 모바일은 휠도 없다.
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: 60,
+        containerRect: { top: 0, bottom: 900 },
+        anchorRect: { top: -220, bottom: -180 },
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(true);
+  });
+
+  it("never blocks downward place drag auto scroll", () => {
+    // 아래쪽 자동 스크롤은 화면 밖 장소에 닿기 위해 필요하다.
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: 860,
+        containerRect: { top: 0, bottom: 900 },
+        anchorRect: { top: 300, bottom: 340 },
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: 450,
+        containerRect: { top: 0, bottom: 900 },
+        anchorRect: { top: 300, bottom: 340 },
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not interfere with auto scroll when it cannot measure", () => {
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: null,
+        containerRect: { top: 0, bottom: 900 },
+        anchorRect: { top: 300, bottom: 340 },
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: 60,
+        containerRect: null,
+        anchorRect: { top: 300, bottom: 340 },
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: 60,
+        containerRect: { top: 0, bottom: 900 },
+        anchorRect: null,
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(true);
+  });
+
+  it("raises the timeline pin but never lowers it during one drag", () => {
+    // 장소가 적은 날짜에서 시작해 많은 날짜를 거쳐 다시 짧은 날짜로 가면
+    // 문서가 줄어 스크롤이 클램프된다. 고정값은 관측한 최대 높이여야 한다.
+    expect(resolveRaisedTimelineHeightLock("520px", 900)).toBe("900px");
+    expect(resolveRaisedTimelineHeightLock("900px", 200)).toBe("900px");
+    expect(resolveRaisedTimelineHeightLock("900px", 900)).toBe("900px");
+  });
+
+  it("starts the timeline pin from nothing and survives unusable input", () => {
+    expect(resolveRaisedTimelineHeightLock(null, 640)).toBe("640px");
+    expect(resolveRaisedTimelineHeightLock("640px", null)).toBe("640px");
+    expect(resolveRaisedTimelineHeightLock("640px", 0)).toBe("640px");
+    expect(resolveRaisedTimelineHeightLock(null, null)).toBeNull();
+    expect(resolveRaisedTimelineHeightLock("", 640)).toBe("640px");
+    expect(resolveRaisedTimelineHeightLock("auto", 640)).toBe("640px");
+  });
+
   it("turns a drop on the ghost placeholder into its resolved insert position", () => {
     // 유령은 활성 카드의 id로 등록돼 있어 그대로 두면 resolveTimelineDropTarget이
     // 자기 자신 방어로 null을 돌려주고 드롭이 통째로 무시된다.
@@ -827,6 +961,21 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     expect(css).toMatch(
       /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*align-content:\s*start/s,
     );
+    // 브라우저 스크롤 앵커링은 위쪽 콘텐츠가 바뀌면 scrollTop을 임의로 보정한다.
+    // 날짜를 갈아치우는 순간이 정확히 그 조건이고, 휴리스틱이라 가끔만 튄다.
+    expect(css).toMatch(/\.app-container\s*\{[^}]*overflow-anchor:\s*none/s);
+    // 시트를 끝까지 굴리면 그 다음 휠이 부모로 넘어가 뒤 화면이 스크롤된다.
+    expect(css).toMatch(
+      /\.trip-select-sheet\s*\{[^}]*overscroll-behavior:\s*contain/s,
+    );
+    // 드롭 직후 인라인 min-height가 사라지며 타임라인이 한 프레임에 줄어든다.
+    // 계산값이 바뀌는 것이므로 removeProperty로도 트랜지션이 걸린다.
+    expect(css).toMatch(
+      /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*transition:\s*min-height/s,
+    );
+    expect(css).toMatch(
+      /prefers-reduced-motion[\s\S]{0,400}\.prototype-trip-detail-screen \.timeline\s*\{[^}]*transition:\s*none/,
+    );
     // row-gap을 쓰면 높이 0인 삽입 슬롯 행마다 간격이 덧붙는다.
     expect(css).not.toMatch(
       /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*row-gap/s,
@@ -858,6 +1007,23 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     // 유령이 끼어들어 카드가 이동하면 droppable 좌표를 다시 재야 한다.
     // 기본값(WhileDragging)은 드래그 시작 때 한 번만 재서 진동을 만든다.
     expect(source).toContain("MeasuringStrategy.Always");
+    // dnd-kit도 레이아웃 변화를 감지해 스크롤을 보정한다. 날짜 전환은 거대한
+    // 레이아웃 변화라 이 보정이 화면을 크게 움직인다. 우리가 직접 관리한다.
+    expect(source).toContain("layoutShiftCompensation: false");
+    // 날짜가 바뀌어 타임라인이 커지면 고정값도 따라 올라가야 한다.
+    // 함수 정의가 아니라 호출부가 있는지를 본다.
+    expect(source).toContain("raiseTimelineHeightLock()");
+    // 위쪽 자동 스크롤 상한. threshold를 명시해야 판정 함수와 기준이 같아진다.
+    expect(source).toContain("canScroll: canPlaceDragAutoScroll");
+    expect(source).toContain("y: PLACE_DRAG_AUTO_SCROLL_THRESHOLD");
+    // 멈춤 기준은 Day 탭이 아니라 그 위의 장소추가 버튼 줄이다.
+    expect(source).toContain("anchorRect: actionsElement");
+    // 시트 등 중첩 스크롤러 위에서는 브리지가 손대지 않는다.
+    expect(source).toContain("isWheelInsideNestedScroller(path)");
+    // 드래그 중에는 타임라인 높이를 고정해 날짜 전환이 문서를 줄이지 못하게 한다.
+    expect(source).toContain("resolveTimelineHeightLock");
+    expect(source).toContain("timelineElement.style.minHeight");
+    expect(source).toContain('removeProperty("min-height")');
     // 번호는 슬롯 순번이라 카드 컴포넌트가 알 필요가 없다.
     expect(source).not.toContain("placeNumber");
     // 유령도 슬롯 하나를 차지하므로 배지는 부모가 슬롯 순번으로 그린다.

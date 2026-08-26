@@ -156,6 +156,9 @@
   margin: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* 브라우저가 콘텐츠 변화에 맞춰 scrollTop을 임의로 보정하지 않게 한다.
+     날짜 전환처럼 위쪽 콘텐츠가 통째로 바뀔 때 화면이 튀는 원인이다. */
+  overflow-anchor: none;
   padding: 0;
   background: var(--surface-app);
   -webkit-overflow-scrolling: touch;
@@ -1151,6 +1154,8 @@
   display: grid;
   gap: 10px;
   overflow-y: auto;
+  /* 끝까지 굴렸을 때 다음 휠이 부모로 넘어가 뒤 화면이 스크롤되는 것을 막는다. */
+  overscroll-behavior: contain;
 }
 
 .prototype-agreement-section {
@@ -4505,6 +4510,8 @@
   box-sizing: border-box;
   max-height: min(86dvh, 720px);
   overflow-y: auto;
+  /* 끝까지 굴렸을 때 다음 휠이 부모로 넘어가 뒤 화면이 스크롤되는 것을 막는다. */
+  overscroll-behavior: contain;
   display: grid;
   gap: 16px;
   padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
@@ -4575,6 +4582,8 @@
   min-height: 0;
   max-height: min(52dvh, 440px);
   overflow-y: auto;
+  /* 끝까지 굴렸을 때 다음 휠이 부모로 넘어가 뒤 화면이 스크롤되는 것을 막는다. */
+  overscroll-behavior: contain;
   padding-bottom: calc(8px + env(safe-area-inset-bottom));
   scrollbar-width: thin;
 }
@@ -5259,6 +5268,8 @@
   background: #fff;
   box-shadow: 0 -18px 60px rgba(23, 23, 40, 0.22);
   overflow-y: auto;
+  /* 끝까지 굴렸을 때 다음 휠이 부모로 넘어가 뒤 화면이 스크롤되는 것을 막는다. */
+  overscroll-behavior: contain;
   pointer-events: auto;
   scrollbar-width: none;
 }
@@ -7943,11 +7954,20 @@
   align-content: start;
   column-gap: 12px;
   min-height: clamp(360px, calc(100dvh - 480px), 520px);
+  /* 드롭 직후 인라인 min-height가 풀릴 때만 실제 높이가 움직인다. 잠글 때는
+     내용 높이가 이미 더 커서 보이는 변화가 없으므로 상시로 걸어도 안전하다. */
+  transition: min-height 220ms ease;
   margin-bottom: 16px;
   border: 0;
   border-radius: 0;
   box-shadow: var(--shadow-none);
   background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prototype-trip-detail-screen .timeline {
+    transition: none;
+  }
 }
 
 .prototype-trip-detail-screen .itinerary-drag-boundary {
@@ -9138,6 +9158,8 @@ a.prototype-stat-card:active {
   width: 100%;
   max-height: 88dvh;
   overflow-y: auto;
+  /* 끝까지 굴렸을 때 다음 휠이 부모로 넘어가 뒤 화면이 스크롤되는 것을 막는다. */
+  overscroll-behavior: contain;
   padding: 8px 18px 22px;
   border-radius: 24px 24px 0 0;
   background: #fff;
