@@ -66,7 +66,7 @@ id 156  dgtour-영광-8   status=active   생성 08-21   external_source 연결 
 
 1. **크롤러를 안 고친다.** `crawl_dgtourcard.py:217`이 그대로라 다음 크롤 실행이 순번 슬러그를 다시 만들어 낸다. 시드 JSON만 손으로 되돌린 셈이다.
 2. **갈라진 링크를 합치지 않는다.** 이 커밋 적용 후 재시딩하면 극성만 뒤집힌다 — `dgtour-영광`이 active로 돌아오고, 찜이 붙은 `dgtour-영광-8`이 hidden이 된다. 08-27에 저장한 찜이 이번엔 사라진다.
-3. **커밋이 추가한 테스트는 이 DB에서 통과하지 못한다.** `test_seed_policies_replaces_unlinked_numbered_dgtour_seed_with_canonical_slug`는 `dgtour-영광-8`이 사라진다고 단언하는데, 링크가 있으면 삭제 대신 hidden 처리된다. 이름의 `unlinked`가 그 전제를 드러낸다 — 빈 DB에서만 성립한다.
+3. **커밋이 추가한 테스트는 통과하지만 이 상황을 덮지 못한다.** `test_seed_policies_replaces_unlinked_numbered_dgtour_seed_with_canonical_slug`는 `sqlite_db_session` 픽스처, 즉 **빈 DB**에서 돈다. 거기서는 정식 슬러그만 생기므로 `dgtour-영광-8 not in slugs`가 자명하게 참이다. 문제는 링크가 붙은 중복 행 시나리오를 **모델링하지 않는다**는 것이다 — 그 경우 재시딩은 순번 행을 삭제하지 않고 hidden으로 돌린다. 이름의 `unlinked`가 적용 범위를 드러낸다.
 4. **hidden인 참여도시 7곳**(밀양·평창·거창·영월·제천·고흥·고창)은 순번 슬러그를 유지한다. 나중에 active로 올리면 같은 문제가 재발한다.
 
 ### 병합 시 주의 — 단순 UPDATE는 실패한다
