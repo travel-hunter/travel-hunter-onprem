@@ -97,5 +97,23 @@ def test_seed_dgtour_non_participating_regions_are_hidden() -> None:
     )
     by_slug = {policy["slug"]: policy for policy in policies}
 
-    for slug in ("dgtour-강진-7", "dgtour-남해-11", "dgtour-영암-12", "dgtour-횡성-14"):
+    for slug in ("dgtour-강진", "dgtour-남해", "dgtour-영암", "dgtour-횡성"):
         assert by_slug[slug]["status"] == "hidden"
+
+
+def test_seed_dgtour_slugs_never_carry_a_page_order_suffix() -> None:
+    from pathlib import Path
+
+    policies = json.loads(
+        (Path(__file__).parents[1] / "app" / "data" / "dgtourcard_policies.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    numbered = [
+        str(policy["slug"])
+        for policy in policies
+        if str(policy["slug"]).rsplit("-", 1)[-1].isdigit()
+    ]
+
+    assert numbered == []
