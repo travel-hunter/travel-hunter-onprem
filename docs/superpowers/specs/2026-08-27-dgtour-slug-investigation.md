@@ -20,7 +20,9 @@ policy["slug"] = f"dgtour-{slugify(city)}-{entry['id']}"
 
 정식 규칙은 이미 코드에 있다 — `canonical_policy_slug_for_city()` (`digital_tourism_resident_card.py:379`)는 `dgtour-{도시}`를 반환한다. 크롤러만 이걸 안 쓴다.
 
-같은 정규식이 `data-signgucd`(5자리 행정구역 코드, 영광=12830)도 이미 뽑고 있다. 순번 대신 쓸 안정 식별자가 이미 손에 있는데 안 쓰는 상태다.
+같은 정규식이 `data-signgucd`(5자리 코드)도 이미 뽑고 있다. 순번 대신 쓸 안정 식별자가 손에 있는데 안 쓰는 상태다.
+
+> **정정 (2026-08-27):** 이 문단은 처음에 영광의 코드를 `12830`이라고 적었다. 그 값은 `officialUrl`의 `signguCd=12830` 쿼리 파라미터, 즉 VisitKorea 자체 코드이지 페이지 마크업의 `data-signgucd`가 아니다. 크롤러의 `SIGNGU_PREFIX_PROVINCE`(`:144`)는 앞 두 자리로 광역시도를 정하는데 `12`는 매핑에 없다. **실제 페이지의 `data-signgucd`가 어떤 체계인지는 원본 HTML이 없어 확인되지 않았다.** 아래 "추가 확인"에서 보듯 시드 JSON도 크롤러 산출물이 아니므로 JSON의 `region` 값은 이에 대한 증거가 되지 못한다.
 
 ### 참고: 백엔드는 이미 양쪽을 받아준다
 
@@ -97,3 +99,22 @@ trip_policies:        trip 1 이 dgtour-하동 과 dgtour-하동-3 에 둘 다 �
 `mypage.test.tsx :: shows saved policies on my page and removes them`
 
 `expected undefined to be truthy` — 위 슬러그 문제와 원인이 다르다. 별도 조사 필요.
+
+
+---
+
+## 추가 확인 (2026-08-27, Codex 검토 중)
+
+**시드 JSON은 크롤러 산출물이 아니다.**
+
+- 크롤러의 `_make_policy_dict()`(`crawl_dgtourcard.py:252`)는 13개 필드만 낸다. 시드 JSON에는 크롤러가 만들 수 없는 필드가 7개 있다 — `sourceCanonicalKey`, `sourceCategory`, `sourceName`, `sourceStatus`, `sourceUrl`, `status`, `structuredDetail`
+- 크롤러는 `officialUrl`에 `tour50.do`(목록)를 넣는데 시드 JSON은 `regnMain.do`(지역 상세)를 갖는다
+- 크롤러 지도 경로의 제목은 `영광 디지털관광주민증 혜택`, 시드 JSON은 `[영광] 디지털관광주민증 혜택`
+- git 이력상 이 JSON은 크롤 실행이 아니라 손으로 쓴 커밋으로 갱신돼 왔다 (`f12efc2`, `8e773e8`)
+
+`-숫자` 접미사가 1..16으로 파일 순서와 일치하는 것은 여전히 크롤러 기원임을 가리킨다. 한 번 크롤로 나온 뒤 손으로 살이 붙은 것으로 보인다.
+
+**두 가지 결과가 따라온다.**
+
+1. "시드만 고치면 다음 크롤이 되돌린다"는 근거는 약하다. 지금 크롤을 돌리면 슬러그만이 아니라 위 7개 필드가 통째로 날아가므로, 아무도 그대로 돌리지 않는 것으로 보인다. 크롤러를 고치는 이유는 **슬러그를 만드는 유일한 코드 경로이기 때문**이고, 재발을 실제로 막는 것은 시드 검증기다.
+2. 크롤러와 enrich 파이프라인이 어떻게 맞물려야 하는지는 미결이다. 별도 논의가 필요하다.
