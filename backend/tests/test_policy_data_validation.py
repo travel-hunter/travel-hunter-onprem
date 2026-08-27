@@ -117,3 +117,31 @@ def test_seed_dgtour_slugs_never_carry_a_page_order_suffix() -> None:
     ]
 
     assert numbered == []
+
+
+def test_validate_policy_data_rejects_a_page_order_suffix_on_any_dgtour_slug(
+    tmp_path,
+) -> None:
+    from pathlib import Path
+
+    from scripts.validate_policy_data import validate_policy_data
+
+    policies = json.loads(
+        (Path(__file__).parents[1] / "app" / "data" / "dgtourcard_policies.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    hidden = next(
+        policy
+        for policy in policies
+        if str(policy.get("status")) == "hidden"
+        and str(policy["slug"]).startswith("dgtour-")
+    )
+    hidden["slug"] = f"{hidden['slug']}-99"
+
+    target = tmp_path / "policies.json"
+    target.write_text(json.dumps(policies, ensure_ascii=False), encoding="utf-8")
+
+    errors = validate_policy_data(target)
+
+    assert any("-99" in error for error in errors)
