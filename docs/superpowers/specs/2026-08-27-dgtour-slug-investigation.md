@@ -118,3 +118,67 @@ trip_policies:        trip 1 이 dgtour-하동 과 dgtour-하동-3 에 둘 다 �
 
 1. "시드만 고치면 다음 크롤이 되돌린다"는 근거는 약하다. 지금 크롤을 돌리면 슬러그만이 아니라 위 7개 필드가 통째로 날아가므로, 아무도 그대로 돌리지 않는 것으로 보인다. 크롤러를 고치는 이유는 **슬러그를 만드는 유일한 코드 경로이기 때문**이고, 재발을 실제로 막는 것은 시드 검증기다.
 2. 크롤러와 enrich 파이프라인이 어떻게 맞물려야 하는지는 미결이다. 별도 논의가 필요하다.
+
+---
+
+## 미결 항목 조사 (2026-08-27) — 구현 중단 사유
+
+"크롤러와 enrich 파이프라인의 관계"를 파고든 결과, **순번 슬러그는 사고가 아니라 배포된 마이그레이션이 의도적으로 채택한 안정 식별자**임이 드러났다. 이 계획은 그 결정을 뒤집는 것이므로 구현 전에 판단이 필요하다.
+
+### 정책 생산자는 둘이다
+
+| 경로 | 진입점 | 슬러그 규칙 |
+|---|---|---|
+| 시드 | `app/db/seed.py:seed_policies` ← `dgtourcard_policies.json` | 순번 (`dgtour-영광-8`) |
+| 정규화 | `scripts/normalize_external_policies.py` → `promote_external_benefits_to_policies` | 정식 (`dgtour-영광`) |
+
+`external_source_records` → 정책 승격 파이프라인이 따로 있다. 로컬 DB의 두 행이 정확히 이 둘이다 — id 8은 `external_source_record_id=37`(정규화 산출), id 156은 그것이 `NULL`(시드 산출). **크롤러가 두 번 돈 게 아니라, 생산자 둘이 서로 다른 규칙으로 같은 도시를 만든 것이다.**
+
+### 마이그레이션 0031이 순번 슬러그를 안정 식별자로 고정했다
+
+`backend/alembic/versions/0031_digital_tourism_resident_card_identity.py` (2026-07-24) docstring:
+
+> This is an idempotent data migration. It corrects existing dgtour seed rows and conservative VisitKorea digital-tourism external records in place **so saved policies and trip attachments keep their stable policy ids/slugs.**
+
+그리고 16개 순번 슬러그를 `known_dgtour(slug, ...)` VALUES로 하드코딩해 `k.slug = p.slug`로 조인한다. 즉 **사용자 첨부를 지키려고 일부러 순번 슬러그를 정체성으로 삼았다.**
+
+`app/services/legacy_dgtour_reconciliation.py`의 `frozen_legacy_dgtour_slugs()`가 같은 16개를 담고 있고, `policy_normalization.py`의 3곳(`:250`, `:456`, `:542`)이 이를 참조해 그 행들을 보호한다. `_hide_legacy_dgtour_seed_policies`는 이름과 달리 동결 슬러그를 `continue`로 **건너뛴다**.
+
+### 그런데 같은 파일이 정식 슬러그로 이름을 바꾼다
+
+`policy_normalization.py:271`
+
+```python
+if record.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY:
+    policy.slug = _policy_slug_for_external_record(record)   # -> 정식 슬러그
+```
+
+`:250`의 동결 가드는 `record.source_category != DIGITAL_TOURISM`일 때만 조기 반환하므로, dgtour 레코드에는 걸리지 않고 `:271`에 도달한다.
+
+`test_policy_normalization.py`가 이 결과를 단언한다 — `:1810`, `:1869`, `:2153`, `:2234`에서 `dgtour-영광`, `dgtour-하동`, `dgtour-가평`.
+
+### 결론: 코드베이스가 마이그레이션 중이고 두 축이 서로 어긋나 있다
+
+| | 순번 슬러그 편 | 정식 슬러그 편 |
+|---|---|---|
+| 근거 | 마이그레이션 0031 docstring + 16건 하드코딩, `frozen_legacy_dgtour_slugs()`, 파이프라인 가드 3곳, 시드 JSON, 테스트 26곳 | `canonical_policy_slug_for_city()`, `_policy_slug_for_external_record()`, `policy_normalization.py:271`, 별칭 해석기, 정규화 테스트 4건, 커밋 `bc3afc8` |
+
+**어느 쪽이 목표인지 코드만으로는 결론이 안 난다.** 별칭 해석기가 양쪽을 다 받아주기 때문에 앱은 어느 쪽이든 동작하고, 그래서 이 어긋남이 오래 눈에 안 띈 것으로 보인다.
+
+### 계획대로 진행할 때 예상되는 회귀 (검증 필요)
+
+`bc3afc8` + Task 3으로 시드를 정식 슬러그로 바꾸면:
+
+1. `frozen_legacy_dgtour_slugs()`의 16개가 **아무 행과도 안 맞게 된다.** 가드 3곳이 조용히 무력화된다
+2. 마이그레이션 0031의 `k.slug = p.slug` 조인이 어긋난다. 새 DB에서 재생하면 dgtour 행을 못 찾는다
+3. `_hide_legacy_dgtour_seed_policies`가 정식 슬러그 시드 행을 **hidden 처리할 수 있다** — 그 행은 `external_source_record_id`가 `NULL`이라 보호 조건(`source_category == dgtour AND external_source_record_id IS NOT NULL AND 참여도시`)을 통과하지 못한다. 현재 로컬 DB의 id 8은 external record가 붙어 있어 보호되지만, **빈 DB에 시드만 넣은 상태에서는 보호되지 않는다.** `promoted_categories`에 `local_half_trip`이 있을 때만 도는 조건부 경로이므로 실제 발동 여부는 확인이 필요하다
+4. Task 4가 넣으려던 "`-숫자` 금지" 규칙은 0031이 하드코딩한 픽스처와 정면으로 충돌한다
+
+### 필요한 결정
+
+**정식 슬러그를 저장 정체성으로 삼을 것인가, 아니면 순번 슬러그를 유지하고 정식 슬러그는 별칭으로만 둘 것인가.**
+
+- **정식으로 통일한다면** — 0031을 잇는 새 마이그레이션으로 기존 행을 개명하고 링크를 옮기며, `frozen_legacy_dgtour_slugs()`를 제거하고 가드 3곳을 재검토하고, 테스트 26곳을 갱신해야 한다. 이번 계획보다 훨씬 큰 작업이다
+- **순번을 유지한다면** — `bc3afc8`은 적용하면 안 된다. 대신 `/api/policies` 응답에서 슬러그를 정식형으로 **노출만** 하거나, 프론트 테스트 4건의 기대값을 실제 값으로 고친다. 훨씬 작다
+
+이 판단 전에는 Task 1(크롤러)만 단독으로도 안전하지 않다. 크롤러를 정식 슬러그로 바꾸면 그것이 만든 JSON이 곧 시드가 되어 같은 충돌을 일으키기 때문이다.
