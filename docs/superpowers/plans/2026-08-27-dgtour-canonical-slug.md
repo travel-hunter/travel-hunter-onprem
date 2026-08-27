@@ -616,3 +616,63 @@ trip_policies:        trip 1 이 dgtour-하동 과 dgtour-하동-3 에 둘 다 �
 **1차 개정(Codex 검토 반영)에서 유지되는 것**
 
 DB 안전 게이트(Task 5), 도시 단위 중복 제거 결정(Task 1), 검증기 범위 확대와 실제 인터페이스(Task 4), 픽스처 한계 명시, 별도 브랜치(Task 0), "11건 링크 0건은 로컬 한정" 경고. 여기에 정식 시드 행 숨김 회귀 테스트(Task 3-A)를 추가했다.
+
+---
+
+## 실행 결과 (2026-08-27)
+
+### 테스트
+
+| 스위트 | 기준선 | 결과 |
+|---|---|---|
+| 백엔드 | 673 passed / 1 failed / 23 skipped | **680 passed / 1 failed / 23 skipped** |
+| 프론트 | 288 passed / 7 failed (295건) | **294 passed / 1 failed** |
+
+백엔드의 실패 1건은 기준선과 동일한 `test_restricted_atomic_artifact_and_sidecar_round_trip`이다. Windows에서 임시 디렉터리 권한이 `S_IMODE & 0o077` 검사를 통과하지 못해 나는 환경 이슈이며 이번 작업과 무관하다.
+
+프론트는 **7건 중 6건이 해소**됐다. 예상은 4건(슬러그 불일치)이었는데, `mypage.test.tsx`의 `expected undefined to be truthy` 2건도 같이 사라졌다 — 이 두 건 역시 로컬 백엔드의 dgtour 데이터 상태에 의존하고 있었다.
+
+남은 1건 `policies.test.tsx :: keeps the trip-attached state scoped to the selected policy`는 **회귀가 아니다.** 이 테스트에 목을 넣는 수정은 `feature/stabilize-policy-trip-tests`의 `04ed2d0`에 있고 이 브랜치에는 없다. 두 브랜치가 모두 머지되면 295/0이 될 것으로 예상된다 (합쳐서 실행해 확인하지는 않았다).
+
+### API
+
+```
+목록     ['dgtour-영광','dgtour-완도','dgtour-하동','dgtour-합천','dgtour-해남']   순번 0건
+옛 주소  /api/policies/dgtour-영광-8  ->  slug: dgtour-영광
+        /api/policies/dgtour-하동-3  ->  slug: dgtour-하동
+```
+
+계약대로 정식 슬러그만 노출하고 기존 공유 링크는 계속 열린다.
+
+### DB 안전 게이트
+
+백업: `D:\backup\travel-hunter-before-dgtour-seed-20260827.dump`, SHA-256 `6d36ff34…3b6a9b`, `pg_restore -l` TOC 208항목 판독 확인.
+
+| 테이블 | 시딩 전 | 시딩 후 |
+|---|---|---|
+| `policies` | 109 | 109 |
+| `trip_policies` | 7 | **8** |
+| `user_saved_policies` | 2 | 2 |
+
+`trip_policies` +1은 **중단 기준에 걸려 조사했고 손상이 아님을 확인했다.**
+
+trip 243이 시드 트립이다 (owner 1, `제주 3일 여행`, start_date 2026-06-15 — `get_or_create_trip`의 조건과 일치). `seed_dev_data`(`:285`)는 항상 **첫 번째 active 정책**을 시드 트립에 붙이는데, 그 첫 active가 `dgtour-하동-3`(링크 id 10, 08-25 시딩분)에서 `dgtour-하동`(링크 id 19)으로 바뀐 것뿐이다. 같은 도시이고 사용자 링크는 삭제·이동 0건이다.
+
+`policies`가 109로 같은 것도 정상이다 — 링크 없는 순번 행 11건이 삭제되고 정식 행 11건이 생겨 상쇄됐다.
+
+### 계획에 없던 수정 1건
+
+`validate_policy_data.py`가 `app`을 임포트하게 되면서 **독립 실행(CLI)이 `ModuleNotFoundError`로 깨졌다.** `normalize_external_policies.py`와 같은 방식으로 `sys.path`를 세워 고쳤고, `backend/`와 다른 디렉터리 양쪽에서 실행해 확인했다.
+
+### 예측이 맞은 것
+
+- **Task 3-A의 회귀는 실재했다.** 테스트를 먼저 써서 정식 시드 행이 실제로 hidden 처리되는 것을 확인한 뒤 `_hide_legacy_dgtour_seed_policies`에 보호 조건을 추가했다. 추측으로 미리 고쳤다면 근거 없는 변경이 될 뻔했다
+- **`test_seed_dgtour_non_participating_regions_are_hidden` 1건만 깨졌다.** 순번 슬러그를 참조하는 나머지 25곳은 예상대로 무영향이었다
+
+### 4173 프리뷰
+
+이 브랜치는 `frontend/src`를 **0줄** 바꾼다 (`frontend/e2e-backend/backend-mode.spec.ts`는 e2e 상수). 따라서 프론트 컨테이너는 재빌드가 필요 없고, 실행 중인 빌드 그대로 이 백엔드를 보면 된다.
+
+### 후속 작업에 참고할 것
+
+`backend/app/scripts/migrate_stay_discount_area_policy_links.py`가 이미 **중복 제거 후 링크 이동** 패턴을 구현하고 있다 (`_move_trip_links`, `trip_links_deleted_as_duplicates`). dgtour 중복 행 병합 계획은 이것을 본보기로 삼는다.
