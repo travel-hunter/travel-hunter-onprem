@@ -284,6 +284,24 @@ def test_seed_dgtour_slugs_never_carry_a_page_order_suffix() -> None:
 
 - [ ] **Step 3: JSON 수정** — 위 표대로 `"slug"` 필드만 바꾼다. `sourceCanonicalKey`, `status`, `officialUrl`은 그대로
 
+- [ ] **Step 3-B: 시드 JSON을 슬러그로 인덱싱하는 기존 테스트 수정 (확인된 파손)**
+
+`backend/tests/test_policy_data_validation.py:85` `test_seed_dgtour_non_participating_regions_are_hidden`이
+시드 JSON을 읽어 `by_slug["dgtour-강진-7"]` 식으로 접근한다. Step 3이 그 4건을 개명하므로 **KeyError로 깨진다.**
+
+```python
+    for slug in ("dgtour-강진", "dgtour-남해", "dgtour-영암", "dgtour-횡성"):
+        assert by_slug[slug]["status"] == "hidden"
+```
+
+**이것이 시드 JSON 변경으로 깨지는 유일한 기존 테스트다.** 순번 슬러그를 참조하는 나머지 25곳은 확인 결과 영향이 없다:
+
+- `test_travel_areas.py:165`, `test_source_provenance_migration_postgres.py` — 테스트가 **자기 픽스처로** 그 슬러그의 행을 직접 만든다. 시드와 무관하다
+- `test_digital_tourism_resident_card.py:37` — `city_from_policy_slug("dgtour-하동-3") == "하동"`. 별칭 해석 함수를 검사하며 **이 함수는 유지한다**
+- `test_policy_semantics_audit.py` — `legacy-dgtour-밀양-1`은 `source_canonical_key` 문자열이고 슬러그가 아니다
+
+그래도 Step 4에서 **전체 스위트로 확인한다.** 위 분류는 정적 판독이며 실행 결과가 우선한다.
+
 - [ ] **Step 4: 통과 확인**
 
 ```
@@ -297,6 +315,17 @@ python -m pytest tests/test_policy_data_validation.py tests/test_policy_source_a
 git add backend/app/data/dgtourcard_policies.json backend/tests/test_policy_data_validation.py
 git commit -m "Drop page-order suffixes from the remaining dgtour seed slugs"
 ```
+
+### 확인된 사실: 기존에 공유된 URL은 계속 열린다
+
+실행 중인 로컬 백엔드에서 양방향을 실측했다.
+
+```
+요청 /api/policies/dgtour-영광    -> 응답 slug: dgtour-영광-8   (정식 행은 지금 hidden)
+요청 /api/policies/dgtour-영광-8  -> 응답 slug: dgtour-영광-8
+```
+
+별칭 해석기가 슬러그가 아니라 **도시 → `source_canonical_key` → active 정책** 순으로 찾기 때문에, 어느 쪽 주소로 와도 그 시점의 활성 정책이 돌아온다. 변경 후에는 둘 다 `slug: dgtour-영광`을 반환한다. **이미 공유된 `-8` 주소는 깨지지 않는다.**
 
 ---
 
