@@ -52,6 +52,29 @@ Notify Build start → Check Environment → Pull Latest Code
 
 **저장소 전체를 마운트해야 한다.** 테스트들이 저장소 레이아웃을 전제로 경로를 계산하기 때문이다.
 
+### `docker compose run` 은 쓰면 안 된다 (실측)
+
+같은 명령을 `docker compose run` 으로 돌리자 **5건이 실패**했다. compose 가 서비스 환경변수를 주입하기 때문이다.
+
+```
+assert payload["inviteUrl"] == "http://127.0.0.1:5173/invites/abc/accept"
+E   - http://127.0.0.1:5173/invites/abc/accept
+E   + http://127.0.0.1:4173/invites/abc/accept
+```
+
+`FRONTEND_BASE_URL` 이 4173 으로 들어가 기본값 5173 을 기대하는
+`test_invite_to_api_computes_display_flags` 등이 깨진다.
+
+**우리가 검사하려는 것은 코드이지 배포 환경이 아니다.** 그래서 테스트 전용 이미지를
+따로 굽고 `docker run` 으로 환경변수 없이 돌린다. 이미지 이름을 고정하면 compose
+프로젝트명 규칙에도 의존하지 않는다.
+
+```bash
+docker build -t travel-hunter-backend-test ./backend
+docker run --rm -v ${PROJECT_DIR}:/repo -w /repo/backend   travel-hunter-backend-test python -m pytest tests -q
+# 679 passed, 18 skipped   (로컬에서 이 명령 그대로 확인)
+```
+
 > 참고: 로컬 Windows 호스트에서는 `test_restricted_atomic_artifact_and_sidecar_round_trip` 1건이 실패한다. 임시 디렉터리 권한이 `S_IMODE & 0o077` 검사를 통과하지 못하는 Windows 환경 문제이며, **리눅스 컨테이너에서는 통과한다** — 위 679 passed 에 포함돼 있다.
 
 ---
@@ -82,6 +105,9 @@ Notify → Check Environment → Pull Latest Code
 - 수정: `deploy/jenkins/dev/Jenkinsfile`
 
 - [ ] **Step 1: `Pull Latest Code` 와 `Build and Deploy` 사이에 삽입**
+
+실제로 삽입한 내용은 `deploy/jenkins/dev/Jenkinsfile` 을 보라. 아래는 초안이며,
+`docker compose run` 을 `docker run` 으로 바꾼 최종본이 파일에 들어가 있다.
 
 ```groovy
         stage('Backend Tests') {
