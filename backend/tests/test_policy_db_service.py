@@ -126,7 +126,7 @@ def test_policy_to_api_projects_requirements_from_authoritative_structured_condi
             {"title": "신청대상", "description": "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자"},
         ],
         "periods": [
-            {"title": "발급 기간", "description": "2026.6.11~8.17", "type": "application"}
+            {"title": "발급 기간", "description": "2026.6.11~8.31", "type": "application"}
         ],
         "requiredDocuments": [],
         "notes": [{"title": "비고", "description": "예산 소진 시 조기 종료"}],
@@ -775,9 +775,9 @@ def make_stay_policy() -> PolicyModel:
         description="숙박 할인권 안내",
         benefit_amount=70000,
         benefit_detail="2/3/5/7만원 할인권",
-        target_condition="발급기간: 2026.6.11~7.31\n사용방법: 참여 온라인 여행사에서 발급",
+        target_condition="발급기간: 2026.6.11~8.31\n사용방법: 참여 온라인 여행사에서 발급",
         region="비수도권 인구감소지역",
-        end_date=date(2026, 7, 31),
+        end_date=date(2026, 8, 31),
         official_url="https://ktostay.visitkorea.or.kr/",
         apply_url=None,
         policy_comment="비수도권 인구감소지역 85개 지자체 숙박 할인",
@@ -801,8 +801,8 @@ def make_stay_policy() -> PolicyModel:
             {"title": "신청대상", "description": "할인권 발급 후 지정 기간 내 입실 가능한 사용자"},
         ],
         "periods": [
-            {"title": "쿠폰 발급 기간", "description": "2026.6.11~8.17", "type": "application"},
-            {"title": "입실 기간", "description": "2026.6.11~8.17", "type": "usage"},
+            {"title": "쿠폰 발급 기간", "description": "2026.6.11~8.31", "type": "application"},
+            {"title": "입실 기간", "description": "2026.6.11~8.31", "type": "usage"},
         ],
         "requiredDocuments": [
             {
@@ -835,7 +835,7 @@ def make_stay_record() -> ExternalSourceRecord:
         region="비수도권 인구감소지역",
         is_nationwide=False,
         status="active",
-        end_date=date(2026, 7, 31),
+        end_date=date(2026, 8, 31),
         benefit_text="2/3/5/7만원 할인권",
         benefit_value_text="2/3/5/7만원 할인권",
         extracted_amount_krw=70000,
@@ -845,8 +845,8 @@ def make_stay_record() -> ExternalSourceRecord:
         field_completeness=90,
         freshness_status="fresh",
         raw_payload={
-            "issuePeriod": "2026.6.11(목)~8.17(월) 매일 오전 10시부터 선착순 발급",
-            "stayPeriod": "2026.6.11(목)~8.17(월)",
+            "issuePeriod": "2026.6.11(목)~8.31(월) 매일 오전 10시부터 선착순 발급",
+            "stayPeriod": "2026.6.11(목)~8.31(월)",
             "usageArea": "비수도권 인구감소지역(85개 지자체)",
             "usagePlace": "국내숙박 업소 / 대실 사용 불가",
             "usageMethod": "참여 온라인 여행사를 통한 숙박 할인권 발급 후 사용 / 1인 1매 사용(선착순)",
@@ -865,12 +865,41 @@ def make_stay_record() -> ExternalSourceRecord:
     )
 
 
+def make_stay_area_policy(
+    *,
+    id: int = 188,
+    slug: str = "stay-discount-gangwon-goseong",
+    sido: str = "강원",
+    city: str = "고성군",
+    source_record_id: int = 88,
+) -> PolicyModel:
+    policy = make_stay_policy()
+    area = policy_service.stay_discount_aliases.StayDiscountAliasArea(
+        sido=sido,
+        city=city,
+        slug=slug,
+    )
+    policy.id = id
+    policy.slug = slug
+    policy.title = policy_service.stay_discount_aliases.alias_title(policy.title, area)
+    policy.region = sido
+    policy.external_source_record_id = source_record_id
+    policy.source_canonical_key = policy_service.stay_discount_aliases.area_source_canonical_key(
+        STAY_DISCOUNT_CAMPAIGN_KEY,
+        slug,
+    )
+    payload: dict[str, object] = {"structuredDetail": policy.structured_detail}
+    policy_service.stay_discount_aliases.apply_alias_structured_detail(payload, area)
+    policy.structured_detail = payload["structuredDetail"]
+    return policy
+
+
 def make_two_stay_campaigns():
     current_policy = make_stay_policy()
     current_policy.id = 23
     current_policy.slug = "travelmonth-33"
     current_policy.external_source_record_id = 35
-    current_policy.end_date = date(2026, 8, 17)
+    current_policy.end_date = date(2026, 8, 31)
     legacy_policy = make_stay_policy()
     legacy_policy.id = 26
     legacy_policy.slug = "travelmonth-35"
@@ -879,7 +908,7 @@ def make_two_stay_campaigns():
     current_record = make_stay_record()
     current_record.id = 35
     current_record.canonical_key = STAY_DISCOUNT_CAMPAIGN_KEY
-    current_record.end_date = date(2026, 8, 17)
+    current_record.end_date = date(2026, 8, 31)
     legacy_record = make_stay_record()
     legacy_record.id = 33
     legacy_record.canonical_key = "legacy-period-hash"
@@ -887,16 +916,29 @@ def make_two_stay_campaigns():
     return current_policy, legacy_policy, current_record, legacy_record
 
 
-def test_stay_discount_list_projects_aliases_and_hides_canonical(monkeypatch) -> None:
+def test_stay_discount_list_uses_persisted_area_rows_and_hides_canonical(
+    monkeypatch,
+) -> None:
     fake_db = object()
-    canonical = make_stay_policy()
-    record = make_stay_record()
+    gangwon_goseong = make_stay_area_policy()
+    gangwon_samcheok = make_stay_area_policy(
+        id=189,
+        slug="stay-discount-gangwon-samcheok",
+        city="삼척시",
+    )
+    gyeongnam_goseong = make_stay_area_policy(
+        id=190,
+        slug="stay-discount-gyeongnam-goseong",
+        sido="경남",
+        city="고성군",
+    )
 
-    monkeypatch.setattr(policy_service.policy_repository, "list_policies", lambda db: [canonical] if db is fake_db else [])
     monkeypatch.setattr(
-        policy_service.external_source_repository,
-        "get_external_source_record_by_id",
-        lambda db, record_id: record if db is fake_db and record_id == 88 else None,
+        policy_service.policy_repository,
+        "list_policies",
+        lambda db: [gangwon_goseong, gangwon_samcheok, gyeongnam_goseong]
+        if db is fake_db
+        else [],
     )
 
     payload = policy_service.list_policies(fake_db)
@@ -922,39 +964,22 @@ def test_stay_discount_list_and_detail_select_current_source_on_survivor_policy(
     monkeypatch,
 ) -> None:
     fake_db = object()
-    survivor = make_stay_policy()
+    survivor = make_stay_area_policy()
     survivor.id = 23
-    survivor.slug = "travelmonth-35"
     survivor.external_source_record_id = 35
-    survivor.end_date = date(2026, 8, 17)
-    legacy = make_stay_policy()
-    legacy.id = 26
-    legacy.slug = "travelmonth-33"
-    legacy.external_source_record_id = 33
+    survivor.end_date = date(2026, 8, 31)
 
-    current_record = make_stay_record()
-    current_record.id = 35
-    current_record.canonical_key = STAY_DISCOUNT_CAMPAIGN_KEY
-    current_record.end_date = date(2026, 8, 17)
-    legacy_record = make_stay_record()
-    legacy_record.id = 33
-    legacy_record.canonical_key = "legacy-period-hash"
-
-    records = {33: legacy_record, 35: current_record}
     monkeypatch.setattr(
         policy_service.policy_repository,
         "list_policies",
-        lambda db: [legacy, survivor] if db is fake_db else [],
-    )
-    monkeypatch.setattr(
-        policy_service.external_source_repository,
-        "get_external_source_record_by_id",
-        lambda db, record_id: records.get(record_id) if db is fake_db else None,
+        lambda db: [survivor] if db is fake_db else [],
     )
     monkeypatch.setattr(
         policy_service.policy_repository,
         "get_policy_by_slug_any_status",
-        lambda *_args: None,
+        lambda db, slug: survivor
+        if db is fake_db and slug == "stay-discount-gangwon-goseong"
+        else None,
     )
     monkeypatch.setattr(
         policy_service.external_source_repository,
@@ -965,32 +990,15 @@ def test_stay_discount_list_and_detail_select_current_source_on_survivor_policy(
     payload = policy_service.list_policies(fake_db)
     detail = policy_service.get_policy("stay-discount-gangwon-goseong", fake_db)
 
-    assert len(payload) == 3
-    assert len({item["slug"] for item in payload}) == 3
+    assert [item["slug"] for item in payload] == ["stay-discount-gangwon-goseong"]
     assert detail is not None
-    assert detail["deadline"] == "2026-08-17"
-    resolution = policy_service.stay_discount_aliases.resolve_stay_discount_alias_slug(
-        fake_db,
-        "stay-discount-gangwon-goseong",
-        [legacy, survivor],
-    )
-    assert resolution is not None
-    assert resolution.canonical_policy.id == 23
-    assert resolution.canonical_policy.external_source_record_id == 35
+    assert detail["deadline"] == "2026-08-31"
 
 
 def test_stay_discount_list_hides_canonical_when_alias_payload_missing(monkeypatch) -> None:
     fake_db = object()
-    canonical = make_stay_policy()
-    record = make_stay_record()
-    record.raw_payload = {}
 
-    monkeypatch.setattr(policy_service.policy_repository, "list_policies", lambda db: [canonical] if db is fake_db else [])
-    monkeypatch.setattr(
-        policy_service.external_source_repository,
-        "get_external_source_record_by_id",
-        lambda db, record_id: record if db is fake_db and record_id == 88 else None,
-    )
+    monkeypatch.setattr(policy_service.policy_repository, "list_policies", lambda db: [])
 
     assert policy_service.list_policies(fake_db) == []
 
@@ -1052,8 +1060,8 @@ def test_stay_discount_alias_requirements_follow_persisted_structured_conditions
             {"title": "혜택 적용 조건", "description": "1박 이상"},
         ],
         "periods": [
-            {"title": "발급 기간", "description": "2026.6.11~8.17", "type": "application"},
-            {"title": "입실 기간", "description": "2026.6.11~8.17", "type": "usage"},
+            {"title": "발급 기간", "description": "2026.6.11~8.31", "type": "application"},
+            {"title": "입실 기간", "description": "2026.6.11~8.31", "type": "usage"},
         ],
         "requiredDocuments": [],
         "notes": [{"title": "비고", "description": "예산 소진 시 조기 종료"}],
@@ -1210,20 +1218,19 @@ def test_stay_discount_raw_fallback_with_invalid_mapping_is_semantically_empty(m
     assert detail["requirements"] == []
 
 
-def test_stay_discount_alias_save_uses_canonical_policy_id_and_echoes_alias(monkeypatch) -> None:
+def test_stay_discount_alias_save_uses_area_policy_id_and_echoes_alias(monkeypatch) -> None:
     fake_db = FakeDb()
     user = make_user()
-    canonical, legacy, record, legacy_record = make_two_stay_campaigns()
-    records = {35: record, 33: legacy_record}
+    area_policy = make_stay_area_policy(id=123, slug="stay-discount-gyeongnam-goseong")
     added_rows: list[dict[str, int]] = []
 
-    monkeypatch.setattr(policy_service.policy_repository, "list_policies", lambda db: [legacy, canonical] if db is fake_db else [])
     monkeypatch.setattr(
-        policy_service.external_source_repository,
-        "get_external_source_record_by_id",
-        lambda db, record_id: records.get(record_id) if db is fake_db else None,
+        policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda db, slug: area_policy
+        if db is fake_db and slug == "stay-discount-gyeongnam-goseong"
+        else None,
     )
-    monkeypatch.setattr(policy_service.policy_repository, "get_policy_by_slug", lambda *_args: None)
     monkeypatch.setattr(policy_service.policy_repository, "get_saved_policy", lambda *_args, **_kwargs: None)
 
     def add_saved_policy_stub(_db, **kwargs):
@@ -1235,27 +1242,27 @@ def test_stay_discount_alias_save_uses_canonical_policy_id_and_echoes_alias(monk
     payload = policy_service.save_policy("stay-discount-gyeongnam-goseong", fake_db, user)
 
     assert payload == {"policyId": "stay-discount-gyeongnam-goseong", "saved": True}
-    assert added_rows == [{"user_id": 7, "policy_id": 23}]
+    assert added_rows == [{"user_id": 7, "policy_id": 123}]
     assert fake_db.commits == 1
 
 
-def test_stay_discount_alias_save_deduplicates_canonical_saved_policy(monkeypatch) -> None:
+def test_stay_discount_alias_save_deduplicates_area_saved_policy(monkeypatch) -> None:
     fake_db = FakeDb()
     user = make_user()
-    canonical = make_stay_policy()
-    record = make_stay_record()
+    area_policy = make_stay_area_policy(id=188)
     added_rows: list[dict[str, int]] = []
 
-    monkeypatch.setattr(policy_service.policy_repository, "list_policies", lambda db: [canonical] if db is fake_db else [])
     monkeypatch.setattr(
-        policy_service.external_source_repository,
-        "get_external_source_record_by_id",
-        lambda db, record_id: record if db is fake_db and record_id == 88 else None,
+        policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda db, slug: area_policy
+        if db is fake_db and slug == "stay-discount-gangwon-goseong"
+        else None,
     )
     monkeypatch.setattr(
         policy_service.policy_repository,
         "get_saved_policy",
-        lambda *_args, **_kwargs: UserSavedPolicy(id=1, user_id=7, policy_id=88),
+        lambda *_args, **_kwargs: UserSavedPolicy(id=1, user_id=7, policy_id=188),
     )
     monkeypatch.setattr(
         policy_service.policy_repository,
@@ -1270,20 +1277,19 @@ def test_stay_discount_alias_save_deduplicates_canonical_saved_policy(monkeypatc
     assert fake_db.commits == 0
 
 
-def test_stay_discount_alias_remove_uses_canonical_policy_id_and_echoes_alias(monkeypatch) -> None:
+def test_stay_discount_alias_remove_uses_area_policy_id_and_echoes_alias(monkeypatch) -> None:
     fake_db = FakeDb()
     user = make_user()
-    canonical, legacy, record, legacy_record = make_two_stay_campaigns()
-    records = {35: record, 33: legacy_record}
+    area_policy = make_stay_area_policy(id=124, slug="stay-discount-gangwon-samcheok")
     removed_rows: list[dict[str, int]] = []
 
-    monkeypatch.setattr(policy_service.policy_repository, "list_policies", lambda db: [legacy, canonical] if db is fake_db else [])
     monkeypatch.setattr(
-        policy_service.external_source_repository,
-        "get_external_source_record_by_id",
-        lambda db, record_id: records.get(record_id) if db is fake_db else None,
+        policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda db, slug: area_policy
+        if db is fake_db and slug == "stay-discount-gangwon-samcheok"
+        else None,
     )
-    monkeypatch.setattr(policy_service.policy_repository, "get_policy_by_slug", lambda *_args: None)
 
     def remove_saved_policy_stub(_db, **kwargs):
         removed_rows.append(kwargs)
@@ -1294,5 +1300,5 @@ def test_stay_discount_alias_remove_uses_canonical_policy_id_and_echoes_alias(mo
     payload = policy_service.remove_saved_policy("stay-discount-gangwon-samcheok", fake_db, user)
 
     assert payload == {"policyId": "stay-discount-gangwon-samcheok", "saved": False}
-    assert removed_rows == [{"user_id": 7, "policy_id": 23}]
+    assert removed_rows == [{"user_id": 7, "policy_id": 124}]
     assert fake_db.commits == 1

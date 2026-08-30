@@ -1,11 +1,17 @@
 import {
   DndContext,
+  DragOverlay,
+  MeasuringStrategy,
   KeyboardSensor,
   MouseSensor,
   TouchSensor,
   closestCenter,
+  pointerWithin,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
+  type Modifier,
   useDroppable,
   useSensor,
   useSensors,
@@ -26,7 +32,15 @@ import {
   Map as MapIcon,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import {
   Link,
   useLocation,
@@ -83,9 +97,6 @@ const placeTimeErrorMessage = "방문 시간은 10분 단위로 선택해 주세
 type TripDetailLocationState = {
   linkedPolicy?: LinkedTripPolicy | null;
 };
-type TripPlaceAddDraft = TripPlaceRequest & {
-  dayNumber: number;
-};
 type TripPlaceEditDraft = TripPlaceRequest & {
   placeId: string;
 };
@@ -104,6 +115,12 @@ type PreviewPlace = {
   sourceProvider?: string | null;
   externalPlaceId?: string | null;
 };
+type PlaceBasketItem = TripPlaceRequest & {
+  basketId: string;
+};
+type BatchPlaceRecovery =
+  | { kind: "none" }
+  | { kind: "missingDay"; availableDays: number[] };
 type DisplayedPlace = ItineraryPlace & {
   isRecommendationPreview?: boolean;
   previewId?: string;
@@ -128,16 +145,13 @@ type RecommendationPreviewState = {
 };
 type PlacePreviewSource =
   | "empty"
-  | "draft"
   | "recommendation"
   | "searchPreview"
-  | "selected"
-  | "manual";
+  | "selected";
 type PlaceSaveEligibility =
   | "empty"
   | "saveSelected"
-  | "requiresExplicitCandidate"
-  | "manualAllowed";
+  | "requiresExplicitCandidate";
 type PlacePreviewCandidate = TripPlaceRequest & {
   previewId: string;
   source: Exclude<PlacePreviewSource, "empty">;
@@ -196,6 +210,25 @@ function formatDayDateLabel(dates: string, dayNumber: number): string {
   return `${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
 }
 
+function parseTripDateInputs(dates: string): { startDate: string; endDate: string } | null {
+  const match = /^(\d{4})\.(\d{2})\.(\d{2})\s*-\s*(?:(\d{4})\.)?(\d{2})\.(\d{2})/.exec(dates);
+  if (!match) return null;
+  const startYear = match[1];
+  const endYear = match[4] ?? startYear;
+  return {
+    startDate: `${startYear}-${match[2]}-${match[3]}`,
+    endDate: `${endYear}-${match[5]}-${match[6]}`,
+  };
+}
+
+function dayCountFromDateInputs(startDate: string, endDate: string): number | null {
+  if (!startDate || !endDate) return null;
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
+}
+
 function formatTripDday(dates: string): string {
   const match = /^(\d{4})\.(\d{2})\.(\d{2})/.exec(dates);
   if (!match) return "D-day";
@@ -249,10 +282,6 @@ function getPlaceMapPoint(
   };
 }
 
-function tripPlaceAddDraftKey(tripId: string, dayNumber: number): string {
-  return createDraftKey(`trip-place:${tripId}:add:${dayNumber}`);
-}
-
 function tripPlaceEditDraftKey(tripId: string, placeId: string): string {
   return createDraftKey(`trip-place:${tripId}:edit:${placeId}`);
 }
@@ -272,6 +301,120 @@ function displayedPlaceSortableId(
   if (place.previewId) return previewPlaceDragId(place.previewId);
   if (place.id) return placeDragId(place.id);
   return null;
+}
+
+function displayedPlaceSortableIds(
+  places: Pick<DisplayedPlace, "id" | "previewTimelineId" | "previewId">[],
+): string[] {
+  return places.flatMap((place) => {
+    const sortableId = displayedPlaceSortableId(place);
+    return sortableId ? [sortableId] : [];
+  });
+}
+
+export function buildTimelineSortableIds({
+  activeSortableId,
+  ghostPosition,
+  sortableIds,
+}: {
+  activeSortableId: string;
+  ghostPosition: number | null;
+  sortableIds: string[];
+}): string[] {
+  if (ghostPosition == null) return sortableIds;
+  const targetIds = sortableIds.filter((id) => id !== activeSortableId);
+  const index = Math.max(0, Math.min(ghostPosition - 1, targetIds.length));
+  return [
+    ...targetIds.slice(0, index),
+    activeSortableId,
+    ...targetIds.slice(index),
+  ];
+}
+
+export type TimelineRenderItem<T> =
+  | { type: "item"; value: T }
+  | { type: "ghost" };
+
+export function buildTimelineRenderItems<T>({
+  ghostPosition,
+  items,
+}: {
+  ghostPosition: number | null;
+  items: T[];
+}): TimelineRenderItem<T>[] {
+  const renderItems = items.map((value) => ({
+    type: "item" as const,
+    value,
+  }));
+  if (ghostPosition == null) return renderItems;
+  const index = Math.max(0, Math.min(ghostPosition - 1, renderItems.length));
+  return [
+    ...renderItems.slice(0, index),
+    { type: "ghost" },
+    ...renderItems.slice(index),
+  ];
+}
+
+export function shouldForwardWindowWheelToAppScroll(
+  event: Pick<WheelEvent, "deltaY" | "defaultPrevented">,
+  appContainer: Pick<
+    HTMLElement,
+    "clientHeight" | "scrollHeight" | "scrollTop" | "classList"
+  > | null,
+): boolean {
+  if (!appContainer) return false;
+  if (event.defaultPrevented) return false;
+  if (event.deltaY === 0) return false;
+
+  const maxScrollTop = Math.max(
+    0,
+    appContainer.scrollHeight - appContainer.clientHeight,
+  );
+  if (maxScrollTop <= 0) return false;
+  if (event.deltaY < 0 && appContainer.scrollTop <= 0) return false;
+  if (event.deltaY > 0 && appContainer.scrollTop >= maxScrollTop) return false;
+  return true;
+}
+
+/**
+ * 휠이 앱 컨테이너보다 안쪽의 스크롤 가능한 요소에서 났는지 본다.
+ * 휠은 window까지 버블링되므로, 대상을 가리지 않으면 시트 위에서 굴려도
+ * 브리지가 기본 스크롤을 취소하고 뒤 화면을 스크롤한다.
+ *
+ * 특정 모달 클래스를 나열하지 않는다. 새 모달이 생길 때마다 재발한다.
+ */
+export function isWheelInsideNestedScroller(
+  path: { canScrollY: boolean; isAppContainer: boolean }[],
+): boolean {
+  for (const node of path) {
+    if (node.isAppContainer) return false;
+    if (node.canScrollY) return true;
+  }
+  return false;
+}
+
+function findSortableIdDay(
+  sortableIdsByDay: Record<number, string[]>,
+  sortableId: string,
+): number | null {
+  for (const [dayText, sortableIds] of Object.entries(sortableIdsByDay)) {
+    if (sortableIds.includes(sortableId)) return Number(dayText);
+  }
+  return null;
+}
+
+export function isCrossDayTimelineDrag({
+  activeSortableId,
+  sortableIdsByDay,
+  visibleDay,
+}: {
+  activeSortableId: string | null;
+  sortableIdsByDay: Record<number, string[]>;
+  visibleDay: number;
+}): boolean {
+  if (!activeSortableId) return false;
+  const sourceDay = findSortableIdDay(sortableIdsByDay, activeSortableId);
+  return sourceDay != null && sourceDay !== visibleDay;
 }
 
 function dayDropId(dayNumber: number): string {
@@ -329,6 +472,461 @@ function parseDayDropId(id: unknown): number | null {
   const dayNumber = Number(value.slice("day:".length));
   return Number.isFinite(dayNumber) ? dayNumber : null;
 }
+
+export function isPointerInsideClientRect(
+  point: { x: number; y: number } | null,
+  rect: Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null,
+): boolean {
+  if (!point || !rect) return false;
+  return (
+    point.x >= rect.left &&
+    point.x <= rect.right &&
+    point.y >= rect.top &&
+    point.y <= rect.bottom
+  );
+}
+
+/**
+ * Day 탭은 높이 24px짜리 얇은 띠라 드래그 중 포인터를 정확히 유지하기 어렵다.
+ * 탭 경계 바깥 이 정도까지는 같은 탭을 가리킨 것으로 본다.
+ */
+export const DAY_TAB_POINTER_TOLERANCE_PX = 12;
+
+/** 하이라이트가 켜진 뒤 실제로 날짜가 열리기까지의 지연. 사실상 즉시 전환에 가깝다. */
+export const DAY_SWITCH_DELAY_MS = 10;
+
+export function pointerDistanceToClientRect(
+  point: { x: number; y: number } | null,
+  rect: Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null,
+): number {
+  if (!point || !rect) return Number.POSITIVE_INFINITY;
+  const dx = Math.max(rect.left - point.x, 0, point.x - rect.right);
+  const dy = Math.max(rect.top - point.y, 0, point.y - rect.bottom);
+  return Math.hypot(dx, dy);
+}
+
+export function isPointerNearClientRect(
+  point: { x: number; y: number } | null,
+  rect: Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null,
+  tolerance: number = DAY_TAB_POINTER_TOLERANCE_PX,
+): boolean {
+  return pointerDistanceToClientRect(point, rect) <= tolerance;
+}
+
+export function isPointerInsideTimelineArea(
+  point: { x: number; y: number } | null,
+  rect: Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null,
+): boolean {
+  return isPointerInsideClientRect(point, rect);
+}
+
+type PointerRect = Pick<DOMRect, "left" | "right" | "top" | "bottom">;
+
+/**
+ * Day 탭 판정에 쓰는 보이지 않는 박스. 장소추가 버튼 줄 바로 아래부터
+ * 타임라인 첫 카드 바로 위까지를 하나로 묶는다. 탭 사이 6px 간격과
+ * 탭·타임라인 사이 16px 구간이 판정에서 빠져 작은 오버레이 카드가
+ * 끊기던 문제를 없앤다.
+ */
+export function resolveDayZoneRect({
+  actionsRect,
+  dayTabsRect,
+  timelineRect,
+}: {
+  actionsRect: PointerRect | null;
+  dayTabsRect: PointerRect | null;
+  timelineRect: PointerRect | null;
+}): PointerRect | null {
+  if (!dayTabsRect) return null;
+  return {
+    left: dayTabsRect.left,
+    right: dayTabsRect.right,
+    top: actionsRect
+      ? Math.min(actionsRect.bottom, dayTabsRect.top)
+      : dayTabsRect.top,
+    bottom: timelineRect
+      ? Math.max(timelineRect.top, dayTabsRect.bottom)
+      : dayTabsRect.bottom,
+  };
+}
+
+export function shouldScheduleDaySwitch({
+  pointer,
+  dayTabRect,
+  timelineRect,
+  dayZoneRect = null,
+}: {
+  pointer: { x: number; y: number } | null;
+  dayTabRect: Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null;
+  timelineRect: Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null;
+  dayZoneRect?: Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null;
+}): boolean {
+  if (isPointerInsideTimelineArea(pointer, timelineRect)) return false;
+  // resolvePointerDayTarget과 같은 판정을 써야 한다. 어긋나면 불은 켜지는데
+  // 날짜는 안 열리는 죽은 구간이 생긴다.
+  if (isPointerInsideClientRect(pointer, dayZoneRect)) return true;
+  return isPointerNearClientRect(pointer, dayTabRect);
+}
+
+export function shouldUseDayRowDragOverlay({
+  pointer,
+  dayTabsRect,
+  timelineRect,
+}: {
+  pointer: { x: number; y: number } | null;
+  dayTabsRect: Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null;
+  timelineRect: Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null;
+}): boolean {
+  return (
+    isPointerInsideClientRect(pointer, dayTabsRect) &&
+    !isPointerInsideTimelineArea(pointer, timelineRect)
+  );
+}
+
+/**
+ * 드래그 중 타임라인에 걸 인라인 min-height. 날짜를 바꾸면 타임라인 내용이
+ * 통째로 교체되어 문서가 짧아질 수 있고, 그러면 브라우저가 scrollTop을 강제로
+ * 줄여 화면이 출렁인다. 이건 브라우저 레이아웃 동작이라 JS 스크롤 잠금으로는
+ * 막을 수 없다. 줄어드는 것만 막으면 되므로 max-height가 아니라 min-height다.
+ */
+export function resolveTimelineHeightLock(
+  timelineHeight: number | null,
+): string | null {
+  if (timelineHeight == null) return null;
+  if (!Number.isFinite(timelineHeight)) return null;
+  if (timelineHeight <= 0) return null;
+  return `${Math.max(1, Math.round(timelineHeight))}px`;
+}
+
+/**
+ * 드래그 한 번 동안 고정값은 절대 내려가지 않는다. 장소가 적은 날짜에서
+ * 시작해 많은 날짜를 거쳐 돌아오면 문서가 줄어 스크롤이 클램프되기 때문이다.
+ * 시작 시점 높이가 아니라 관측한 최대 높이를 유지한다.
+ */
+export function resolveRaisedTimelineHeightLock(
+  currentLock: string | null,
+  timelineHeight: number | null,
+): string | null {
+  const nextLock = resolveTimelineHeightLock(timelineHeight);
+  if (!nextLock) return currentLock || null;
+  const currentPx = Number.parseFloat(currentLock ?? "");
+  if (!Number.isFinite(currentPx)) return nextLock;
+  return Number.parseFloat(nextLock) > currentPx ? nextLock : currentLock;
+}
+
+/** dnd-kit 자동 스크롤이 발동하는 가장자리 폭. 컨테이너 높이 대비 비율이다. */
+export const PLACE_DRAG_AUTO_SCROLL_THRESHOLD = 0.2;
+
+/**
+ * 위쪽 자동 스크롤의 상한. Day 탭은 타임라인보다 위에 있어서, 탭을 겨냥해
+ * 카드를 위로 끌면 자동 스크롤이 헤더와 버튼 줄을 불러와 탭을 아래로 밀어낸다.
+ * 겨냥하던 대상이 움직이므로 삽입이 어려워진다.
+ *
+ * `anchorRect`가 멈춤 기준이다. 이 요소가 다 보이면 위로 더 갈 이유가 없으므로
+ * 막고, 화면 밖이면 보일 때까지는 허용한다 — 아래로 한참 내려간 상태에서
+ * 집었을 때 다른 날짜로 옮길 길이 막히면 안 되고, 모바일은 휠 대안도 없다.
+ *
+ * 기준은 Day 탭이 아니라 그 위의 장소추가 버튼 줄이다. Day 탭을 기준으로 하면
+ * 탭이 화면 맨 위 가장자리에 딱 붙어 겨냥이 빡빡하다.
+ *
+ * 아래쪽 자동 스크롤은 건드리지 않는다. 화면 밖 장소에 닿으려면 필요하다.
+ */
+export function shouldAllowPlaceDragAutoScroll({
+  pointerY,
+  containerRect,
+  anchorRect,
+  thresholdRatio,
+}: {
+  pointerY: number | null;
+  containerRect: Pick<DOMRect, "top" | "bottom"> | null;
+  anchorRect: Pick<DOMRect, "top" | "bottom"> | null;
+  thresholdRatio: number;
+}): boolean {
+  if (pointerY == null || !containerRect) return true;
+  if (!anchorRect) return true;
+  const containerHeight = containerRect.bottom - containerRect.top;
+  if (containerHeight <= 0) return true;
+  const isPointerInTopBand =
+    pointerY <= containerRect.top + containerHeight * thresholdRatio;
+  if (!isPointerInTopBand) return true;
+  const isAnchorFullyVisible =
+    anchorRect.top >= containerRect.top &&
+    anchorRect.bottom <= containerRect.bottom;
+  return !isAnchorFullyVisible;
+}
+
+export function resolveClosestTimelinePosition({
+  itemRects,
+  pointerY,
+}: {
+  itemRects: Pick<DOMRect, "top" | "bottom">[];
+  pointerY: number | null;
+}): number {
+  if (pointerY == null || itemRects.length === 0) return 1;
+  const nextIndex = itemRects.findIndex(
+    (rect) => pointerY <= (rect.top + rect.bottom) / 2,
+  );
+  return nextIndex < 0 ? itemRects.length + 1 : nextIndex + 1;
+}
+
+/**
+ * 같은 날짜 안에서의 삽입 위치. 백엔드 move_trip_place는 같은 날짜일 때
+ * 끌고 있는 카드를 먼저 뺀 목록에 position-1로 끼우므로, 세는 목록에서도
+ * 그 카드를 빼야 자리가 맞는다. 빼지 않으면 드래그한 카드가 놓는 지점보다
+ * 위에 있을 때 한 칸씩 밀린다.
+ */
+export function resolveSameDayInsertPosition({
+  items,
+  activeSortableId,
+  pointerY,
+}: {
+  items: { sortableId: string; top: number; bottom: number }[];
+  activeSortableId: string | null;
+  pointerY: number | null;
+}): number {
+  return resolveClosestTimelinePosition({
+    itemRects: items.filter((item) => item.sortableId !== activeSortableId),
+    pointerY,
+  });
+}
+
+/**
+ * 끌고 있는 카드 자신은 드롭 후보에서 뺀다. 슬롯의 판정 사각형은 원래 자리에
+ * 그대로 있고 변형은 안쪽 카드에만 걸리므로, 카드 한 장 높이보다 적게 끌면
+ * 포인터가 아직 자기 슬롯 안이라 over === active가 되어 드롭이 무시됐다.
+ * 빼두면 타임라인 영역(day-area)이 받아 포인터 위치대로 자리가 정해진다.
+ */
+export function excludeActiveCollision<T extends { id: unknown }>(
+  collisions: T[],
+  activeId: unknown,
+): T[] {
+  if (activeId == null) return collisions;
+  return collisions.filter(
+    (collision) => String(collision.id) !== String(activeId),
+  );
+}
+
+export function resolvePointerDayTarget({
+  dayNumbers,
+  pointer,
+  rectByDay,
+  timelineRect,
+  dayZoneRect = null,
+}: {
+  dayNumbers: number[];
+  pointer: { x: number; y: number } | null;
+  rectByDay: Record<
+    number,
+    Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null | undefined
+  >;
+  timelineRect: Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null;
+  dayZoneRect?: Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null;
+}): number | null {
+  if (isPointerInsideTimelineArea(pointer, timelineRect)) return null;
+  // Day 존 안이면 거리 상한 없이 가장 가까운 탭을 고른다. 존을 못 재면
+  // 탭 경계 여유(DAY_TAB_POINTER_TOLERANCE_PX)로 폴백한다.
+  const maxDistance = isPointerInsideClientRect(pointer, dayZoneRect)
+    ? Number.POSITIVE_INFINITY
+    : DAY_TAB_POINTER_TOLERANCE_PX;
+  let closestDay: number | null = null;
+  let closestDistance = Number.POSITIVE_INFINITY;
+  for (const dayNumber of dayNumbers) {
+    const distance = pointerDistanceToClientRect(
+      pointer,
+      rectByDay[dayNumber] ?? null,
+    );
+    if (distance > maxDistance) continue;
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestDay = dayNumber;
+    }
+  }
+  return closestDay;
+}
+
+export function resolvePlaceDragOverId({
+  collisionOverId,
+  pointerDayTarget,
+  isOverDayRow,
+  visibleDay,
+  closestVisibleDayPosition,
+}: {
+  collisionOverId: unknown | null;
+  pointerDayTarget: number | null;
+  isOverDayRow: boolean;
+  visibleDay: number;
+  closestVisibleDayPosition: number;
+}): unknown | null {
+  if (pointerDayTarget != null) return dayDropId(pointerDayTarget);
+  if (isOverDayRow) {
+    return dayPositionDropId(visibleDay, closestVisibleDayPosition);
+  }
+  return collisionOverId;
+}
+
+export function resolvePointerVerifiedTimelineOverId({
+  dayNumbers,
+  overId,
+  pointer,
+  rectByDay,
+}: {
+  dayNumbers: number[];
+  overId: unknown;
+  pointer: { x: number; y: number } | null;
+  rectByDay: Record<
+    number,
+    Pick<DOMRect, "left" | "right" | "top" | "bottom"> | null | undefined
+  >;
+}): unknown | null {
+  const targetDay = parseDayDropId(overId);
+  if (!targetDay) return overId;
+  if (!dayNumbers.includes(targetDay)) return null;
+  return isPointerInsideClientRect(pointer, rectByDay[targetDay] ?? null)
+    ? overId
+    : null;
+}
+
+function dayPositionDropId(dayNumber: number, position: number): string {
+  return `day-position:${dayNumber}:${position}`;
+}
+
+function parseDayPositionDropId(
+  id: unknown,
+): { dayNumber: number; position: number } | null {
+  const match = /^day-position:(\d+):(\d+)$/.exec(String(id));
+  if (!match) return null;
+  const dayNumber = Number(match[1]);
+  const position = Number(match[2]);
+  if (!Number.isInteger(dayNumber) || !Number.isInteger(position)) return null;
+  return { dayNumber, position };
+}
+
+export type TimelineDropTarget = {
+  dayNumber: number;
+  position: number;
+};
+
+export function resolveTimelineDropTarget({
+  activeSortableId,
+  dayNumbers,
+  overId,
+  sortableIdsByDay,
+  visibleDay,
+}: {
+  activeSortableId: string;
+  dayNumbers: number[];
+  overId: unknown;
+  sortableIdsByDay: Record<number, string[]>;
+  visibleDay: number;
+}): TimelineDropTarget | null {
+  const explicitPosition = parseDayPositionDropId(overId);
+  if (
+    explicitPosition &&
+    dayNumbers.includes(explicitPosition.dayNumber) &&
+    explicitPosition.position >= 1
+  ) {
+    return explicitPosition;
+  }
+
+  const targetDay = parseDayDropId(overId);
+  if (targetDay && dayNumbers.includes(targetDay)) {
+    const targetIds = sortableIdsByDay[targetDay] ?? [];
+    const sameVisibleDay = targetDay === visibleDay;
+    const targetCount = sameVisibleDay
+      ? targetIds.filter((id) => id !== activeSortableId).length
+      : targetIds.length;
+    return { dayNumber: targetDay, position: targetCount + 1 };
+  }
+
+  const overSortableId = String(overId);
+  if (overSortableId === activeSortableId) return null;
+  for (const dayNumber of dayNumbers) {
+    const targetIds = sortableIdsByDay[dayNumber] ?? [];
+    const targetIndex = targetIds.indexOf(overSortableId);
+    if (targetIndex >= 0) {
+      return { dayNumber, position: targetIndex + 1 };
+    }
+  }
+  return null;
+}
+
+/**
+ * 타임라인 영역 전체를 덮는 드롭 대상. 빈 날짜나 마지막 카드 아래 빈 공간에는
+ * 포인터가 맞출 수 있는 droppable이 없었다 — 카드 사이 슬롯은 height:0이라
+ * pointerWithin이 절대 잡지 못한다.
+ */
+function dayAreaDropId(dayNumber: number): string {
+  return `day-area:${dayNumber}`;
+}
+
+export function parseDayAreaDropId(id: unknown): number | null {
+  const match = /^day-area:(\d+)$/.exec(String(id));
+  if (!match) return null;
+  const dayNumber = Number(match[1]);
+  return Number.isInteger(dayNumber) ? dayNumber : null;
+}
+
+/**
+ * pointerWithin은 겹치는 droppable을 모두 돌려준다. 타임라인 영역은 카드보다
+ * 훨씬 커서 카드를 이길 수 있고, 그러면 카드 사이 삽입 위치를 못 고른다.
+ * 더 구체적인 대상이 하나라도 있으면 영역은 버린다.
+ */
+export function preferSpecificDropTargets<T extends { id: unknown }>(
+  collisions: T[],
+): T[] {
+  const specific = collisions.filter(
+    (collision) => parseDayAreaDropId(collision.id) == null,
+  );
+  return specific.length > 0 ? specific : collisions;
+}
+
+/**
+ * 영역 드롭을 실제 삽입 위치로 바꾼다. closestPosition은 기존
+ * resolveClosestTimelinePosition으로 구하며, 빈 날짜면 1이 나온다.
+ */
+export function resolveDayAreaOverId({
+  overId,
+  closestPosition,
+}: {
+  overId: unknown;
+  closestPosition: number;
+}): unknown {
+  const dayNumber = parseDayAreaDropId(overId);
+  if (dayNumber == null) return overId;
+  return dayPositionDropId(dayNumber, closestPosition);
+}
+
+/**
+ * 유령 자리표시는 활성 카드의 sortable id로 등록돼 있다. 그 위에 드롭하거나
+ * 그 위를 지날 때 id를 그대로 넘기면 resolveTimelineDropTarget의 자기 자신
+ * 방어에 걸려 null이 되고, 드롭이 통째로 무시되거나 유령이 깜빡인다.
+ * 이미 계산해 둔 삽입 위치로 바꿔준다.
+ */
+export function resolveGhostDropOverId({
+  activeSortableId,
+  overId,
+  crossDayPreview,
+}: {
+  activeSortableId: string;
+  overId: unknown;
+  crossDayPreview: TimelineDropTarget | null;
+}): unknown {
+  if (String(overId) !== activeSortableId) return overId;
+  if (!crossDayPreview) return overId;
+  return dayPositionDropId(crossDayPreview.dayNumber, crossDayPreview.position);
+}
+
+const placeDragCollisionDetection: CollisionDetection = (args) => {
+  // 순서가 중요하다. 구체적인 대상을 먼저 고르면 [day-area, 활성카드]에서
+  // 활성카드가 남고, 그걸 빼면 후보가 통째로 비어 드롭이 무시된다.
+  const narrow = <T extends { id: unknown }>(collisions: T[]): T[] =>
+    preferSpecificDropTargets(
+      excludeActiveCollision(collisions, args.active?.id ?? null),
+    );
+  const pointerCollisions = narrow(pointerWithin(args));
+  if (pointerCollisions.length > 0) return pointerCollisions;
+  return narrow(closestCenter(args));
+};
 
 function parsePlaceTime(
   value: string | null | undefined,
@@ -751,6 +1349,22 @@ function placeTimeMinutes(time: string | undefined): number | null {
   return hour * 60 + minute;
 }
 
+/**
+ * 추천 미리보기의 시간 수정창은 한 번에 하나만 열린다. `<details>`는 자기
+ * 열림 상태를 스스로 들고 서로를 모르므로, 부모가 열린 카드 하나를 기억한다.
+ *
+ * 닫는 신호는 그 카드가 실제로 열려 있을 때만 반영한다. 그렇지 않으면
+ * 브라우저가 다른 카드에 보내는 닫힘 신호가 열린 창을 꺼버린다.
+ */
+export function resolveNextOpenTimeEditorId(
+  currentOpenId: string | null,
+  toggledId: string,
+  willOpen: boolean,
+): string | null {
+  if (willOpen) return toggledId;
+  return currentOpenId === toggledId ? null : currentOpenId;
+}
+
 function displayedPlaceWarningKey(place: DisplayedPlace): string | null {
   return place.id ?? place.previewTimelineId ?? null;
 }
@@ -902,22 +1516,6 @@ function previewFromSearchCandidate(
   );
 }
 
-function previewFromDraft(
-  draft: TripPlaceAddDraft,
-  dayNumber: number,
-): PlacePreviewCandidate {
-  return previewFromPayload(
-    {
-      time: draft.time ?? "",
-      label: draft.label,
-      meta: draft.meta ?? "",
-    },
-    "draft",
-    dayNumber,
-    `draft:${dayNumber}:${draft.label}`,
-  );
-}
-
 function placePreviewMarker(
   place: PlacePreviewCandidate,
 ): KakaoMapMarker | null {
@@ -934,15 +1532,6 @@ function placePreviewMarker(
   };
 }
 
-function saveEligibilityForPreview(
-  preview: PlacePreviewState,
-): PlaceSaveEligibility {
-  if (preview.source === "empty") return "empty";
-  return preview.source === "searchPreview"
-    ? "requiresExplicitCandidate"
-    : "saveSelected";
-}
-
 function placeSearchText(item: PlaceSearchCandidate): string {
   return [item.title, item.meta, item.categoryName, item.address]
     .filter((part): part is string => Boolean(part))
@@ -955,6 +1544,14 @@ const TRIP_CONFLICT_MESSAGE =
 
 function isTripConflict(error: unknown): boolean {
   return isApiError(error) && error.status === 409;
+}
+
+export function isMissingTripDay(error: unknown): boolean {
+  return (
+    isApiError(error) &&
+    error.status === 404 &&
+    error.detail === "Trip day not found"
+  );
 }
 
 export function ItineraryDetailPage() {
@@ -993,6 +1590,9 @@ export function ItineraryDetailPage() {
   const [placeSearchCandidates, setPlaceSearchCandidates] = useState<
     PlaceSearchCandidate[]
   >([]);
+  const [placeBasket, setPlaceBasket] = useState<PlaceBasketItem[]>([]);
+  const [batchPlaceRecovery, setBatchPlaceRecovery] =
+    useState<BatchPlaceRecovery>({ kind: "none" });
   const [isLoadingPlaceSearch, setIsLoadingPlaceSearch] = useState(false);
   const [placeSearchError, setPlaceSearchError] = useState("");
   const [placePreview, setPlacePreview] = useState<PlacePreviewState>({
@@ -1003,6 +1603,14 @@ export function ItineraryDetailPage() {
     useState<PlaceSaveEligibility>("empty");
   const [movingPlaceId, setMovingPlaceId] = useState<string | null>(null);
   const [draggingPlaceId, setDraggingPlaceId] = useState<string | null>(null);
+  // 추천 미리보기 시간 수정창은 한 번에 하나만 열린다. <details>가 서로를
+  // 모르므로 부모가 열린 카드를 하나 들고 있어야 한다.
+  const [openTimeEditorId, setOpenTimeEditorId] = useState<string | null>(null);
+  const [dragOverDay, setDragOverDay] = useState<number | null>(null);
+  const [isDragOverDayRow, setIsDragOverDayRow] = useState(false);
+  const [crossDayDragPreview, setCrossDayDragPreview] = useState<
+    { dayNumber: number; position: number } | null
+  >(null);
   const [moveError, setMoveError] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [placeDetail, setPlaceDetail] = useState<{
@@ -1011,6 +1619,13 @@ export function ItineraryDetailPage() {
   } | null>(null);
   const [deleteCandidatePlace, setDeleteCandidatePlace] =
     useState<ItineraryPlace | null>(null);
+  const [dateEditor, setDateEditor] = useState<{
+    startDate: string;
+    endDate: string;
+    overflowPlaceStrategy: "moveToLastDay" | "delete";
+    error: string;
+    isSaving: boolean;
+  } | null>(null);
   const [removingPolicySlug, setRemovingPolicySlug] = useState<string | null>(
     null,
   );
@@ -1026,9 +1641,17 @@ export function ItineraryDetailPage() {
       selectedPreviewIds: [],
       timeline: {},
       error: "",
-    });
+  });
   const placeEditorSessionRef = useRef(0);
   const placeSearchRequestRef = useRef(0);
+  const placeBasketIdRef = useRef(0);
+  const placeDragAutoSwitchTimerRef = useRef<number | null>(null);
+  const placeDragAutoSwitchDayRef = useRef<number | null>(null);
+  const placeDragScrollLockRef = useRef(false);
+  const placeDragPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const placeDragContentBoundsRef = useRef<{
+    activeBottomWithMargin: number;
+  } | null>(null);
   const placePreviewRef = useRef<PlacePreviewState>({
     source: "empty",
     place: null,
@@ -1062,6 +1685,16 @@ export function ItineraryDetailPage() {
     const sortableId = displayedPlaceSortableId(place);
     return sortableId ? [sortableId] : [];
   });
+  const sortableIdsByDay = dayNumbers.reduce<Record<number, string[]>>(
+    (idsByDay, day) => {
+      const places = isPreviewActive
+        ? (recommendationPreview.timeline[day] ?? [])
+        : (trip?.days[day] ?? []);
+      idsByDay[day] = displayedPlaceSortableIds(places);
+      return idsByDay;
+    },
+    {},
+  );
   const stayLabel = formatStayLabel(dayNumbers.length || 3);
   const canManageTripStatus =
     trip?.currentUserRole === "owner" || trip?.currentUserRole === "editor";
@@ -1072,6 +1705,41 @@ export function ItineraryDetailPage() {
     draggingPlaceId,
     isPreviewActive ? recommendationPreview.timeline : undefined,
   );
+  const draggingPlaceSortableId = draggingPlaceId
+    ? isPreviewActive
+      ? draggingPlaceId
+      : placeDragId(draggingPlaceId)
+    : null;
+  const isCrossDayPlaceDrag = isCrossDayTimelineDrag({
+    activeSortableId: draggingPlaceSortableId,
+    sortableIdsByDay,
+    visibleDay,
+  });
+  /**
+   * 다른 날짜에서 끌고 온 카드가 들어갈 자리. 이 값이 있으면 활성 카드의 id를
+   * 보이는 날짜의 SortableContext에 끼워 넣어, 같은 날짜 이동과 똑같이
+   * dnd-kit이 주변 카드를 밀어내게 한다.
+   */
+  const crossDayGhostPosition =
+    isCrossDayPlaceDrag && crossDayDragPreview?.dayNumber === visibleDay
+      ? crossDayDragPreview.position
+      : null;
+  const timelineGhostPosition =
+    crossDayGhostPosition != null && draggingPlaceSortableId
+      ? crossDayGhostPosition
+      : null;
+  const timelineSortableIds =
+    timelineGhostPosition == null || !draggingPlaceSortableId
+      ? sortablePlaceIds
+      : buildTimelineSortableIds({
+          activeSortableId: draggingPlaceSortableId,
+          ghostPosition: timelineGhostPosition,
+          sortableIds: sortablePlaceIds,
+        });
+  const timelineRenderItems = buildTimelineRenderItems({
+    ghostPosition: timelineGhostPosition,
+    items: displayedPlaces,
+  });
   const tripPeople = trip?.people.length
     ? trip.people
     : ["지영", "민수", "수현"];
@@ -1079,6 +1747,15 @@ export function ItineraryDetailPage() {
     ? getTripRegionEmojiFromTitle(trip.title)
     : "🧳";
   const tripDdayLabel = trip ? formatTripDday(trip.dates) : "D-day";
+  const dateEditorDayCount = dateEditor
+    ? dayCountFromDateInputs(dateEditor.startDate, dateEditor.endDate)
+    : null;
+  const dateEditorOverflowPlaceCount =
+    trip && dateEditorDayCount != null && dateEditorDayCount < dayNumbers.length
+      ? dayNumbers
+          .filter((day) => day > dateEditorDayCount)
+          .reduce((sum, day) => sum + (trip.days[day]?.length ?? 0), 0)
+      : 0;
   const routeLinkedPolicy =
     (location.state as TripDetailLocationState | null)?.linkedPolicy ?? null;
   const linkedPolicies = linkedTripPoliciesForDisplay(
@@ -1098,6 +1775,210 @@ export function ItineraryDetailPage() {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
+  const clearPlaceDragAutoSwitch = useCallback(() => {
+    if (placeDragAutoSwitchTimerRef.current !== null) {
+      window.clearTimeout(placeDragAutoSwitchTimerRef.current);
+    }
+    placeDragAutoSwitchTimerRef.current = null;
+    placeDragAutoSwitchDayRef.current = null;
+  }, []);
+  const updatePlaceDragPointer = useCallback((event: Event) => {
+    if (event instanceof PointerEvent || event instanceof MouseEvent) {
+      placeDragPointerRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+      };
+      return;
+    }
+    if (event instanceof TouchEvent) {
+      const touch = event.touches[0] ?? event.changedTouches[0] ?? null;
+      if (touch) {
+        placeDragPointerRef.current = {
+          x: touch.clientX,
+          y: touch.clientY,
+        };
+      }
+    }
+  }, []);
+  const getPointerVerifiedTimelineOverId = useCallback(
+    (overId: unknown): unknown | null => {
+      const targetDay = parseDayDropId(overId);
+      if (!targetDay) return overId;
+      const dayTabElement = document.querySelector<HTMLElement>(
+        `[data-day-drop-id="${dayDropId(targetDay)}"]`,
+      );
+      return resolvePointerVerifiedTimelineOverId({
+        dayNumbers,
+        overId,
+        pointer: placeDragPointerRef.current,
+        rectByDay: {
+          [targetDay]: dayTabElement?.getBoundingClientRect() ?? null,
+        },
+      });
+    },
+    [dayNumbers],
+  );
+  // 빈 날짜와 마지막 카드 아래 빈 공간을 위한 드롭 대상. 카드 사이 슬롯은
+  // height:0이라 포인터가 맞출 수 없어 이 영역이 유일한 후보가 된다.
+  const { setNodeRef: setTimelineAreaRef } = useDroppable({
+    id: dayAreaDropId(visibleDay),
+  });
+  const getDayZoneRect = useCallback(() => {
+    const actionsElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-actions]",
+    );
+    const dayTabsElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-day-tabs]",
+    );
+    const timelineElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-timeline]",
+    );
+    return resolveDayZoneRect({
+      actionsRect: actionsElement?.getBoundingClientRect() ?? null,
+      dayTabsRect: dayTabsElement?.getBoundingClientRect() ?? null,
+      timelineRect: timelineElement?.getBoundingClientRect() ?? null,
+    });
+  }, []);
+  const getPointerDayTarget = useCallback((): number | null => {
+    const timelineElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-timeline]",
+    );
+    const rectByDay = Object.fromEntries(
+      dayNumbers.map((dayNumber) => {
+        const dayTabElement = document.querySelector<HTMLElement>(
+          `[data-day-drop-id="${dayDropId(dayNumber)}"]`,
+        );
+        return [dayNumber, dayTabElement?.getBoundingClientRect() ?? null];
+      }),
+    );
+    return resolvePointerDayTarget({
+      dayNumbers,
+      pointer: placeDragPointerRef.current,
+      rectByDay,
+      timelineRect: timelineElement?.getBoundingClientRect() ?? null,
+      dayZoneRect: getDayZoneRect(),
+    });
+  }, [dayNumbers, getDayZoneRect]);
+  const isPointerOverDayRow = useCallback((): boolean => {
+    const timelineElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-timeline]",
+    );
+    // 탭 행이 아니라 Day 존 전체를 본다. 탭 사이 간격과 탭·타임라인 사이
+    // 죽은 구간에서도 작은 오버레이 카드가 끊기지 않는다.
+    return shouldUseDayRowDragOverlay({
+      pointer: placeDragPointerRef.current,
+      dayTabsRect: getDayZoneRect(),
+      timelineRect: timelineElement?.getBoundingClientRect() ?? null,
+    });
+  }, [getDayZoneRect]);
+  const getClosestCurrentDayTimelinePosition = useCallback(
+    (activeSortableId: string | null): number => {
+      const items = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          "[data-itinerary-timeline] [data-sortable-id]:not([data-timeline-ghost])",
+        ),
+      ).map((item) => {
+        const rect = item.getBoundingClientRect();
+        return {
+          sortableId: item.dataset.sortableId ?? "",
+          top: rect.top,
+          bottom: rect.bottom,
+        };
+      });
+      return resolveSameDayInsertPosition({
+        items,
+        activeSortableId,
+        pointerY: placeDragPointerRef.current?.y ?? null,
+      });
+    },
+    [],
+  );
+  /**
+   * 드래그 중에는 스크롤 체이닝(당겨서 새로고침 등)과 smooth 스크롤만 끈다.
+   * 스크롤 자체를 막으면 dnd-kit 자동 스크롤과 휠까지 죽는다. 시작 위치로
+   * 되돌리는 로직도 두지 않는다 — 자동 스크롤로 내려간 사용자를 낚아챈다.
+   */
+  const lockPlaceDragViewportScroll = useCallback(() => {
+    if (typeof window === "undefined" || placeDragScrollLockRef.current) return;
+    const appContainer = document.querySelector<HTMLElement>(".app-container");
+    placeDragScrollLockRef.current = true;
+    document.documentElement.classList.add("itinerary-place-drag-scroll-locked");
+    document.body.classList.add("itinerary-place-drag-scroll-locked");
+    appContainer?.classList.add("itinerary-place-drag-scroll-locked");
+    // 날짜를 바꿔도 문서가 짧아지지 않게 현재 높이를 바닥으로 고정한다.
+    const timelineElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-timeline]",
+    );
+    if (timelineElement) {
+      const lockedHeight = resolveTimelineHeightLock(
+        timelineElement.getBoundingClientRect().height,
+      );
+      if (lockedHeight) timelineElement.style.minHeight = lockedHeight;
+    }
+  }, []);
+  const unlockPlaceDragViewportScroll = useCallback(() => {
+    if (!placeDragScrollLockRef.current) return;
+    const appContainer = document.querySelector<HTMLElement>(".app-container");
+    placeDragScrollLockRef.current = false;
+    document.documentElement.classList.remove(
+      "itinerary-place-drag-scroll-locked",
+    );
+    document.body.classList.remove("itinerary-place-drag-scroll-locked");
+    appContainer?.classList.remove("itinerary-place-drag-scroll-locked");
+    // 인라인 값을 지우면 app.css의 min-height: clamp(...)가 다시 적용된다.
+    // 계산값이 바뀌므로 .timeline의 min-height 트랜지션이 걸린다.
+    const timelineElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-timeline]",
+    );
+    timelineElement?.style.removeProperty("min-height");
+  }, []);
+  /**
+   * 날짜가 바뀌면 타임라인 높이가 달라진다. 커졌으면 고정값을 올려서,
+   * 나중에 짧은 날짜로 돌아갔을 때 문서가 줄지 않게 한다.
+   */
+  const raiseTimelineHeightLock = useCallback(() => {
+    if (!placeDragScrollLockRef.current) return;
+    const timelineElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-timeline]",
+    );
+    if (!timelineElement) return;
+    const raised = resolveRaisedTimelineHeightLock(
+      timelineElement.style.minHeight || null,
+      timelineElement.getBoundingClientRect().height,
+    );
+    if (raised) timelineElement.style.minHeight = raised;
+  }, []);
+  useEffect(() => {
+    if (!draggingPlaceId) return;
+    raiseTimelineHeightLock();
+  }, [draggingPlaceId, visibleDay, raiseTimelineHeightLock]);
+  const canPlaceDragAutoScroll = useCallback((element: Element): boolean => {
+    // 멈춤 기준은 Day 탭이 아니라 그 위의 장소추가 버튼 줄이다. 버튼 줄까지
+    // 보이는 지점에서 멈춰야 Day 탭이 화면 위 가장자리에 붙지 않는다.
+    const actionsElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-actions]",
+    );
+    return shouldAllowPlaceDragAutoScroll({
+      pointerY: placeDragPointerRef.current?.y ?? null,
+      containerRect: element.getBoundingClientRect(),
+      anchorRect: actionsElement?.getBoundingClientRect() ?? null,
+      thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+    });
+  }, []);
+  const restrictPlaceDragToContent = useCallback<Modifier>(({ transform }) => {
+    const bounds = placeDragContentBoundsRef.current;
+    const appContainer = document.querySelector<HTMLElement>(".app-container");
+    if (!bounds || !appContainer) return transform;
+    // 날짜가 바뀌면 문서 높이도 바뀐다. 드래그 시작 시점 값을 쓰면 클램프가 튄다.
+    const contentBottom =
+      appContainer.getBoundingClientRect().top +
+      appContainer.scrollHeight -
+      appContainer.scrollTop;
+    return {
+      ...transform,
+      y: Math.min(transform.y, contentBottom - bounds.activeBottomWithMargin),
+    };
+  }, []);
   const refreshTripAfterConflict = async (
     setError: (message: string) => void,
   ) => {
@@ -1111,6 +1992,7 @@ export function ItineraryDetailPage() {
       .getTrip(tripIdToRefresh)
       .catch(() => null);
     if (latestTrip) setTrip(latestTrip);
+    return latestTrip;
   };
   const updatePlacePreview = (nextPreview: PlacePreviewState) => {
     placePreviewRef.current = nextPreview;
@@ -1156,6 +2038,49 @@ export function ItineraryDetailPage() {
     }
   }, [navigate, trip, tripId]);
 
+  useEffect(() => {
+    if (!draggingPlaceId) return undefined;
+    window.addEventListener("pointermove", updatePlaceDragPointer, {
+      passive: true,
+    });
+    window.addEventListener("touchmove", updatePlaceDragPointer, {
+      passive: true,
+    });
+    return () => {
+      window.removeEventListener("pointermove", updatePlaceDragPointer);
+      window.removeEventListener("touchmove", updatePlaceDragPointer);
+    };
+  }, [draggingPlaceId, updatePlaceDragPointer]);
+
+  useEffect(() => {
+    const handleWindowWheel = (event: WheelEvent) => {
+      const appContainer = document.querySelector<HTMLElement>(".app-container");
+      if (!appContainer) return;
+      // 휠은 window까지 버블링된다. 시트처럼 안쪽에 스크롤러가 있으면
+      // 브리지가 기본 스크롤을 취소하고 뒤 화면을 스크롤해버린다.
+      const path: { canScrollY: boolean; isAppContainer: boolean }[] = [];
+      let node = event.target instanceof Element ? event.target : null;
+      while (node) {
+        path.push({
+          canScrollY: node.scrollHeight > node.clientHeight,
+          isAppContainer: node === appContainer,
+        });
+        if (node === appContainer) break;
+        node = node.parentElement;
+      }
+      if (isWheelInsideNestedScroller(path)) return;
+      if (!shouldForwardWindowWheelToAppScroll(event, appContainer)) return;
+
+      event.preventDefault();
+      appContainer.scrollTop += event.deltaY;
+    };
+
+    window.addEventListener("wheel", handleWindowWheel, { passive: false });
+    return () => {
+      window.removeEventListener("wheel", handleWindowWheel);
+    };
+  }, []);
+
   const updateDetailSearchParams = (nextValues: {
     day?: number;
     place?: string | null;
@@ -1178,6 +2103,75 @@ export function ItineraryDetailPage() {
     setActiveDay(day);
     setSelectedMapPlaceId(null);
     updateDetailSearchParams({ day, place: null });
+  };
+
+  const openDateEditor = () => {
+    if (!trip) return;
+    const parsedDates = parseTripDateInputs(trip.dates);
+    if (!parsedDates) {
+      setNotice("현재 여행기간을 읽지 못했어요. 새로고침 후 다시 시도해 주세요.");
+      return;
+    }
+    setDateEditor({
+      ...parsedDates,
+      overflowPlaceStrategy: "moveToLastDay",
+      error: "",
+      isSaving: false,
+    });
+  };
+
+  const submitDateEditor = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!trip || !dateEditor || dateEditor.isSaving) return;
+    const nextDayCount = dayCountFromDateInputs(
+      dateEditor.startDate,
+      dateEditor.endDate,
+    );
+    if (nextDayCount == null || nextDayCount < 1) {
+      setDateEditor((current) =>
+        current
+          ? {
+              ...current,
+              error: "종료일은 시작일과 같거나 이후여야 합니다.",
+            }
+          : current,
+      );
+      return;
+    }
+
+    setDateEditor((current) =>
+      current ? { ...current, error: "", isSaving: true } : current,
+    );
+    try {
+      const updatedTrip = await appDataApi.updateTripSettings(trip.id, {
+        expectedRevision: trip.revision,
+        startDate: dateEditor.startDate,
+        endDate: dateEditor.endDate,
+        overflowPlaceStrategy: dateEditor.overflowPlaceStrategy,
+      });
+      const updatedDayNumbers = tripDayNumbers(updatedTrip.days);
+      const nextActiveDay = updatedDayNumbers.includes(visibleDay)
+        ? visibleDay
+        : (updatedDayNumbers[updatedDayNumbers.length - 1] ?? 1);
+      setTrip(updatedTrip);
+      setDateEditor(null);
+      setActiveDay(nextActiveDay);
+      setSelectedMapPlaceId(null);
+      updateDetailSearchParams({ day: nextActiveDay, place: null });
+      setNotice("여행기간을 수정했어요.");
+    } catch (nextError) {
+      setDateEditor((current) =>
+        current
+          ? {
+              ...current,
+              error: isApiError(nextError)
+                ? nextError.message
+                : "여행기간을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.",
+              isSaving: false,
+            }
+          : current,
+      );
+    }
   };
 
   const selectMapPlace = (placeId: string | null) => {
@@ -1359,6 +2353,7 @@ export function ItineraryDetailPage() {
         timeline: {},
         error: "",
       });
+      setOpenTimeEditorId(null);
       setSelectedMapPlaceId((currentPlaceId) =>
         currentPlaceId && savedPreviewIds.has(currentPlaceId)
           ? null
@@ -1470,6 +2465,7 @@ export function ItineraryDetailPage() {
       timeline: {},
       error: "",
     });
+    setOpenTimeEditorId(null);
     setSelectedMapPlaceId((currentPlaceId) =>
       currentPlaceId &&
       recommendationPreview.places.some(
@@ -1503,109 +2499,24 @@ export function ItineraryDetailPage() {
     }));
   };
 
-  const chooseAddPlaceRecommendation = (
-    items: Recommendation[],
-    dayNumber: number,
-  ): { item: Recommendation; index: number } | null => {
-    if (items.length === 0) return null;
-    const visibleDayMatch = items.findIndex(
-      (item) => item.suggestedDay === dayNumber,
-    );
-    if (visibleDayMatch >= 0)
-      return { item: items[visibleDayMatch], index: visibleDayMatch };
-    const tripDayMatch = items.findIndex(
-      (item) =>
-        item.suggestedDay != null && dayNumbers.includes(item.suggestedDay),
-    );
-    if (tripDayMatch >= 0)
-      return { item: items[tripDayMatch], index: tripDayMatch };
-    return { item: items[0], index: 0 };
-  };
-
-  const hydrateDefaultPlaceRecommendation = async (
-    nextTrip: Trip,
-    dayNumber: number,
-    sessionId: number,
-    searchRequestId: number,
-  ) => {
-    try {
-      const recommendations = await appDataApi.listRecommendations(nextTrip.id);
-      if (placeEditorSessionRef.current !== sessionId) return;
-      if (placeSearchRequestRef.current !== searchRequestId) return;
-      if (placePreviewRef.current.source !== "empty") return;
-      const recommendation = chooseAddPlaceRecommendation(
-        recommendations,
-        dayNumber,
-      );
-      if (!recommendation) return;
-      const preview = previewFromRecommendation(
-        recommendation.item,
-        recommendation.index,
-        dayNumber,
-      );
-      updatePlacePreview({ source: "recommendation", place: preview });
-      setPlaceSaveEligibility("saveSelected");
-      updatePlaceForm({
-        time: preview.time ?? "",
-        label: preview.label,
-        meta: preview.meta ?? "",
-        address: preview.address,
-        latitude: preview.latitude,
-        longitude: preview.longitude,
-        category: preview.category,
-        categoryCode: preview.categoryCode,
-        placeUrl: preview.placeUrl,
-        sourceProvider: preview.sourceProvider,
-        externalPlaceId: preview.externalPlaceId,
-      });
-    } catch {
-      if (
-        placeEditorSessionRef.current === sessionId &&
-        placePreviewRef.current.source === "empty"
-      ) {
-        setPlaceSaveEligibility("empty");
-      }
-    }
-  };
-
   const openAddPlace = () => {
     if (!canEditTrip) {
       showEditPermissionRequired();
       return;
     }
-    const draft = trip
-      ? readDraft<TripPlaceAddDraft>(tripPlaceAddDraftKey(trip.id, visibleDay))
-      : null;
-    const sessionId = placeEditorSessionRef.current + 1;
-    placeEditorSessionRef.current = sessionId;
+    placeEditorSessionRef.current += 1;
     placeSearchRequestRef.current = 0;
     setPlaceSearchQuery("");
     setPlaceSearchCandidates([]);
     setPlaceSearchError("");
+    setPlaceBasket([]);
+    setBatchPlaceRecovery({ kind: "none" });
     setPlaceEditor({ mode: "add", dayNumber: visibleDay });
-    setPlaceForm(
-      draft
-        ? { time: draft.time ?? "", label: draft.label, meta: draft.meta ?? "" }
-        : { time: "", label: "", meta: "" },
-    );
-    if (draft?.label?.trim()) {
-      updatePlacePreview({
-        source: "draft",
-        place: previewFromDraft(draft, visibleDay),
-      });
-      setPlaceSaveEligibility("saveSelected");
-    } else {
-      clearPlacePreview();
-    }
-    setPlaceDraftNotice(draft ? "작성 중이던 장소 내용을 불러왔어요." : "");
+    setPlaceForm({ time: "", label: "", meta: "" });
+    clearPlacePreview();
+    setPlaceSaveEligibility("empty");
+    setPlaceDraftNotice("");
     setPlaceError("");
-    if (trip)
-      void hydrateDefaultPlaceRecommendation(
-        trip,
-        visibleDay,
-        sessionId,
-        placeSearchRequestRef.current,
-      );
   };
 
   const openEditPlace = (place: ItineraryPlace) => {
@@ -1623,6 +2534,7 @@ export function ItineraryDetailPage() {
     setPlaceSearchQuery("");
     setPlaceSearchError("");
     setPlaceSearchCandidates([]);
+    setPlaceBasket([]);
     clearPlacePreview();
     setPlaceEditor({ mode: "edit", dayNumber: visibleDay, place });
     setPlaceForm(
@@ -1649,11 +2561,7 @@ export function ItineraryDetailPage() {
         setPlaceSearchCandidates([]);
         setPlaceSearchError("");
         setIsLoadingPlaceSearch(false);
-        setPlaceSaveEligibility(
-          placePreviewRef.current.source === "searchPreview"
-            ? "manualAllowed"
-            : saveEligibilityForPreview(placePreviewRef.current),
-        );
+        setPlaceSaveEligibility("empty");
       }
       return;
     }
@@ -1679,7 +2587,7 @@ export function ItineraryDetailPage() {
         updatePlacePreview({ source: "searchPreview", place: preview });
         setPlaceSaveEligibility("requiresExplicitCandidate");
       } else if (placeEditor?.mode === "add") {
-        setPlaceSaveEligibility("manualAllowed");
+        setPlaceSaveEligibility("empty");
       }
     } catch {
       if (
@@ -1691,7 +2599,7 @@ export function ItineraryDetailPage() {
       setPlaceSearchError(
         "장소 검색 결과를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.",
       );
-      if (placeEditor?.mode === "add") setPlaceSaveEligibility("manualAllowed");
+      if (placeEditor?.mode === "add") setPlaceSaveEligibility("empty");
     } finally {
       if (
         placeEditorSessionRef.current === sessionId &&
@@ -1706,14 +2614,8 @@ export function ItineraryDetailPage() {
     if (placeEditor?.mode === "add") {
       setPlaceError("");
       const trimmedQuery = query.trim();
-      const blankSearchPreviewEligibility =
-        placePreviewRef.current.source === "searchPreview"
-          ? "manualAllowed"
-          : saveEligibilityForPreview(placePreviewRef.current);
       setPlaceSaveEligibility(
-        trimmedQuery
-          ? "requiresExplicitCandidate"
-          : blankSearchPreviewEligibility,
+        trimmedQuery ? "requiresExplicitCandidate" : "empty",
       );
       setPlaceForm((current) => ({
         time: current.time ?? "",
@@ -1733,6 +2635,36 @@ export function ItineraryDetailPage() {
   };
 
   const selectPlaceSearchCandidate = (candidate: PlaceSearchCandidate) => {
+    if (placeEditor?.mode === "add") {
+      const basketPayload = placeSearchCandidatePayload(candidate, "");
+      placeBasketIdRef.current += 1;
+      setPlaceBasket((current) => [
+        ...current,
+        {
+          ...basketPayload,
+          basketId: `place-basket-${placeBasketIdRef.current}`,
+        },
+      ]);
+      updatePlacePreview({
+        source: "selected",
+        place: previewFromSearchCandidate(
+          candidate,
+          placeEditor.dayNumber,
+          "selected",
+          "",
+        ),
+      });
+      placeSearchRequestRef.current += 1;
+      setPlaceSearchQuery("");
+      setPlaceSearchCandidates([]);
+      setPlaceSearchError("");
+      setIsLoadingPlaceSearch(false);
+      setPlaceSaveEligibility("empty");
+      setPlaceForm({ time: "", label: "", meta: "" });
+      setBatchPlaceRecovery({ kind: "none" });
+      setPlaceError("");
+      return;
+    }
     const preview = previewFromSearchCandidate(
       candidate,
       placeEditor?.dayNumber ?? visibleDay,
@@ -1746,30 +2678,82 @@ export function ItineraryDetailPage() {
     setPlaceError("");
   };
 
+  const removePlaceBasketItem = (basketId: string) => {
+    setPlaceBasket((current) =>
+      current.filter((item) => item.basketId !== basketId),
+    );
+    setBatchPlaceRecovery({ kind: "none" });
+    setPlaceError("");
+  };
+
+  const submitPlaceBasket = async (dayNumber: number) => {
+    if (!trip || !placeEditor || placeEditor.mode !== "add") return;
+    if (placeBasket.length === 0) return;
+    setIsSavingPlace(true);
+    setPlaceError("");
+    setBatchPlaceRecovery({ kind: "none" });
+    const places = placeBasket.map(({ basketId: _basketId, ...place }) => place);
+    try {
+      const nextTrip = await appDataApi.addTripPlaces(trip.id, dayNumber, {
+        expectedRevision: trip.revision,
+        places,
+      });
+      setTrip(nextTrip);
+      setPlaceBasket([]);
+      setPlaceEditor(null);
+      clearPlacePreview();
+      setPlaceDraftNotice("");
+      setNotice("장소를 일정에 추가했어요.");
+      window.setTimeout(() => setNotice(null), 1800);
+    } catch (error) {
+      if (isTripConflict(error)) {
+        await refreshTripAfterConflict(setPlaceError);
+      } else if (isMissingTripDay(error)) {
+        const latestTrip = await refreshTripQuietly(trip.id);
+        if (latestTrip) {
+          setBatchPlaceRecovery({
+            kind: "missingDay",
+            availableDays: tripDayNumbers(latestTrip.days),
+          });
+          setPlaceError(
+            "저장할 Day가 변경되었어요. 최신 일정의 Day를 선택해 다시 저장해 주세요.",
+          );
+        } else {
+          setPlaceError(
+            "최신 일정을 불러오지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.",
+          );
+        }
+      } else {
+        setPlaceError(
+          "장소 정보를 저장하지 못했어요. 입력값을 확인하고 다시 시도해 주세요.",
+        );
+      }
+    } finally {
+      setIsSavingPlace(false);
+    }
+  };
+
+  const retryPlaceBasket = (dayNumber: number) => {
+    void submitPlaceBasket(dayNumber);
+  };
+
   const submitPlaceEditor = async () => {
     if (!trip || !placeEditor) return;
     if (!canEditTrip) {
       setPlaceError("이 일정은 보기 권한으로 참여 중이라 편집할 수 없어요.");
       return;
     }
-    if (
-      placeEditor.mode === "add" &&
-      placeSaveEligibility === "requiresExplicitCandidate"
-    ) {
-      setPlaceError("검색 결과에서 저장할 장소를 직접 선택해 주세요.");
+    if (placeEditor.mode === "add" && placeBasket.length > 0) {
+      void submitPlaceBasket(placeEditor.dayNumber);
       return;
     }
-    if (placeEditor.mode === "add" && placeSaveEligibility === "empty") {
-      setPlaceError("검색 결과를 선택하거나 장소명을 직접 입력해 주세요.");
+    if (placeEditor.mode === "add") {
+      setPlaceError("검색 결과에서 저장할 장소를 선택해 주세요.");
       return;
     }
     const label = placeForm.label.trim();
     if (!label) {
-      setPlaceError(
-        placeEditor.mode === "add"
-          ? "검색 결과를 선택하거나 장소명을 직접 입력해 주세요."
-          : "장소명을 입력해 주세요.",
-      );
+      setPlaceError("장소명을 입력해 주세요.");
       return;
     }
     const time = placeForm.time?.trim() ?? "";
@@ -1801,31 +2785,18 @@ export function ItineraryDetailPage() {
         payload.sourceProvider = placeForm.sourceProvider;
       if (placeForm.externalPlaceId !== undefined)
         payload.externalPlaceId = placeForm.externalPlaceId;
-      const nextTrip =
-        placeEditor.mode === "add"
-          ? await appDataApi.addTripPlace(
-              trip.id,
-              placeEditor.dayNumber,
-              payload,
-            )
-          : await appDataApi.updateTripPlace(
-              trip.id,
-              placeEditor.place.id ?? "",
-              payload,
-            );
-      if (placeEditor.mode === "add")
-        clearDraft(tripPlaceAddDraftKey(trip.id, placeEditor.dayNumber));
+      const nextTrip = await appDataApi.updateTripPlace(
+        trip.id,
+        placeEditor.place.id ?? "",
+        payload,
+      );
       if (placeEditor.mode === "edit" && placeEditor.place.id)
         clearDraft(tripPlaceEditDraftKey(trip.id, placeEditor.place.id));
       setTrip(nextTrip);
       setPlaceEditor(null);
       clearPlacePreview();
       setPlaceDraftNotice("");
-      setNotice(
-        placeEditor.mode === "add"
-          ? "장소를 일정에 추가했어요."
-          : "장소 정보를 수정했어요.",
-      );
+      setNotice("장소 정보를 수정했어요.");
       window.setTimeout(() => setNotice(null), 1800);
     } catch (error) {
       if (isTripConflict(error)) {
@@ -1904,12 +2875,180 @@ export function ItineraryDetailPage() {
     const placeId = isPreviewActive
       ? String(event.active.id)
       : parsePlaceDragId(event.active.id);
-    if (placeId) setDraggingPlaceId(placeId);
+    if (!placeId) return;
+    const activeSortableId = String(event.active.id);
+    const activeNode =
+      typeof document !== "undefined"
+        ? (Array.from(
+            document.querySelectorAll<HTMLElement>("[data-sortable-id]"),
+          ).find((node) => node.dataset.sortableId === activeSortableId) ??
+          null)
+        : null;
+    const appContainer =
+      typeof document !== "undefined"
+        ? document.querySelector<HTMLElement>(".app-container")
+        : null;
+    placeDragContentBoundsRef.current =
+      activeNode && appContainer
+        ? {
+            activeBottomWithMargin:
+              activeNode.getBoundingClientRect().bottom +
+              (Number.parseFloat(
+                window.getComputedStyle(activeNode).marginBottom,
+              ) || 0),
+          }
+        : null;
+    updatePlaceDragPointer(event.activatorEvent);
+    lockPlaceDragViewportScroll();
+    setCrossDayDragPreview(null);
+    setIsDragOverDayRow(false);
+    setDraggingPlaceId(placeId);
+  };
+
+  const handlePlaceDragOver = (event: DragOverEvent) => {
+    if (!trip || !canEditTrip || movingPlaceId) return;
+    let verifiedOverId = event.over
+      ? getPointerVerifiedTimelineOverId(event.over.id)
+      : null;
+    const timelineElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-timeline]",
+    );
+    const isOverDayRow = isPointerOverDayRow();
+    setIsDragOverDayRow(isOverDayRow);
+    const pointerDayTarget = getPointerDayTarget();
+    verifiedOverId = resolvePlaceDragOverId({
+      collisionOverId: verifiedOverId,
+      pointerDayTarget,
+      isOverDayRow,
+      visibleDay,
+      closestVisibleDayPosition: getClosestCurrentDayTimelinePosition(String(event.active.id)),
+    });
+    if (!pointerDayTarget && !isOverDayRow) {
+      const dayTarget = parseDayDropId(verifiedOverId);
+      if (
+        dayTarget &&
+        isPointerInsideTimelineArea(
+          placeDragPointerRef.current,
+          timelineElement?.getBoundingClientRect() ?? null,
+        )
+      ) {
+        verifiedOverId = dayPositionDropId(dayTarget, 1);
+      }
+    }
+    const activeSortableId = String(event.active.id);
+    verifiedOverId = resolveDayAreaOverId({
+      overId: verifiedOverId,
+      closestPosition: getClosestCurrentDayTimelinePosition(String(event.active.id)),
+    });
+    verifiedOverId = resolveGhostDropOverId({
+      activeSortableId,
+      overId: verifiedOverId,
+      crossDayPreview: isCrossDayPlaceDrag ? crossDayDragPreview : null,
+    });
+    const targetDay = parseDayDropId(verifiedOverId);
+    if (!targetDay || !dayNumbers.includes(targetDay)) {
+      clearPlaceDragAutoSwitch();
+      setDragOverDay(null);
+      const target = resolveTimelineDropTarget({
+        activeSortableId,
+        dayNumbers,
+        overId: verifiedOverId,
+        sortableIdsByDay,
+        visibleDay,
+      });
+      const sourceDay = findSortableIdDay(sortableIdsByDay, activeSortableId);
+      setCrossDayDragPreview(
+        target && sourceDay != null && target.dayNumber !== sourceDay
+          ? target
+          : null,
+      );
+      return;
+    }
+    const dayTabElement = document.querySelector<HTMLElement>(
+      `[data-day-drop-id="${dayDropId(targetDay)}"]`,
+    );
+    if (
+      !shouldScheduleDaySwitch({
+        pointer: placeDragPointerRef.current,
+        dayTabRect: dayTabElement?.getBoundingClientRect() ?? null,
+        timelineRect: timelineElement?.getBoundingClientRect() ?? null,
+        dayZoneRect: getDayZoneRect(),
+      })
+    ) {
+      clearPlaceDragAutoSwitch();
+      setDragOverDay(null);
+      return;
+    }
+    setDragOverDay(targetDay);
+    const sourceDay = findSortableIdDay(sortableIdsByDay, activeSortableId);
+    if (sourceDay != null && targetDay !== sourceDay) {
+      setCrossDayDragPreview({
+        dayNumber: targetDay,
+        position: (sortableIdsByDay[targetDay] ?? []).length + 1,
+      });
+    }
+    if (targetDay === visibleDay) {
+      clearPlaceDragAutoSwitch();
+      return;
+    }
+    if (placeDragAutoSwitchDayRef.current === targetDay) return;
+    clearPlaceDragAutoSwitch();
+    placeDragAutoSwitchDayRef.current = targetDay;
+    placeDragAutoSwitchTimerRef.current = window.setTimeout(() => {
+      placeDragAutoSwitchTimerRef.current = null;
+      setActiveDay(targetDay);
+      updateDetailSearchParams({ day: targetDay, place: null });
+    }, DAY_SWITCH_DELAY_MS);
   };
 
   const handlePlaceDragEnd = (event: DragEndEvent) => {
+    let verifiedOverId = event.over
+      ? getPointerVerifiedTimelineOverId(event.over.id)
+      : null;
+    const timelineElement = document.querySelector<HTMLElement>(
+      "[data-itinerary-timeline]",
+    );
+    const pointerDayTarget = getPointerDayTarget();
+    const isOverDayRow = isPointerOverDayRow();
+    verifiedOverId = resolvePlaceDragOverId({
+      collisionOverId: verifiedOverId,
+      pointerDayTarget,
+      isOverDayRow,
+      visibleDay,
+      closestVisibleDayPosition: getClosestCurrentDayTimelinePosition(String(event.active.id)),
+    });
+    if (!pointerDayTarget && !isOverDayRow) {
+      const dayTarget = parseDayDropId(verifiedOverId);
+      if (
+        dayTarget &&
+        isPointerInsideTimelineArea(
+          placeDragPointerRef.current,
+          timelineElement?.getBoundingClientRect() ?? null,
+        )
+      ) {
+        verifiedOverId = dayPositionDropId(dayTarget, 1);
+      }
+    }
+    const activeSortableId = String(event.active.id);
+    // dragOver와 같은 순서로 풀어야 한다. 한쪽만 적용하면 미리보기는 뜨는데
+    // 드롭이 안 먹는 식으로 갈린다.
+    const overId = resolveGhostDropOverId({
+      activeSortableId,
+      overId: resolveDayAreaOverId({
+        overId: verifiedOverId,
+        closestPosition: getClosestCurrentDayTimelinePosition(String(event.active.id)),
+      }),
+      crossDayPreview: isCrossDayPlaceDrag ? crossDayDragPreview : null,
+    });
+    placeDragContentBoundsRef.current = null;
+    placeDragPointerRef.current = null;
+    clearPlaceDragAutoSwitch();
+    unlockPlaceDragViewportScroll();
+    setCrossDayDragPreview(null);
     setDraggingPlaceId(null);
-    if (!trip || !canEditTrip || movingPlaceId || !event.over) return;
+    setDragOverDay(null);
+    setIsDragOverDayRow(false);
+    if (!trip || !canEditTrip || movingPlaceId || !overId) return;
     if (isPreviewActive) {
       const activeId = String(event.active.id);
       const activeDay = findDisplayedPlaceDay(
@@ -1917,74 +3056,55 @@ export function ItineraryDetailPage() {
         activeId,
       );
       if (!activeDay) return;
-      const overTimelineId = parseTimelineDragId(event.over.id)
-        ? String(event.over.id)
-        : null;
-      if (overTimelineId) {
-        const targetDay = findDisplayedPlaceDay(
-          recommendationPreview.timeline,
-          overTimelineId,
-        );
-        if (!targetDay || overTimelineId === activeId) return;
-        const targetIndex =
-          recommendationPreview.timeline[targetDay]?.findIndex(
-            (place) => place.previewTimelineId === overTimelineId,
-          ) ?? -1;
-        if (targetIndex < 0) return;
-        setRecommendationPreview((current) => ({
-          ...current,
-          timeline: moveTimelinePlace(
-            current.timeline,
-            activeId,
-            targetDay,
-            targetIndex,
-          ),
-        }));
-        setActiveDay(targetDay);
-        updateDetailSearchParams({ day: targetDay, place: null });
-        return;
-      }
-      const targetDay = parseDayDropId(event.over.id);
-      if (!targetDay || !dayNumbers.includes(targetDay)) return;
-      const targetCount =
-        recommendationPreview.timeline[targetDay]?.length ?? 0;
+      const target = resolveTimelineDropTarget({
+        activeSortableId: activeId,
+        dayNumbers,
+        overId,
+        sortableIdsByDay,
+        visibleDay: activeDay,
+      });
+      if (!target) return;
       setRecommendationPreview((current) => ({
         ...current,
         timeline: moveTimelinePlace(
           current.timeline,
           activeId,
-          targetDay,
-          targetCount,
+          target.dayNumber,
+          target.position - 1,
         ),
       }));
-      setActiveDay(targetDay);
-      updateDetailSearchParams({ day: targetDay, place: null });
+      setActiveDay(target.dayNumber);
+      updateDetailSearchParams({ day: target.dayNumber, place: null });
       return;
     }
     const placeId = parsePlaceDragId(event.active.id);
     if (!placeId) return;
-    const place = dayPlaces.find((item) => item.id === placeId);
+    const place =
+      Object.values(trip.days)
+        .flat()
+        .find((item) => item.id === placeId) ?? null;
     if (!place) return;
 
-    const overPlaceId = parsePlaceDragId(event.over.id);
-    if (overPlaceId) {
-      const targetIndex = dayPlaces.findIndex(
-        (item) => item.id === overPlaceId,
-      );
-      if (targetIndex < 0 || overPlaceId === placeId) return;
-      void movePlaceTo(place, visibleDay, targetIndex + 1);
-      return;
-    }
+    const target = resolveTimelineDropTarget({
+      activeSortableId: String(event.active.id),
+      dayNumbers,
+      overId,
+      sortableIdsByDay,
+      visibleDay,
+    });
+    if (!target) return;
+    void movePlaceTo(place, target.dayNumber, target.position);
+  };
 
-    const targetDay = parseDayDropId(event.over.id);
-    if (
-      !targetDay ||
-      targetDay === visibleDay ||
-      !dayNumbers.includes(targetDay)
-    )
-      return;
-    const targetCount = trip.days[targetDay]?.length ?? 0;
-    void movePlaceTo(place, targetDay, targetCount + 1);
+  const handlePlaceDragCancel = () => {
+    placeDragContentBoundsRef.current = null;
+    placeDragPointerRef.current = null;
+    clearPlaceDragAutoSwitch();
+    unlockPlaceDragViewportScroll();
+    setCrossDayDragPreview(null);
+    setDraggingPlaceId(null);
+    setDragOverDay(null);
+    setIsDragOverDayRow(false);
   };
 
   const cancelDeletePlace = () => {
@@ -2064,17 +3184,6 @@ export function ItineraryDetailPage() {
   const updatePlaceForm = (nextForm: TripPlaceRequest) => {
     setPlaceForm(nextForm);
     if (!trip || !placeEditor) return;
-    if (placeEditor.mode === "add") {
-      saveDraft<TripPlaceAddDraft>(
-        tripPlaceAddDraftKey(trip.id, placeEditor.dayNumber),
-        {
-          dayNumber: placeEditor.dayNumber,
-          time: nextForm.time ?? "",
-          label: nextForm.label,
-          meta: nextForm.meta ?? "",
-        },
-      );
-    }
     if (placeEditor.mode === "edit" && placeEditor.place.id) {
       saveDraft<TripPlaceEditDraft>(
         tripPlaceEditDraftKey(trip.id, placeEditor.place.id),
@@ -2090,25 +3199,20 @@ export function ItineraryDetailPage() {
 
   const closePlaceEditor = () => {
     if (isSavingPlace) return;
-    if (trip && placeEditor?.mode === "add")
-      clearDraft(tripPlaceAddDraftKey(trip.id, placeEditor.dayNumber));
     if (trip && placeEditor?.mode === "edit" && placeEditor.place.id)
       clearDraft(tripPlaceEditDraftKey(trip.id, placeEditor.place.id));
     placeEditorSessionRef.current += 1;
     setPlaceDraftNotice("");
     setPlaceSearchCandidates([]);
     setPlaceSearchQuery("");
+    setPlaceBasket([]);
+    setBatchPlaceRecovery({ kind: "none" });
     clearPlacePreview();
     setPlaceEditor(null);
   };
 
   const discardPlaceDraft = () => {
     if (!trip || !placeEditor) return;
-    if (placeEditor.mode === "add") {
-      clearDraft(tripPlaceAddDraftKey(trip.id, placeEditor.dayNumber));
-      setPlaceForm({ time: "", label: "", meta: "" });
-      clearPlacePreview();
-    }
     if (placeEditor.mode === "edit" && placeEditor.place.id) {
       clearDraft(tripPlaceEditDraftKey(trip.id, placeEditor.place.id));
       setPlaceForm({
@@ -2178,6 +3282,15 @@ export function ItineraryDetailPage() {
           <span className="prototype-detail-dday-chip">{tripDdayLabel}</span>
           <h1>{trip.title}</h1>
           <p>📅 {trip.dates}</p>
+          {canEditTrip && (
+            <Link
+              aria-label="일정 편집"
+              className="prototype-trip-hero-edit"
+              to={`/trips/${encodeURIComponent(trip.id)}/edit`}
+            >
+              편집
+            </Link>
+          )}
         </div>
         <div className="prototype-trip-hero-icon" aria-hidden="true">
           {tripRegionEmojiLabel}
@@ -2321,9 +3434,22 @@ export function ItineraryDetailPage() {
       <div className="prototype-trip-detail-divider" aria-hidden="true" />
       <DndContext
         sensors={dragSensors}
-        collisionDetection={closestCenter}
+        collisionDetection={placeDragCollisionDetection}
+        modifiers={[restrictPlaceDragToContent]}
+        /* 유령이 끼어들면 카드가 실제로 이동한다. 기본값(WhileDragging)은
+           드래그 시작 때 한 번만 재므로 옛 좌표로 판정해 진동이 생긴다. */
+        measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+        /* dnd-kit의 레이아웃 시프트 보정은 끄고(날짜 전환이 거대한 변화라
+           보정량이 커진다), 위쪽 자동 스크롤에는 상한을 둔다. threshold를
+           명시해야 shouldAllowPlaceDragAutoScroll과 기준이 일치한다. */
+        autoScroll={{
+          layoutShiftCompensation: false,
+          canScroll: canPlaceDragAutoScroll,
+          threshold: { x: 0, y: PLACE_DRAG_AUTO_SCROLL_THRESHOLD },
+        }}
         onDragStart={handlePlaceDragStart}
-        onDragCancel={() => setDraggingPlaceId(null)}
+        onDragOver={handlePlaceDragOver}
+        onDragCancel={handlePlaceDragCancel}
         onDragEnd={handlePlaceDragEnd}
       >
         {isTripViewer && (
@@ -2355,7 +3481,11 @@ export function ItineraryDetailPage() {
           selectedPlaceId={selectedMapPlaceId}
         />
 
-        <section className="trip-primary-actions" aria-label="일정 편집 작업">
+        <section
+          className="trip-primary-actions"
+          aria-label="일정 편집 작업"
+          data-itinerary-actions
+        >
           <button
             className="prototype-trip-action-button prototype-trip-action-add"
             type="button"
@@ -2391,81 +3521,146 @@ export function ItineraryDetailPage() {
           </section>
         )}
 
-        <div className="day-tabs" aria-label="일정 날짜 선택">
+        <div
+          aria-label="일정 날짜 선택"
+          className="day-tabs"
+          data-itinerary-day-tabs
+        >
           {dayNumbers.map((day) => (
             <DroppableDayTab
               canDrop={canEditTrip && Boolean(draggingPlaceId)}
               dateLabel={formatDayDateLabel(trip.dates, day)}
               day={day}
               isActive={visibleDay === day}
+              isDragOver={dragOverDay === day}
               key={day}
               onSelect={selectTripDay}
-              placeLabel={activeDraggingPlaceLabel}
             />
           ))}
         </div>
 
-        {displayedPlaces.length > 0 && (
-          <>
-            <div
-              className={draggingPlaceId ? "timeline dnd-active" : "timeline"}
-            >
-              <SortableContext
-                items={sortablePlaceIds}
-                strategy={verticalListSortingStrategy}
+        <div aria-hidden="true" className="itinerary-drag-boundary" />
+        <div
+          className={draggingPlaceId ? "timeline dnd-active" : "timeline"}
+          data-itinerary-timeline
+          ref={setTimelineAreaRef}
+        >
+          <SortableContext
+            items={timelineSortableIds}
+            strategy={verticalListSortingStrategy}
+          >
+            {timelineRenderItems.map((renderItem, renderIndex) => {
+              // 번호는 슬롯 순번이다. 유령도 한 칸을 차지하므로 들고 있는
+              // 카드가 자동으로 포함된다. 배지는 카드와 형제로 놓여
+              // 카드가 재정렬돼도 행 순서에 고정된다.
+              const marker = (
+                <TimelineSlotMarker
+                  isLast={renderIndex === timelineRenderItems.length - 1}
+                  number={renderIndex + 1}
+                />
+              );
+              if (renderItem.type === "ghost") {
+                return (
+                  <Fragment key="timeline-cross-day-ghost">
+                    {marker}
+                    <TimelineGhostCard
+                      label={activeDraggingPlaceLabel}
+                      sortableId={draggingPlaceSortableId ?? ""}
+                    />
+                  </Fragment>
+                );
+              }
+              const place = renderItem.value;
+              const index = timelineRenderItems
+                .slice(0, renderIndex)
+                .filter((item) => item.type === "item").length;
+              return (
+              <Fragment
+                key={
+                  place.id ??
+                  place.previewId ??
+                  `${place.time}-${place.label}`
+                }
               >
-                {displayedPlaces.map((place, index) => (
-                  <SortablePlaceItem
-                    canEditTrip={canEditTrip}
-                    currentDay={visibleDay}
-                    dayNumbers={dayNumbers}
-                    disabled={
-                      Boolean(movingPlaceId) ||
-                      isSavingPlace ||
-                      recommendationPreview.status === "saving"
-                    }
-                    isMoving={movingPlaceId === place.id}
-                    isPreviewMode={isPreviewActive}
-                    previewDayPlaceCounts={Object.fromEntries(
-                      dayNumbers.map((day) => [
-                        day,
-                        recommendationPreview.timeline[day]?.length ?? 0,
-                      ]),
-                    )}
-                    key={
-                      place.id ??
-                      place.previewId ??
-                      `${place.time}-${place.label}`
-                    }
-                    hasTimeOrderWarning={Boolean(
-                      displayedPlaceWarningKey(place) &&
-                        timeWarningPlaceIds.has(
-                          displayedPlaceWarningKey(place)!,
-                        ),
-                    )}
-                    onCancelRecommendationPreviewPlace={
-                      cancelRecommendationPreviewPlace
-                    }
-                    onDelete={requestDeletePlace}
-                    onEdit={openEditPlace}
-                    onMove={movePlaceTo}
-                    onSelectRecommendationPreviewPlace={
-                      selectRecommendationPreviewMapPlace
-                    }
-                    onSaveRecommendationPreviewPlace={(previewId) =>
-                      void saveRecommendationPreviewPlace(previewId)
-                    }
-                    place={place}
-                    placeNumber={index + 1}
-                    places={displayedPlaces}
-                    onPreviewTimeChange={updateRecommendationPreviewPlaceTime}
-                    trip={trip}
+                {canEditTrip && draggingPlaceId && (
+                  <DroppableTimelinePosition
+                    dayNumber={visibleDay}
+                    isCrossDay={isCrossDayPlaceDrag}
+                    position={index + 1}
                   />
-                ))}
-              </SortableContext>
+                )}
+                {marker}
+                <SortablePlaceItem
+                  canEditTrip={canEditTrip}
+                  currentDay={visibleDay}
+                  dayNumbers={dayNumbers}
+                  disabled={
+                    Boolean(movingPlaceId) ||
+                    isSavingPlace ||
+                    recommendationPreview.status === "saving"
+                  }
+                  isMoving={movingPlaceId === place.id}
+                  isPreviewMode={isPreviewActive}
+                  previewDayPlaceCounts={Object.fromEntries(
+                    dayNumbers.map((day) => [
+                      day,
+                      recommendationPreview.timeline[day]?.length ?? 0,
+                    ]),
+                  )}
+                  hasTimeOrderWarning={Boolean(
+                    displayedPlaceWarningKey(place) &&
+                      timeWarningPlaceIds.has(displayedPlaceWarningKey(place)!),
+                  )}
+                  onCancelRecommendationPreviewPlace={
+                    cancelRecommendationPreviewPlace
+                  }
+                  onDelete={requestDeletePlace}
+                  onEdit={openEditPlace}
+                  onMove={movePlaceTo}
+                  onSelectRecommendationPreviewPlace={
+                    selectRecommendationPreviewMapPlace
+                  }
+                  onSaveRecommendationPreviewPlace={(previewId) =>
+                    void saveRecommendationPreviewPlace(previewId)
+                  }
+                  place={place}
+                  places={displayedPlaces}
+                  openTimeEditorId={openTimeEditorId}
+                  onToggleTimeEditor={(cardId, willOpen) =>
+                    setOpenTimeEditorId((current) =>
+                      resolveNextOpenTimeEditorId(current, cardId, willOpen),
+                    )
+                  }
+                  onPreviewTimeChange={updateRecommendationPreviewPlaceTime}
+                  trip={trip}
+                />
+              </Fragment>
+              );
+            })}
+            {canEditTrip && draggingPlaceId && (
+              <DroppableTimelinePosition
+                dayNumber={visibleDay}
+                isCrossDay={isCrossDayPlaceDrag}
+                position={displayedPlaces.length + 1}
+              />
+            )}
+          </SortableContext>
+        </div>
+        <DragOverlay dropAnimation={null}>
+          {draggingPlaceId && (
+            <div
+              aria-hidden="true"
+              className={
+                dragOverDay || isDragOverDayRow
+                  ? "place-drag-overlay over-day-target"
+                  : "place-drag-overlay"
+              }
+            >
+              <GripVertical size={16} />
+              <strong>{activeDraggingPlaceLabel}</strong>
             </div>
-          </>
-        )}
+          )}
+        </DragOverlay>
       </DndContext>
       {isPreviewActive && (
         <aside
@@ -2488,7 +3683,7 @@ export function ItineraryDetailPage() {
               void commitRecommendationPreview({ saveAllCandidates: false })
             }
           >
-            완료
+            {recommendationPreview.status === "saving" ? "저장 중" : "선택 저장"}
           </button>
           <button
             className="btn sm primary"
@@ -2510,6 +3705,33 @@ export function ItineraryDetailPage() {
       {placeError && !placeEditor && <Toast>{placeError}</Toast>}
       {moveError && <Toast>{moveError}</Toast>}
       {notice && <Toast>{notice}</Toast>}
+      {dateEditor && (
+        <TripDateEditorSheet
+          error={dateEditor.error}
+          endDate={dateEditor.endDate}
+          isSaving={dateEditor.isSaving}
+          onChangeEndDate={(endDate) =>
+            setDateEditor((current) =>
+              current ? { ...current, endDate, error: "" } : current,
+            )
+          }
+          onChangeStartDate={(startDate) =>
+            setDateEditor((current) =>
+              current ? { ...current, startDate, error: "" } : current,
+            )
+          }
+          onChangeStrategy={(overflowPlaceStrategy) =>
+            setDateEditor((current) =>
+              current ? { ...current, overflowPlaceStrategy } : current,
+            )
+          }
+          onClose={() => setDateEditor(null)}
+          onSubmit={submitDateEditor}
+          overflowPlaceCount={dateEditorOverflowPlaceCount}
+          overflowPlaceStrategy={dateEditor.overflowPlaceStrategy}
+          startDate={dateEditor.startDate}
+        />
+      )}
       {placeEditor && (
         <PlaceEditorSheet
           error={placeError}
@@ -2522,7 +3744,11 @@ export function ItineraryDetailPage() {
           onDiscardDraft={discardPlaceDraft}
           onSearchChange={updatePlaceSearchQuery}
           onSelectSearchCandidate={selectPlaceSearchCandidate}
+          onRemoveBasketItem={removePlaceBasketItem}
+          onRetryBasketDay={retryPlaceBasket}
           onSubmit={submitPlaceEditor}
+          batchRecovery={batchPlaceRecovery}
+          placeBasket={placeBasket}
           preview={placePreview}
           saveEligibility={placeSaveEligibility}
           searchCandidates={placeSearchResults}
@@ -2549,6 +3775,113 @@ export function ItineraryDetailPage() {
         onConfirm={confirmDeletePlace}
       />
     </section>
+  );
+}
+
+function TripDateEditorSheet({
+  endDate,
+  error,
+  isSaving,
+  onChangeEndDate,
+  onChangeStartDate,
+  onChangeStrategy,
+  onClose,
+  onSubmit,
+  overflowPlaceCount,
+  overflowPlaceStrategy,
+  startDate,
+}: {
+  endDate: string;
+  error: string;
+  isSaving: boolean;
+  onChangeEndDate: (value: string) => void;
+  onChangeStartDate: (value: string) => void;
+  onChangeStrategy: (value: "moveToLastDay" | "delete") => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  overflowPlaceCount: number;
+  overflowPlaceStrategy: "moveToLastDay" | "delete";
+  startDate: string;
+}) {
+  return (
+    <div className="sheet-backdrop trip-date-editor-backdrop" role="presentation">
+      <form
+        aria-labelledby="trip-date-editor-title"
+        aria-modal="true"
+        className="trip-date-editor-sheet"
+        onSubmit={onSubmit}
+        role="dialog"
+      >
+        <div className="sheet-head">
+          <div>
+            <h2 id="trip-date-editor-title">여행기간 수정</h2>
+            <p className="meta">
+              기간을 줄이면 제외되는 날짜의 장소를 마지막 날로 옮길 수 있어요.
+            </p>
+          </div>
+          <IconButton label="닫기" onClick={onClose}>
+            <X size={18} />
+          </IconButton>
+        </div>
+
+        <label className="field">
+          시작일
+          <input
+            name="startDate"
+            type="date"
+            value={startDate}
+            onChange={(event) => onChangeStartDate(event.target.value)}
+          />
+        </label>
+        <label className="field">
+          종료일
+          <input
+            name="endDate"
+            type="date"
+            value={endDate}
+            onChange={(event) => onChangeEndDate(event.target.value)}
+          />
+        </label>
+
+        {overflowPlaceCount > 0 && (
+          <fieldset className="trip-date-overflow-options">
+            <legend>
+              제외되는 날짜의 장소 {overflowPlaceCount}개를 어떻게 처리할까요?
+            </legend>
+            <label>
+              <input
+                checked={overflowPlaceStrategy === "moveToLastDay"}
+                name="overflowPlaceStrategy"
+                type="radio"
+                value="moveToLastDay"
+                onChange={() => onChangeStrategy("moveToLastDay")}
+              />
+              마지막 Day로 이동
+            </label>
+            <label>
+              <input
+                checked={overflowPlaceStrategy === "delete"}
+                name="overflowPlaceStrategy"
+                type="radio"
+                value="delete"
+                onChange={() => onChangeStrategy("delete")}
+              />
+              제외되는 장소 삭제
+            </label>
+          </fieldset>
+        )}
+
+        {error && <p className="form-error">{error}</p>}
+        <div className="sheet-actions">
+          <button className="btn line" disabled={isSaving} type="button" onClick={onClose}>
+            취소
+          </button>
+          <button className="btn primary" disabled={isSaving} type="submit">
+            {isSaving ? "저장 중" : "기간 저장"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -2850,20 +4183,21 @@ function DroppableDayTab({
   dateLabel,
   day,
   isActive,
+  isDragOver,
   onSelect,
-  placeLabel,
 }: {
   canDrop: boolean;
   dateLabel: string;
   day: number;
   isActive: boolean;
+  isDragOver: boolean;
   onSelect: (day: number) => void;
-  placeLabel: string;
 }) {
-  const { isOver, setNodeRef } = useDroppable({
+  const { setNodeRef } = useDroppable({
     id: dayDropId(day),
     disabled: !canDrop,
   });
+  const isOver = isDragOver;
   const className = [
     "day-tab",
     isActive ? "active" : "",
@@ -2875,12 +4209,9 @@ function DroppableDayTab({
 
   return (
     <button
-      aria-label={
-        canDrop
-          ? `Day ${day} ${dateLabel}에 ${placeLabel} 놓기`
-          : `Day ${day} ${dateLabel}`
-      }
+      aria-label={`Day ${day} ${dateLabel}`}
       className={className}
+      data-day-drop-id={dayDropId(day)}
       key={day}
       onClick={() => onSelect(day)}
       ref={setNodeRef}
@@ -2888,8 +4219,93 @@ function DroppableDayTab({
     >
       <strong>Day {day}</strong>
       <span>{dateLabel}</span>
-      {canDrop && <em>{isOver ? "놓기" : "이동 가능"}</em>}
     </button>
+  );
+}
+
+/**
+ * 다른 날짜에서 끌고 온 카드가 들어갈 자리표시. 활성 카드의 sortable id로 등록해
+ * 대상 날짜의 SortableContext 멤버가 되게 한다. dnd-kit이 이 항목을 활성 항목으로
+ * 보고 주변 카드를 밀어내므로, 같은 날짜 이동과 동일한 동작이 나온다.
+ */
+/**
+ * 왼쪽 번호 열. 카드 목록과 형제로 놓여 행 순서에 고정된다. 카드가 재정렬되거나
+ * 유령이 끼어들어도 이 배지는 자리를 지킨다. 번호는 슬롯 순번이라 들고 있는
+ * 카드(유령)도 자동으로 한 칸을 차지한다.
+ */
+function TimelineSlotMarker({
+  isLast,
+  number,
+}: {
+  isLast: boolean;
+  number: number;
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      className={isLast ? "timeline-marker last" : "timeline-marker"}
+    >
+      <span>{number}</span>
+    </div>
+  );
+}
+
+function TimelineGhostCard({
+  label,
+  sortableId,
+}: {
+  label: string;
+  sortableId: string;
+}) {
+  const { setNodeRef, transform, transition } = useSortable({ id: sortableId });
+
+  return (
+    <div
+      aria-hidden="true"
+      className="timeline-slot timeline-ghost"
+      data-sortable-id={sortableId}
+      data-timeline-ghost
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+    >
+      <div className="timeline-sortable-card">
+        <article className="place-detail timeline-ghost-card">
+          <GripVertical size={16} />
+          <strong>{label}</strong>
+        </article>
+      </div>
+    </div>
+  );
+}
+
+function DroppableTimelinePosition({
+  dayNumber,
+  isCrossDay,
+  position,
+}: {
+  dayNumber: number;
+  isCrossDay: boolean;
+  position: number;
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: dayPositionDropId(dayNumber, position),
+  });
+  const className = [
+    "timeline-insertion-slot",
+    isCrossDay ? "cross-day" : "",
+    isOver ? "over" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <div
+      aria-hidden="true"
+      className={className}
+      data-day={dayNumber}
+      data-position={position}
+      ref={setNodeRef}
+    />
   );
 }
 
@@ -2907,10 +4323,11 @@ function SortablePlaceItem({
   onMove,
   onPreviewTimeChange,
   onSaveRecommendationPreviewPlace,
+  onToggleTimeEditor,
+  openTimeEditorId,
   onSelectRecommendationPreviewPlace,
   place,
   previewDayPlaceCounts,
-  placeNumber,
   places,
   trip,
 }: {
@@ -2931,10 +4348,11 @@ function SortablePlaceItem({
   ) => Promise<void>;
   onPreviewTimeChange: (place: DisplayedPlace, time: string) => void;
   onSaveRecommendationPreviewPlace: (previewId: string) => void;
+  onToggleTimeEditor: (cardId: string, willOpen: boolean) => void;
+  openTimeEditorId: string | null;
   onSelectRecommendationPreviewPlace: (previewId: string) => void;
   place: DisplayedPlace;
   previewDayPlaceCounts: Record<number, number>;
-  placeNumber: number;
   places: DisplayedPlace[];
   trip: Trip;
 }) {
@@ -2956,12 +4374,15 @@ function SortablePlaceItem({
     id: sortableId,
     disabled: !canEditTrip || !canSortPlace || disabled,
   });
-  const style = {
-    transform: CSS.Transform.toString(transform),
+  const sortableTransform = CSS.Transform.toString(transform);
+  const cardStyle = {
+    transform: sortableTransform,
     transition,
   };
+  // 시간 수정창 아코디언 식별자. 미리보기 카드와 기존 카드 모두 값이 있다.
+  const timeEditorCardId = displayedPlaceWarningKey(place);
   const className = [
-    "timeline-item",
+    "timeline-slot",
     isDragging ? "dragging" : "",
     isMoving ? "moving" : "",
   ]
@@ -3009,13 +4430,12 @@ function SortablePlaceItem({
     <div
       className={className}
       data-place-id={place.id}
+      data-sortable-id={sortableId}
       ref={setNodeRef}
-      style={style}
     >
-      <div className="timeline-marker" aria-hidden="true">
-        <span>{placeNumber}</span>
-      </div>
+      <div className="timeline-sortable-card">
       <article
+        style={cardStyle}
         className={
           isRecommendationPreviewPlace
             ? "place-detail recommendation-preview-place"
@@ -3116,6 +4536,18 @@ function SortablePlaceItem({
             <details
               className="preview-time-edit"
               aria-label={`${place.label} 시간 수정`}
+              open={
+                timeEditorCardId
+                  ? openTimeEditorId === timeEditorCardId
+                  : undefined
+              }
+              onToggle={(event) => {
+                if (!timeEditorCardId) return;
+                onToggleTimeEditor(
+                  timeEditorCardId,
+                  (event.currentTarget as HTMLDetailsElement).open,
+                );
+              }}
             >
               <summary>수정</summary>
               <PlaceTimePicker
@@ -3143,6 +4575,18 @@ function SortablePlaceItem({
               <details
                 className="preview-time-edit"
                 aria-label={`${place.label} 시간 수정`}
+                open={
+                  timeEditorCardId
+                    ? openTimeEditorId === timeEditorCardId
+                    : undefined
+                }
+                onToggle={(event) => {
+                  if (!timeEditorCardId) return;
+                  onToggleTimeEditor(
+                    timeEditorCardId,
+                    (event.currentTarget as HTMLDetailsElement).open,
+                  );
+                }}
               >
                 <summary>수정</summary>
                 <PlaceTimePicker
@@ -3174,6 +4618,7 @@ function SortablePlaceItem({
           </div>
         ) : null}
       </article>
+      </div>
     </div>
   );
 }
@@ -3303,9 +4748,7 @@ function PlacePreviewMapCard({
       ? "검색 결과를 지도에 미리 표시했어요. 저장하려면 후보를 직접 선택해 주세요."
       : saveEligibility === "saveSelected"
         ? "저장할 장소로 선택되어 있어요."
-        : saveEligibility === "manualAllowed"
-          ? "검색 결과가 없어도 장소명을 직접 입력해 저장할 수 있어요."
-          : "장소를 검색하면 지도에 표시돼요.";
+        : "장소를 검색하면 지도에 표시돼요.";
   const fallback = (
     <div
       className={
@@ -3333,17 +4776,14 @@ function PlacePreviewMapCard({
         </div>
         <span
           className={
-            saveEligibility === "saveSelected" ||
-            saveEligibility === "manualAllowed"
+            saveEligibility === "saveSelected"
               ? "place-preview-state ready"
               : "place-preview-state"
           }
         >
           {saveEligibility === "saveSelected"
             ? "저장 가능"
-            : saveEligibility === "manualAllowed"
-              ? "직접 입력"
-              : "확인 필요"}
+            : "확인 필요"}
         </span>
       </div>
       {marker ? (
@@ -3369,6 +4809,7 @@ function PlacePreviewMapCard({
 }
 
 function PlaceEditorSheet({
+  batchRecovery,
   error,
   form,
   isLoadingSearch,
@@ -3377,9 +4818,12 @@ function PlaceEditorSheet({
   onChange,
   onClose,
   onDiscardDraft,
+  onRemoveBasketItem,
+  onRetryBasketDay,
   onSearchChange,
   onSelectSearchCandidate,
   onSubmit,
+  placeBasket,
   preview,
   saveEligibility,
   searchCandidates,
@@ -3387,6 +4831,7 @@ function PlaceEditorSheet({
   searchQuery,
   restoredDraftMessage,
 }: {
+  batchRecovery: BatchPlaceRecovery;
   error: string;
   form: TripPlaceRequest;
   isLoadingSearch: boolean;
@@ -3395,9 +4840,12 @@ function PlaceEditorSheet({
   onChange: (form: TripPlaceRequest) => void;
   onClose: () => void;
   onDiscardDraft: () => void;
+  onRemoveBasketItem: (basketId: string) => void;
+  onRetryBasketDay: (dayNumber: number) => void;
   onSearchChange: (query: string) => void;
   onSelectSearchCandidate: (candidate: PlaceSearchCandidate) => void;
   onSubmit: () => void;
+  placeBasket: PlaceBasketItem[];
   preview: PlacePreviewState;
   saveEligibility: PlaceSaveEligibility;
   searchCandidates: PlaceSearchCandidate[];
@@ -3405,28 +4853,7 @@ function PlaceEditorSheet({
   searchQuery: string;
   restoredDraftMessage: string;
 }) {
-  const showEmptySearch =
-    mode === "add" &&
-    searchQuery.trim() &&
-    !isLoadingSearch &&
-    searchCandidates.length === 0;
-  const showBlankManualRecovery =
-    mode === "add" &&
-    !searchQuery.trim() &&
-    saveEligibility === "manualAllowed" &&
-    searchCandidates.length === 0 &&
-    !isLoadingSearch;
-  const showManualPlaceName =
-    mode === "edit" ||
-    showEmptySearch ||
-    showBlankManualRecovery ||
-    (mode === "add" &&
-      Boolean(form.label) &&
-      searchCandidates.length === 0 &&
-      !isLoadingSearch);
-  const updateManualPlaceName = (label: string) => {
-    onChange({ time: form.time ?? "", label, meta: form.meta ?? "" });
-  };
+  const hasPlaceBasket = mode === "add" && placeBasket.length > 0;
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
       <section
@@ -3443,7 +4870,7 @@ function PlaceEditorSheet({
             </h2>
             <p className="meta">
               {mode === "add"
-                ? "장소를 검색해 선택하거나 직접 입력한 뒤 방문 시간과 메모를 저장하세요."
+                ? "장소를 검색해 선택한 뒤 목록에 담아 저장하세요."
                 : "장소명, 방문 시간, 메모를 수정하세요."}
             </p>
           </div>
@@ -3509,7 +4936,62 @@ function PlaceEditorSheet({
                   ))}
                 </div>
               )}
-              {form.label && (
+              {hasPlaceBasket && (
+                <section
+                  className="place-basket"
+                  aria-label="추가할 장소 목록"
+                >
+                  <div className="place-basket-head">
+                    <strong>추가할 장소 {placeBasket.length}개</strong>
+                  </div>
+                  <div className="place-basket-list" role="list">
+                    {placeBasket.map((item) => (
+                      <div
+                        className="place-basket-row"
+                        key={item.basketId}
+                        role="listitem"
+                      >
+                        <span>
+                          <strong>{item.label}</strong>
+                          <em>{item.category ?? item.categoryCode ?? "장소"}</em>
+                          <small>{item.address ?? item.meta ?? "장소 정보 확인"}</small>
+                        </span>
+                        <button
+                          aria-label={`${item.label} 제거`}
+                          className="btn sm ghost"
+                          type="button"
+                          onClick={() => onRemoveBasketItem(item.basketId)}
+                          disabled={isSaving}
+                        >
+                          제거
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {hasPlaceBasket && batchRecovery.kind === "missingDay" && (
+                <section
+                  className="place-basket-recovery"
+                  aria-label="batch place missing day recovery"
+                >
+                  <strong>최신 일정에서 저장할 Day를 선택해 주세요.</strong>
+                  <div className="place-basket-recovery-actions">
+                    {batchRecovery.availableDays.map((dayNumber) => (
+                      <button
+                        className="btn sm line"
+                        disabled={isSaving}
+                        key={dayNumber}
+                        type="button"
+                        onClick={() => onRetryBasketDay(dayNumber)}
+                      >
+                        Day {dayNumber} 저장하기
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {!hasPlaceBasket && form.label && (
                 <div
                   className="place-selected-summary"
                   aria-label="선택한 장소"
@@ -3518,9 +5000,9 @@ function PlaceEditorSheet({
                   <span>{form.meta || "장소 정보 확인"}</span>
                 </div>
               )}
-              {showEmptySearch && (
+              {!hasPlaceBasket && searchQuery.trim() && !isLoadingSearch && searchCandidates.length === 0 && !searchError && (
                 <p className="place-search-status">
-                  검색 결과가 없어요. 장소명을 직접 입력해 저장할 수 있어요.
+                  검색 결과가 없어요. 다른 검색어로 다시 찾아주세요.
                 </p>
               )}
             </div>
@@ -3531,51 +5013,56 @@ function PlaceEditorSheet({
               saveEligibility={saveEligibility}
             />
           )}
-          <PlaceTimePicker
-            disabled={isSaving}
-            value={form.time ?? ""}
-            onChange={(time) => onChange({ ...form, time })}
-          />
-          <input
-            type="hidden"
-            name="place-time"
-            value={form.time ?? ""}
-            readOnly
-          />
-          {showManualPlaceName ? (
+          {mode === "edit" && (
+            <>
+              <PlaceTimePicker
+                disabled={isSaving}
+                value={form.time ?? ""}
+                onChange={(time) => onChange({ ...form, time })}
+              />
+              <input
+                type="hidden"
+                name="place-time"
+                value={form.time ?? ""}
+                readOnly
+              />
+            </>
+          )}
+          {mode === "edit" ? (
             <label className="field">
               장소명
               <input
                 name="place-label"
                 placeholder="성산일출봉"
                 value={form.label}
-                onChange={(event) => updateManualPlaceName(event.target.value)}
+                onChange={(event) =>
+                  onChange({ ...form, label: event.target.value })
+                }
               />
             </label>
-          ) : (
-            <input
-              type="hidden"
-              name="place-label"
-              value={form.label}
-              readOnly
-            />
+          ) : null}
+          {mode === "edit" && (
+            <label className="field">
+              메모
+              <textarea
+                name="place-meta"
+                placeholder="이동 메모나 예약 정보를 적어주세요"
+                value={form.meta ?? ""}
+                onChange={(event) =>
+                  onChange({ ...form, meta: event.target.value })
+                }
+              />
+            </label>
           )}
-          <label className="field">
-            메모
-            <textarea
-              name="place-meta"
-              placeholder="이동 메모나 예약 정보를 적어주세요"
-              value={form.meta ?? ""}
-              onChange={(event) =>
-                onChange({ ...form, meta: event.target.value })
-              }
-            />
-          </label>
           {error && <p className="form-error">{error}</p>}
         </div>
         <div className="sheet-actions">
           <Button full disabled={isSaving} onClick={onSubmit}>
-            {isSaving ? "저장 중입니다" : "저장하기"}
+            {isSaving
+              ? "저장 중입니다"
+              : hasPlaceBasket
+                ? `${placeBasket.length}개 저장하기`
+                : "저장하기"}
           </Button>
         </div>
       </section>

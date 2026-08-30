@@ -9,8 +9,6 @@ import {
   ExternalCollectionOpsHealth,
   ExternalCollectionRunResponse,
   InviteEmailResult,
-  InviteLinksState,
-  InviteRole,
   InviteState,
   PlaceSearchCandidate,
   Policy,
@@ -193,6 +191,11 @@ export type TripPlaceMutationRequest = TripPlaceRequest & {
   expectedRevision: number;
 };
 
+export type TripPlacesBatchRequest = {
+  expectedRevision: number;
+  places: TripPlaceRequest[];
+};
+
 export type TripPlaceUpdateRequest = Partial<TripPlaceRequest> & {
   expectedRevision: number;
 };
@@ -207,9 +210,16 @@ export type TripStatusUpdateRequest = {
   status: "draft" | "confirmed";
 };
 
+export type TripSettingsUpdateRequest = {
+  expectedRevision: number;
+  title?: string;
+  startDate?: string;
+  endDate?: string;
+  overflowPlaceStrategy?: "moveToLastDay" | "delete";
+};
+
 export type SendInviteEmailRequest = {
   email: string;
-  role?: InviteRole;
 };
 
 export type AppDataApi = {
@@ -250,6 +260,8 @@ export type AppDataApi = {
   getTrip: (tripId: string) => Promise<Trip>;
   updateTripStatus: (tripId: string, status: TripStatusUpdateRequest) => Promise<Trip>;
   addTripPlace: (tripId: string, dayNumber: number, place: TripPlaceMutationRequest) => Promise<Trip>;
+  addTripPlaces: (tripId: string, dayNumber: number, request: TripPlacesBatchRequest) => Promise<Trip>;
+  updateTripSettings: (tripId: string, settings: TripSettingsUpdateRequest) => Promise<Trip>;
   updateTripPlace: (tripId: string, placeId: string, place: TripPlaceUpdateRequest) => Promise<Trip>;
   moveTripPlace: (tripId: string, placeId: string, move: TripPlaceMoveRequest) => Promise<Trip>;
   deleteTripPlace: (tripId: string, placeId: string, expectedRevision: number) => Promise<Trip>;
@@ -257,8 +269,8 @@ export type AppDataApi = {
   removePolicyFromTrip: (tripId: string, policySlug: string) => Promise<TripPolicyResponse>;
   listRecommendations: (tripId: string) => Promise<Recommendation[]>;
   searchTripPlaces: (tripId: string, options: TripPlaceSearchOptions) => Promise<PlaceSearchCandidate[]>;
-  getInviteState: (tripId: string) => Promise<InviteLinksState>;
-  confirmInviteSent: (tripId: string, role?: InviteRole) => Promise<InviteState>;
+  getInviteState: (tripId: string) => Promise<InviteState>;
+  confirmInviteSent: (tripId: string) => Promise<InviteState>;
   sendInviteEmail: (tripId: string, request: SendInviteEmailRequest) => Promise<InviteEmailResult>;
   acceptInvite: (inviteToken: string) => Promise<InviteState>;
   listAdminUsers: (options?: { q?: string; onboardingCompleted?: boolean; limit?: number; offset?: number }) => Promise<AdminUserListResponse>;

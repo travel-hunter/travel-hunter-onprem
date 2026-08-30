@@ -10,14 +10,17 @@ import {
   tripCreatePrimaryRegions,
   tripCreatePrimaryRegionValues,
 } from "../../data/displayConfig";
-import { getDefaultTripDateRange } from "../../utils/dateDefaults";
+import {
+  getDefaultTripDateRange,
+  normalizeTripDateRange,
+} from "../../utils/dateDefaults";
 
 const TRIP_CREATE_TOTAL_STEPS = 2;
-const tripCreateMaxDays = 7;
-const tripCreateMinDays = 2;
 const broadTravelAreaRegions = new Set<string>(tripCreatePrimaryRegionValues);
+const calendarWeekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
 const NO_TRAVEL_AREA_HEADING = "세부 지역 선택";
 type TripCreateStep = 1 | 2;
+type DatePickerAnchor = "start" | "end";
 type SelectedTravelArea = Pick<
   TravelAreaRecommendation,
   | "travelAreaId"
@@ -51,6 +54,42 @@ function tripDateDayCount(startDate: string, endDate: string): number | null {
   const end = parseDateInput(endDate);
   if (!start || !end) return null;
   return Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+}
+
+function formatDateInput(date: Date): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function startOfMonth(value: string): Date {
+  const parsed = parseDateInput(value) ?? new Date();
+  return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+}
+
+function addMonths(date: Date, months: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
+}
+
+function formatCalendarMonth(date: Date): string {
+  return `${date.getFullYear()}년 ${date.getMonth() + 1}월`;
+}
+
+function buildCalendarDays(month: Date): Date[] {
+  const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
+  const start = new Date(firstDay);
+  start.setDate(firstDay.getDate() - firstDay.getDay());
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return date;
+  });
+}
+
+function isDateInputInRange(value: string, startDate: string, endDate: string): boolean {
+  return value >= startDate && value <= endDate;
 }
 
 function generatedTripTitle(region: string, dayCount: number | null): string {
@@ -150,9 +189,15 @@ export function ItineraryCreatePage() {
   const [styleDraft, setStyleDraft] = useState(profile.style ?? "");
   const [startDate, setStartDate] = useState(defaultTripStartDate);
   const [endDate, setEndDate] = useState(defaultTripEndDate);
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [datePickerAnchor, setDatePickerAnchor] = useState<DatePickerAnchor>("start");
+  const [calendarMonth, setCalendarMonth] = useState(() =>
+    startOfMonth(defaultTripStartDate),
+  );
   const [titleDraft, setTitleDraft] = useState(
     generatedTripTitle(initialRegion, initialDayCount),
   );
+  const titleEditedByUserRef = useRef(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isCreationTakingLong, setIsCreationTakingLong] = useState(false);
   const [error, setError] = useState("");
@@ -168,9 +213,9 @@ export function ItineraryCreatePage() {
   const dayCount = tripDateDayCount(startDate, endDate);
   const dateRangeError =
     dayCount === null
-      ? "출발일과 도착일을 선택하세요."
-      : dayCount < tripCreateMinDays || dayCount > tripCreateMaxDays
-        ? "일정 기간은 2일부터 7일까지 선택할 수 있습니다."
+      ? "첫날과 마지막 날을 선택하세요."
+      : dayCount < 1
+        ? "마지막 날은 첫날과 같거나 뒤여야 해요."
         : "";
   const linkedPolicyLabel = linkablePolicySlug
     ? linkablePolicySlug.startsWith("travelmonth-")
@@ -223,6 +268,20 @@ export function ItineraryCreatePage() {
     setSearchParams(nextSearchParams, { replace: true });
   };
 
+  const setAutoTitleDraft = (previousAutoTitle: string, nextAutoTitle: string) => {
+    setTitleDraft((current) =>
+      !titleEditedByUserRef.current &&
+      (current.trim() === "" || current === previousAutoTitle)
+        ? nextAutoTitle
+        : current,
+    );
+  };
+
+  const updateTitleDraftFromUser = (value: string) => {
+    titleEditedByUserRef.current = true;
+    setTitleDraft(value);
+  };
+
   const applyTravelArea = (
     area: TravelAreaRecommendation,
     options?: {
@@ -237,10 +296,9 @@ export function ItineraryCreatePage() {
     setTravelAreaChoiceSido(area.sido);
     setTravelAreaChoiceQuery(null);
     setSelectedRegionDraft(area.travelAreaName);
-    setTitleDraft((current) =>
-      current.trim() === "" || current === previousAutoTitle
-        ? generatedTripTitle(area.travelAreaName, dayCount)
-        : current,
+    setAutoTitleDraft(
+      previousAutoTitle,
+      generatedTripTitle(area.travelAreaName, dayCount),
     );
     if (options?.syncUrl) {
       syncTravelAreaSearchParams({
@@ -273,10 +331,9 @@ export function ItineraryCreatePage() {
         setTravelAreaChoiceSido(requestedSido);
         setTravelAreaChoiceQuery(requestedRegion);
       }
-      setTitleDraft((current) =>
-        current.trim() === "" || current === previousAutoTitle
-          ? generatedTripTitle(requestedRegion, dayCount)
-          : current,
+      setAutoTitleDraft(
+        previousAutoTitle,
+        generatedTripTitle(requestedRegion, dayCount),
       );
     }
   }, [requestedRegion, requestedSido, requestedTravelAreaId]);
@@ -436,27 +493,46 @@ export function ItineraryCreatePage() {
     setTravelAreaChoiceSido(isBroadTravelAreaRegion(region) ? region : null);
     setTravelAreaChoiceQuery(null);
     syncTravelAreaSearchParams({ region, travelAreaId: null });
-    setTitleDraft((current) =>
-      current.trim() === "" || current === previousAutoTitle
-        ? generatedTripTitle(region, dayCount)
-        : current,
-    );
+    setAutoTitleDraft(previousAutoTitle, generatedTripTitle(region, dayCount));
   };
 
   const selectTravelArea = (area: TravelAreaRecommendation) => {
     applyTravelArea(area, { syncUrl: true });
   };
 
-  const updateDates = (nextStartDate: string, nextEndDate: string) => {
+  const updateDates = (rawStartDate: string, rawEndDate: string) => {
+    // 달력 클릭과 네이티브 날짜 입력이 모두 이 함수를 지난다. 여기서 한 번
+    // 정규화하면 UI에서 일수가 음수가 될 길이 없어진다.
+    const { startDate: nextStartDate, endDate: nextEndDate } =
+      normalizeTripDateRange(rawStartDate, rawEndDate);
     const previousAutoTitle = generatedTripTitle(selectedRegion, dayCount);
     const nextDayCount = tripDateDayCount(nextStartDate, nextEndDate);
     setStartDate(nextStartDate);
     setEndDate(nextEndDate);
-    setTitleDraft((current) =>
-      current.trim() === "" || current === previousAutoTitle
-        ? generatedTripTitle(selectedRegion, nextDayCount)
-        : current,
+    setAutoTitleDraft(
+      previousAutoTitle,
+      generatedTripTitle(
+        selectedRegion,
+        nextDayCount != null && nextDayCount > 0 ? nextDayCount : dayCount,
+      ),
     );
+  };
+
+  const openDatePicker = () => {
+    setCalendarMonth(startOfMonth(startDate));
+    setIsDatePickerOpen(true);
+  };
+
+  const selectCalendarDate = (value: string) => {
+    if (datePickerAnchor === "start") {
+      updateDates(value, value);
+      setDatePickerAnchor("end");
+      setCalendarMonth(startOfMonth(value));
+      return;
+    }
+    updateDates(startDate, value);
+    setDatePickerAnchor("start");
+    setCalendarMonth(startOfMonth(value));
   };
 
   const goNext = () => {
@@ -644,7 +720,9 @@ export function ItineraryCreatePage() {
                 <input
                   aria-label="일정 제목"
                   name="trip-title"
-                  onChange={(event) => setTitleDraft(event.target.value)}
+                  onChange={(event) =>
+                    updateTitleDraftFromUser(event.target.value)
+                  }
                   placeholder={generatedTripTitle(selectedRegion, dayCount)}
                   value={titleDraft}
                 />
@@ -659,10 +737,24 @@ export function ItineraryCreatePage() {
                 <span>2</span>
                 <div>
                   <h3 id="trip-date-section-title">여행 기간</h3>
-                  <p>2일부터 7일까지 선택할 수 있습니다.</p>
+                  <p>Select a start and end date for the trip.</p>
                 </div>
               </div>
-              <div className="prototype-date-fields">
+              <button
+                aria-controls="trip-date-range-picker"
+                aria-expanded={isDatePickerOpen}
+                className="trip-date-range-card"
+                data-testid="trip-date-range-trigger"
+                onClick={openDatePicker}
+                type="button"
+              >
+                <span>여행 날짜</span>
+                <strong data-testid="trip-date-range-summary">
+                  {startDate} ~ {endDate}
+                </strong>
+                <em>{dayCount ? `${dayCount}일` : "날짜를 선택하세요"}</em>
+              </button>
+              <div className="prototype-date-fields prototype-date-fields-hidden">
                 <label>
                   출발일
                   <input
@@ -684,6 +776,77 @@ export function ItineraryCreatePage() {
                   />
                 </label>
               </div>
+              {isDatePickerOpen && (
+                <div
+                  aria-label="여행 날짜 범위"
+                  className="trip-date-calendar"
+                  data-testid="trip-date-range-calendar"
+                  id="trip-date-range-picker"
+                  role="dialog"
+                >
+                  <div className="trip-date-calendar-head">
+                    <button
+                      aria-label="이전 달"
+                      onClick={() => setCalendarMonth((current) => addMonths(current, -1))}
+                      type="button"
+                    >
+                      이전
+                    </button>
+                    <strong>{formatCalendarMonth(calendarMonth)}</strong>
+                    <button
+                      aria-label="다음 달"
+                      onClick={() => setCalendarMonth((current) => addMonths(current, 1))}
+                      type="button"
+                    >
+                      다음
+                    </button>
+                  </div>
+                  <p className="trip-date-calendar-guide">
+                    {datePickerAnchor === "start" ? "첫날을 선택하세요" : "마지막 날을 선택하세요"}
+                  </p>
+                  <div className="trip-date-calendar-grid" role="grid">
+                    {calendarWeekdayLabels.map((label) => (
+                      <span className="trip-date-weekday" key={label}>
+                        {label}
+                      </span>
+                    ))}
+                    {buildCalendarDays(calendarMonth).map((date) => {
+                      const value = formatDateInput(date);
+                      const isCurrentMonth = date.getMonth() === calendarMonth.getMonth();
+                      const isStart = value === startDate;
+                      const isEnd = value === endDate;
+                      const isInsideRange = isDateInputInRange(value, startDate, endDate);
+                      const className = [
+                        "trip-date-day",
+                        isCurrentMonth ? "" : "outside-month",
+                        isInsideRange ? "in-range" : "",
+                        isStart ? "range-start" : "",
+                        isEnd ? "range-end" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ");
+                      return (
+                        <button
+                          aria-label={value}
+                          className={className}
+                          key={value}
+                          onClick={() => selectCalendarDate(value)}
+                          type="button"
+                        >
+                          {date.getDate()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    className="trip-date-calendar-done"
+                    onClick={() => setIsDatePickerOpen(false)}
+                    type="button"
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
               {dateRangeError && (
                 <p className="prototype-checkout-error">{dateRangeError}</p>
               )}

@@ -2,14 +2,14 @@
 
 ## 기준
 
-- 기준일: 2026-07-24
-- 기준 Alembic head: `0030_half_trip_five_semantics`
+- 기준일: 2026-08-18
+- 기준 Alembic head: `0035_stay_policy_identity`
 - PostgreSQL: 16.14 (`postgres:16-alpine` fresh container)
 - SQL snapshot: `docs/db-schema-current.sql`
 - ERD/관계 시각화: `docs/db-erd.md`
-- 생성 방식: 이전 schema-only snapshot에 Alembic head `0027_source_provenance_keys`의 offline SQL diff를 반영했고, 이후 `0029`/`0030`은 data-only semantic migration으로 schema object를 추가하지 않는다. Fresh DB pg_dump 재생성은 별도 검증으로 다시 수행할 수 있다. Schema 변경은 Alembic 기준으로 추적하고, 관계/핵심 컬럼 요약은 `docs/db-erd.md`가 제공한다.
+- 생성 방식: 이전 schema-only snapshot에 Alembic head `0027_source_provenance_keys`의 offline SQL diff를 반영했고, 이후 data-only semantic migration과 `0035_stay_policy_identity`의 index 변경을 반영했다. Fresh DB pg_dump 재생성은 별도 검증으로 다시 수행할 수 있다. Schema 변경은 Alembic 기준으로 추적하고, 관계/핵심 컬럼 요약은 `docs/db-erd.md`가 제공한다.
 
-이 문서는 현재 앱이 사용하는 PostgreSQL schema의 기준 문서다. 초기 SQL 기준본 이후 Alembic migration `0002`~`0030`이 적용된 현재 구조를 설명한다. 테이블 관계, 핵심 컬럼, 제약/index, 문서 drift는 `docs/db-erd.md`를 함께 본다.
+이 문서는 현재 앱이 사용하는 PostgreSQL schema의 기준 문서다. 초기 SQL 기준본 이후 Alembic migration `0002`~`0035`가 적용된 현재 구조를 설명한다. 테이블 관계, 핵심 컬럼, 제약/index, 문서 drift는 `docs/db-erd.md`를 함께 본다.
 
 ## 테이블 그룹
 
@@ -78,7 +78,7 @@ Migration metadata:
 - `policies.apply_url`
 - `policies.structured_detail`
 - `trip_invites.role`
-  - 초대 token에 고정되는 권한(`viewer`/`editor`)이다. 같은 일정에서 role별 active invite가 공존할 수 있으며, 다른 role 링크 생성은 기존 token의 role을 변경하지 않는다.
+  - 초대 token에 고정되는 권한이다. 현재 신규 초대 생성/수락 계약은 `editor`만 지원하며, 기존 viewer 초대 token은 editor로 승급하지 않고 수락되지 않는다. 기존 `trip_members.role="viewer"` 멤버는 계속 읽기 전용으로 남는다.
 - `trips.status`
 - `trips.revision`
 
@@ -101,8 +101,9 @@ Migration metadata:
 - `0027_source_provenance_keys`: 외부 원문의 snapshot `canonical_key`와 nullable, non-unique `logical_key`를 분리하고 key 버전(`canonical_key_version`)을 추가한다. 기존 레코드는 source_category/지역/기간 기반으로 가능한 범위에서 backfill한다.
 - `0029_stay_discount_semantics`: 숙박세일페스타 semantic data-only 보정이다. 새 schema object는 추가하지 않는다.
 - `0030_half_trip_five_semantics`: scoped 대한민국 반값여행 5섹션 semantic data-only 보정이다. 새 schema object는 추가하지 않는다.
+- `0035_stay_policy_identity`: 숙박세일페스타 지역별 public 정책 row가 같은 원문 `external_source_records.id`를 공유할 수 있도록 `policies.external_source_record_id` index를 non-unique로 바꾼다.
 
-현재 `docs/db-schema-current.sql`은 기존 schema-only snapshot에서 Alembic `0027_source_provenance_keys` diff를 반영한 schema reference이며, `0029`/`0030`은 schema object 변경이 없는 data-only migration이다. 향후 schema migration이 추가되면 같은 절차로 다시 생성한다.
+현재 `docs/db-schema-current.sql`은 기존 schema-only snapshot에서 Alembic `0027_source_provenance_keys` diff와 `0035_stay_policy_identity` index 변경을 반영한 schema reference이며, data-only migration은 schema object 변경이 없다. 향후 schema migration이 추가되면 같은 절차로 다시 생성한다.
 
 ## `notification_deliveries`
 
@@ -203,7 +204,7 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 - `last_verified_at`
 - `verification_status`
 
-`external_source_record_id`는 `external_source_records.id`를 참조하며, 원문 레코드 삭제 시 정책 row는 유지하고 참조만 `NULL`로 만든다.
+`external_source_record_id`는 `external_source_records.id`를 참조하며, 원문 레코드 삭제 시 정책 row는 유지하고 참조만 `NULL`로 만든다. 이 컬럼은 non-unique다. 일반 외부 정책은 보통 원문 1건당 public 정책 1건을 만들지만, 숙박세일페스타는 canonical 근거 row와 지역별 public 정책 row가 같은 원문 record id를 공유한다.
 
 API `sourceType`은 `source_type` 원문값을 그대로 노출하지 않고 `internal` 또는 `external`로 정규화한다. `external_source_record_id`가 있으면 `external`, source 정보가 비어 있으면 `internal`, 지원하지 않는 비어 있지 않은 source type은 `external`로 본다. `source_name`, `source_category`, `source_canonical_key`는 중복 판단과 운영 진단 metadata로 유지한다.
 

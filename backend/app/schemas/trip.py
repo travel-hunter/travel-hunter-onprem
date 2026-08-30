@@ -4,12 +4,14 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
-InviteRole = Literal["viewer", "editor"]
+InviteRole = Literal["editor"]
 TripRole = Literal["owner", "editor", "viewer"]
 TripStatus = Literal["draft", "confirmed"]
+TripDateOverflowStrategy = Literal["moveToLastDay", "delete"]
 RecommendationSourceType = Literal["freshCandidate", "savedSummary"]
 InviteEmailDeliveryStatus = Literal["sent", "notConfigured", "failed"]
 MAX_TRIP_PARTICIPANTS = 10
+MIN_TRIP_DURATION_DAYS = 1
 MAX_TRIP_DURATION_DAYS = 7
 
 
@@ -44,7 +46,7 @@ class CreateTripRequest(BaseModel):
     style: str | None = None
     description: str | None = Field(default=None, max_length=500)
     policySlug: str | None = None
-    durationDays: int | None = Field(default=None, ge=2, le=MAX_TRIP_DURATION_DAYS)
+    durationDays: int | None = Field(default=None, ge=MIN_TRIP_DURATION_DAYS)
     startDate: date | None = None
     endDate: date | None = None
 
@@ -56,8 +58,8 @@ class CreateTripRequest(BaseModel):
             raise ValueError("startDate and endDate must be provided together")
         if self.startDate is not None and self.endDate is not None:
             day_count = (self.endDate - self.startDate).days + 1
-            if day_count < 2 or day_count > MAX_TRIP_DURATION_DAYS:
-                raise ValueError("Trip date range must be between 2 and 7 days")
+            if day_count < MIN_TRIP_DURATION_DAYS:
+                raise ValueError("Trip endDate must be on or after startDate")
         return self
 
 
@@ -68,6 +70,8 @@ class Trip(BaseModel):
     revision: int
     travelAreaId: str | None = None
     dates: str
+    startDate: date
+    endDate: date
     people: list[str]
     participantCount: int
     expectedSaving: str
@@ -128,12 +132,6 @@ class InviteState(BaseModel):
     alreadyMember: bool = False
 
 
-class InviteLinksState(BaseModel):
-    tripId: str
-    viewer: InviteState | None = None
-    editor: InviteState | None = None
-
-
 class ConfirmInviteRequest(BaseModel):
     role: InviteRole = "editor"
 
@@ -175,6 +173,25 @@ class CreateTripPlaceRequest(BaseModel):
     externalPlaceId: str | None = None
 
 
+class CreateTripPlaceItem(BaseModel):
+    time: str | None = None
+    label: str = Field(min_length=1, max_length=200)
+    meta: str | None = None
+    address: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    category: str | None = None
+    categoryCode: str | None = None
+    placeUrl: str | None = None
+    sourceProvider: str | None = None
+    externalPlaceId: str | None = None
+
+
+class CreateTripPlacesRequest(BaseModel):
+    expectedRevision: int = Field(ge=1)
+    places: list[CreateTripPlaceItem] = Field(min_length=1, max_length=50)
+
+
 class UpdateTripPlaceRequest(BaseModel):
     expectedRevision: int = Field(ge=1)
     time: str | None = None
@@ -190,3 +207,23 @@ class MoveTripPlaceRequest(BaseModel):
 
 class UpdateTripStatusRequest(BaseModel):
     status: TripStatus
+
+
+class UpdateTripSettingsRequest(BaseModel):
+    expectedRevision: int = Field(ge=1)
+    title: str | None = Field(default=None, min_length=1, max_length=100)
+    startDate: date | None = None
+    endDate: date | None = None
+    overflowPlaceStrategy: TripDateOverflowStrategy = "moveToLastDay"
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> "UpdateTripSettingsRequest":
+        has_start = self.startDate is not None
+        has_end = self.endDate is not None
+        if has_start != has_end:
+            raise ValueError("startDate and endDate must be provided together")
+        if self.startDate is not None and self.endDate is not None:
+            day_count = (self.endDate - self.startDate).days + 1
+            if day_count < MIN_TRIP_DURATION_DAYS:
+                raise ValueError("Trip endDate must be on or after startDate")
+        return self

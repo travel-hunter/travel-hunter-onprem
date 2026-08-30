@@ -1,7 +1,7 @@
 # 친구 초대와 일정 상세 수정 작업흐름 명세
 
 > Status: active local UX workflow spec.
-> Scope: 현재 구현된 링크 기반 친구 초대와 일정 상세 편집 흐름을 현실적인 사용자 작업 순서로 설명하고, 가까운 다음 개선 후보인 email 초대 발송 흐름을 별도 future-ready 범위로 정의한다.
+> Scope: 현재 구현된 editor 전용 링크 기반 친구 초대와 일정 상세 편집 흐름을 현실적인 사용자 작업 순서로 설명하고, email 초대 발송 흐름을 링크 초대의 보조 전송 수단으로 정의한다.
 > Authority: API wire shape는 `docs/mvp-api-contract.md`, 구현 상태 요약은 `docs/implemented-feature-spec.md`, 릴리즈 우선순위는 `docs/next-work-plan.md`를 따른다.
 
 ## 1. 목적
@@ -10,29 +10,30 @@
 
 핵심 질문은 다음이다.
 
-- 초대한 사람은 어디서 어떤 권한을 선택하고 어떤 링크를 공유하는가?
+- 초대한 사람은 어디서 editor 초대 링크를 만들고 공유하는가?
 - 초대받은 사람은 링크를 열었을 때 로그인/가입 상태에 따라 어떤 화면을 거치는가?
-- 초대 수락 후 viewer/editor 권한이 일정 상세 수정 가능 여부에 어떻게 반영되는가?
-- 가까운 다음 개선인 email 초대 발송은 기존 링크 초대 흐름 위에 어떤 UI/API/예외 상태로 붙어야 하는가?
+- 초대 수락 후 editor 권한이 일정 상세 수정 가능 여부에 어떻게 반영되는가?
+- email 초대 발송은 기존 링크 초대 흐름 위에 어떤 UI/API/예외 상태로 붙는가?
 
 ## 2. 범위
 
 ### 2.1 현재 구현 범위
 
-- 일정 owner/editor가 `/friend-invite?tripId={tripId}`에서 viewer/editor 권한을 선택한다.
-- owner/editor가 초대 링크를 활성화하고 복사/공유한다.
+- 일정 owner/editor가 `/friend-invite?tripId={tripId}`에서 editor 초대 링크를 확인한다.
+- owner/editor가 editor 초대 링크를 활성화하고 복사/공유한다.
 - 초대 URL은 공개 수락 경로 `/invites/{token}/accept`를 사용한다.
 - 초대 수신자는 링크로 진입한다.
 - 비로그인 수신자는 로그인 또는 회원가입 후 원래 초대 링크로 돌아와 수락한다.
 - 로그인 수신자는 바로 초대 수락을 시도한다.
-- 수락 성공 시 `trip_members.role`에 viewer/editor 권한이 반영되고 일정 상세로 이동한다.
+- 수락 성공 시 `trip_members.role`에 editor 권한이 반영되고 일정 상세로 이동한다.
 - owner/editor는 일정 상세에서 장소 추가/수정/삭제/이동이 가능하다.
-- viewer는 일정 상세를 볼 수 있지만 장소 편집은 할 수 없다.
+- 기존 viewer 멤버는 일정 상세를 볼 수 있지만 장소 편집은 할 수 없다.
+- 기존 viewer 초대 token은 더 이상 수락되지 않는다.
 
 ### 2.2 가까운 다음 개선 범위
 
 - SMTP/Brevo readiness 이후 친구 초대 email 발송을 링크 초대의 보조 전송 수단으로 추가한다.
-- email 초대는 새 권한 모델이 아니라 기존 `trip_invites` 토큰/role/public accept URL을 전달하는 전송 채널이다.
+- email 초대는 새 권한 모델이 아니라 editor `trip_invites` 토큰/public accept URL을 전달하는 전송 채널이다.
 - email 발송 실패는 초대 링크 생성 자체를 취소하지 않는다. 사용자는 링크 복사로 fallback할 수 있어야 한다.
 
 ### 2.3 명시적 제외 범위
@@ -51,15 +52,15 @@
 | --- | --- | --- | --- |
 | Guest | 로그인하지 않은 사용자 | 초대 링크 진입, 로그인/회원가입으로 이동, 비밀번호 재설정/OAuth 시작 | 초대 수락 API 호출, 일정 상세 조회, 장소 편집 불가 |
 | Member | 로그인한 일반 사용자 | 본인 일정 생성, 초대 링크 수락, 참여한 일정 열람 | 참여하지 않은 일정 상세 접근 불가 |
-| Trip Owner | 일정을 생성한 사용자 | 초대 링크 생성/role 설정, 일정 삭제, 장소 추가/수정/삭제/이동, 정책 연결/해제 | 본 명세에서는 owner 권한 양도 없음 |
-| Trip Editor | editor 초대를 수락한 멤버 | 일정 상세 열람, 장소 추가/수정/삭제/이동, 정책 연결/해제 | 초대 링크 생성/role 설정, 일정 삭제 불가 |
-| Trip Viewer | viewer 초대를 수락한 멤버 | 일정 상세 열람 | 장소 추가/수정/삭제/이동, 정책 연결/해제 불가 |
+| Trip Owner | 일정을 생성한 사용자 | editor 초대 링크 관리, 일정 삭제, 장소 추가/수정/삭제/이동, 정책 연결/해제 | 본 명세에서는 owner 권한 양도 없음 |
+| Trip Editor | editor 초대를 수락한 멤버 | 일정 상세 열람, editor 초대 링크 관리, 장소 추가/수정/삭제/이동, 정책 연결/해제 | 일정 삭제 불가 |
+| Trip Viewer | 기존 viewer 멤버 | 일정 상세 열람 | 장소 추가/수정/삭제/이동, 정책 연결/해제, 신규 viewer 초대 수락 불가 |
 
 권한 원칙:
 
 - `owner`와 `editor`는 일정 상세에서 편집 컨트롤을 사용할 수 있다.
 - `viewer`는 편집 컨트롤을 보지 않거나 읽기 전용 안내를 본다. viewer가 API를 직접 호출해도 서버는 403으로 막아야 한다.
-- 이미 더 높은 권한을 가진 멤버가 더 낮은 권한의 초대 링크를 다시 눌러도 기존 권한을 낮추지 않는다.
+- 이미 참여 중인 멤버가 editor 초대 링크를 다시 눌러도 기존 권한을 낮추지 않는다.
 
 ## 4. 현재 구현: 링크 기반 친구 초대 흐름
 
@@ -78,47 +79,47 @@
      - owner/editor 아님: 권한 없음 안내.
      - 일정 없음 또는 접근 불가: not found/접근 불가 안내.
 
-### 4.2 초대 권한을 선택한다
+### 4.2 초대 권한은 editor로 고정한다
 
-1. 초대 화면은 권한 선택 UI를 보여준다.
-2. 기본 권장값은 `editor`이다. 단, 화면 copy는 권한 차이를 명확히 설명한다.
+1. 초대 화면은 단일 editor 초대 링크 UI를 보여준다.
+2. viewer 초대 링크 생성 UI는 제공하지 않는다.
+3. 기존 viewer 멤버는 계속 읽기 전용이지만 신규 viewer 초대 token은 만들거나 수락하지 않는다.
 
-권한 선택 copy 예시:
+초대 링크 copy 예시:
 
-- `함께 편집 가능`: 초대받은 사람이 장소를 추가, 수정, 삭제, 이동할 수 있다.
-- `보기만 가능`: 초대받은 사람이 일정은 볼 수 있지만 장소를 편집할 수 없다.
+- `함께 편집 링크`: 초대받은 사람이 장소를 추가, 수정, 삭제, 이동할 수 있다.
 
 주의 copy:
 
 - `초대 링크를 받은 사람은 로그인 또는 회원가입 후 일정에 참여할 수 있어요.`
 - `링크를 아는 사람이 접근할 수 있으니 신뢰하는 사람에게만 공유하세요.`
-- `현재는 링크 공유 방식이며 email/SMS/Kakao 발송은 지원하지 않아요.`
+- `email 발송에 실패해도 링크를 복사해 직접 공유할 수 있어요.`
 
 ### 4.3 초대 링크를 활성화한다
 
-1. owner/editor가 `/friend-invite?tripId={tripId}`에 진입하면 프론트엔드는 권한별 링크 상태를 조회한다.
+1. owner/editor가 `/friend-invite?tripId={tripId}`에 진입하면 프론트엔드는 editor 링크 상태를 조회한다.
    - API: `GET /api/trips/{tripId}/invite`
-   - Response: `{ "tripId": "...", "viewer": InviteState, "editor": InviteState }`
-2. 화면은 `보기만 가능`과 `함께 편집` 링크 카드를 분리해 보여준다. 두 카드의 URL/token은 달라야 한다.
-3. owner/editor가 특정 카드에서 `링크 만들기` 또는 `링크 준비` 버튼을 누르면 프론트엔드는 해당 role을 전송한다.
+   - Response: `InviteState`이며 `role`은 `"editor"`이다.
+2. 화면은 `함께 편집 링크` 카드 하나를 보여준다.
+3. owner/editor가 카드에서 `편집 링크 만들기` 또는 링크 준비 버튼을 누르면 프론트엔드는 role 없이 요청한다.
    - API: `POST /api/trips/{tripId}/invite`
-   - Request: `{ "role": "viewer" }` 또는 `{ "role": "editor" }`
+   - Request: `{}` 또는 `{ "role": "editor" }`
 4. 백엔드는 다음을 수행한다.
    - 요청자가 owner/editor인지 확인한다.
-   - role이 `viewer` 또는 `editor`인지 검증한다.
-   - 같은 role의 active invite가 있으면 그 token을 그대로 반환한다.
-   - 다른 role의 active invite는 절대 role을 갱신하거나 token을 재사용하지 않는다.
-   - 같은 role의 active invite가 없으면 `trip_invites`에 새 token과 role을 저장한다.
+   - role이 없거나 `editor`인지 검증한다.
+   - `viewer` role 요청은 422로 거부한다.
+   - active editor invite가 있으면 그 token을 그대로 반환한다.
+   - active editor invite가 없으면 `trip_invites`에 새 token과 `editor` role을 저장한다.
    - `TRAVEL_HUNTER_PUBLIC_BASE_URL` 기준 `inviteUrl`을 만든다.
-5. 프론트엔드는 role 카드별 `inviteUrl`을 화면에 표시한다.
+5. 프론트엔드는 editor `inviteUrl`을 화면에 표시한다.
    - URL 형태: `https://<domain>/invites/{token}/accept`
-6. owner/editor는 각 role 카드의 `링크 복사` 또는 OS 공유 기능을 사용해 외부 메신저에 직접 붙여넣는다.
+6. owner/editor는 `함께 편집 링크 복사` 또는 OS 공유 기능을 사용해 외부 메신저에 직접 붙여넣는다.
 
 성공 상태 copy 예시:
 
 - `초대 링크가 준비됐어요.`
 - `이 링크를 받은 사람은 로그인 또는 회원가입 후 일정에 참여합니다.`
-- `선택된 권한: 함께 편집 가능` 또는 `선택된 권한: 보기만 가능`.
+- `함께 편집 링크가 준비됐어요.`
 
 실패 상태:
 
@@ -129,13 +130,12 @@
 | 404 일정 없음 | `일정을 찾을 수 없어요.` | 일정 목록으로 이동 |
 | 네트워크 오류 | `초대 링크를 만들지 못했어요. 잠시 후 다시 시도해 주세요.` | 재시도 버튼 제공 |
 
-### 4.4 다른 권한 링크를 만든다
+### 4.4 기존 viewer 초대 token 처리
 
-1. owner/editor가 같은 초대 화면에서 반대 role 카드의 링크를 만든다.
-2. 프론트엔드는 `POST /api/trips/{tripId}/invite`로 해당 role을 전송한다.
-3. 백엔드는 기존에 공유된 다른 role 링크를 변경하지 않고, 요청 role의 active invite만 반환하거나 새 token을 발급한다.
-4. 이후 새로 수락하는 사용자는 본인이 연 token에 고정된 role을 받는다.
-5. 이미 수락해 `trip_members`에 들어간 사용자의 기존 role은 이 동작만으로 자동 변경하지 않는다.
+1. 과거에 생성된 viewer 초대 token은 editor token으로 승급하지 않는다.
+2. `/invites/{token}/accept`에서 viewer 초대 token을 열면 백엔드는 active editor invite로 찾지 못하므로 404를 반환한다.
+3. 사용자는 새 editor 초대 링크를 요청해야 한다.
+4. 이미 수락해 `trip_members.role="viewer"`로 들어간 사용자는 기존처럼 읽기 전용 멤버로 남는다.
 
 ## 5. 현재 구현: 초대받은 사람의 수락 흐름
 
@@ -197,8 +197,7 @@
    - 예: 가입 → 닉네임 설정 → 프로필 설정 → `/invites/{token}/accept` 복귀.
 5. `/invites/{token}/accept`로 돌아오면 인증된 상태에서 수락 API를 호출한다.
 6. 수락 성공 후 `/trips/{tripId}`로 이동한다.
-7. 수락된 role이 `editor`이면 일정 상세에서 장소 편집 CTA가 보인다.
-8. 수락된 role이 `viewer`이면 일정 상세는 읽기 전용이다.
+7. 신규 수락된 role은 `editor`이며 일정 상세에서 장소 편집 CTA가 보인다.
 
 가입 경로에서 중요한 UX 조건:
 
@@ -215,7 +214,7 @@
    - 안내: `이미 참여 중인 일정입니다.`
    - CTA: `일정 보러 가기`.
 5. 이미 멤버의 기존 role은 낮추지 않는다.
-   - 예: 이미 editor인 사용자가 viewer 초대 링크를 다시 눌러도 editor 유지.
+   - 예: 기존 viewer 멤버가 editor 초대 링크를 다시 눌러도 기존 멤버 처리 규칙을 따른다.
    - 예: 이미 owner인 사용자가 초대 링크를 눌러도 owner 유지.
 
 ### 5.5 초대 수락 실패와 예외
@@ -224,6 +223,7 @@
 | --- | --- | --- | --- |
 | token 없음 | 404 | `초대 링크를 찾을 수 없어요.` | 새 링크 요청 안내 |
 | token 만료 | 404 또는 만료 error | `초대 링크가 만료됐어요.` | 초대한 사람에게 새 링크 요청 |
+| 기존 viewer 초대 token | 404 | `초대 링크를 찾을 수 없어요.` | 새 editor 링크 요청 안내 |
 | 미로그인 상태에서 수락 API 직접 호출 | 401 | `로그인 후 초대를 수락할 수 있어요.` | 로그인/가입 CTA |
 | 서버 오류 | 500 | `초대를 수락하지 못했어요. 잠시 후 다시 시도해 주세요.` | 재시도 |
 | 네트워크 오류 | client error | `연결이 불안정해요. 다시 시도해 주세요.` | 재시도 |
@@ -333,7 +333,7 @@
 | 장소 수정 | 불가 | 불가 | 불가 | 가능 | 가능 |
 | 장소 삭제 | 불가 | 불가 | 불가 | 가능 | 가능 |
 | 장소 이동 | 불가 | 불가 | 불가 | 가능 | 가능 |
-| 초대 링크 생성/role 설정 | 불가 | 불가 | 불가 | 가능 | 가능 |
+| editor 초대 링크 관리 | 불가 | 불가 | 불가 | 가능 | 가능 |
 | 일정 삭제 | 불가 | 불가 | 불가 | 불가 | 가능 |
 
 ## 8. 가까운 다음 개선: email 초대 발송 흐름
@@ -350,21 +350,19 @@
 ### 8.2 owner/editor의 email 초대 작업흐름
 
 1. owner/editor가 `/friend-invite?tripId={tripId}`에 진입한다.
-2. owner/editor가 권한을 선택한다.
-   - `함께 편집 가능(editor)` 또는 `보기만 가능(viewer)`.
-3. owner/editor가 초대 받을 사람의 email 주소를 입력한다.
-4. owner/editor가 `email로 초대 보내기` 버튼을 누른다.
-5. 프론트엔드는 email 발송 API를 호출한다.
+2. owner/editor가 초대 받을 사람의 email 주소를 입력한다.
+3. owner/editor가 `email 초대 보내기` 버튼을 누른다.
+4. 프론트엔드는 email 발송 API를 호출한다.
    - API: `POST /api/trips/{tripId}/invite/email`
-   - Request 예시: `{ "email": "friend@example.com", "role": "editor" }`
-6. 백엔드는 선택 role 전용 링크 확인/생성과 email 발송을 같은 service 흐름에서 처리한다.
-7. 백엔드는 다음을 수행한다.
+   - Request 예시: `{ "email": "friend@example.com" }`
+5. 백엔드는 editor 링크 확인/생성과 email 발송을 같은 service 흐름에서 처리한다.
+6. 백엔드는 다음을 수행한다.
    - 요청자가 owner/editor인지 확인한다.
    - email 형식을 검증한다.
-   - 선택한 role의 초대 token과 role을 확인한다.
+   - editor 초대 token과 role을 확인한다.
    - public invite URL을 포함한 email을 발송한다.
    - 발송 결과를 audit/log로 남긴다. secret 또는 SMTP credential은 로그에 남기지 않는다.
-8. 성공 시 화면은 발송 완료를 보여준다.
+7. 성공 시 화면은 발송 완료를 보여준다.
 
 성공 copy 예시:
 
@@ -391,7 +389,7 @@ Email 본문에서도 로그인 전 일정 상세 미리보기는 제공하지 �
 
 | 상황 | 사용자 안내 | 시스템 동작 | 회복 행동 |
 | --- | --- | --- | --- |
-| SMTP 미설정 | `email 발송 설정이 아직 없어요. 해당 권한 링크를 복사해 직접 보내 주세요.` | API는 200과 `deliveryStatus=notConfigured`를 반환하고 선택 role 링크는 유지 | 링크 복사 fallback |
+| SMTP 미설정 | `email 발송 설정이 아직 없어요. 초대 링크를 복사해 직접 보내 주세요.` | API는 200과 `deliveryStatus=notConfigured`를 반환하고 editor 링크는 유지 | 링크 복사 fallback |
 | 잘못된 email 형식 | `email 주소를 확인해 주세요.` | API 호출 전 client 검증 또는 422 | 입력 수정 |
 | SMTP provider 실패 | `email을 보내지 못했어요. 링크를 복사해 직접 보내세요.` | 초대 token은 유지, 실패 로그 기록 | 링크 복사/재시도 |
 | rate limit | `잠시 후 다시 시도해 주세요.` | 과도한 발송 차단 | 시간 후 재시도 |
@@ -414,25 +412,27 @@ Email 본문에서도 로그인 전 일정 상세 미리보기는 제공하지 �
 1. owner 또는 editor 계정으로 로그인한다.
 2. 일정 하나를 생성하거나 seed 일정에 진입한다.
 3. 일정 상세에서 `친구 초대`를 누른다.
-4. 권한을 `함께 편집 가능`으로 선택한다.
+4. `함께 편집 링크` 카드 하나만 보이는지 확인한다.
 5. 초대 링크를 생성한다.
-6. 생성된 URL이 `/invites/{token}/accept` 형태인지 확인한다.
-7. 시크릿 브라우저 또는 로그아웃 상태에서 링크를 연다.
-8. 일정 상세 내용이 보이지 않고 로그인/회원가입 안내만 보이는지 확인한다.
-9. 기존 계정으로 로그인한다.
-10. 초대 수락 완료 안내가 보이는지 확인한다.
-11. 일정 상세로 이동한다.
-12. editor 권한이면 `장소 추가`와 장소 수정/삭제/이동이 가능한지 확인한다.
-13. 같은 링크를 다시 열었을 때 “이미 참여 중” 안내 또는 일정 상세 이동이 되는지 확인한다.
+6. 생성된 URL이 `/invites/{token}/accept` 형태이고 role이 editor인지 확인한다.
+7. `보기만 가능`, `viewer`, `읽기 전용 링크` 문구가 보이지 않는지 확인한다.
+8. 시크릿 브라우저 또는 로그아웃 상태에서 링크를 연다.
+9. 일정 상세 내용이 보이지 않고 로그인/회원가입 안내만 보이는지 확인한다.
+10. 기존 계정으로 로그인한다.
+11. 초대 수락 완료 안내가 보이는지 확인한다.
+12. 일정 상세로 이동한다.
+13. editor 권한으로 `장소 추가`와 장소 수정/삭제/이동이 가능한지 확인한다.
+14. 같은 링크를 다시 열었을 때 “이미 참여 중” 안내 또는 일정 상세 이동이 되는지 확인한다.
 
-### 9.2 Viewer 권한 smoke
+### 9.2 기존 viewer 멤버 읽기 전용 smoke
 
-1. owner 또는 editor가 같은 일정에서 role을 `보기만 가능`으로 선택해 링크를 생성한다.
-2. 다른 계정 또는 신규 가입 계정으로 링크를 수락한다.
+1. 기존 데이터 또는 fixture로 `trip_members.role="viewer"` 멤버를 준비한다.
+2. viewer 멤버 계정으로 로그인한다.
 3. 일정 상세에 진입한다.
 4. timeline과 장소 상세는 보이는지 확인한다.
 5. `장소 추가`, `수정`, `삭제`, drag handle이 보이지 않거나 비활성인지 확인한다.
 6. API 직접 호출 또는 UI 우회 시 서버가 403을 반환하는지 확인한다.
+7. 과거 viewer 초대 token을 `/invites/{token}/accept`로 열면 새 editor 권한으로 승급되지 않고 오류 안내가 나오는지 확인한다.
 
 ### 9.3 가입 후 초대 수락 smoke
 

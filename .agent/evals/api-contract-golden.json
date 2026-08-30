@@ -631,7 +631,9 @@
         "recommendedPolicies": "array of { slug, title, amount, region }",
         "days": "object (id:string, time:string, label:string, meta:string, address:string|null, latitude:number|null, longitude:number|null, category:string|null, categoryCode:string|null, placeUrl:string|null, sourceProvider:string|null, externalPlaceId:string|null)",
         "currentUserRole": "string enum(owner|editor|viewer)",
-        "revision": "number"
+        "revision": "number",
+        "startDate": "YYYY-MM-DD string",
+        "endDate": "YYYY-MM-DD string"
       },
       "exampleTripId": "1",
       "dbModeTripIdPolicy": "The API returns numeric trip ids as strings and accepts only numeric string trip handles.",
@@ -674,12 +676,14 @@
         "days": "object (id:string, time:string, label:string, meta:string, address:string|null, latitude:number|null, longitude:number|null, category:string|null, categoryCode:string|null, placeUrl:string|null, sourceProvider:string|null, externalPlaceId:string|null)",
         "currentUserRole": "string enum(owner|editor|viewer)",
         "revision": "number",
-        "travelAreaId": "string|null"
+        "travelAreaId": "string|null",
+        "startDate": "YYYY-MM-DD string",
+        "endDate": "YYYY-MM-DD string"
       },
       "dbModePolicySlugBehavior": "When policySlug is present, create the trip and link trip_policies; unknown policySlug returns 404 Policy not found.",
-      "durationDaysBehavior": "Optional durationDays defaults to 3, accepts 2 through 7, controls trips.end_date and generated trip_days when startDate/endDate are absent.",
+      "durationDaysBehavior": "Optional durationDays defaults to 3, accepts any value >= 1, controls trips.end_date and generated trip_days when startDate/endDate are absent.",
       "participantCountBehavior": "Optional legacy participantCount defaults to 1, accepts 1 through 10, and is stored as planned party size separate from the real member/invite list. Current /trips/new UI omits this field; actual participant display uses people.",
-      "dateRangeBehavior": "Optional startDate/endDate must be provided together, accept 2 through 7 days inclusive, override durationDays, and control trips.start_date/end_date plus generated trip_days.date.",
+      "dateRangeBehavior": "Optional startDate/endDate must be provided together; endDate must be on or after startDate. One-day and greater-than-7-day ranges are valid, override durationDays, and control trips.start_date/end_date plus generated trip_days.date.",
       "dbModeRecommendationBehavior": "The returned recommendedPolicies follows strict municipality/city matching; province-only 광역 matches are excluded except explicit localities inside whole-sido travel areas.",
       "travelAreaIdBehavior": "Valid static or dynamic policy-region travelAreaId resolves to backend travel area, stores trips.travel_area_id, and uses the travel-area display name as trips.region. Invalid travelAreaId returns 400 Travel area not found.",
       "dbModeCreateDaysBehavior": "Creates Trip, owner membership, date-based trip_days, optional trip_policies link, and returns empty day arrays for newly created trips; does not generate auto-course places, trip_places, or trip_recommendations during create."
@@ -700,9 +704,34 @@
         "recommendedPolicies": "array of { slug, title, amount, region, status }",
         "days": "object (id:string, time:string, label:string, meta:string, address:string|null, latitude:number|null, longitude:number|null, category:string|null, categoryCode:string|null, placeUrl:string|null, sourceProvider:string|null, externalPlaceId:string|null)",
         "currentUserRole": "string enum(owner|editor|viewer)",
-        "revision": "number"
+        "revision": "number",
+        "startDate": "YYYY-MM-DD string",
+        "endDate": "YYYY-MM-DD string"
       },
       "dbModeRecommendationBehavior": "recommendedPolicies follows strict municipality/city matching; province-only 광역 matches are excluded, and whole-sido travel areas such as 서울 전체 only allow explicit localities inside that sido."
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/trips/1/settings",
+      "status": 200,
+      "request": {
+        "expectedRevision": 1,
+        "title": "Updated trip",
+        "startDate": "2026-07-12",
+        "endDate": "2026-07-18",
+        "overflowPlaceStrategy": "moveToLastDay"
+      },
+      "requiredFields": {
+        "id": "string",
+        "title": "string",
+        "startDate": "YYYY-MM-DD string",
+        "endDate": "YYYY-MM-DD string",
+        "revision": "number",
+        "days": "object",
+        "currentUserRole": "string enum(owner|editor|viewer)"
+      },
+      "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale.",
+      "dbModeBehavior": "Requires owner/editor access, updates whole-trip title and canonical date range without parsing presentation-only dates, adds missing days, and handles overflow days by moveToLastDay or delete. Viewer access returns 403 Trip edit permission required."
     },
     {
       "method": "DELETE",
@@ -777,6 +806,38 @@
       },
       "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale.",
       "dbModeBehavior": "Requires owner/editor access, atomically compares and increments trips.revision, inserts trip_places, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
+    },
+    {
+      "method": "POST",
+      "path": "/api/trips/1/days/1/places/batch",
+      "status": 200,
+      "request": {
+        "expectedRevision": 1,
+        "places": [
+          {
+            "label": "Basket cafe",
+            "time": "",
+            "meta": "1 Basket road",
+            "address": "1 Basket road",
+            "latitude": 33.45,
+            "longitude": 126.57,
+            "category": "Cafe",
+            "categoryCode": "CE7",
+            "placeUrl": "https://place.map.kakao.com/123",
+            "sourceProvider": "kakao",
+            "externalPlaceId": "123"
+          }
+        ]
+      },
+      "requiredFields": {
+        "id": "string",
+        "title": "string",
+        "revision": "number",
+        "days": "object",
+        "currentUserRole": "string enum(owner|editor|viewer)"
+      },
+      "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale.",
+      "dbModeBehavior": "Requires owner/editor access, atomically compares and increments trips.revision once, appends 1-50 selected search-place candidates to the requested trip day, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
     },
     {
       "method": "PATCH",
@@ -903,12 +964,12 @@
         "acceptedAt": "string|null",
         "invited": "boolean",
         "copied": "boolean",
-        "role": "string enum(viewer|editor)",
+        "role": "string enum(editor)",
         "alreadyMember": "boolean"
       },
       "serverCopiedValue": false,
       "invitedMeaning": "true when a valid invite token exists or the current request created/confirmed one",
-      "roleBehavior": "POST /api/trips/{tripId}/invite accepts optional viewer/editor role and defaults to editor"
+      "roleBehavior": "POST /api/trips/{tripId}/invite returns an editor invite, accepts omitted or editor role, and rejects viewer role with 422"
     },
     {
       "method": "POST",
@@ -916,7 +977,7 @@
       "status": 200,
       "requestFields": {
         "email": "string",
-        "role": "string enum(viewer|editor) optional default editor"
+        "role": "string enum(editor) optional default editor"
       },
       "requiredFields": {
         "invite": "InviteState",
@@ -939,10 +1000,10 @@
         "acceptedAt": "string",
         "invited": "boolean",
         "copied": "boolean",
-        "role": "string enum(viewer|editor)",
+        "role": "string enum(editor)",
         "alreadyMember": "boolean"
       },
-      "dbModeBehavior": "Requires bearer auth, marks trip_invites.accepted_at, inserts trip_members idempotently with the invite role, returns alreadyMember=true without downgrading existing members, and rejects new members with 409 Trip participant limit reached when actual owner/member participants already total 10."
+      "dbModeBehavior": "Requires bearer auth, accepts active editor invite tokens only, marks trip_invites.accepted_at, inserts trip_members idempotently with the invite role, returns alreadyMember=true without downgrading existing members, rejects legacy viewer invite tokens as not found, and rejects new members with 409 Trip participant limit reached when actual owner/member participants already total 10."
     },
     {
       "method": "GET",

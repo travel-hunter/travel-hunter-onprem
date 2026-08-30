@@ -156,6 +156,9 @@
   margin: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* 브라우저가 콘텐츠 변화에 맞춰 scrollTop을 임의로 보정하지 않게 한다.
+     날짜 전환처럼 위쪽 콘텐츠가 통째로 바뀔 때 화면이 튀는 원인이다. */
+  overflow-anchor: none;
   padding: 0;
   background: var(--surface-app);
   -webkit-overflow-scrolling: touch;
@@ -1151,6 +1154,8 @@
   display: grid;
   gap: 10px;
   overflow-y: auto;
+  /* 끝까지 굴렸을 때 다음 휠이 부모로 넘어가 뒤 화면이 스크롤되는 것을 막는다. */
+  overscroll-behavior: contain;
 }
 
 .prototype-agreement-section {
@@ -3511,17 +3516,17 @@
   margin: 0 0 4px;
 }
 
-.prototype-trip-detail-screen .timeline-item.dragging {
+.prototype-trip-detail-screen .timeline-slot.dragging {
   position: relative;
   z-index: 5;
 }
 
-.prototype-trip-detail-screen .timeline-item.dragging .place-detail {
+.prototype-trip-detail-screen .timeline-slot.dragging .place-detail {
   border-color: var(--primary-500);
   box-shadow: var(--shadow-md);
 }
 
-.prototype-trip-detail-screen .timeline-item.moving .place-detail {
+.prototype-trip-detail-screen .timeline-slot.moving .place-detail {
   border-color: rgba(255, 94, 91, 0.35);
   background: #fff5f4;
 }
@@ -3694,6 +3699,75 @@
 
 .place-search-status.error {
   color: var(--primary-600);
+}
+
+.place-basket {
+  display: grid;
+  gap: 9px;
+  padding-top: 2px;
+}
+
+.place-basket-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.place-basket-head strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.place-basket-list {
+  display: grid;
+  gap: 8px;
+}
+
+.place-basket-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.place-basket-row span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.place-basket-row strong {
+  color: var(--ink);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.place-basket-row em,
+.place-basket-row small {
+  color: var(--gray-600);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.place-basket-row em {
+  font-style: normal;
+  font-weight: 800;
+}
+
+.place-basket-row small {
+  overflow-wrap: anywhere;
+}
+
+.place-basket-row button {
+  min-width: 64px;
+  white-space: nowrap;
 }
 
 .place-preview-map-card {
@@ -4436,6 +4510,8 @@
   box-sizing: border-box;
   max-height: min(86dvh, 720px);
   overflow-y: auto;
+  /* 끝까지 굴렸을 때 다음 휠이 부모로 넘어가 뒤 화면이 스크롤되는 것을 막는다. */
+  overscroll-behavior: contain;
   display: grid;
   gap: 16px;
   padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
@@ -4506,6 +4582,8 @@
   min-height: 0;
   max-height: min(52dvh, 440px);
   overflow-y: auto;
+  /* 끝까지 굴렸을 때 다음 휠이 부모로 넘어가 뒤 화면이 스크롤되는 것을 막는다. */
+  overscroll-behavior: contain;
   padding-bottom: calc(8px + env(safe-area-inset-bottom));
   scrollbar-width: thin;
 }
@@ -5190,6 +5268,8 @@
   background: #fff;
   box-shadow: 0 -18px 60px rgba(23, 23, 40, 0.22);
   overflow-y: auto;
+  /* 끝까지 굴렸을 때 다음 휠이 부모로 넘어가 뒤 화면이 스크롤되는 것을 막는다. */
+  overscroll-behavior: contain;
   pointer-events: auto;
   scrollbar-width: none;
 }
@@ -6061,6 +6141,27 @@
   flex: 0 0 auto;
 }
 
+.prototype-trip-list-screen .itinerary-card-management {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.prototype-trip-list-screen .itinerary-card-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 1px solid #d8e0ec;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #fff;
+  color: #1f2a44;
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .prototype-trip-list-screen .trip-delete-btn {
   display: inline-flex;
   align-items: center;
@@ -6509,6 +6610,15 @@
   gap: 12px;
 }
 
+.prototype-date-fields-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .prototype-date-fields label,
 .prototype-title-field {
   display: grid;
@@ -6536,6 +6646,134 @@
 .prototype-title-field input:focus {
   border-color: #ff5e5b;
   outline: 3px solid rgba(255, 94, 91, 0.16);
+}
+
+.trip-date-range-card {
+  display: grid;
+  width: 100%;
+  gap: 6px;
+  border: 1px solid #d4d4dc;
+  border-radius: 16px;
+  padding: 14px;
+  text-align: left;
+  color: #1a1a2e;
+  background: #fff;
+  font: inherit;
+  box-shadow: 0 8px 20px rgba(26, 26, 46, 0.06);
+}
+
+.trip-date-range-card:focus-visible {
+  border-color: #ff5e5b;
+  outline: 3px solid rgba(255, 94, 91, 0.16);
+}
+
+.trip-date-range-card span {
+  color: #8c8ca1;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trip-date-range-card strong {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.trip-date-range-card em {
+  color: #ff5e5b;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.trip-date-calendar {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #ffe0df;
+  border-radius: 18px;
+  padding: 14px;
+  background: #fffafa;
+}
+
+.trip-date-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.trip-date-calendar-head button {
+  border: 1px solid #ffd4d2;
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: #ff5e5b;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.trip-date-calendar-head strong {
+  color: #1a1a2e;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.trip-date-calendar-guide {
+  margin: 0;
+  color: #8c8ca1;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trip-date-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.trip-date-weekday {
+  display: grid;
+  place-items: center;
+  min-height: 26px;
+  color: #8c8ca1;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.trip-date-day {
+  min-height: 38px;
+  border: 0;
+  border-radius: 12px;
+  color: #1a1a2e;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.trip-date-day.outside-month {
+  color: #c0bfca;
+}
+
+.trip-date-day.in-range {
+  background: rgba(255, 94, 91, 0.12);
+}
+
+.trip-date-day.range-start,
+.trip-date-day.range-end {
+  color: #fff;
+  background: var(--primary-500);
+  font-weight: 900;
+}
+
+.trip-date-calendar-done {
+  min-height: 42px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--primary-500);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .prototype-date-summary {
@@ -6937,6 +7175,23 @@
   line-height: 1;
 }
 
+.prototype-trip-hero-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 30px;
+  margin-top: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.54);
+  border-radius: 999px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
 .prototype-trip-detail-screen .trip-status-panel {
   display: flex;
   align-items: center;
@@ -7249,9 +7504,10 @@
 
 .prototype-trip-detail-screen .day-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 10px;
-  overflow-x: auto;
+  margin-bottom: 22px;
+  overflow-x: visible;
   padding: 6px 16px 8px;
   scrollbar-width: none;
 }
@@ -7286,6 +7542,10 @@
 .prototype-trip-detail-screen .day-tab.active {
   background: #ff5e5b;
   color: #fff;
+}
+
+.prototype-trip-detail-screen .day-tab.drop-target {
+  min-width: 76px;
 }
 
 .list-map-toggle {
@@ -7681,7 +7941,22 @@
   }
 }
 
+/* 번호 열을 카드 목록에서 떼어내 행 순서에 고정한다. 배지와 카드가 형제로
+   같은 행에 놓이므로 카드가 재정렬되거나 유령이 끼어들어도 배지는 제자리다.
+   row-gap은 쓰지 않는다 — 높이 0인 .timeline-insertion-slot이 행마다 끼어
+   있어 row-gap을 주면 카드 사이마다 간격이 덧붙는다. */
 .prototype-trip-detail-screen .timeline {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  /* min-height가 내용보다 크면 그리드 기본값(normal = stretch)이 남는 공간을
+     행에 분배해 카드 사이가 벌어진다. 블록일 때는 아래에 그냥 남았다. */
+  align-content: start;
+  column-gap: 12px;
+  min-height: clamp(360px, calc(100dvh - 480px), 520px);
+  /* 드롭 직후 인라인 min-height가 풀릴 때만 실제 높이가 움직인다. 잠글 때는
+     내용 높이가 이미 더 커서 보이는 변화가 없으므로 상시로 걸어도 안전하다. */
+  transition: min-height 220ms ease;
   margin-bottom: 16px;
   border: 0;
   border-radius: 0;
@@ -7689,19 +7964,114 @@
   background: transparent;
 }
 
-.prototype-trip-detail-screen .timeline.dnd-active .place-detail {
+@media (prefers-reduced-motion: reduce) {
+  .prototype-trip-detail-screen .timeline {
+    transition: none;
+  }
+}
+
+.prototype-trip-detail-screen .itinerary-drag-boundary {
+  height: 16px;
+  margin: 0 16px;
+  pointer-events: none;
+}
+
+.timeline-insertion-slot {
+  grid-column: 1 / -1;
+  height: 0;
+  min-height: 0;
+  border: 1px dashed transparent;
+  border-radius: 12px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: auto;
+  transition:
+    height 0.16s ease,
+    min-height 0.16s ease;
+}
+
+/* 자리는 dnd-kit의 정렬 변형이 만든다. 슬롯이 같이 자라면 간격이 두 배가 되고
+   포인터가 지날 때마다 아래 카드가 통째로 밀려 화면이 흔들린다. */
+.timeline-insertion-slot.over {
+  height: 0;
+  min-height: 0;
+  border-color: transparent;
+  background: transparent;
+  margin-bottom: 0;
+  opacity: 0;
+}
+
+.place-drag-overlay {
+  display: flex;
+  width: min(320px, calc(100vw - 32px));
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--primary-500);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--shadow-lg);
+  color: #1a1a2e;
+}
+
+.place-drag-overlay strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-drag-overlay.over-day-target {
+  width: min(220px, calc(100vw - 48px));
+  opacity: 0.9;
+  transform: translateY(-52px) scale(0.86);
+  transform-origin: bottom center;
+}
+
+/* 드래그 중에는 스크롤 체이닝(당겨서 새로고침 등)과 smooth 스크롤만 끈다.
+   overflow: hidden으로 스크롤 자체를 막으면 dnd-kit이 스크롤 가능한 조상을
+   못 찾아 자동 스크롤이 죽고 휠도 먹지 않는다. 진동은 되돌리기 리스너와
+   높이 캐시를 없앤 것으로 잡는다. */
+html.itinerary-place-drag-scroll-locked,
+body.itinerary-place-drag-scroll-locked,
+.app-container.itinerary-place-drag-scroll-locked {
+  overscroll-behavior: none;
+  scroll-behavior: auto;
+}
+
+.prototype-trip-detail-screen .timeline.dnd-active .place-detail:not(.timeline-ghost-card) {
   border-style: dashed;
 }
 
-.prototype-trip-detail-screen .timeline-item {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 12px;
+.prototype-trip-detail-screen .timeline-sortable-card {
+  position: relative;
+  min-width: 0;
+}
+
+.prototype-trip-detail-screen .timeline-slot {
+  min-width: 0;
   margin-bottom: 12px;
 }
 
-.prototype-trip-detail-screen .timeline-item .time {
+.prototype-trip-detail-screen .timeline-slot .time {
   display: none;
+}
+
+.prototype-trip-detail-screen .timeline-slot.dragging .timeline-sortable-card {
+  opacity: 0;
+}
+
+/* 다른 날짜에서 끌고 온 카드의 자리표시. 실제 카드와 같은 흐름에 놓여
+   자리를 차지하므로 dnd-kit이 주변 카드를 같은 날짜와 동일하게 밀어낸다. */
+.prototype-trip-detail-screen .timeline-ghost-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  border: 1px dashed var(--primary-500);
+  background: rgba(255, 94, 91, 0.08);
+  color: #4f5568;
+  opacity: 0.72;
+  pointer-events: none;
 }
 
 .prototype-trip-detail-screen .timeline-marker {
@@ -7709,6 +8079,7 @@
   display: flex;
   justify-content: center;
   align-self: stretch;
+  margin-bottom: 12px;
 }
 
 .prototype-trip-detail-screen .timeline-marker::after {
@@ -7722,9 +8093,8 @@
   transform: translateX(-50%);
 }
 
-.prototype-trip-detail-screen
-  .timeline-item:last-child
-  .timeline-marker::after {
+/* :last-of-type은 태그 기준이라 삽입 슬롯 div에도 걸린다. 명시 클래스를 쓴다. */
+.prototype-trip-detail-screen .timeline-marker.last::after {
   display: none;
 }
 
@@ -8788,6 +9158,8 @@ a.prototype-stat-card:active {
   width: 100%;
   max-height: 88dvh;
   overflow-y: auto;
+  /* 끝까지 굴렸을 때 다음 휠이 부모로 넘어가 뒤 화면이 스크롤되는 것을 막는다. */
+  overscroll-behavior: contain;
   padding: 8px 18px 22px;
   border-radius: 24px 24px 0 0;
   background: #fff;
@@ -11206,6 +11578,96 @@ a.prototype-stat-card:active {
 .trip-primary-actions .prototype-trip-action-button {
   min-height: 48px;
   justify-content: center;
+}
+
+.trip-primary-actions .prototype-trip-action-date {
+  grid-column: 1 / -1;
+  border: 1px solid #d8e0ec;
+  background: #f8fafc;
+  color: #1f2a44;
+}
+
+.prototype-trip-edit-screen {
+  background: var(--surface-app);
+}
+
+.trip-edit-form {
+  display: grid;
+  gap: 14px;
+  margin: 0 16px 24px;
+  padding: 18px;
+  border: 1px solid var(--border-card);
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: var(--shadow-trip-card);
+}
+
+.trip-edit-form .field {
+  display: grid;
+  gap: 8px;
+  color: #1f2a44;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.trip-edit-form input[type="date"],
+.trip-edit-form input:not([type]) {
+  min-height: 44px;
+  border: 1px solid #d8e0ec;
+  border-radius: 14px;
+  padding: 0 12px;
+  color: #1f2a44;
+  font: inherit;
+}
+
+.trip-edit-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.trip-date-editor-sheet {
+  width: min(100%, 520px);
+  display: grid;
+  gap: 14px;
+  justify-self: center;
+  margin: 0 16px calc(18px + env(safe-area-inset-bottom));
+  padding: 18px;
+  border: 1px solid var(--border-card);
+  border-radius: 24px 24px 18px 18px;
+  background: #fff;
+  box-shadow: 0 -18px 48px rgba(23, 23, 40, 0.18);
+}
+
+.trip-date-editor-sheet .sheet-head h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.trip-date-overflow-options {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #ffe0dc;
+  border-radius: 14px;
+  background: #fff8f5;
+}
+
+.trip-date-overflow-options legend {
+  padding: 0 4px;
+  color: #1f2a44;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.trip-date-overflow-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #3b4052;
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .recommendation-preview-banner {
