@@ -13,7 +13,7 @@ pipeline {
         BRANCH_NAME = "develop"
 
         ENV_FILE = "deploy/.env.prod"
-        COMPOSE_FILE = "compose.tunnel.yaml"
+        COMPOSE_FILE = "compose.yaml"
         COMPOSE_PROJECT_NAME = "travelhunter-dev"
 
         DEV_DOMAIN = "dev.travel-hunter.co.kr"
