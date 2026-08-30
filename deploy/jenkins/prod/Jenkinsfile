@@ -8,7 +8,7 @@ pipeline {
     }
     environment {
         PROJECT_DIR = "/home/prod-deploy/prodtravelhunterapp"
-        BRANCH_NAME = "prod-jenkins"
+        BRANCH_NAME = "ci/prod-jenkins"
 
         ENV_FILE = "deploy/.env.prod"
         COMPOSE_FILE = "compose.yaml"
