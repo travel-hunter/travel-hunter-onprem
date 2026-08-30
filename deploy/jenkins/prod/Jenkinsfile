@@ -9,7 +9,7 @@ pipeline {
     }
 
     environment {
-        BRANCH_NAME = "ci/prod-jenkins"
+        BRANCH_NAME = "main"
 
         PROD_ENV_FILE = "/home/prod-deploy/prodtravelhunterapp/deploy/.env.prod"
 
