@@ -341,7 +341,7 @@ pipeline {
                 color: "warning",
                 failOnError: false,
                 message: """
-⛔ *[PROD] Travel Hunter 운영 배포 취소*
+⛔ *[PROD] Travel Hunter 운영 서버 배포 취소*
 
 • Job: `${env.JOB_NAME}`
 • Build: `#${env.BUILD_NUMBER}`
