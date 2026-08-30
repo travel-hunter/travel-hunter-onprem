@@ -6,6 +6,8 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+// @ts-expect-error Vitest runs this assertion in Node, but this project does not install Node type declarations.
+import { readFileSync } from "node:fs";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -26,8 +28,1071 @@ import {
 } from "../../test/fixtures";
 import { installAppKakaoSdkMock } from "../../test/kakaoMock";
 import { getLink, login, renderAppRoute } from "../../test/renderAppRoute";
+import {
+  buildTimelineRenderItems,
+  buildTimelineSortableIds,
+  isCrossDayTimelineDrag,
+  DAY_SWITCH_DELAY_MS,
+  DAY_TAB_POINTER_TOLERANCE_PX,
+  PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+  shouldAllowPlaceDragAutoScroll,
+  isPointerInsideClientRect,
+  isWheelInsideNestedScroller,
+  isPointerNearClientRect,
+  parseDayAreaDropId,
+  excludeActiveCollision,
+  preferSpecificDropTargets,
+  resolveSameDayInsertPosition,
+  resolveDayAreaOverId,
+  resolveDayZoneRect,
+  resolveGhostDropOverId,
+  resolvePointerDayTarget,
+  resolvePointerVerifiedTimelineOverId,
+  resolveNextOpenTimeEditorId,
+  resolvePlaceDragOverId,
+  resolveClosestTimelinePosition,
+  resolveRaisedTimelineHeightLock,
+  resolveTimelineHeightLock,
+  resolveTimelineDropTarget,
+  shouldForwardWindowWheelToAppScroll,
+  shouldUseDayRowDragOverlay,
+  shouldScheduleDaySwitch,
+} from "../../pages/itinerary/ItineraryDetailPage";
 
 describe("Travel Hunter app — trip detail & itinerary", () => {
+  it("forwards desktop window wheel only when the app container can scroll vertically", () => {
+    const classList = { contains: vi.fn(() => false) };
+    const appContainer = {
+      classList,
+      clientHeight: 600,
+      scrollHeight: 1200,
+      scrollTop: 100,
+    } as unknown as HTMLElement;
+
+    expect(
+      shouldForwardWindowWheelToAppScroll(
+        { defaultPrevented: false, deltaY: 80 },
+        appContainer,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps forwarding wheel scrolling while a place drag is in progress", () => {
+    // 카드를 잡은 채로 휠을 굴려 일정 아래쪽을 볼 수 있어야 한다.
+    const classList = {
+      contains: vi.fn((className: string) =>
+        className === "itinerary-place-drag-scroll-locked",
+      ),
+    };
+    const appContainer = {
+      classList,
+      clientHeight: 600,
+      scrollHeight: 1200,
+      scrollTop: 100,
+    } as unknown as HTMLElement;
+
+    expect(
+      shouldForwardWindowWheelToAppScroll(
+        { defaultPrevented: false, deltaY: 80 },
+        appContainer,
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves the wheel alone inside a nested scroller such as an open sheet", () => {
+    // 휠은 window까지 버블링된다. 브리지가 대상을 안 가리면 시트 위에서 굴려도
+    // preventDefault로 기본 스크롤을 죽이고 뒤 화면을 스크롤한다.
+    expect(
+      isWheelInsideNestedScroller([
+        { canScrollY: false, isAppContainer: false },
+        { canScrollY: true, isAppContainer: false },
+        { canScrollY: true, isAppContainer: true },
+      ]),
+    ).toBe(true);
+  });
+
+  it("still bridges the wheel from the desktop gutter", () => {
+    // 앱 컨테이너에 닿기 전 스크롤러가 없으면 브리지가 원래 하던 일을 한다.
+    expect(
+      isWheelInsideNestedScroller([
+        { canScrollY: false, isAppContainer: false },
+        { canScrollY: true, isAppContainer: true },
+      ]),
+    ).toBe(false);
+    expect(isWheelInsideNestedScroller([])).toBe(false);
+  });
+
+  it("does not forward non-scrolling or already-handled wheel events", () => {
+    const classList = { contains: vi.fn(() => false) };
+    const appContainer = {
+      classList,
+      clientHeight: 600,
+      scrollHeight: 600,
+      scrollTop: 0,
+    } as unknown as HTMLElement;
+
+    expect(
+      shouldForwardWindowWheelToAppScroll(
+        { defaultPrevented: false, deltaY: 80 },
+        appContainer,
+      ),
+    ).toBe(false);
+    expect(
+      shouldForwardWindowWheelToAppScroll(
+        { defaultPrevented: true, deltaY: 80 },
+        {
+          ...appContainer,
+          scrollHeight: 1200,
+        } as unknown as HTMLElement,
+      ),
+    ).toBe(false);
+    expect(
+      shouldForwardWindowWheelToAppScroll(
+        { defaultPrevented: false, deltaY: 0 },
+        {
+          ...appContainer,
+          scrollHeight: 1200,
+        } as unknown as HTMLElement,
+      ),
+    ).toBe(false);
+  });
+
+  it("inserts the active card once at the target Day ghost position", () => {
+    expect(
+      buildTimelineSortableIds({
+        activeSortableId: "place:move-me",
+        ghostPosition: 2,
+        sortableIds: ["place:target-a", "place:target-b", "place:target-c"],
+      }),
+    ).toEqual([
+      "place:target-a",
+      "place:move-me",
+      "place:target-b",
+      "place:target-c",
+    ]);
+  });
+
+  it("keeps the target Day sortable list unchanged without a ghost position", () => {
+    expect(
+      buildTimelineSortableIds({
+        activeSortableId: "place:move-me",
+        ghostPosition: null,
+        sortableIds: ["place:target-a", "place:target-b"],
+      }),
+    ).toEqual(["place:target-a", "place:target-b"]);
+  });
+
+  it("renders a target Day ghost between the resolved adjacent cards", () => {
+    expect(
+      buildTimelineRenderItems({
+        ghostPosition: 2,
+        items: ["target-a", "target-b", "target-c"],
+      }),
+    ).toEqual([
+      { type: "item", value: "target-a" },
+      { type: "ghost" },
+      { type: "item", value: "target-b" },
+      { type: "item", value: "target-c" },
+    ]);
+  });
+
+  it("resolves cross-day timeline card drops to the hovered place position", () => {
+    expect(
+      resolveTimelineDropTarget({
+        activeSortableId: "place:move-me",
+        dayNumbers: [1, 2, 3],
+        overId: "place:target-b",
+        sortableIdsByDay: {
+          1: ["place:move-me"],
+          2: ["place:target-a", "place:target-b", "place:target-c"],
+          3: [],
+        },
+        visibleDay: 1,
+      }),
+    ).toEqual({ dayNumber: 2, position: 2 });
+  });
+
+  it("resolves day-tab timeline drops to the end of the target day", () => {
+    expect(
+      resolveTimelineDropTarget({
+        activeSortableId: "place:move-me",
+        dayNumbers: [1, 2, 3],
+        overId: "day:3",
+        sortableIdsByDay: {
+          1: ["place:move-me"],
+          2: ["place:target-a"],
+          3: ["place:target-b", "place:target-c"],
+        },
+        visibleDay: 1,
+      }),
+    ).toEqual({ dayNumber: 3, position: 3 });
+  });
+
+  it("resolves explicit timeline insertion slots to the requested position", () => {
+    expect(
+      resolveTimelineDropTarget({
+        activeSortableId: "place:move-me",
+        dayNumbers: [1, 2, 3],
+        overId: "day-position:2:1",
+        sortableIdsByDay: {
+          1: ["place:move-me"],
+          2: ["place:target-a", "place:target-b"],
+          3: [],
+        },
+        visibleDay: 1,
+      }),
+    ).toEqual({ dayNumber: 2, position: 1 });
+  });
+
+  it("detects cross-day timeline drags after switching to the target day", () => {
+    expect(
+      isCrossDayTimelineDrag({
+        activeSortableId: "place:move-me",
+        sortableIdsByDay: {
+          1: ["place:move-me"],
+          2: ["place:target-a", "place:target-b"],
+        },
+        visibleDay: 2,
+      }),
+    ).toBe(true);
+
+    expect(
+      isCrossDayTimelineDrag({
+        activeSortableId: "place:move-me",
+        sortableIdsByDay: {
+          1: ["place:move-me", "place:target-a"],
+          2: ["place:target-b"],
+        },
+        visibleDay: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it("requires the pointer itself to be inside a Day tab before switching days", () => {
+    const dayTabRect = {
+      left: 100,
+      right: 180,
+      top: 40,
+      bottom: 72,
+    };
+
+    expect(isPointerInsideClientRect({ x: 120, y: 60 }, dayTabRect)).toBe(
+      true,
+    );
+    expect(isPointerInsideClientRect({ x: 120, y: 88 }, dayTabRect)).toBe(
+      false,
+    );
+    expect(isPointerInsideClientRect({ x: 92, y: 60 }, dayTabRect)).toBe(
+      false,
+    );
+    expect(isPointerInsideClientRect(null, dayTabRect)).toBe(false);
+    expect(isPointerInsideClientRect({ x: 120, y: 60 }, null)).toBe(false);
+  });
+
+  it("prioritizes the timeline first-position area over an adjacent Day tab", () => {
+    expect(
+      shouldScheduleDaySwitch({
+        pointer: { x: 124, y: 146 },
+        dayTabRect: { left: 80, right: 170, top: 104, bottom: 150 },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps Day switching available inside the Day button above the timeline", () => {
+    expect(
+      shouldScheduleDaySwitch({
+        pointer: { x: 124, y: 118 },
+        dayTabRect: { left: 80, right: 170, top: 104, bottom: 150 },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBe(true);
+  });
+
+  it("reports strict containment misses for the gap between Day tabs", () => {
+    const firstDayTabRect = {
+      left: 100,
+      right: 160,
+      top: 40,
+      bottom: 72,
+    };
+    const secondDayTabRect = {
+      left: 174,
+      right: 234,
+      top: 40,
+      bottom: 72,
+    };
+    const pointerBetweenTabs = { x: 167, y: 60 };
+
+    expect(
+      isPointerInsideClientRect(pointerBetweenTabs, firstDayTabRect),
+    ).toBe(false);
+    expect(
+      isPointerInsideClientRect(pointerBetweenTabs, secondDayTabRect),
+    ).toBe(false);
+  });
+
+  it("keeps the compact Day overlay in the gap between Day buttons", () => {
+    expect(
+      shouldUseDayRowDragOverlay({
+        pointer: { x: 167, y: 60 },
+        dayTabsRect: { left: 100, right: 234, top: 40, bottom: 72 },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBe(true);
+  });
+
+  it("uses the closest current-Day insertion position for a Day-row gap drop", () => {
+    expect(
+      resolveClosestTimelinePosition({
+        pointerY: 84,
+        itemRects: [
+          { top: 160, bottom: 232 },
+          { top: 244, bottom: 316 },
+          { top: 328, bottom: 400 },
+        ],
+      }),
+    ).toBe(1);
+    expect(
+      resolveClosestTimelinePosition({
+        pointerY: 290,
+        itemRects: [
+          { top: 160, bottom: 232 },
+          { top: 244, bottom: 316 },
+          { top: 328, bottom: 400 },
+        ],
+      }),
+    ).toBe(3);
+  });
+
+  it("rejects Day-tab drops when the pointer is outside the Day tab", () => {
+    const dayTabRects = {
+      3: {
+        left: 200,
+        right: 270,
+        top: 80,
+        bottom: 110,
+      },
+    };
+
+    expect(
+      resolvePointerVerifiedTimelineOverId({
+        dayNumbers: [1, 2, 3],
+        overId: "day:3",
+        pointer: { x: 220, y: 220 },
+        rectByDay: dayTabRects,
+      }),
+    ).toBeNull();
+    expect(
+      resolvePointerVerifiedTimelineOverId({
+        dayNumbers: [1, 2, 3],
+        overId: "day:3",
+        pointer: { x: 220, y: 90 },
+        rectByDay: dayTabRects,
+      }),
+    ).toBe("day:3");
+    expect(
+      resolvePointerVerifiedTimelineOverId({
+        dayNumbers: [1, 2, 3],
+        overId: "place:target-a",
+        pointer: { x: 220, y: 220 },
+        rectByDay: dayTabRects,
+      }),
+    ).toBe("place:target-a");
+  });
+
+  it("counts a same-day insert position without the card being dragged", () => {
+    // 백엔드는 같은 날짜일 때 끌고 있는 카드를 먼저 빼고 position-1로 끼운다
+    // (services/trips.py move_trip_place). 세는 목록에서도 빼야 자리가 맞는다.
+    const items = [
+      { sortableId: "place:a", top: 100, bottom: 170 },
+      { sortableId: "place:b", top: 182, bottom: 252 },
+      { sortableId: "place:c", top: 264, bottom: 334 },
+    ];
+
+    // A를 끌어 B와 C 사이에 놓는다 → 남은 목록 [B, C]의 1번 자리
+    expect(
+      resolveSameDayInsertPosition({
+        items,
+        activeSortableId: "place:a",
+        pointerY: 258,
+      }),
+    ).toBe(2);
+    // 거의 안 움직였으면 제자리 그대로여야 한다
+    expect(
+      resolveSameDayInsertPosition({
+        items,
+        activeSortableId: "place:a",
+        pointerY: 140,
+      }),
+    ).toBe(1);
+    // 맨 아래로 내리면 마지막
+    expect(
+      resolveSameDayInsertPosition({
+        items,
+        activeSortableId: "place:a",
+        pointerY: 400,
+      }),
+    ).toBe(3);
+    // 다른 날짜에서 온 카드는 애초에 이 목록에 없다
+    expect(
+      resolveSameDayInsertPosition({
+        items,
+        activeSortableId: "place:z",
+        pointerY: 258,
+      }),
+    ).toBe(3);
+  });
+
+  it("drops the dragged card from its own collision candidates", () => {
+    // 슬롯의 판정 사각형은 원래 자리에 그대로 있어서, 짧게 끌면 포인터가
+    // 자기 슬롯 안이라 over === active가 되고 드롭이 통째로 무시됐다.
+    expect(
+      excludeActiveCollision(
+        [{ id: "place:move-me" }, { id: "day-area:2" }],
+        "place:move-me",
+      ),
+    ).toEqual([{ id: "day-area:2" }]);
+    expect(
+      excludeActiveCollision([{ id: "day-area:2" }], "place:move-me"),
+    ).toEqual([{ id: "day-area:2" }]);
+    expect(
+      excludeActiveCollision([{ id: "place:move-me" }], "place:move-me"),
+    ).toEqual([]);
+    expect(excludeActiveCollision([{ id: "day-area:2" }], null)).toEqual([
+      { id: "day-area:2" },
+    ]);
+  });
+
+  it("parses the whole-timeline drop area id", () => {
+    expect(parseDayAreaDropId("day-area:2")).toBe(2);
+    expect(parseDayAreaDropId("day-area:0")).toBe(0);
+    expect(parseDayAreaDropId("day:2")).toBeNull();
+    expect(parseDayAreaDropId("day-position:2:3")).toBeNull();
+    expect(parseDayAreaDropId(null)).toBeNull();
+  });
+
+  it("prefers a card over the whole-timeline area when both are hit", () => {
+    // pointerWithin은 겹치는 droppable을 모두 돌려준다. 큰 영역이 카드를
+    // 이기면 카드 사이 삽입 위치를 영영 못 고른다.
+    expect(
+      preferSpecificDropTargets([
+        { id: "day-area:2" },
+        { id: "place:target-b" },
+      ]),
+    ).toEqual([{ id: "place:target-b" }]);
+    expect(
+      preferSpecificDropTargets([
+        { id: "day-area:2" },
+        { id: "day-position:2:1" },
+      ]),
+    ).toEqual([{ id: "day-position:2:1" }]);
+  });
+
+  it("keeps the whole-timeline area when nothing more specific is hit", () => {
+    // 빈 날짜에는 이것 말고 맞출 게 없다.
+    expect(preferSpecificDropTargets([{ id: "day-area:2" }])).toEqual([
+      { id: "day-area:2" },
+    ]);
+    expect(preferSpecificDropTargets([])).toEqual([]);
+  });
+
+  it("turns a whole-timeline area drop into the closest insert position", () => {
+    expect(
+      resolveDayAreaOverId({ overId: "day-area:2", closestPosition: 3 }),
+    ).toBe("day-position:2:3");
+    // 빈 날짜는 resolveClosestTimelinePosition이 1을 돌려준다.
+    expect(
+      resolveDayAreaOverId({ overId: "day-area:4", closestPosition: 1 }),
+    ).toBe("day-position:4:1");
+    expect(
+      resolveDayAreaOverId({ overId: "place:target-b", closestPosition: 3 }),
+    ).toBe("place:target-b");
+    expect(
+      resolveDayAreaOverId({ overId: null, closestPosition: 3 }),
+    ).toBeNull();
+  });
+
+  it("keeps only one preview time editor open at a time", () => {
+    // <details>는 서로를 모른다. 부모가 열린 카드 하나를 기억해야 아코디언이 된다.
+    expect(resolveNextOpenTimeEditorId(null, "place:a", true)).toBe("place:a");
+    expect(resolveNextOpenTimeEditorId("place:a", "place:b", true)).toBe(
+      "place:b",
+    );
+  });
+
+  it("closes the preview time editor when the open one is toggled shut", () => {
+    expect(resolveNextOpenTimeEditorId("place:a", "place:a", false)).toBeNull();
+    // 이미 닫힌 다른 카드를 닫는 신호가 와도 열린 것을 건드리지 않는다.
+    expect(resolveNextOpenTimeEditorId("place:a", "place:b", false)).toBe(
+      "place:a",
+    );
+  });
+
+  it("pins the timeline height so a day switch cannot shrink the document", () => {
+    // 날짜를 바꾸면 타임라인 내용이 통째로 바뀌어 문서가 짧아질 수 있다.
+    // 그러면 브라우저가 scrollTop을 강제로 줄여 화면이 출렁인다.
+    // min-height로 줄어드는 것만 막는다. 늘어나는 것은 스크롤을 건드리지 않는다.
+    expect(resolveTimelineHeightLock(760.4)).toBe("760px");
+    expect(resolveTimelineHeightLock(0.6)).toBe("1px");
+  });
+
+  it("refuses to pin an unusable timeline height", () => {
+    expect(resolveTimelineHeightLock(null)).toBeNull();
+    expect(resolveTimelineHeightLock(0)).toBeNull();
+    expect(resolveTimelineHeightLock(-120)).toBeNull();
+    expect(resolveTimelineHeightLock(Number.NaN)).toBeNull();
+    expect(resolveTimelineHeightLock(Number.POSITIVE_INFINITY)).toBeNull();
+  });
+
+  it("stops scrolling further up once the action buttons are fully visible", () => {
+    // 장소추가 버튼 줄이 다 보이는 지점에서 멈춘다. Day 탭을 기준으로 하면
+    // 탭이 화면 맨 위 가장자리에 딱 붙어 겨냥이 빡빡하다.
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: 60,
+        containerRect: { top: 0, bottom: 900 },
+        anchorRect: { top: 300, bottom: 340 },
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(false);
+  });
+
+  it("still scrolls up while the action buttons are off screen", () => {
+    // 아래로 한참 내려간 상태에서 카드를 집으면 버튼 줄이 화면 밖이다.
+    // 그때까지 막으면 다른 날짜로 옮길 방법이 없다. 모바일은 휠도 없다.
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: 60,
+        containerRect: { top: 0, bottom: 900 },
+        anchorRect: { top: -220, bottom: -180 },
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(true);
+  });
+
+  it("never blocks downward place drag auto scroll", () => {
+    // 아래쪽 자동 스크롤은 화면 밖 장소에 닿기 위해 필요하다.
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: 860,
+        containerRect: { top: 0, bottom: 900 },
+        anchorRect: { top: 300, bottom: 340 },
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: 450,
+        containerRect: { top: 0, bottom: 900 },
+        anchorRect: { top: 300, bottom: 340 },
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not interfere with auto scroll when it cannot measure", () => {
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: null,
+        containerRect: { top: 0, bottom: 900 },
+        anchorRect: { top: 300, bottom: 340 },
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: 60,
+        containerRect: null,
+        anchorRect: { top: 300, bottom: 340 },
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAllowPlaceDragAutoScroll({
+        pointerY: 60,
+        containerRect: { top: 0, bottom: 900 },
+        anchorRect: null,
+        thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+      }),
+    ).toBe(true);
+  });
+
+  it("raises the timeline pin but never lowers it during one drag", () => {
+    // 장소가 적은 날짜에서 시작해 많은 날짜를 거쳐 다시 짧은 날짜로 가면
+    // 문서가 줄어 스크롤이 클램프된다. 고정값은 관측한 최대 높이여야 한다.
+    expect(resolveRaisedTimelineHeightLock("520px", 900)).toBe("900px");
+    expect(resolveRaisedTimelineHeightLock("900px", 200)).toBe("900px");
+    expect(resolveRaisedTimelineHeightLock("900px", 900)).toBe("900px");
+  });
+
+  it("starts the timeline pin from nothing and survives unusable input", () => {
+    expect(resolveRaisedTimelineHeightLock(null, 640)).toBe("640px");
+    expect(resolveRaisedTimelineHeightLock("640px", null)).toBe("640px");
+    expect(resolveRaisedTimelineHeightLock("640px", 0)).toBe("640px");
+    expect(resolveRaisedTimelineHeightLock(null, null)).toBeNull();
+    expect(resolveRaisedTimelineHeightLock("", 640)).toBe("640px");
+    expect(resolveRaisedTimelineHeightLock("auto", 640)).toBe("640px");
+  });
+
+  it("turns a drop on the ghost placeholder into its resolved insert position", () => {
+    // 유령은 활성 카드의 id로 등록돼 있어 그대로 두면 resolveTimelineDropTarget이
+    // 자기 자신 방어로 null을 돌려주고 드롭이 통째로 무시된다.
+    expect(
+      resolveGhostDropOverId({
+        activeSortableId: "place:move-me",
+        overId: "place:move-me",
+        crossDayPreview: { dayNumber: 2, position: 3 },
+      }),
+    ).toBe("day-position:2:3");
+  });
+
+  it("leaves a normal drop target untouched", () => {
+    expect(
+      resolveGhostDropOverId({
+        activeSortableId: "place:move-me",
+        overId: "place:target-b",
+        crossDayPreview: { dayNumber: 2, position: 3 },
+      }),
+    ).toBe("place:target-b");
+    expect(
+      resolveGhostDropOverId({
+        activeSortableId: "place:move-me",
+        overId: "place:move-me",
+        crossDayPreview: null,
+      }),
+    ).toBe("place:move-me");
+  });
+
+  it("spans the Day zone from below the action buttons to the timeline top", () => {
+    expect(
+      resolveDayZoneRect({
+        actionsRect: { left: 559, right: 1347, top: 1120, bottom: 1160 },
+        dayTabsRect: { left: 559, right: 1347, top: 1183, bottom: 1221 },
+        timelineRect: { left: 559, right: 1347, top: 1259, bottom: 1690 },
+      }),
+    ).toEqual({ left: 559, right: 1347, top: 1160, bottom: 1259 });
+  });
+
+  it("falls back to the Day tab row when the neighbouring landmarks are missing", () => {
+    expect(
+      resolveDayZoneRect({
+        actionsRect: null,
+        dayTabsRect: { left: 559, right: 1347, top: 1183, bottom: 1221 },
+        timelineRect: null,
+      }),
+    ).toEqual({ left: 559, right: 1347, top: 1183, bottom: 1221 });
+    expect(
+      resolveDayZoneRect({
+        actionsRect: null,
+        dayTabsRect: null,
+        timelineRect: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("resolves the nearest Day tab anywhere inside the Day zone", () => {
+    const rectByDay = {
+      1: { left: 575, right: 624, top: 1189, bottom: 1213 },
+      2: { left: 630, right: 679, top: 1189, bottom: 1213 },
+      3: { left: 685, right: 734, top: 1189, bottom: 1213 },
+    };
+    const dayZoneRect = { left: 559, right: 1347, top: 1160, bottom: 1259 };
+    const timelineRect = { left: 559, right: 1347, top: 1259, bottom: 1690 };
+
+    // 장소추가 버튼 바로 아래 — 탭에서 29px 위. 기존 12px 여유로는 잡히지 않는다.
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 700, y: 1160 },
+        rectByDay,
+        timelineRect,
+        dayZoneRect,
+      }),
+    ).toBe(3);
+    // 탭과 타임라인 사이 죽은 구간 — 탭에서 45px 아래.
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 600, y: 1258 },
+        rectByDay,
+        timelineRect,
+        dayZoneRect,
+      }),
+    ).toBe(1);
+  });
+
+  it("still refuses a Day target inside the timeline even with a Day zone", () => {
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 700, y: 1300 },
+        rectByDay: {
+          1: { left: 575, right: 624, top: 1189, bottom: 1213 },
+          2: { left: 630, right: 679, top: 1189, bottom: 1213 },
+          3: { left: 685, right: 734, top: 1189, bottom: 1213 },
+        },
+        timelineRect: { left: 559, right: 1347, top: 1259, bottom: 1690 },
+        dayZoneRect: { left: 559, right: 1347, top: 1160, bottom: 1259 },
+      }),
+    ).toBeNull();
+  });
+
+  it("schedules a Day switch anywhere inside the Day zone", () => {
+    expect(
+      shouldScheduleDaySwitch({
+        pointer: { x: 700, y: 1170 },
+        dayTabRect: { left: 685, right: 734, top: 1189, bottom: 1213 },
+        timelineRect: { left: 559, right: 1347, top: 1259, bottom: 1690 },
+        dayZoneRect: { left: 559, right: 1347, top: 1160, bottom: 1259 },
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts a pointer just outside a Day tab edge as a hit", () => {
+    const dayTabRect = { left: 100, right: 176, top: 40, bottom: 64 };
+
+    expect(
+      isPointerNearClientRect(
+        { x: 120, y: 32 },
+        dayTabRect,
+        DAY_TAB_POINTER_TOLERANCE_PX,
+      ),
+    ).toBe(true);
+    expect(
+      isPointerNearClientRect(
+        { x: 120, y: 72 },
+        dayTabRect,
+        DAY_TAB_POINTER_TOLERANCE_PX,
+      ),
+    ).toBe(true);
+    expect(
+      isPointerNearClientRect(
+        { x: 120, y: 100 },
+        dayTabRect,
+        DAY_TAB_POINTER_TOLERANCE_PX,
+      ),
+    ).toBe(false);
+    expect(
+      isPointerNearClientRect(null, dayTabRect, DAY_TAB_POINTER_TOLERANCE_PX),
+    ).toBe(false);
+    expect(
+      isPointerNearClientRect(
+        { x: 120, y: 48 },
+        null,
+        DAY_TAB_POINTER_TOLERANCE_PX,
+      ),
+    ).toBe(false);
+  });
+
+  it("resolves a Day target when the pointer drifts just above the tab row", () => {
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 190, y: 72 },
+        rectByDay: {
+          1: { left: 80, right: 150, top: 80, bottom: 104 },
+          2: { left: 158, right: 228, top: 80, bottom: 104 },
+          3: { left: 236, right: 306, top: 80, bottom: 104 },
+        },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBe(2);
+  });
+
+  it("resolves the nearest Day tab when the pointer sits in the gap between tabs", () => {
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 156, y: 92 },
+        rectByDay: {
+          1: { left: 80, right: 150, top: 80, bottom: 104 },
+          2: { left: 158, right: 228, top: 80, bottom: 104 },
+          3: { left: 236, right: 306, top: 80, bottom: 104 },
+        },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBe(2);
+  });
+
+  it("still refuses a Day target while the pointer is inside the timeline", () => {
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 190, y: 136 },
+        rectByDay: {
+          1: { left: 80, right: 150, top: 80, bottom: 104 },
+          2: { left: 158, right: 228, top: 80, bottom: 104 },
+          3: { left: 236, right: 306, top: 80, bottom: 104 },
+        },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBeNull();
+  });
+
+  it("schedules a Day switch when the pointer hovers just above the Day tab", () => {
+    expect(
+      shouldScheduleDaySwitch({
+        pointer: { x: 124, y: 96 },
+        dayTabRect: { left: 80, right: 170, top: 104, bottom: 128 },
+        timelineRect: { left: 64, right: 820, top: 150, bottom: 760 },
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps the Day-switch delay short enough to feel immediate", () => {
+    expect(DAY_SWITCH_DELAY_MS).toBe(10);
+  });
+
+  it("keeps a Day target when collision temporarily reports a timeline card", () => {
+    expect(
+      resolvePointerDayTarget({
+        dayNumbers: [1, 2, 3],
+        pointer: { x: 220, y: 92 },
+        rectByDay: {
+          1: { left: 80, right: 150, top: 80, bottom: 112 },
+          2: { left: 158, right: 228, top: 80, bottom: 112 },
+          3: { left: 236, right: 306, top: 80, bottom: 112 },
+        },
+        timelineRect: { left: 64, right: 820, top: 132, bottom: 760 },
+      }),
+    ).toBe(2);
+  });
+
+  it("keeps the physical Day target when a drag frame has no collision target", () => {
+    expect(
+      resolvePlaceDragOverId({
+        collisionOverId: null,
+        pointerDayTarget: 3,
+        isOverDayRow: true,
+        visibleDay: 1,
+        closestVisibleDayPosition: 1,
+      }),
+    ).toBe("day:3");
+  });
+
+  it("resolves explicit timeline insertion slots for every visible gap", () => {
+    const sortableIdsByDay = {
+      1: ["place:a", "place:b", "place:c"],
+      2: ["place:d", "place:e"],
+    };
+
+    expect(
+      resolveTimelineDropTarget({
+        activeSortableId: "place:a",
+        dayNumbers: [1, 2],
+        overId: "day-position:1:2",
+        sortableIdsByDay,
+        visibleDay: 1,
+      }),
+    ).toEqual({ dayNumber: 1, position: 2 });
+
+    expect(
+      resolveTimelineDropTarget({
+        activeSortableId: "place:a",
+        dayNumbers: [1, 2],
+        overId: "day-position:2:3",
+        sortableIdsByDay,
+        visibleDay: 1,
+      }),
+    ).toEqual({ dayNumber: 2, position: 3 });
+  });
+
+  it("resolves cross-Day first, middle, and end slots without an active ghost", () => {
+    const sortableIdsByDay = {
+      1: ["place:move-me"],
+      2: ["place:target-a", "place:target-b"],
+    };
+
+    for (const [overId, position] of [
+      ["day-position:2:1", 1],
+      ["day-position:2:2", 2],
+      ["day-position:2:3", 3],
+    ] as const) {
+      expect(
+        resolveTimelineDropTarget({
+          activeSortableId: "place:move-me",
+          dayNumbers: [1, 2],
+          overId,
+          sortableIdsByDay,
+          visibleDay: 2,
+        }),
+      ).toEqual({ dayNumber: 2, position });
+    }
+  });
+
+  it("keeps the itinerary drag target and spacing affordance styles present", () => {
+    const css = readFileSync("src/styles/app.css", "utf8");
+
+    expect(css).toMatch(/\.timeline-insertion-slot\s*\{/);
+    expect(css).toMatch(/\.timeline-insertion-slot\.over\s*\{/);
+    expect(css).toMatch(/\.timeline-insertion-slot\s*\{[^}]*height:\s*0/s);
+    expect(css).toMatch(/\.timeline-insertion-slot\s*\{[^}]*opacity:\s*0/s);
+    expect(css).toMatch(
+      /\.timeline-insertion-slot\.over\s*\{[^}]*border-color:\s*transparent/s,
+    );
+    expect(css).toMatch(
+      /\.timeline-insertion-slot\.over\s*\{[^}]*background:\s*transparent/s,
+    );
+    // 자리는 dnd-kit이 만든다. 슬롯이 같이 자라면 간격이 두 배가 되고 화면이 흔들린다.
+    expect(css).toMatch(
+      /\.timeline-insertion-slot\.over\s*\{[^}]*min-height:\s*0/s,
+    );
+    expect(css).not.toMatch(
+      /\.timeline-insertion-slot\.over\s*\{[^}]*min-height:\s*44px/s,
+    );
+    // 수동 오프셋 미리보기는 SortableContext 편입으로 대체됐다.
+    expect(css).not.toMatch(/\.timeline-cross-day-preview\s*\{/);
+    expect(css).not.toMatch(/--timeline-cross-day-preview-height/);
+    expect(css).toMatch(/\.timeline-ghost-card\s*\{/);
+    expect(css).toMatch(
+      /\.itinerary-drag-boundary\s*\{[^}]*height:\s*16px/s,
+    );
+    expect(css).toMatch(
+      /\.itinerary-drag-boundary\s*\{[^}]*pointer-events:\s*none/s,
+    );
+    expect(css).toMatch(
+      /\.timeline-insertion-slot\.over\s*\{[^}]*opacity:\s*0/s,
+    );
+    expect(css).toMatch(/\.place-drag-overlay\s*\{/);
+    // 잠금이 스크롤 자체를 막으면 dnd-kit 자동 스크롤과 휠까지 죽는다.
+    // 진동은 되돌리기 리스너와 높이 캐시를 없앤 것으로 잡는다.
+    expect(css).toMatch(/itinerary-place-drag-scroll-locked/);
+    expect(css).not.toMatch(
+      /\.app-container\.itinerary-place-drag-scroll-locked\s*\{[^}]*overflow:\s*hidden/s,
+    );
+    expect(css).toMatch(
+      /\.prototype-trip-detail-screen \.day-tab\.drop-target\s*\{[^}]*min-width:\s*76px/s,
+    );
+    expect(css).not.toMatch(
+      /\.prototype-trip-detail-screen \.day-tab\.drop-target em\s*\{/,
+    );
+    expect(css).toMatch(/\.timeline-sortable-card\s*\{/);
+    // 번호 열을 카드 목록에서 떼어내 행 순서에 고정한다. 타임라인 자체가
+    // 2열 그리드가 되고, 배지와 카드가 형제로 같은 행에 놓인다.
+    expect(css).toMatch(
+      /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*grid-template-columns:\s*28px/s,
+    );
+    // min-height가 크므로 남는 공간을 행에 분배하면 카드 사이가 벌어진다.
+    // 그리드 기본값(normal = stretch)을 start로 눌러야 한다.
+    expect(css).toMatch(
+      /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*align-content:\s*start/s,
+    );
+    // 브라우저 스크롤 앵커링은 위쪽 콘텐츠가 바뀌면 scrollTop을 임의로 보정한다.
+    // 날짜를 갈아치우는 순간이 정확히 그 조건이고, 휴리스틱이라 가끔만 튄다.
+    expect(css).toMatch(/\.app-container\s*\{[^}]*overflow-anchor:\s*none/s);
+    // 시트를 끝까지 굴리면 그 다음 휠이 부모로 넘어가 뒤 화면이 스크롤된다.
+    expect(css).toMatch(
+      /\.trip-select-sheet\s*\{[^}]*overscroll-behavior:\s*contain/s,
+    );
+    // 드롭 직후 인라인 min-height가 사라지며 타임라인이 한 프레임에 줄어든다.
+    // 계산값이 바뀌는 것이므로 removeProperty로도 트랜지션이 걸린다.
+    expect(css).toMatch(
+      /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*transition:\s*min-height/s,
+    );
+    expect(css).toMatch(
+      /prefers-reduced-motion[\s\S]{0,400}\.prototype-trip-detail-screen \.timeline\s*\{[^}]*transition:\s*none/,
+    );
+    // row-gap을 쓰면 높이 0인 삽입 슬롯 행마다 간격이 덧붙는다.
+    expect(css).not.toMatch(
+      /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*row-gap/s,
+    );
+    expect(css).toMatch(
+      /\.timeline-insertion-slot\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s,
+    );
+    // 배지가 밖으로 나가면서 이 규칙은 의미를 잃는다.
+    expect(css).not.toMatch(
+      /\.timeline-item\.dragging \.timeline-marker\s*\{/,
+    );
+    expect(css).toMatch(
+      /\.prototype-trip-detail-screen \.timeline\s*\{[^}]*min-height:\s*clamp\(360px,\s*calc\(100dvh - 480px\),\s*520px\)/s,
+    );
+  });
+
+  it("installs a non-passive window wheel bridge for desktop gutters", () => {
+    const source = readFileSync(
+      "src/pages/itinerary/ItineraryDetailPage.tsx",
+      "utf8",
+    );
+
+    expect(source).toContain('window.addEventListener("wheel"');
+    // 스크롤을 의도적으로 허용하므로 시작 위치로 되돌리면 사용자를 낚아챈다.
+    expect(source).not.toContain("restorePlaceDragScrollPosition");
+    // 날짜가 바뀌면 문서 높이도 바뀐다. 시작 시점 높이를 캐시하면 어긋난다.
+    expect(source).not.toContain("bounds.contentHeight");
+    expect(source).toContain("shouldForwardWindowWheelToAppScroll");
+    // 유령이 끼어들어 카드가 이동하면 droppable 좌표를 다시 재야 한다.
+    // 기본값(WhileDragging)은 드래그 시작 때 한 번만 재서 진동을 만든다.
+    expect(source).toContain("MeasuringStrategy.Always");
+    // dnd-kit도 레이아웃 변화를 감지해 스크롤을 보정한다. 날짜 전환은 거대한
+    // 레이아웃 변화라 이 보정이 화면을 크게 움직인다. 우리가 직접 관리한다.
+    expect(source).toContain("layoutShiftCompensation: false");
+    // 날짜가 바뀌어 타임라인이 커지면 고정값도 따라 올라가야 한다.
+    // 함수 정의가 아니라 호출부가 있는지를 본다.
+    expect(source).toContain("raiseTimelineHeightLock()");
+    // 위쪽 자동 스크롤 상한. threshold를 명시해야 판정 함수와 기준이 같아진다.
+    expect(source).toContain("canScroll: canPlaceDragAutoScroll");
+    expect(source).toContain("y: PLACE_DRAG_AUTO_SCROLL_THRESHOLD");
+    // 멈춤 기준은 Day 탭이 아니라 그 위의 장소추가 버튼 줄이다.
+    expect(source).toContain("anchorRect: actionsElement");
+    // 시트 등 중첩 스크롤러 위에서는 브리지가 손대지 않는다.
+    expect(source).toContain("isWheelInsideNestedScroller(path)");
+    // 시간 수정창 아코디언은 부모가 열린 카드를 하나 들고 있어야 성립한다.
+    expect(source).toContain("resolveNextOpenTimeEditorId(current");
+    expect(source).toContain("openTimeEditorId");
+    // 동작은 이미 선택 저장인데 문구만 완료로 남아 있었다.
+    expect(source).toContain('"저장 중" : "선택 저장"');
+    expect(source).not.toMatch(/>\s*완료\s*</);
+    // 드래그 중에는 타임라인 높이를 고정해 날짜 전환이 문서를 줄이지 못하게 한다.
+    expect(source).toContain("resolveTimelineHeightLock");
+    expect(source).toContain("timelineElement.style.minHeight");
+    expect(source).toContain('removeProperty("min-height")');
+    // 번호는 슬롯 순번이라 카드 컴포넌트가 알 필요가 없다.
+    expect(source).not.toContain("placeNumber");
+    // 유령도 슬롯 하나를 차지하므로 배지는 부모가 슬롯 순번으로 그린다.
+    // 유령 컴포넌트 자체는 카드 셀만 렌더한다.
+    expect(source).toMatch(/timeline-slot timeline-ghost/);
+    expect(source).not.toMatch(
+      /timeline-slot timeline-ghost[\s\S]{0,400}timeline-marker/,
+    );
+    expect(source).toContain("passive: false");
+    expect(source).toContain(".app-container");
+  });
+
+  it("keeps long trip day selectors visible by wrapping day tabs", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "155",
+      title: "15 day trip",
+      dates: "2026.09.01 - 09.15",
+      days: Object.fromEntries(
+        Array.from({ length: 15 }, (_, index) => [index + 1, []]),
+      ),
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/155");
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: /Day 15/ }),
+        ).toBeInTheDocument(),
+      );
+
+      const dayTabsCss = readFileSync("src/styles/app.css", "utf8");
+      expect(dayTabsCss).toMatch(
+        /\.prototype-trip-detail-screen \.day-tabs\s*\{[^}]*flex-wrap:\s*wrap/s,
+      );
+      expect(dayTabsCss).toMatch(
+        /\.prototype-trip-detail-screen \.day-tabs\s*\{[^}]*overflow-x:\s*visible/s,
+      );
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
   it("renders itinerary detail day tabs from trip data", async () => {
     const trip: Trip = {
       ...getPreviewTrip(),
@@ -183,6 +1248,96 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     } finally {
       getTripSpy.mockRestore();
       movePlaceSpy.mockRestore();
+    }
+  });
+
+  it("marks saved places whose visit time is earlier than the previous place", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "130",
+      revision: 3,
+      title: "시간 확인 여행",
+      days: {
+        1: [
+          { id: "time-a", time: "11:00", label: "늦은 장소", meta: "오전" },
+          { id: "time-b", time: "10:00", label: "이른 장소", meta: "오전" },
+          {
+            id: "time-c",
+            time: "10:00",
+            label: "같은 시간 장소",
+            meta: "오전",
+          },
+        ],
+        2: [
+          {
+            id: "time-d",
+            time: "09:00",
+            label: "다른 Day 장소",
+            meta: "오전",
+          },
+        ],
+      },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/130?day=1");
+
+      await waitFor(() =>
+        expect(screen.getAllByText("시간 확인 여행").length).toBeGreaterThan(0),
+      );
+      expect(
+        screen.getByRole("button", { name: "이른 장소 방문 시간 확인" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "늦은 장소 방문 시간 확인" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "같은 시간 장소 방문 시간 확인" }),
+      ).not.toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
+  it("opens the existing place editor when the time warning is clicked", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "131",
+      revision: 4,
+      title: "시간 수정 진입 여행",
+      days: {
+        1: [
+          { id: "edit-a", time: "12:00", label: "점심 장소", meta: "식사" },
+          { id: "edit-b", time: "11:00", label: "오전 장소", meta: "관광" },
+        ],
+        2: [],
+      },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/131?day=1");
+
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "오전 장소 방문 시간 확인",
+        }),
+      );
+
+      expect(
+        await screen.findByRole("heading", { name: "장소 수정" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("방문 시간")).toBeInTheDocument();
+      expect(screen.getByDisplayValue("오전 장소")).toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
     }
   });
 
@@ -955,6 +2110,591 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
+  it("keeps the add-sheet search-only before a place selection", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "125",
+      title: "검색 전용 장소 추가 여행",
+      days: { 1: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockResolvedValue([]);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/125");
+      const user = userEvent.setup();
+
+      await user.click(await screen.findByRole("button", { name: /장소 추가/ }));
+
+      expect(screen.getByLabelText("장소 검색")).toBeInTheDocument();
+      expect(screen.queryByLabelText("장소명")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("메모")).not.toBeInTheDocument();
+
+      await user.type(screen.getByLabelText("장소 검색"), "등록되지 않은 장소");
+
+      await waitFor(() =>
+        expect(searchTripPlacesSpy).toHaveBeenCalledWith("125", {
+          query: "등록되지 않은 장소",
+        }),
+      );
+      expect(screen.queryByLabelText("장소명")).not.toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+    }
+  });
+
+  it("keeps selected place search candidates in an add-sheet place basket", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "126",
+      title: "장소 바구니 여행",
+      days: { 1: [], 2: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockImplementation(async (_tripId, request) => {
+        if (request.query.includes("성산")) {
+          return [
+            {
+              id: "search-a",
+              label: "성산일출봉",
+              title: "성산일출봉",
+              meta: "제주 서귀포시",
+              address: "제주 서귀포시 성산읍",
+              categoryCode: "AT4",
+              categoryName: "관광명소",
+              sourceProvider: "kakao",
+              externalPlaceId: "kakao-a",
+            },
+          ];
+        }
+        if (request.query.includes("시장")) {
+          return [
+            {
+              id: "search-b",
+              label: "동문시장",
+              title: "동문시장",
+              meta: "제주 제주시",
+              address: "제주 제주시 관덕로",
+              categoryCode: "FD6",
+              categoryName: "음식점",
+              sourceProvider: "kakao",
+              externalPlaceId: "kakao-b",
+            },
+          ];
+        }
+        return [];
+      });
+    const addPlaceSpy = vi.spyOn(appDataApi, "addTripPlace");
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/126");
+      const user = userEvent.setup();
+
+      await user.click(await screen.findByRole("button", { name: /장소 추가/ }));
+      const searchInput = screen.getByLabelText("장소 검색");
+      await user.type(searchInput, "성산");
+      await user.click(await screen.findByRole("button", { name: "성산일출봉 선택" }));
+
+      expect(screen.getByRole("dialog", { name: "장소 추가" })).toBeInTheDocument();
+      expect(searchInput).toHaveValue("");
+      expect(screen.queryByRole("button", { name: "성산일출봉 선택" })).not.toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("추가할 장소 1개");
+      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("관광명소");
+      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("제주 서귀포시 성산읍");
+      expect(screen.queryByLabelText("장소명")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("메모")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "1개 저장하기" })).toBeInTheDocument();
+
+      await user.type(searchInput, "시장");
+      await user.click(await screen.findByRole("button", { name: "동문시장 선택" }));
+      await user.type(searchInput, "성산");
+      await user.click(await screen.findByRole("button", { name: "성산일출봉 선택" }));
+
+      const basket = screen.getByRole("region", { name: "추가할 장소 목록" });
+      expect(basket).toHaveTextContent("추가할 장소 3개");
+      expect(within(basket).getAllByText("성산일출봉")).toHaveLength(2);
+      expect(within(basket).getByText("동문시장")).toBeInTheDocument();
+
+      const removeButton = within(basket).getAllByRole("button", { name: "성산일출봉 제거" })[0];
+      expect(removeButton).toHaveTextContent(/^제거$/);
+      await user.click(removeButton);
+
+      expect(basket).toHaveTextContent("추가할 장소 2개");
+      expect(within(basket).getAllByText("성산일출봉")).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "2개 저장하기" })).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "2개 저장하기" }));
+
+      expect(addPlaceSpy).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog", { name: "장소 추가" })).toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+      addPlaceSpy.mockRestore();
+    }
+  });
+
+  it("saves an add-sheet place basket with one batch request and closes the sheet", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "127",
+      revision: 7,
+      title: "Batch place trip",
+      days: { 1: [], 2: [] },
+      currentUserRole: "owner",
+    };
+    const savedTrip: Trip = {
+      ...trip,
+      revision: 8,
+      days: {
+        1: [
+          { id: "saved-a", time: "", label: "Alpha cafe", meta: "Cafe" },
+          { id: "saved-b", time: "", label: "Beta park", meta: "Park" },
+        ],
+        2: [],
+      },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockImplementation(async (_tripId, request) => {
+        if (request.query.includes("Alpha")) {
+          return [
+            {
+              id: "alpha",
+              label: "Alpha cafe",
+              title: "Alpha cafe",
+              meta: "Cafe",
+              address: "Alpha address",
+              categoryCode: "CE7",
+              categoryName: "Cafe",
+              sourceProvider: "kakao",
+              externalPlaceId: "kakao-alpha",
+            },
+          ];
+        }
+        if (request.query.includes("Beta")) {
+          return [
+            {
+              id: "beta",
+              label: "Beta park",
+              title: "Beta park",
+              meta: "Park",
+              address: "Beta address",
+              categoryCode: "AT4",
+              categoryName: "Park",
+              sourceProvider: "kakao",
+              externalPlaceId: "kakao-beta",
+            },
+          ];
+        }
+        return [];
+      });
+    const addPlacesSpy = vi
+      .spyOn(appDataApi, "addTripPlaces")
+      .mockResolvedValue(savedTrip);
+    const addPlaceSpy = vi.spyOn(appDataApi, "addTripPlace");
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/127");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(document.querySelector(".prototype-trip-action-add")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".prototype-trip-action-add")!);
+      const searchInput = document.querySelector<HTMLInputElement>(
+        'input[name="place-search"]',
+      )!;
+      await user.type(searchInput, "Alpha");
+      await waitFor(() =>
+        expect(document.querySelector(".place-search-results button")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".place-search-results button")!);
+      await user.type(searchInput, "Beta");
+      await waitFor(() =>
+        expect(document.querySelector(".place-search-results button")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".place-search-results button")!);
+      await user.click(screen.getByRole("button", { name: /2개 저장하기/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
+      expect(addPlaceSpy).not.toHaveBeenCalled();
+      expect(addPlacesSpy).toHaveBeenCalledWith("127", 1, {
+        expectedRevision: 7,
+        places: [
+          {
+            time: "",
+            label: "Alpha cafe",
+            meta: "Cafe",
+            address: "Alpha address",
+            latitude: null,
+            longitude: null,
+            category: "Cafe",
+            categoryCode: "CE7",
+            placeUrl: null,
+            sourceProvider: "kakao",
+            externalPlaceId: "kakao-alpha",
+          },
+          {
+            time: "",
+            label: "Beta park",
+            meta: "Park",
+            address: "Beta address",
+            latitude: null,
+            longitude: null,
+            category: "Park",
+            categoryCode: "AT4",
+            placeUrl: null,
+            sourceProvider: "kakao",
+            externalPlaceId: "kakao-beta",
+          },
+        ],
+      });
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "장소 추가" })).not.toBeInTheDocument(),
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+      addPlacesSpy.mockRestore();
+      addPlaceSpy.mockRestore();
+    }
+  });
+
+  it("keeps a place basket after a batch conflict and waits for explicit retry", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "128",
+      revision: 3,
+      title: "Batch conflict trip",
+      days: { 1: [], 2: [] },
+      currentUserRole: "owner",
+    };
+    const latestTrip: Trip = { ...trip, revision: 4 };
+    const savedTrip: Trip = {
+      ...latestTrip,
+      revision: 5,
+      days: { 1: [{ id: "saved-gamma", time: "", label: "Gamma beach", meta: "Beach" }], 2: [] },
+    };
+    const getTripSpy = vi
+      .spyOn(appDataApi, "getTrip")
+      .mockResolvedValueOnce(trip)
+      .mockResolvedValueOnce(latestTrip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockResolvedValue([
+        {
+          id: "gamma",
+          label: "Gamma beach",
+          title: "Gamma beach",
+          meta: "Beach",
+        },
+      ]);
+    const addPlacesSpy = vi
+      .spyOn(appDataApi, "addTripPlaces")
+      .mockRejectedValueOnce(new ApiError("conflict", { status: 409, statusText: "Conflict" }))
+      .mockResolvedValueOnce(savedTrip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/128");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(document.querySelector(".prototype-trip-action-add")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".prototype-trip-action-add")!);
+      const searchInput = document.querySelector<HTMLInputElement>(
+        'input[name="place-search"]',
+      )!;
+      await user.type(searchInput, "Gamma");
+      await waitFor(() =>
+        expect(document.querySelector(".place-search-results button")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".place-search-results button")!);
+      await user.click(screen.getByRole("button", { name: /1개 저장하기/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(screen.getByRole("dialog")).toHaveTextContent("Gamma beach"),
+      );
+      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("Gamma beach");
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
+      expect(addPlacesSpy).toHaveBeenCalledTimes(1);
+
+      await user.click(screen.getByRole("button", { name: /1개 저장하기/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(2));
+      expect(addPlacesSpy).toHaveBeenLastCalledWith(
+        "128",
+        1,
+        expect.objectContaining({ expectedRevision: 4 }),
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+      addPlacesSpy.mockRestore();
+    }
+  });
+
+  it("lets a user choose a current Day before retrying a missing Day batch save", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "129",
+      revision: 10,
+      title: "Missing day batch trip",
+      days: { 1: [], 2: [], 3: [] },
+      currentUserRole: "owner",
+    };
+    const latestTrip: Trip = {
+      ...trip,
+      revision: 11,
+      days: { 1: [], 2: [] },
+    };
+    const savedTrip: Trip = {
+      ...latestTrip,
+      revision: 12,
+      days: { 1: [], 2: [{ id: "saved-delta", time: "", label: "Delta museum", meta: "Museum" }] },
+    };
+    const getTripSpy = vi
+      .spyOn(appDataApi, "getTrip")
+      .mockResolvedValueOnce(trip)
+      .mockResolvedValueOnce(latestTrip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockResolvedValue([
+        {
+          id: "delta",
+          label: "Delta museum",
+          title: "Delta museum",
+          meta: "Museum",
+        },
+      ]);
+    const addPlacesSpy = vi
+      .spyOn(appDataApi, "addTripPlaces")
+      .mockRejectedValueOnce(
+        new ApiError("Trip day not found", {
+          status: 404,
+          statusText: "Not Found",
+          detail: "Trip day not found",
+        }),
+      )
+      .mockResolvedValueOnce(savedTrip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/129?day=3");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(document.querySelector(".prototype-trip-action-add")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".prototype-trip-action-add")!);
+      const searchInput = document.querySelector<HTMLInputElement>(
+        'input[name="place-search"]',
+      )!;
+      await user.type(searchInput, "Delta");
+      await waitFor(() =>
+        expect(document.querySelector(".place-search-results button")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".place-search-results button")!);
+      await user.click(screen.getByRole("button", { name: /1개 저장하기/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
+      expect(addPlacesSpy).toHaveBeenLastCalledWith("129", 3, expect.any(Object));
+      const recovery = await screen.findByRole("region", {
+        name: "batch place missing day recovery",
+      });
+      expect(within(recovery).getByRole("button", { name: /Day 1/ })).toBeInTheDocument();
+      expect(within(recovery).getByRole("button", { name: /Day 2/ })).toBeInTheDocument();
+      expect(within(recovery).queryByRole("button", { name: /Day 3/ })).not.toBeInTheDocument();
+      expect(addPlacesSpy).toHaveBeenCalledTimes(1);
+
+      await user.click(within(recovery).getByRole("button", { name: /Day 2/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(2));
+      expect(addPlacesSpy).toHaveBeenLastCalledWith(
+        "129",
+        2,
+        expect.objectContaining({ expectedRevision: 11 }),
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+      addPlacesSpy.mockRestore();
+    }
+  });
+
+  it("does not offer stale Day recovery when refreshing after a missing Day batch failure fails", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "129-refresh-failure",
+      revision: 10,
+      title: "Missing day refresh failure trip",
+      days: { 1: [], 2: [], 3: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi
+      .spyOn(appDataApi, "getTrip")
+      .mockResolvedValueOnce(trip)
+      .mockRejectedValueOnce(new ApiError("Trip not found", {
+        status: 404,
+        statusText: "Not Found",
+        detail: "Trip not found",
+      }));
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockResolvedValue([
+        {
+          id: "delta-refresh-failure",
+          label: "Delta museum",
+          title: "Delta museum",
+          meta: "Museum",
+        },
+      ]);
+    const addPlacesSpy = vi
+      .spyOn(appDataApi, "addTripPlaces")
+      .mockRejectedValueOnce(
+        new ApiError("Trip day not found", {
+          status: 404,
+          statusText: "Not Found",
+          detail: "Trip day not found",
+        }),
+      );
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/129-refresh-failure?day=3");
+      const user = userEvent.setup();
+
+      await user.click(
+        await screen.findByRole("button", { name: /장소 추가/ }),
+      );
+      const searchInput = screen.getByRole("textbox", { name: "장소 검색" });
+      await user.type(searchInput, "Delta");
+      await user.click(
+        await screen.findByRole("button", { name: "Delta museum 선택" }),
+      );
+      await user.click(screen.getByRole("button", { name: /1개 저장하기/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(getTripSpy).toHaveBeenCalledTimes(2));
+      expect(
+        screen.queryByRole("region", { name: "batch place missing day recovery" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent(
+        "Delta museum",
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+      addPlacesSpy.mockRestore();
+    }
+  });
+
+  it("does not show missing Day recovery for a generic trip 404 batch failure", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "130",
+      revision: 12,
+      title: "Generic batch 404 trip",
+      days: { 1: [], 2: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockResolvedValue([
+        {
+          id: "epsilon",
+          label: "Epsilon market",
+          title: "Epsilon market",
+          meta: "Market",
+        },
+      ]);
+    const addPlacesSpy = vi
+      .spyOn(appDataApi, "addTripPlaces")
+      .mockRejectedValue(
+        new ApiError("Trip not found", {
+          status: 404,
+          statusText: "Not Found",
+          detail: "Trip not found",
+        }),
+      );
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/130");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(document.querySelector(".prototype-trip-action-add")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".prototype-trip-action-add")!);
+      const searchInput = document.querySelector<HTMLInputElement>(
+        'input[name="place-search"]',
+      )!;
+      await user.type(searchInput, "Epsilon");
+      await waitFor(() =>
+        expect(document.querySelector(".place-search-results button")).toBeInTheDocument(),
+      );
+      await user.click(document.querySelector<HTMLButtonElement>(".place-search-results button")!);
+      await user.click(screen.getByRole("button", { name: /1개 저장하기/ }));
+
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
+      expect(
+        screen.queryByRole("region", { name: "batch place missing day recovery" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent(
+        "Epsilon market",
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+      addPlacesSpy.mockRestore();
+    }
+  });
+
+  it("links to the trip edit page from the detail hero", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "104",
+      title: "Editable trip",
+      dates: "2026.06.15 - 06.17",
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/104");
+
+      const editLink = await screen.findByRole("link", { name: "일정 편집" });
+      expect(editLink).toHaveAttribute("href", "/trips/104/edit");
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
   it("shows unsaved recommendation preview cards in the timeline before save", async () => {
     const trip: Trip = {
       ...getPreviewTrip(),
@@ -1025,7 +2765,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.click(screen.getByRole("button", { name: "성산일출봉 후보 저장" }));
       expect(addPlaceSpy).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "성산일출봉 후보 저장" })).toHaveTextContent("저장됨");
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect(addPlaceSpy).toHaveBeenCalledWith("102", 1, expect.objectContaining({ label: "성산일출봉", time: "10:00", meta: "관광명소", category: "관광명소", categoryCode: "AT4", expectedRevision: 4 }));
@@ -1071,7 +2811,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       const existingTimeEdit = document.querySelectorAll(".preview-time-edit")[0] as HTMLElement;
       await user.click(within(existingTimeEdit).getByText("수정"));
       await user.click(within(existingTimeEdit).getByRole("button", { name: "방문 시간 1시간 증가" }));
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(updatePlaceSpy).toHaveBeenCalledTimes(1));
       expect(updatePlaceSpy).toHaveBeenCalledWith("121", "existing-time-1", expect.objectContaining({ time: "10:00", expectedRevision: 8 }));
@@ -1315,7 +3055,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.click(await screen.findByRole("button", { name: "오설록 후보 저장" }));
       expect(addPlaceSpy).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "오설록 후보 저장" })).toHaveTextContent("저장됨");
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect(deletePlaceSpy).not.toHaveBeenCalled();
@@ -1392,12 +3132,12 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.queryByLabelText("우도 방문 시간")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("우도 메모")).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "우도 후보 저장" }));
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       expect(await screen.findByText(/다른 사용자가 먼저 일정을 수정/)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "우도 후보 저장" })).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(2));
       expect(addPlaceSpy).toHaveBeenLastCalledWith("106", 1, expect.objectContaining({ label: "우도", time: "10:00", meta: "섬", expectedRevision: 31 }));
@@ -1429,13 +3169,13 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.queryByLabelText("동백정원 방문 시간")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("동백정원 메모")).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "동백정원 후보 저장" }));
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect((await screen.findAllByText(/저장되지 않은 미리보기 입력은 그대로 보존/)).length).toBeGreaterThan(0);
       expect(screen.getByRole("button", { name: "동백정원 후보 저장" })).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "완료" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(2));
       expect(addPlaceSpy).toHaveBeenNthCalledWith(1, "107", 1, expect.objectContaining({ label: "동백정원", time: "10:00", meta: "꽃", expectedRevision: 40 }));

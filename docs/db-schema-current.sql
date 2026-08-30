@@ -107,6 +107,8 @@ CREATE TABLE public.external_source_records (
     source_category character varying(80) NOT NULL,
     external_id character varying(160) NOT NULL,
     canonical_key character varying(160) NOT NULL,
+    logical_key character varying(200),
+    canonical_key_version character varying(30),
     detail_url character varying(500),
     collected_page_url character varying(500) NOT NULL,
     title character varying(300) NOT NULL,
@@ -1239,6 +1241,13 @@ CREATE INDEX ix_external_source_records_end_date ON public.external_source_recor
 CREATE INDEX ix_external_source_records_external_id ON public.external_source_records USING btree (external_id);
 
 
+
+--
+-- Name: ix_external_source_records_logical_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_external_source_records_logical_key ON public.external_source_records USING btree (logical_key);
+
 --
 -- Name: ix_external_source_records_region; Type: INDEX; Schema: public; Owner: -
 --
@@ -1326,7 +1335,7 @@ CREATE INDEX ix_pending_social_signups_token_hash ON public.pending_social_signu
 -- Name: ix_policies_external_source_record_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX ix_policies_external_source_record_id ON public.policies USING btree (external_source_record_id);
+CREATE INDEX ix_policies_external_source_record_id ON public.policies USING btree (external_source_record_id);
 
 
 --

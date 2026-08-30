@@ -62,7 +62,10 @@ http://127.0.0.1:4173/
 ```
 
 
-## Auth flow UI without real SMTP/OAuth
+## Auth Checks: Default No-Secret Flow
+
+Use this path for normal local auth UI checks. It does not require real SMTP,
+Google, or Kakao credentials.
 
 For local UI checks, use the dev-only auth helper instead of real email delivery or Google/Kakao callbacks. It refuses to run when `APP_ENV` is `staging`, `production`, or `prod`. Run Alembic first so the latest pending signup tables exist.
 
@@ -84,6 +87,44 @@ cd backend
 Open the printed URL in the local frontend. By default the helper uses `http://127.0.0.1:5173`, matching the Vite dev server. If you are checking the Docker production frontend on `4173`, either set `TRAVEL_HUNTER_PUBLIC_BASE_URL=http://127.0.0.1:4173` before running the helper or replace the port in the printed URL.
 
 The latest generated URL is also saved to `.omx/tmp/dev-auth-helper/latest-url.txt` unless `--no-file` is passed. Use a fresh test email/provider id for each run; the helper rejects already-created users/social accounts so existing accounts are not modified accidentally.
+
+## Auth Checks: Opt-In Real SMTP/OAuth Config
+
+Use this path only when you deliberately want the local backend to detect real
+SMTP or Google/Kakao OAuth settings. Do not put real secrets in tracked files,
+shell history, screenshots, or handoff notes.
+
+- Create a local-only `backend/.env.local` from the safe placeholder file
+  `backend/.env.local.example`, then replace placeholders with your own local
+  integration values.
+- `backend/.env.local` is ignored by git and by the backend Docker build. Keep
+  it local to your machine.
+- Do not copy `backend/.env.local` into `deploy/.env.*` or a server environment
+  unless you are intentionally setting up that server with reviewed production
+  or staging values.
+- Docker Compose loads backend env in this order:
+  1. `backend/compose.defaults.env`
+  2. optional `backend/.env.local`
+  3. explicit non-secret values in `compose.yaml`
+- `backend/compose.defaults.env` sets safe Docker defaults such as
+  `TRAVEL_HUNTER_PUBLIC_BASE_URL=http://127.0.0.1:4173` and disabled Kakao
+  Local settings.
+- `backend/.env.local` can override `TRAVEL_HUNTER_PUBLIC_BASE_URL` for auth
+  links, for example when you are using the Vite frontend on `5173`.
+- `backend/.env.local` can provide auth integration variables such as
+  `SMTP_*`, `GOOGLE_*`, and OAuth `KAKAO_*`.
+- `backend/.env.local` can also opt in Kakao Local settings such as
+  `KAKAO_LOCAL_ENABLED=true` and `KAKAO_LOCAL_REST_API_KEY=...`.
+- Non-Docker backend runs also read `backend/.env.local`; already-exported
+  process environment variables still win.
+
+Success boundary for this local opt-in is intentionally narrow:
+
+- You can verify settings detection without sending email.
+- You can verify OAuth start behavior reaches provider redirect (`302`) instead
+  of missing-config (`503`) when provider settings are present.
+- Actual email delivery and full provider callback completion are out of scope
+  unless you deliberately perform those external checks.
 
 ## Port Standard
 

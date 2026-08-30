@@ -1,14 +1,14 @@
-﻿import { Heart } from "lucide-react";
+import { Heart } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Policy, Trip } from "../api";
 import { getPolicyMoodIcon, getPolicyMoodTone, getTripRegionEmojiFromTitle } from "../data/displayConfig";
-import { dday } from "../utils";
+import { formatPolicyDeadlineTag, formatPolicyPeriodSummary } from "../utils";
 import { canUsePolicyActions } from "../utils/policyCapabilities";
 import { SurfaceCard, Tag } from "./ui";
 
-function compactDeadline(deadline: string) {
-  return `~${deadline.split("-").join(".")}`;
+function compactPolicyPeriod(policy: Policy) {
+  return formatPolicyPeriodSummary(policy);
 }
 
 function tripRegionEmoji(trip: Trip) {
@@ -51,6 +51,7 @@ export function PolicyListCard({
     }
   };
   const canSave = canUsePolicyActions(policy) && Boolean(onToggleSave);
+  const periodSummary = compactPolicyPeriod(policy);
 
   return (
     <SurfaceCard as="article" className="policy-list-card">
@@ -59,12 +60,12 @@ export function PolicyListCard({
         <div className="policy-list-copy">
           <div className="policy-list-badges">
             <span>{policy.amount}</span>
-            <em>{dday(policy.deadline)}</em>
+            <em>{formatPolicyDeadlineTag(policy)}</em>
           </div>
           <h3>{policy.title}</h3>
           <div className="policy-list-meta">
             <span aria-hidden="true">📍</span>
-            {policy.region} · {compactDeadline(policy.deadline)}
+            {periodSummary ? `${policy.region} · ${periodSummary}` : policy.region}
           </div>
         </div>
       </Link>
@@ -96,6 +97,7 @@ export function ItineraryCard({
   onDelete?: (trip: Trip) => void;
 }) {
   const detailPath = `/trips/${trip.id}`;
+  const editPath = `/trips/${trip.id}/edit`;
   const totalPlaces = Object.values(trip.days).reduce((sum, places) => sum + places.length, 0);
   const dayCount = Object.keys(trip.days).length || 1;
   const participantNames = tripParticipantNames(trip);
@@ -113,7 +115,12 @@ export function ItineraryCard({
           <Link className="itinerary-title-link" to={detailPath}>
             <h4>{trip.title}</h4>
           </Link>
-          <div className="itinerary-actions">
+          <div className="itinerary-actions itinerary-card-management">
+            {trip.currentUserRole !== "viewer" && (
+              <Link className="itinerary-card-edit" to={editPath} aria-label={`${trip.title} 편집`}>
+                편집
+              </Link>
+            )}
             {onDelete && (
               <button className="trip-delete-btn" disabled={isDeleting} onClick={() => onDelete(trip)} type="button">
                 {isDeleting ? "삭제 중" : "삭제"}

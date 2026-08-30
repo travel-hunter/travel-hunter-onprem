@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
@@ -29,6 +30,8 @@ def trip_payload(trip_id: str = "7") -> dict[str, object]:
         "status": "confirmed",
         "revision": 1,
         "dates": "2026.06.15 - 06.17",
+        "startDate": date(2026, 6, 15),
+        "endDate": date(2026, 6, 17),
         "people": ["Test User"],
         "participantCount": 1,
         "expectedSaving": "30만원",
@@ -49,8 +52,8 @@ def invite_payload(trip_id: str = "7") -> dict[str, object]:
     return {
         "id": "9",
         "tripId": trip_id,
-        "inviteToken": "abc",
-        "inviteUrl": "http://127.0.0.1:5173/invites/abc/accept",
+        "inviteToken": "editor-token",
+        "inviteUrl": "http://127.0.0.1:5173/invites/editor-token/accept",
         "expiresAt": "2026-06-30T00:00:00Z",
         "createdAt": "2026-05-04T00:00:00Z",
         "acceptedAt": None,
@@ -60,13 +63,6 @@ def invite_payload(trip_id: str = "7") -> dict[str, object]:
         "alreadyMember": False,
     }
 
-
-
-
-def invite_links_payload(trip_id: str = "7") -> dict[str, object]:
-    viewer = {**invite_payload(trip_id), "id": "10", "inviteToken": "viewer-token", "inviteUrl": "http://127.0.0.1:5173/invites/viewer-token/accept", "role": "viewer"}
-    editor = {**invite_payload(trip_id), "id": "11", "inviteToken": "editor-token", "inviteUrl": "http://127.0.0.1:5173/invites/editor-token/accept", "role": "editor"}
-    return {"tripId": trip_id, "viewer": viewer, "editor": editor}
 
 def clear_overrides() -> None:
     app.dependency_overrides.pop(trip_routes.get_optional_db, None)
@@ -155,17 +151,27 @@ def test_db_trip_create_route_returns_created_numeric_id(monkeypatch) -> None:
     assert body["days"] == {"1": [], "2": [], "3": [], "4": []}
 
 
-def test_db_trip_create_route_rejects_out_of_range_duration() -> None:
+def test_db_trip_create_route_accepts_long_duration(monkeypatch) -> None:
     fake_db = object()
     user = make_user()
     install_db_route_dependencies(None, fake_db, user)
+
+    def create_trip_stub(db, current_user, payload):
+        assert db is fake_db
+        assert current_user is user
+        assert payload.durationDays == 8
+        created = trip_payload("8")
+        created["days"] = {day: [] for day in range(1, 9)}
+        return created
+
+    monkeypatch.setattr(trip_routes.trip_service, "create_trip", create_trip_stub)
 
     try:
         response = client.post("/api/trips", json={"durationDays": 8})
     finally:
         clear_overrides()
 
-    assert response.status_code == 422
+    assert response.status_code == 200
 
 
 def test_db_trip_create_route_rejects_out_of_range_participant_count() -> None:
@@ -184,7 +190,39 @@ def test_db_trip_create_route_rejects_out_of_range_participant_count() -> None:
     assert [response.status_code for response in responses] == [422, 422]
 
 
-def test_db_trip_create_route_rejects_invalid_date_ranges() -> None:
+def test_db_trip_create_route_accepts_valid_one_day_and_long_date_ranges(monkeypatch) -> None:
+    fake_db = object()
+    user = make_user()
+    install_db_route_dependencies(None, fake_db, user)
+    captured_ranges: list[tuple[date, date]] = []
+
+    def create_trip_stub(db, current_user, payload):
+        assert db is fake_db
+        assert current_user is user
+        captured_ranges.append((payload.startDate, payload.endDate))
+        created = trip_payload(str(len(captured_ranges)))
+        day_count = (payload.endDate - payload.startDate).days + 1
+        created["days"] = {day: [] for day in range(1, day_count + 1)}
+        return created
+
+    monkeypatch.setattr(trip_routes.trip_service, "create_trip", create_trip_stub)
+
+    try:
+        responses = [
+            client.post("/api/trips", json={"startDate": "2026-07-12", "endDate": "2026-07-12"}),
+            client.post("/api/trips", json={"startDate": "2026-07-12", "endDate": "2026-07-19"}),
+        ]
+    finally:
+        clear_overrides()
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert captured_ranges == [
+        (date(2026, 7, 12), date(2026, 7, 12)),
+        (date(2026, 7, 12), date(2026, 7, 19)),
+    ]
+
+
+def test_db_trip_create_route_rejects_missing_or_reversed_date_ranges() -> None:
     fake_db = object()
     user = make_user()
     install_db_route_dependencies(None, fake_db, user)
@@ -192,14 +230,12 @@ def test_db_trip_create_route_rejects_invalid_date_ranges() -> None:
     try:
         responses = [
             client.post("/api/trips", json={"startDate": "2026-07-12"}),
-            client.post("/api/trips", json={"startDate": "2026-07-12", "endDate": "2026-07-12"}),
             client.post("/api/trips", json={"startDate": "2026-07-15", "endDate": "2026-07-12"}),
-            client.post("/api/trips", json={"startDate": "2026-07-12", "endDate": "2026-07-19"}),
         ]
     finally:
         clear_overrides()
 
-    assert [response.status_code for response in responses] == [422, 422, 422, 422]
+    assert [response.status_code for response in responses] == [422, 422]
 
 
 def test_db_trip_create_route_maps_policy_error(monkeypatch) -> None:
@@ -401,6 +437,44 @@ def test_db_trip_status_update_route_rejects_invalid_status(monkeypatch) -> None
     assert response.status_code == 422
 
 
+def test_db_trip_settings_update_route_returns_updated_trip(monkeypatch) -> None:
+    fake_db = object()
+    user = make_user()
+    install_db_route_dependencies(monkeypatch, fake_db, user)
+
+    def update_settings(db, current_user, trip_id, payload):
+        assert db is fake_db
+        assert current_user is user
+        assert trip_id == "7"
+        assert payload.expectedRevision == 1
+        assert payload.title == "Updated trip"
+        assert payload.startDate == date(2026, 6, 15)
+        assert payload.endDate == date(2026, 6, 20)
+        assert payload.overflowPlaceStrategy == "moveToLastDay"
+        return {**trip_payload(trip_id), "title": "Updated trip", "dates": "2026.06.15 - 06.20"}
+
+    monkeypatch.setattr(trip_routes.trip_service, "update_trip_settings", update_settings)
+
+    try:
+        response = client.patch(
+            "/api/trips/7/settings",
+            json={
+                "expectedRevision": 1,
+                "title": "Updated trip",
+                "startDate": "2026-06-15",
+                "endDate": "2026-06-20",
+                "overflowPlaceStrategy": "moveToLastDay",
+            },
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "7"
+    assert response.json()["title"] == "Updated trip"
+    assert response.json()["dates"] == "2026.06.15 - 06.20"
+
+
 def test_db_trip_place_crud_routes_return_updated_trip(monkeypatch) -> None:
     fake_db = object()
     user = make_user()
@@ -458,6 +532,78 @@ def test_db_trip_place_crud_routes_return_updated_trip(monkeypatch) -> None:
     assert calls[2][1].dayNumber == 2
     assert calls[2][1].position == 1
     assert calls[3] == ("delete", 1, 1)
+
+
+def test_db_trip_place_batch_route_returns_updated_trip(monkeypatch) -> None:
+    fake_db = object()
+    user = make_user()
+    install_db_route_dependencies(monkeypatch, fake_db, user)
+
+    def add_places(db, current_user, trip_id, day_number, payload):
+        assert db is fake_db
+        assert current_user is user
+        assert trip_id == "7"
+        assert day_number == 1
+        assert payload.expectedRevision == 1
+        assert [place.label for place in payload.places] == ["Cafe stop", "Beach stop"]
+        return trip_payload(trip_id)
+
+    monkeypatch.setattr(trip_routes.trip_service, "add_places_to_trip_day", add_places)
+
+    try:
+        response = client.post(
+            "/api/trips/7/days/1/places/batch",
+            json={
+                "expectedRevision": 1,
+                "places": [
+                    {"label": "Cafe stop", "time": "", "sourceProvider": "kakao"},
+                    {"label": "Beach stop"},
+                ],
+            },
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "7"
+
+
+def test_db_trip_place_batch_route_rejects_empty_places(monkeypatch) -> None:
+    fake_db = object()
+    user = make_user()
+    install_db_route_dependencies(monkeypatch, fake_db, user)
+
+    try:
+        response = client.post(
+            "/api/trips/7/days/1/places/batch",
+            json={"expectedRevision": 1, "places": []},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 422
+
+
+def test_db_trip_place_batch_route_maps_missing_day_error(monkeypatch) -> None:
+    fake_db = object()
+    user = make_user()
+    install_db_route_dependencies(monkeypatch, fake_db, user)
+
+    def reject(*_args):
+        raise trip_service.TripServiceError(404, "Trip day not found")
+
+    monkeypatch.setattr(trip_routes.trip_service, "add_places_to_trip_day", reject)
+
+    try:
+        response = client.post(
+            "/api/trips/7/days/99/places/batch",
+            json={"expectedRevision": 1, "places": [{"label": "Cafe stop"}]},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Trip day not found"}
 
 
 def test_db_trip_place_routes_map_service_errors(monkeypatch) -> None:
@@ -572,22 +718,23 @@ def test_db_recommendation_and_invite_routes(monkeypatch) -> None:
     monkeypatch.setattr(
         trip_routes.trip_service,
         "get_invite_state",
-        lambda db, current_user, trip_id: invite_links_payload(trip_id)
+        lambda db, current_user, trip_id: invite_payload(trip_id)
         if db is fake_db and current_user is user and trip_id == "7"
         else None,
     )
     monkeypatch.setattr(
         trip_routes.trip_service,
         "confirm_invite_sent",
-        lambda db, current_user, trip_id, role="editor": {**invite_payload(trip_id), "invited": True, "role": role}
-        if db is fake_db and current_user is user and trip_id == "7"
+        lambda db, current_user, trip_id, role="editor": {**invite_payload(trip_id), "invited": True, "role": "editor"}
+        if db is fake_db and current_user is user and trip_id == "7" and role == "editor"
         else None,
     )
 
     try:
         recommendations = client.get("/api/trips/7/recommendations")
         invite = client.get("/api/trips/7/invite")
-        confirm = client.post("/api/trips/7/invite", json={"role": "viewer"})
+        confirm = client.post("/api/trips/7/invite")
+        viewer_confirm = client.post("/api/trips/7/invite", json={"role": "viewer"})
     finally:
         clear_overrides()
 
@@ -596,12 +743,12 @@ def test_db_recommendation_and_invite_routes(monkeypatch) -> None:
     assert "sourceType" in recommendations.json()[0]
     assert invite.status_code == 200
     assert invite.json()["tripId"] == "7"
-    assert invite.json()["viewer"]["role"] == "viewer"
-    assert invite.json()["editor"]["role"] == "editor"
-    assert invite.json()["viewer"]["inviteToken"] != invite.json()["editor"]["inviteToken"]
+    assert invite.json()["role"] == "editor"
+    assert invite.json()["inviteToken"] == "editor-token"
     assert confirm.status_code == 200
     assert confirm.json()["invited"] is True
-    assert confirm.json()["role"] == "viewer"
+    assert confirm.json()["role"] == "editor"
+    assert viewer_confirm.status_code == 422
 
 
 def test_db_trip_place_search_route_returns_candidates(monkeypatch) -> None:
@@ -662,7 +809,7 @@ def test_db_trip_invite_email_route_returns_delivery_status(monkeypatch) -> None
     try:
         response = client.post(
             "/api/trips/7/invite/email",
-            json={"email": "friend@example.com", "role": "viewer"},
+            json={"email": "friend@example.com"},
         )
     finally:
         clear_overrides()
@@ -670,7 +817,26 @@ def test_db_trip_invite_email_route_returns_delivery_status(monkeypatch) -> None
     assert response.status_code == 200
     assert response.json()["deliveryStatus"] == "sent"
     assert response.json()["invite"]["tripId"] == "7"
-    assert response.json()["invite"]["role"] == "viewer"
+    assert response.json()["invite"]["role"] == "editor"
+
+
+def test_db_trip_invite_email_route_rejects_viewer_role(monkeypatch) -> None:
+    fake_db = object()
+    user = make_user()
+    install_db_route_dependencies(monkeypatch, fake_db, user)
+    send_invite_email = Mock()
+    monkeypatch.setattr(trip_routes.trip_service, "send_invite_email", send_invite_email)
+
+    try:
+        response = client.post(
+            "/api/trips/7/invite/email",
+            json={"email": "friend@example.com", "role": "viewer"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 422
+    assert not send_invite_email.called
 
 
 def test_db_trip_invite_email_route_returns_404_for_non_owner(monkeypatch) -> None:

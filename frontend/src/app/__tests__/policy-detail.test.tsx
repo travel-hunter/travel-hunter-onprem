@@ -103,8 +103,6 @@ describe("Travel Hunter app — policy detail", () => {
     }
   });
 
-
-
   it("renders structured detail sections when the policy provides structuredDetail", async () => {
     const structuredPolicy: Policy = {
       id: "structured-policy",
@@ -114,7 +112,7 @@ describe("Travel Hunter app — policy detail", () => {
       title: "구조화 상세 정책",
       org: "Travel Hunter",
       region: "전국",
-      deadline: "2026-12-31",
+      deadline: "2026-08-31",
       amount: "확인 필요",
       summary: "기존 요약 fallback",
       match: 90,
@@ -122,12 +120,41 @@ describe("Travel Hunter app — policy detail", () => {
       requirements: [],
       documents: ["기존 서류 fallback"],
       structuredDetail: {
-        benefits: [{ title: "혜택", description: "숙박비를 최대 7만원 할인", amount: "최대 7만원" }],
-        conditions: [{ title: "대상", description: "비수도권 숙박 예약자" }],
-        periods: [{ title: "신청 기간", description: "2026-06-01 ~ 2026-07-31" }],
-        links: [{ label: "공식 상세", url: "https://example.com/structured" }],
-        documents: [],
-        notices: [{ title: "주의", description: "예산 소진 시 조기 종료" }],
+        supportContent: [
+          { title: "핵심 혜택", description: "합천 제휴처 17곳의 혜택을 제공합니다." },
+          { title: "카테고리별 인기 혜택", description: "인기순 대표 제휴처와 주요 혜택을 카테고리별로 정리했습니다." },
+          {
+            title: "카테고리별 인기 혜택",
+            description: "🍽️ 로우풀: 음료 구매시 아메리카노 리필 1회\n호수뷰와 마운틴뷰가 조화로운 대형카페",
+            url: "https://korean.visitkorea.or.kr/dgtourcard/biz/mbrb/mbrbPtcl.do?mbrbId=cdb03f3e-180d-11ef-b16c-0242ac130002",
+          },
+        ],
+        applicationTarget: [{ title: "대상", description: "비수도권 숙박 예약자" }],
+        periods: [
+          {
+            title: "신청 기간",
+            description: "2026-06-01 ~ 2026-08-31",
+            type: "application",
+            startDate: "2026-06-01",
+            endDate: "2026-08-31",
+          },
+          {
+            title: "여행 기간",
+            description: "2026-06-01 ~ 2026-12-31",
+            type: "usage",
+            startDate: "2026-06-01",
+            endDate: "2026-12-31",
+          },
+          {
+            title: "쿠폰 발급 기간",
+            description: "2026-06-15 ~ 2026-07-15",
+            type: "issue",
+            startDate: "2026-06-15",
+            endDate: "2026-07-15",
+          },
+        ],
+        requiredDocuments: [],
+        notes: [{ title: "주의", description: "예산 소진 시 조기 종료" }],
       },
       officialUrl: "https://example.com/official",
       applyUrl: null,
@@ -142,12 +169,109 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/structured-policy");
 
       expect(await screen.findByRole("heading", { name: "구조화 상세 정책" })).toBeInTheDocument();
-      expect(screen.getByText("최대 7만원")).toBeInTheDocument();
-      expect(screen.getByText("2026-06-01 ~ 2026-07-31")).toBeInTheDocument();
+      expect(screen.getByText("합천 제휴처 17곳의 혜택을 제공합니다.")).toBeInTheDocument();
+      expect(screen.getByText("카테고리별 인기 혜택")).toBeInTheDocument();
+      const benefitLink = screen.getByRole("link", {
+        name: /로우풀 음료 구매시 아메리카노 리필 1회 호수뷰와 마운틴뷰가 조화로운 대형카페/,
+      });
+      expect(benefitLink).toHaveAttribute(
+        "href",
+        "https://korean.visitkorea.or.kr/dgtourcard/biz/mbrb/mbrbPtcl.do?mbrbId=cdb03f3e-180d-11ef-b16c-0242ac130002",
+      );
+      expect(benefitLink).toHaveAttribute("target", "_blank");
+      expect(benefitLink).toHaveAttribute("rel", expect.stringContaining("noreferrer"));
+      expect(within(benefitLink).getByText("🍽️ 로우풀")).toHaveClass("policy-benefit-link-title");
+      expect(within(benefitLink).getByText("음료 구매시 아메리카노 리필 1회")).toHaveClass("policy-benefit-link-description");
+      expect(within(benefitLink).getByText("호수뷰와 마운틴뷰가 조화로운 대형카페")).toHaveClass("policy-benefit-link-place-description");
+      expect(screen.getByText("핵심 혜택").closest(".policy-benefit-group")).toHaveClass(
+        "policy-benefit-group--core",
+      );
+      expect(screen.getByText("신청 기간")).toBeInTheDocument();
+      expect(screen.getByText("여행 기간")).toBeInTheDocument();
+      expect(screen.getByText("쿠폰 발급 기간")).toBeInTheDocument();
+      expect(screen.getByText("2026-06-01 ~ 2026-08-31")).toBeInTheDocument();
+      expect(screen.getByText("2026-06-01 ~ 2026-12-31")).toBeInTheDocument();
+      expect(screen.getByText("2026-06-15 ~ 2026-07-15")).toBeInTheDocument();
       expect(screen.getByText("비수도권 숙박 예약자")).toBeInTheDocument();
       expect(screen.getByText("예산 소진 시 조기 종료")).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: /공식 상세/ })).toHaveAttribute("href", "https://example.com/structured");
+      expect(document.body).not.toHaveTextContent("2026.05.01 ~ 2026.12.31");
+      expect(screen.getByRole("link", { name: /혜택 안내 보기/ })).toHaveAttribute("href", "https://example.com/official");
       expect(screen.getByText("기존 서류 fallback")).toBeInTheDocument();
+    } finally {
+      getPolicySpy.mockRestore();
+    }
+  });
+
+  it("renders confirmation-needed fallback instead of malformed period text when deadline is unknown", async () => {
+    const unknownDeadlinePolicy: Policy = {
+      id: "unknown-deadline-detail",
+      slug: "unknown-deadline-detail",
+      label: "UD",
+      tag: "지역할인",
+      title: "마감 확인 필요 상세 정책",
+      org: "Travel Hunter",
+      region: "전국",
+      deadline: "",
+      amount: "확인 필요",
+      summary: "공식 안내에서 기간 확인이 필요한 정책입니다.",
+      match: 60,
+      category: "지역할인",
+      requirements: [],
+      documents: [],
+      officialUrl: "https://example.com/official",
+      applyUrl: null,
+    };
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(unknownDeadlinePolicy);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies/unknown-deadline-detail");
+
+      expect(await screen.findByRole("heading", { name: "마감 확인 필요 상세 정책" })).toBeInTheDocument();
+      expect(document.body).toHaveTextContent("마감일 확인 필요");
+      expect(document.body).not.toHaveTextContent("2026.05.01 ~ ");
+      expect(document.body).not.toHaveTextContent("상시");
+      expect(document.body).not.toHaveTextContent("마감일 확인 필요 마감");
+    } finally {
+      getPolicySpy.mockRestore();
+    }
+  });
+
+  it("renders a confirmed deadline without inventing a structured start date", async () => {
+    const deadlineOnlyPolicy: Policy = {
+      id: "deadline-only-detail",
+      slug: "deadline-only-detail",
+      label: "DO",
+      tag: "지역할인",
+      title: "마감일만 확인된 상세 정책",
+      org: "Travel Hunter",
+      region: "전국",
+      deadline: "2026-12-31",
+      amount: "확인 필요",
+      summary: "공식 안내에서 시작일 확인이 필요한 정책입니다.",
+      match: 60,
+      category: "지역할인",
+      requirements: [],
+      documents: [],
+      officialUrl: "https://example.com/official",
+      applyUrl: null,
+    };
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(deadlineOnlyPolicy);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies/deadline-only-detail");
+
+      expect(await screen.findByRole("heading", { name: "마감일만 확인된 상세 정책" })).toBeInTheDocument();
+      expect(screen.getByText("2026.12.31 마감")).toBeInTheDocument();
+      expect(document.body).not.toHaveTextContent("시작일 확인 필요");
+      expect(document.body).not.toHaveTextContent("2026.05.01");
     } finally {
       getPolicySpy.mockRestore();
     }
@@ -170,12 +294,11 @@ describe("Travel Hunter app — policy detail", () => {
       requirements: ["기존 조건 fallback"],
       documents: ["기존 서류 fallback"],
       structuredDetail: {
-        benefits: [{ title: "혜택", description: "구조화 혜택" }],
-        conditions: [],
+        supportContent: [{ title: "혜택", description: "구조화 혜택" }],
+        applicationTarget: [],
         periods: [],
-        links: [{ label: "위험 링크", url: "javascript:alert(1)" }],
-        documents: [],
-        notices: [],
+        requiredDocuments: [],
+        notes: [],
       },
       officialUrl: "https://example.com/official",
       applyUrl: null,
@@ -199,7 +322,7 @@ describe("Travel Hunter app — policy detail", () => {
     }
   });
 
-  it("falls back legacy notice requirements when structured conditions are present", async () => {
+  it("does not reclassify legacy requirements when structured conditions are present", async () => {
     const mixedRequirementsPolicy: Policy = {
       id: "mixed-requirement-fallback",
       slug: "mixed-requirement-fallback",
@@ -216,12 +339,11 @@ describe("Travel Hunter app — policy detail", () => {
       requirements: ["공식 공지사항 필독", "모바일 지역화폐 결제"],
       documents: ["기존 서류 fallback"],
       structuredDetail: {
-        benefits: [{ title: "혜택", description: "구조화 혜택" }],
-        conditions: [{ title: "혜택 적용 조건", description: "구조화 결제 조건" }],
+        supportContent: [{ title: "혜택", description: "구조화 혜택" }],
+        applicationTarget: [{ title: "혜택 적용 조건", description: "구조화 결제 조건" }],
         periods: [],
-        links: [],
-        documents: [],
-        notices: [],
+        requiredDocuments: [],
+        notes: [],
       },
       officialUrl: "https://example.com/official",
       applyUrl: null,
@@ -236,13 +358,144 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/mixed-requirement-fallback");
 
       expect(await screen.findByRole("heading", { name: "조건 구조화와 확인사항 fallback 정책" })).toBeInTheDocument();
-      const conditionCard = screen.getByRole("heading", { name: /혜택 적용 조건/ }).closest(".policy-requirement-group");
+      const conditionCard = screen.getByRole("heading", { name: /신청대상/ }).closest(".policy-requirement-group");
       expect(conditionCard).not.toBeNull();
       expect(within(conditionCard as HTMLElement).getByText("구조화 결제 조건")).toBeInTheDocument();
-      expect(within(conditionCard as HTMLElement).queryByText("모바일 지역화폐 결제")).not.toBeInTheDocument();
-      const noticeCard = screen.getByRole("heading", { name: /확인 필요 사항/ }).closest(".policy-requirement-group");
-      expect(noticeCard).not.toBeNull();
-      expect(within(noticeCard as HTMLElement).getByText("공식 공지사항 필독")).toBeInTheDocument();
+      expect(document.body).not.toHaveTextContent("모바일 지역화폐 결제");
+      expect(document.body).not.toHaveTextContent("공식 공지사항 필독");
+    } finally {
+      getPolicySpy.mockRestore();
+    }
+  });
+
+  it("renders stay discount semantics only from their structured sections", async () => {
+    const legacyCompositeRequirement =
+      "7만원 이상 숙박상품 3만원 할인 · 쿠폰 발급 2026.06.10~06.20 · 입실 2026.06.11~07.31 · 참여 온라인 여행사 선착순";
+    const structuredStayPolicy: Policy = {
+      id: "structured-stay-discount",
+      slug: "structured-stay-discount",
+      label: "강원",
+      tag: "최대 7만원",
+      title: "구조화 숙박세일 페스타",
+      org: "한국관광공사",
+      region: "강원",
+      deadline: "2026-07-31",
+      amount: "최대 7만원",
+      summary: "숙박 할인권을 제공하는 정책입니다.",
+      match: 90,
+      category: "숙박",
+      requirements: [legacyCompositeRequirement],
+      documents: [],
+      structuredDetail: {
+        supportContent: [{ title: "할인 혜택", description: "숙박 결제 금액에 따라 2만~7만원 할인" }],
+        applicationTarget: [{ title: "이용 조건", description: "비수도권 숙박시설 1박 이상 예약" }],
+        periods: [
+          { title: "쿠폰 발급 기간", description: "2026.06.10 ~ 2026.06.20", type: "issue" },
+          { title: "입실 기간", description: "2026.06.11 ~ 2026.07.31", type: "usage" },
+        ],
+        requiredDocuments: [],
+        notes: [{ title: "발급 안내", description: "참여 온라인 여행사에서 선착순 발급" }],
+      },
+      officialUrl: "https://ktostay.visitkorea.or.kr/",
+      applyUrl: null,
+      sourceType: "external",
+    };
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(structuredStayPolicy);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies/structured-stay-discount");
+
+      expect(
+        await screen.findByRole("heading", { name: "구조화 숙박세일 페스타" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("숙박 결제 금액에 따라 2만~7만원 할인")).toBeInTheDocument();
+      expect(screen.getByText("비수도권 숙박시설 1박 이상 예약")).toBeInTheDocument();
+      expect(screen.getByText("쿠폰 발급 기간")).toBeInTheDocument();
+      expect(screen.getByText("2026.06.10 ~ 2026.06.20")).toBeInTheDocument();
+      expect(screen.getByText("입실 기간")).toBeInTheDocument();
+      expect(screen.getByText("2026.06.11 ~ 2026.07.31")).toBeInTheDocument();
+      expect(screen.getByText("참여 온라인 여행사에서 선착순 발급")).toBeInTheDocument();
+      expect(document.body).not.toHaveTextContent(legacyCompositeRequirement);
+    } finally {
+      getPolicySpy.mockRestore();
+    }
+  });
+
+  it("renders scoped half-trip five-section detail without moving proof text into application target", async () => {
+    const pollutedLegacyRequirement = "영수증, 결제내역, 인증사진, 캡처본을 신청대상에 섞으면 안 되는 legacy 문자열";
+    const halfTripPolicy: Policy = {
+      id: "travelmonth-20",
+      slug: "travelmonth-20",
+      label: "거창",
+      tag: "50%",
+      title: "[거창] 대한민국 반값여행 지원",
+      org: "거창군",
+      region: "경남",
+      deadline: "2026-08-30",
+      amount: "여행비 50% 환급",
+      summary: "거창 반값여행 지원",
+      match: 90,
+      category: "지역할인",
+      requirements: [pollutedLegacyRequirement],
+      documents: ["legacy 서류 fallback"],
+      structuredDetail: {
+        supportContent: [
+          { title: "지원내용", description: "거창 여행 중 사용한 경비의 50%를 모바일 거창반값여행 정책발행용 상품권으로 지급한다." },
+        ],
+        periods: [
+          { title: "사전신청 기간", description: "2026-04-13~2026-08-30", type: "application" },
+          { title: "여행 기간", description: "2026-04-14~2026-08-31", type: "travel" },
+        ],
+        applicationTarget: [
+          { title: "신청대상", description: "거창을 여행하고 싶은 타지역 거주 관광객." },
+          { title: "신청대상", description: "거창군, 김천시, 함양군, 산청군, 합천군, 무주군 거주자는 제외한다." },
+        ],
+        requiredDocuments: [
+          { title: "필요서류", description: "지정 관광지 2개소 이상 방문 인증 사진." },
+          { title: "필요서류", description: "제로페이 가맹점 2개소 이상에서 정책발행용 상품권을 사용한 영수증." },
+          { title: "필요서류", description: "숙박예약 또는 이용완료 내역 캡처본, 숙박업소 이용 확인서." },
+        ],
+        notes: [
+          { title: "비고", description: "선착순 마감 기준은 경비 신청 순이며 예산 소진 시 마감된다." },
+        ],
+      },
+      officialUrl: "https://geochangtour.kr/",
+      applyUrl: null,
+      sourceType: "external",
+    };
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(halfTripPolicy);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies/travelmonth-20");
+
+      expect(
+        await screen.findByRole("heading", { name: "[거창] 대한민국 반값여행 지원" }),
+      ).toBeInTheDocument();
+      const supportSection = screen.getByRole("region", { name: "지원내용" });
+      const targetSection = screen.getByRole("heading", { name: /신청대상/ }).closest(".policy-requirement-group");
+      const documentSection = screen.getByRole("heading", { name: /필요서류/ }).closest(".section-block");
+      expect(screen.getByRole("heading", { name: /기간/ })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /비고/ })).toBeInTheDocument();
+      expect(targetSection).not.toBeNull();
+      expect(documentSection).not.toBeNull();
+      expect(within(supportSection).getByText(/거창 여행 중 사용한 경비의 50%/)).toBeInTheDocument();
+      expect(within(targetSection as HTMLElement).getByText("거창을 여행하고 싶은 타지역 거주 관광객.")).toBeInTheDocument();
+      expect(targetSection).not.toHaveTextContent("영수증");
+      expect(targetSection).not.toHaveTextContent("인증 사진");
+      expect(targetSection).not.toHaveTextContent("캡처본");
+      expect(within(documentSection as HTMLElement).getByText(/영수증/)).toBeInTheDocument();
+      expect(within(documentSection as HTMLElement).getByText(/인증 사진/)).toBeInTheDocument();
+      expect(within(documentSection as HTMLElement).getByText(/캡처본/)).toBeInTheDocument();
+      expect(document.body).not.toHaveTextContent(pollutedLegacyRequirement);
+      expect(document.body).not.toHaveTextContent("legacy 서류 fallback");
     } finally {
       getPolicySpy.mockRestore();
     }
@@ -283,8 +536,8 @@ describe("Travel Hunter app — policy detail", () => {
         await screen.findByRole("heading", { name: "[강진] 대한민국 반값여행 지원" }),
       ).toBeInTheDocument();
       expect(document.body).not.toHaveTextContent("디지털관광주민증");
-      expect(screen.queryByRole("heading", { name: /신청 대상/ })).not.toBeInTheDocument();
-      const noticeCard = screen.getByRole("heading", { name: /확인 필요 사항/ }).closest(".policy-requirement-group");
+      expect(screen.queryByRole("heading", { name: /신청대상/ })).not.toBeInTheDocument();
+      const noticeCard = screen.getByRole("heading", { name: /비고/ }).closest(".policy-requirement-group");
       expect(noticeCard).not.toBeNull();
       expect(within(noticeCard as HTMLElement).getByText(gangjinRequirement)).toBeInTheDocument();
       expect(noticeCard).not.toHaveTextContent("디지털관광주민증");
@@ -292,7 +545,6 @@ describe("Travel Hunter app — policy detail", () => {
       getPolicySpy.mockRestore();
     }
   });
-
 
   it("uses an official policy link as an official information CTA when no direct apply link is available", async () => {
     const officialUrl =
@@ -385,16 +637,16 @@ describe("Travel Hunter app — policy detail", () => {
     try {
       renderAppRoute(examplePolicyPath);
 
-      await waitFor(() => expect(document.body).toHaveTextContent("지원 내용"));
+      await waitFor(() => expect(document.body).toHaveTextContent("지원내용"));
       const bodyText = document.body.textContent ?? "";
-      expect(bodyText.indexOf("지원 내용")).toBeLessThan(
-        bodyText.indexOf("신청 기간"),
+      expect(bodyText.indexOf("지원내용")).toBeLessThan(
+        bodyText.indexOf("기간"),
       );
-      expect(bodyText.indexOf("신청 기간")).toBeLessThan(
-        bodyText.indexOf("신청 대상"),
+      expect(bodyText.indexOf("기간")).toBeLessThan(
+        bodyText.indexOf("신청대상"),
       );
-      expect(bodyText.indexOf("신청 대상")).toBeLessThan(
-        bodyText.indexOf("필요 서류"),
+      expect(bodyText.indexOf("신청대상")).toBeLessThan(
+        bodyText.indexOf("필요서류"),
       );
       expect(document.body).toHaveTextContent(
         "디지털관광주민증 발급 또는 지역별 신청 조건 확인",
@@ -444,11 +696,11 @@ describe("Travel Hunter app — policy detail", () => {
 
       await screen.findByText("부산 결제 캐시백");
       const bodyText = document.body.textContent ?? "";
-      expect(bodyText.indexOf("신청 대상")).toBeLessThan(
+      expect(bodyText.indexOf("신청대상")).toBeLessThan(
         bodyText.indexOf("혜택 적용 조건"),
       );
       expect(bodyText.indexOf("혜택 적용 조건")).toBeLessThan(
-        bodyText.indexOf("확인 필요 사항"),
+        bodyText.indexOf("비고"),
       );
       expect(document.body).toHaveTextContent("국내 여행자");
       expect(document.body).toHaveTextContent(
@@ -499,7 +751,7 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/long-summary-policy");
 
       const supportSection = await screen.findByRole("region", {
-        name: "지원 내용",
+        name: "지원내용",
       });
       expect(
         within(supportSection).getByText("최대 140000원"),
@@ -526,7 +778,7 @@ describe("Travel Hunter app — policy detail", () => {
     }
   });
 
-  it("uses the dgtour summary instead of repeating generic benefit text", async () => {
+  it("uses the dgtour summary and renders it as always-issued instead of deadline-unknown", async () => {
     const dgtourPolicy: Policy = {
       id: "dgtour-밀양-1",
       slug: "dgtour-밀양-1",
@@ -535,7 +787,7 @@ describe("Travel Hunter app — policy detail", () => {
       title: "밀양 디지털관광주민증 혜택",
       org: "한국관광공사",
       region: "경남",
-      deadline: "2026-12-31",
+      deadline: "",
       amount: "혜택 제공",
       summary:
         "디지털관광주민증 소지자 대상 밀양(경남) 지역 방문 시 혜택을 제공합니다.",
@@ -543,7 +795,7 @@ describe("Travel Hunter app — policy detail", () => {
       category: "지역할인",
       requirements: ["디지털관광주민증 발급자", "경남 방문"],
       documents: ["디지털관광주민증"],
-      officialUrl: "https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+      officialUrl: "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48270",
       applyUrl: null,
       sourceType: "external",
     };
@@ -557,7 +809,7 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/dgtour-%EB%B0%80%EC%96%91-1");
 
       const supportSection = await screen.findByRole("region", {
-        name: "지원 내용",
+        name: "지원내용",
       });
       expect(
         within(supportSection).getByText("디지털관광주민증 혜택"),
@@ -568,6 +820,10 @@ describe("Travel Hunter app — policy detail", () => {
           "디지털관광주민증 소지자 대상 밀양(경남) 지역 방문 시 혜택을 제공합니다.",
         ),
       ).toBeInTheDocument();
+      expect(screen.getByText("상시 발급")).toBeInTheDocument();
+      expect(screen.getByText("상시 발급 · 제휴처별 운영기간 확인")).toBeInTheDocument();
+      expect(document.body).toHaveTextContent("별도 신청 마감일 없이 발급 후 이용할 수 있습니다.");
+      expect(document.body).not.toHaveTextContent("마감일 확인 필요");
       expect(supportSection).not.toHaveTextContent("혜택 제공 혜택");
     } finally {
       getPolicySpy.mockRestore();
@@ -605,7 +861,7 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/travelmonth-44");
 
       const supportSection = await screen.findByRole("region", {
-        name: "지원 내용",
+        name: "지원내용",
       });
       expect(within(supportSection).getByText("최대 30%")).toBeInTheDocument();
       expect(within(supportSection).getByText("이용 조건")).toBeInTheDocument();
@@ -641,14 +897,36 @@ describe("Travel Hunter app — policy detail", () => {
       match: 90,
       category: "숙박",
       requirements: [
-        "7만원 미만 국내 숙박상품: 2만원 할인 (1박 이상)",
-        "7만원 이상 국내 숙박상품: 3만원 할인 (1박 이상)",
-        "14만원 미만 국내 숙박상품: 5만원 할인 (연박 이상)",
-        "14만원 이상 국내 숙박상품: 7만원 할인 (연박 이상)",
-        "참여 온라인 여행사에서 매일 오전 10시부터 선착순 발급",
-        "입실기간: 2026.6.11~7.31",
+        "강원 고성 등 숙박세일페스타 대상 지역 숙박 이용자",
+        "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자",
+        "할인권 발급 후 지정 기간 내 입실 가능한 사용자",
       ],
       documents: [],
+      structuredDetail: {
+        supportContent: [
+          { title: "할인 혜택", description: "7만원 미만 국내 숙박상품 예약 시 2만원 할인" },
+          { title: "할인 혜택", description: "7만원 이상 국내 숙박상품 예약 시 3만원 할인" },
+          { title: "할인 혜택", description: "14만원 미만 국내 숙박상품 예약 시 5만원 할인" },
+          { title: "할인 혜택", description: "14만원 이상 국내 숙박상품 예약 시 7만원 할인" },
+        ],
+        periods: [
+          { title: "쿠폰 발급기간", description: "2026.06.11 ~ 2026.07.31", type: "application" },
+          { title: "입실기간", description: "2026.06.11 ~ 2026.07.31", type: "usage" },
+        ],
+        applicationTarget: [
+          { title: "신청대상", description: "강원 고성 등 숙박세일페스타 대상 지역 숙박 이용자" },
+          { title: "신청대상", description: "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자" },
+          { title: "신청대상", description: "할인권 발급 후 지정 기간 내 입실 가능한 사용자" },
+        ],
+        requiredDocuments: [
+          { title: "필요서류", description: "별도 제출 서류 없음 · 온라인 할인권 발급 및 예약 기준으로 적용" },
+        ],
+        notes: [
+          { title: "비고", description: "할인권은 매일 오전 10시부터 선착순 발급됩니다." },
+          { title: "비고", description: "예산 소진 시 조기 종료될 수 있습니다." },
+          { title: "비고", description: "세부 기준은 공식 안내에서 최종 확인하세요." },
+        ],
+      },
       officialUrl: "https://ktostay.visitkorea.or.kr/",
       applyUrl: null,
       sourceType: "external",
@@ -663,7 +941,7 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/stay-discount-gangwon-goseong");
 
       const supportSection = await screen.findByRole("region", {
-        name: "지원 내용",
+        name: "지원내용",
       });
       expect(
         await screen.findByRole("heading", {
@@ -672,16 +950,17 @@ describe("Travel Hunter app — policy detail", () => {
       ).toBeInTheDocument();
       expect(within(supportSection).getByText("최대 7만원")).toBeInTheDocument();
       expect(
-        within(supportSection).getByText(
-          "비수도권 인구감소지역 숙박 예약 시 결제 금액과 숙박 조건에 따라 2만~7만원 할인권을 제공합니다.",
-        ),
+        within(supportSection).getByText("7만원 미만 국내 숙박상품 예약 시 2만원 할인"),
       ).toBeInTheDocument();
       expect(
-        screen.getByText("7만원 미만 국내 숙박상품: 2만원 할인 (1박 이상)"),
+        within(supportSection).getByText("14만원 이상 국내 숙박상품 예약 시 7만원 할인"),
       ).toBeInTheDocument();
-      expect(
-        screen.getByText("14만원 이상 국내 숙박상품: 7만원 할인 (연박 이상)"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("쿠폰 발급기간")).toBeInTheDocument();
+      expect(screen.getByText("입실기간")).toBeInTheDocument();
+      expect(screen.getByText("강원 고성 등 숙박세일페스타 대상 지역 숙박 이용자")).toBeInTheDocument();
+      expect(screen.getByText("별도 제출 서류 없음 · 온라인 할인권 발급 및 예약 기준으로 적용")).toBeInTheDocument();
+      expect(screen.getByText("예산 소진 시 조기 종료될 수 있습니다.")).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: /혜택 적용 조건/ })).not.toBeInTheDocument();
       expect(
         screen.queryByText(/7만원 미만\* 국내 숙박상품 예약 시 2만원 할인/),
       ).not.toBeInTheDocument();
@@ -690,20 +969,101 @@ describe("Travel Hunter app — policy detail", () => {
     }
   });
 
-  it("renders policy detail in prototype-only flow without FAQ accordion", async () => {
-    await login();
-    cleanup();
-    renderAppRoute(examplePolicyPath);
+  it("separates structured support conditions from core benefit cards", async () => {
+    const halfTripPolicy: Policy = {
+      id: "travelmonth-23",
+      slug: "travelmonth-23",
+      label: "전남",
+      tag: "최대 20만원",
+      title: "[강진] 대한민국 반값여행 지원",
+      org: "강진 지자체, 한국관광공사",
+      region: "전남",
+      deadline: "2026-08-31",
+      amount: "최대 20만원 환급",
+      summary: "강진 반값여행 지원",
+      match: 90,
+      category: "지역할인",
+      requirements: [],
+      documents: [],
+      structuredDetail: {
+        supportContent: [
+          { title: "혜택", description: "최대 20만원 환급" },
+          { title: "혜택 적용 조건", description: "강진군 관광지 2개소 이상 방문" },
+          { title: "혜택 적용 조건", description: "모바일 강진사랑상품권(Chak)으로 결제" },
+          {
+            title: "지원내용",
+            description: "강진 지역 여행 후 공식 안내에서 정한 소비·방문 인증 기준을 충족하면 최대 20만원 환급 혜택을 받을 수 있습니다.",
+          },
+        ],
+        periods: [],
+        applicationTarget: [
+          { title: "신청대상", description: "강진군 외 지역에 거주하는 사전신청 관광객 누구나" },
+        ],
+        requiredDocuments: [],
+        notes: [],
+      },
+      officialUrl: "https://www.gangjintour.com/",
+      applyUrl: null,
+      sourceType: "external",
+    };
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(halfTripPolicy);
 
-    await waitFor(() =>
-      expect(document.body).toHaveTextContent(examplePolicyTitle),
-    );
-    expect(
-      screen.queryByRole("button", { name: /어떤 서류가 필요한가요/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /내 일정에 담기|일정에 담김/ }),
-    ).toBeInTheDocument();
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies/travelmonth-23");
+
+      const supportSection = await screen.findByRole("region", {
+        name: "지원내용",
+      });
+      const coreBenefitGroup = within(supportSection)
+        .getByText("핵심 혜택")
+        .closest(".policy-benefit-group");
+      const usageConditionGroup = screen
+        .getByRole("heading", { name: /혜택 적용 조건/ })
+        .closest(".policy-requirement-group");
+
+      expect(coreBenefitGroup).not.toBeNull();
+      expect(usageConditionGroup).not.toBeNull();
+      expect(within(coreBenefitGroup as HTMLElement).getByText("최대 20만원 환급")).toBeInTheDocument();
+      expect(
+        within(coreBenefitGroup as HTMLElement).queryByText("강진군 관광지 2개소 이상 방문"),
+      ).not.toBeInTheDocument();
+      expect(
+        within(usageConditionGroup as HTMLElement).getByText("강진군 관광지 2개소 이상 방문"),
+      ).toBeInTheDocument();
+      expect(
+        within(usageConditionGroup as HTMLElement).getByText("모바일 강진사랑상품권(Chak)으로 결제"),
+      ).toBeInTheDocument();
+    } finally {
+      getPolicySpy.mockRestore();
+    }
+  });
+
+  it("renders policy detail in prototype-only flow without FAQ accordion", async () => {
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(examplePolicyDetail);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute(examplePolicyPath);
+
+      await waitFor(() =>
+        expect(document.body).toHaveTextContent(examplePolicyTitle),
+      );
+      expect(
+        screen.queryByRole("button", { name: /어떤 서류가 필요한가요/ }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /내 일정에 담기|일정에 담김/ }),
+      ).toBeInTheDocument();
+    } finally {
+      getPolicySpy.mockRestore();
+    }
   });
 
   it("keeps the application notice fallback when a policy has no official links", async () => {

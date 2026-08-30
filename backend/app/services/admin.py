@@ -63,6 +63,7 @@ SOURCE_CATEGORY_LABELS = {
     "regional_benefit": "여행가는 달",
     "traffic_benefit": "교통혜택",
     "local_half_trip": "반값여행",
+    "digital_tourism_resident_card": "디지털관광주민증",
     "stay_discount": "숙박세일 페스타",
 }
 

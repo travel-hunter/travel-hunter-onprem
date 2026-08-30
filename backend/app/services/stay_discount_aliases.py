@@ -10,19 +10,12 @@ from sqlalchemy.orm import Session
 
 from app.models import ExternalSourceRecord, Policy as PolicyModel
 from app.repositories import external_sources as external_source_repository
+from app.data.stay_discount_campaign import select_current_stay_discount_record
+from app.services.policy_semantics import format_benefit_amount
 
 ALIAS_PREFIX = "stay-discount"
 SOURCE_CATEGORY = "stay_discount"
-DISPLAY_SUMMARY = "비수도권 인구감소지역 숙박 예약 시 결제 금액과 숙박 조건에 따라 2만~7만원 할인권을 제공합니다."
-DISPLAY_AMOUNT = "최대 7만원"
-DISPLAY_REQUIREMENTS = [
-    "7만원 미만 국내 숙박상품: 2만원 할인 (1박 이상)",
-    "7만원 이상 국내 숙박상품: 3만원 할인 (1박 이상)",
-    "14만원 미만 국내 숙박상품: 5만원 할인 (연박 이상)",
-    "14만원 이상 국내 숙박상품: 7만원 할인 (연박 이상)",
-    "참여 온라인 여행사에서 매일 오전 10시부터 선착순 발급",
-    "입실기간: 2026.6.11~7.31",
-]
+_DISCOUNT_AMOUNT_PATTERN = re.compile(r"(?P<amount>\d[\d,]*)\s*(?P<unit>만원|원)\s*할인")
 
 _SIDO_SLUGS = {
     "강원": "gangwon",
@@ -86,8 +79,10 @@ _CITY_SLUGS = {
     "담양군": "damyang",
     "보성군": "boseong",
     "신안군": "sinan",
+    "순천시": "suncheon",
     "영광군": "yeonggwang",
     "영암군": "yeongam",
+    "여수시": "yeosu",
     "완도군": "wando",
     "장성군": "jangseong",
     "장흥군": "jangheung",
@@ -155,14 +150,125 @@ class StayDiscountAliasRecord:
 
 
 def is_stay_discount_canonical_policy(policy: PolicyModel) -> bool:
-    return (policy.source_category or "") == SOURCE_CATEGORY and policy.external_source_record_id is not None
+    return (
+        (policy.source_category or "") == SOURCE_CATEGORY
+        and policy.external_source_record_id is not None
+        and not is_stay_discount_area_slug(policy.slug)
+    )
 
 
-def apply_detail_display_fields(payload: dict[str, object]) -> dict[str, object]:
-    payload["tag"] = DISPLAY_AMOUNT
-    payload["amount"] = DISPLAY_AMOUNT
-    payload["summary"] = DISPLAY_SUMMARY
-    payload["requirements"] = [*DISPLAY_REQUIREMENTS]
+def is_stay_discount_area_slug(slug: str | None) -> bool:
+    return bool(slug and slug.startswith(f"{ALIAS_PREFIX}-"))
+
+
+def is_stay_discount_area_policy(policy: PolicyModel) -> bool:
+    return (policy.source_category or "") == SOURCE_CATEGORY and is_stay_discount_area_slug(
+        policy.slug
+    )
+
+
+def area_source_canonical_key(record_key: str | None, alias_slug: str) -> str:
+    base_key = (record_key or ALIAS_PREFIX).strip() or ALIAS_PREFIX
+    return f"{base_key}:{alias_slug}"
+
+
+def _section_descriptions(structured_detail: object, section: str) -> list[str]:
+    if not isinstance(structured_detail, dict):
+        return []
+    items = structured_detail.get(section)
+    if not isinstance(items, list):
+        return []
+    return [
+        str(item["description"]).strip()
+        for item in items
+        if isinstance(item, dict) and str(item.get("description") or "").strip()
+    ]
+
+
+def _maximum_structured_discount(benefits: list[str]) -> int | None:
+    amounts: list[int] = []
+    for benefit in benefits:
+        for match in _DISCOUNT_AMOUNT_PATTERN.finditer(benefit):
+            amount = int(match.group("amount").replace(",", ""))
+            amounts.append(amount * 10_000 if match.group("unit") == "만원" else amount)
+    return max(amounts) if amounts else None
+
+
+def _alias_application_targets(alias_area: StayDiscountAliasArea) -> list[dict[str, str]]:
+    city = display_city_name(alias_area.city)
+    return [
+        {
+            "title": "신청대상",
+            "description": f"{alias_area.sido} {city} 등 숙박세일페스타 대상 지역 숙박 이용자",
+        },
+        {
+            "title": "신청대상",
+            "description": "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자",
+        },
+        {
+            "title": "신청대상",
+            "description": "할인권 발급 후 지정 기간 내 입실 가능한 사용자",
+        },
+    ]
+
+
+def _default_required_documents() -> list[dict[str, str]]:
+    return [
+        {
+            "title": "필요서류",
+            "description": "별도 제출 서류 없음 · 온라인 할인권 발급 및 예약 기준으로 적용",
+        }
+    ]
+
+
+def _append_note_once(structured_detail: dict[str, object], description: str) -> None:
+    notes = structured_detail.get("notes")
+    if not isinstance(notes, list):
+        notes = []
+        structured_detail["notes"] = notes
+    if not any(isinstance(item, dict) and item.get("description") == description for item in notes):
+        notes.append({"title": "비고", "description": description})
+
+
+def apply_alias_structured_detail(
+    payload: dict[str, object],
+    alias_area: StayDiscountAliasArea,
+) -> dict[str, object]:
+    """Project canonical stay-discount detail into the approved five-section alias UI."""
+    structured_detail = payload.get("structuredDetail")
+    if not isinstance(structured_detail, dict):
+        return payload
+
+    projected = dict(structured_detail)
+    projected["applicationTarget"] = _alias_application_targets(alias_area)
+    documents = projected.get("requiredDocuments")
+    if not isinstance(documents, list) or not documents:
+        projected["requiredDocuments"] = _default_required_documents()
+    _append_note_once(projected, "세부 기준은 공식 안내에서 최종 확인하세요.")
+    payload["structuredDetail"] = projected
+    return apply_detail_display_fields(payload)
+
+
+def apply_detail_display_fields(
+    payload: dict[str, object],
+    *,
+    benefit_amount: int | None = None,
+) -> dict[str, object]:
+    structured_detail = payload.get("structuredDetail")
+    benefits = _section_descriptions(structured_detail, "supportContent") or _section_descriptions(structured_detail, "benefits")
+    conditions = _section_descriptions(structured_detail, "applicationTarget") or _section_descriptions(structured_detail, "conditions")
+    display_amount = format_benefit_amount(
+        benefit_amount if benefit_amount is not None else _maximum_structured_discount(benefits)
+    ) or ""
+    payload["tag"] = display_amount
+    payload["amount"] = display_amount
+    summary_sections = []
+    if benefits:
+        summary_sections.append("혜택: " + " / ".join(benefits))
+    if conditions:
+        summary_sections.append("이용 조건: " + " / ".join(conditions))
+    payload["summary"] = " · ".join(summary_sections)
+    payload["requirements"] = conditions
     return payload
 
 
@@ -264,7 +370,8 @@ def resolve_stay_discount_alias_slug(
             for policy in policy_repository.list_policies(db)
             if is_stay_discount_canonical_policy(policy)
         ]
-    for policy in candidate_policies:
+    current_policy = select_current_stay_discount_policy(db, candidate_policies)
+    for policy in ([current_policy] if current_policy is not None else []):
         for alias_area in alias_areas_for_policy(db, policy):
             if alias_area.slug == slug:
                 return StayDiscountAliasResolution(
@@ -273,6 +380,28 @@ def resolve_stay_discount_alias_slug(
                     alias_area=alias_area,
                 )
     return None
+
+
+def select_current_stay_discount_policy(
+    db: Session,
+    policies: list[PolicyModel],
+) -> PolicyModel | None:
+    policies_by_record_id = {
+        int(policy.external_source_record_id): policy
+        for policy in policies
+        if is_stay_discount_canonical_policy(policy)
+        and policy.external_source_record_id is not None
+    }
+    records = [
+        record
+        for record_id in policies_by_record_id
+        if (record := external_source_repository.get_external_source_record_by_id(db, record_id))
+        is not None
+    ]
+    current_record = select_current_stay_discount_record(records)
+    if current_record is None or current_record.id is None:
+        return None
+    return policies_by_record_id.get(int(current_record.id))
 
 
 def _slug_part(value: str, mapping: dict[str, str]) -> str:

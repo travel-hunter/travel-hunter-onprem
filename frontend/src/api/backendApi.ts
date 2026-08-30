@@ -29,7 +29,9 @@ import {
   SignupVerifyResponse,
   TripPlaceMoveRequest,
   TripPlaceMutationRequest,
+  TripPlacesBatchRequest,
   TripPlaceSearchOptions,
+  TripSettingsUpdateRequest,
   TripPlaceUpdateRequest,
   TripPolicyResponse,
   TripStatusUpdateRequest,
@@ -48,8 +50,6 @@ import {
   ExternalCollectionOpsHealth,
   ExternalCollectionRunResponse,
   InviteEmailResult,
-  InviteLinksState,
-  InviteRole,
   InviteState,
   PlaceSearchCandidate,
   Policy,
@@ -147,6 +147,10 @@ export const backendApi: AppDataApi = {
   getTrip: (tripId: string): Promise<Trip> => apiClient.get<Trip>(`/api/trips/${tripId}`),
   updateTripStatus: (tripId: string, status: TripStatusUpdateRequest): Promise<Trip> => apiClient.patch<Trip>(`/api/trips/${tripId}/status`, status),
   addTripPlace: (tripId: string, dayNumber: number, place: TripPlaceMutationRequest): Promise<Trip> => apiClient.post<Trip>(`/api/trips/${tripId}/days/${dayNumber}/places`, place),
+  addTripPlaces: (tripId: string, dayNumber: number, request: TripPlacesBatchRequest): Promise<Trip> =>
+    apiClient.post<Trip>(`/api/trips/${tripId}/days/${dayNumber}/places/batch`, request),
+  updateTripSettings: (tripId: string, settings: TripSettingsUpdateRequest): Promise<Trip> =>
+    apiClient.patch<Trip>(`/api/trips/${tripId}/settings`, settings),
   updateTripPlace: (tripId: string, placeId: string, place: TripPlaceUpdateRequest): Promise<Trip> => apiClient.patch<Trip>(`/api/trips/${tripId}/places/${placeId}`, place),
   moveTripPlace: (tripId: string, placeId: string, move: TripPlaceMoveRequest): Promise<Trip> => apiClient.patch<Trip>(`/api/trips/${tripId}/places/${placeId}/move`, move),
   deleteTripPlace: (tripId: string, placeId: string, expectedRevision: number): Promise<Trip> =>
@@ -156,8 +160,8 @@ export const backendApi: AppDataApi = {
   listRecommendations: (tripId: string): Promise<Recommendation[]> => apiClient.get<Recommendation[]>(`/api/trips/${tripId}/recommendations`),
   searchTripPlaces: (tripId: string, options: TripPlaceSearchOptions): Promise<PlaceSearchCandidate[]> =>
     apiClient.get<PlaceSearchCandidate[]>(`/api/trips/${tripId}/place-search${queryString(options)}`),
-  getInviteState: (tripId: string): Promise<InviteLinksState> => apiClient.get<InviteLinksState>(`/api/trips/${tripId}/invite`),
-  confirmInviteSent: (tripId: string, role?: InviteRole): Promise<InviteState> => apiClient.post<InviteState>(`/api/trips/${tripId}/invite`, role ? { role } : undefined),
+  getInviteState: (tripId: string): Promise<InviteState> => apiClient.get<InviteState>(`/api/trips/${tripId}/invite`),
+  confirmInviteSent: (tripId: string): Promise<InviteState> => apiClient.post<InviteState>(`/api/trips/${tripId}/invite`),
   sendInviteEmail: (tripId: string, request: SendInviteEmailRequest): Promise<InviteEmailResult> => apiClient.post<InviteEmailResult>(`/api/trips/${tripId}/invite/email`, request),
   acceptInvite: (inviteToken: string): Promise<InviteState> => apiClient.post<InviteState>(`/api/invites/${inviteToken}/accept`),
   listAdminUsers: (options): Promise<AdminUserListResponse> =>

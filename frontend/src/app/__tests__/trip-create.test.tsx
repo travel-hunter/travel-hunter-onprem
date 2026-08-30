@@ -21,6 +21,7 @@ import {
   getYeonggwangTravelAreaResponse,
 } from "../../test/fixtures";
 import { login, renderAppRoute } from "../../test/renderAppRoute";
+import { addDaysToDateInput, getKstDateInputValue } from "../../utils/dateDefaults";
 
 describe("Travel Hunter app — trip creation", () => {
   it("shows all 17 broad regions when choosing a new trip region", async () => {
@@ -138,12 +139,13 @@ describe("Travel Hunter app — trip creation", () => {
       await user.click(
         within(styleDialog).getByRole("button", { name: "맛집" }),
       );
-      expect(screen.getByText(/^취향 · /)).toBeInTheDocument();
       await user.click(
         within(styleDialog).getByRole("button", { name: "선택 완료" }),
       );
       await waitFor(() =>
-        expect(screen.getByText("취향 · 맛집")).toBeInTheDocument(),
+        expect(
+          screen.getByRole("button", { name: /선택한 취향\s*맛집\s*변경/ }),
+        ).toBeInTheDocument(),
       );
       fireEvent.change(screen.getByLabelText("출발일"), {
         target: { value: "2026-07-12" },
@@ -151,9 +153,8 @@ describe("Travel Hunter app — trip creation", () => {
       fireEvent.change(screen.getByLabelText("도착일"), {
         target: { value: "2026-07-18" },
       });
-      expect(
-        screen.getByText(/2026\.07\.12.*2026\.07\.18.*7일/),
-      ).toBeInTheDocument();
+      expect(screen.getByLabelText("출발일")).toHaveValue("2026-07-12");
+      expect(screen.getByLabelText("도착일")).toHaveValue("2026-07-18");
       expect(
         screen.queryByLabelText("여행 인원 선택"),
       ).not.toBeInTheDocument();
@@ -162,7 +163,7 @@ describe("Travel Hunter app — trip creation", () => {
       expect((titleInput as HTMLInputElement).value).toMatch(/^.+ \d일 여행$/);
       await user.clear(titleInput);
       await user.type(titleInput, "부산 맛집 여행");
-      await user.click(screen.getByRole("button", { name: "확인하고 만들기" }));
+      await user.click(screen.getByRole("button", { name: "일정 생성" }));
 
       await waitFor(() =>
         expect(createTripSpy).toHaveBeenCalledWith(
@@ -242,8 +243,9 @@ describe("Travel Hunter app — trip creation", () => {
   it("uses the home recommendation region query when creating a trip", async () => {
     await login();
     cleanup();
-    renderAppRoute("/trips/new?region=%EB%B6%80%EC%82%B0");
-    const user = userEvent.setup();
+    const travelAreasSpy = vi
+      .spyOn(appDataApi, "listTravelAreaRecommendations")
+      .mockResolvedValue(getBusanTravelAreaResponse());
     const createdTrip: Trip = {
       ...getPreviewTrip(),
       id: "45",
@@ -263,16 +265,25 @@ describe("Travel Hunter app — trip creation", () => {
       .mockResolvedValue(createdTrip);
 
     try {
+      renderAppRoute("/trips/new?region=%EB%B6%80%EC%82%B0");
+      const user = userEvent.setup();
       await waitFor(() =>
         expect(screen.getByRole("button", { name: /부산/ })).toHaveClass(
           "active",
         ),
       );
-      await user.click(screen.getByRole("button", { name: "다음" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: /부산 전체/ })).toHaveClass(
+          "active",
+        ),
+      );
+      const nextButton = screen.getByRole("button", { name: "다음" });
+      await waitFor(() => expect(nextButton).toBeEnabled());
+      await user.click(nextButton);
       const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
       await user.clear(titleInput);
       await user.type(titleInput, "부산 추천 여행");
-      await user.click(screen.getByRole("button", { name: "확인하고 만들기" }));
+      await user.click(screen.getByRole("button", { name: "일정 생성" }));
 
       await waitFor(() =>
         expect(createTripSpy).toHaveBeenCalledWith(
@@ -285,6 +296,74 @@ describe("Travel Hunter app — trip creation", () => {
       );
       await waitFor(() => expect(getTripSpy).toHaveBeenCalledWith("45"));
     } finally {
+      createTripSpy.mockRestore();
+      getTripSpy.mockRestore();
+      travelAreasSpy.mockRestore();
+    }
+  });
+
+  it("does not append a late auto-selected travel-area title after the user edits the title", async () => {
+    await login();
+    cleanup();
+    let resolveTravelAreas: (
+      response: ReturnType<typeof getBusanTravelAreaResponse>,
+    ) => void = () => undefined;
+    const pendingTravelAreas = new Promise<ReturnType<
+      typeof getBusanTravelAreaResponse
+    >>((resolve) => {
+      resolveTravelAreas = resolve;
+    });
+    const travelAreasSpy = vi
+      .spyOn(appDataApi, "listTravelAreaRecommendations")
+      .mockReturnValue(pendingTravelAreas);
+    const createdTrip: Trip = {
+      ...getPreviewTrip(),
+      id: "145",
+      title: "부산 추천 여행",
+      dates: "2026.06.15 - 06.17",
+      days: { 1: [], 2: [], 3: [] },
+    };
+    const createTripSpy = vi
+      .spyOn(appDataApi, "createTrip")
+      .mockResolvedValue(createdTrip);
+    const getTripSpy = vi
+      .spyOn(appDataApi, "getTrip")
+      .mockResolvedValue(createdTrip);
+
+    try {
+      renderAppRoute("/trips/new?region=%EB%B6%80%EC%82%B0");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: /부산/ })).toHaveClass(
+          "active",
+        ),
+      );
+      resolveTravelAreas(getBusanTravelAreaResponse());
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: /부산 전체/ })).toHaveClass(
+          "active",
+        ),
+      );
+      await user.click(screen.getByRole("button", { name: "다음" }));
+      const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
+      await user.clear(titleInput);
+      await user.type(titleInput, "부산 추천 여행");
+      expect(titleInput).toHaveValue("부산 추천 여행");
+      await user.click(screen.getByRole("button", { name: "일정 생성" }));
+
+      await waitFor(() =>
+        expect(createTripSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "부산 추천 여행",
+            region: "부산 전체",
+            travelAreaId: "busan-all",
+          }),
+        ),
+      );
+      await waitFor(() => expect(getTripSpy).toHaveBeenCalledWith("145"));
+    } finally {
+      travelAreasSpy.mockRestore();
       createTripSpy.mockRestore();
       getTripSpy.mockRestore();
     }
@@ -338,7 +417,7 @@ describe("Travel Hunter app — trip creation", () => {
       await user.clear(titleInput);
       await user.type(titleInput, "영광 반값여행");
       const createButton = screen.getByRole("button", {
-        name: "확인하고 만들기",
+        name: "일정 생성",
       });
       await waitFor(() => expect(createButton).toBeEnabled());
       await user.click(createButton);
@@ -400,7 +479,7 @@ describe("Travel Hunter app — trip creation", () => {
       const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
       await user.clear(titleInput);
       await user.type(titleInput, "합천 여행");
-      await user.click(screen.getByRole("button", { name: "확인하고 만들기" }));
+      await user.click(screen.getByRole("button", { name: "일정 생성" }));
 
       await waitFor(() =>
         expect(createTripSpy).toHaveBeenCalledWith(
@@ -446,8 +525,12 @@ describe("Travel Hunter app — trip creation", () => {
       expect(
         await screen.findByRole("button", { name: /속초·고성·양양/ }),
       ).toHaveClass("active");
-      await user.click(screen.getByRole("button", { name: "다음" }));
-      await user.click(screen.getByRole("button", { name: "확인하고 만들기" }));
+      const nextButton = screen.getByRole("button", { name: "다음" });
+      await waitFor(() => expect(nextButton).toBeEnabled());
+      await user.click(nextButton);
+      const createButton = await screen.findByRole("button", { name: "일정 생성" });
+      await waitFor(() => expect(createButton).toBeEnabled());
+      await user.click(createButton);
 
       await waitFor(() =>
         expect(createTripSpy).toHaveBeenCalledWith(
@@ -661,14 +744,24 @@ describe("Travel Hunter app — trip creation", () => {
 
     try {
       renderAppRoute("/trips/new?region=%EA%B0%95%EC%9B%90");
+      await screen.findByRole("heading", { name: "강원 세부 지역 선택" });
+      expect(screen.getByRole("button", { name: "다음" })).toBeDisabled();
+      expect(
+        screen.getByText("세부 지역을 선택해야 다음 단계로 이동할 수 있어요."),
+      ).toBeInTheDocument();
+
       await user.click(
         await screen.findByRole("button", { name: /속초·고성·양양/ }),
       );
+      expect(
+        screen.queryByText("세부 지역을 선택해야 다음 단계로 이동할 수 있어요."),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "다음" })).toBeEnabled();
       await user.click(screen.getByRole("button", { name: "다음" }));
       const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
       await user.clear(titleInput);
       await user.type(titleInput, "강원 권역 여행");
-      await user.click(screen.getByRole("button", { name: "확인하고 만들기" }));
+      await user.click(screen.getByRole("button", { name: "일정 생성" }));
 
       await waitFor(() =>
         expect(createTripSpy).toHaveBeenCalledWith(
@@ -733,7 +826,7 @@ describe("Travel Hunter app — trip creation", () => {
       const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
       await user.clear(titleInput);
       await user.type(titleInput, "부산 일반 여행");
-      await user.click(screen.getByRole("button", { name: "확인하고 만들기" }));
+      await user.click(screen.getByRole("button", { name: "일정 생성" }));
 
       await waitFor(() =>
         expect(createTripSpy).toHaveBeenCalledWith(
@@ -796,11 +889,11 @@ describe("Travel Hunter app — trip creation", () => {
       expect(
         screen.queryByRole("heading", { name: "여행 지역 선택" }),
       ).not.toBeInTheDocument();
-      expect(document.body).toHaveTextContent("연결 정책 · 선택한 정책");
+      expect(document.body).not.toHaveTextContent("연결 정책 · 선택한 정책");
       const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
       await user.clear(titleInput);
       await user.type(titleInput, "공식 혜택 참고 여행");
-      await user.click(screen.getByRole("button", { name: "확인하고 만들기" }));
+      await user.click(screen.getByRole("button", { name: "일정 생성" }));
 
       await waitFor(() => expect(createTripSpy).toHaveBeenCalled());
       expect(createTripSpy.mock.calls[0][0]).toEqual(
@@ -829,19 +922,120 @@ describe("Travel Hunter app — trip creation", () => {
       .mockResolvedValue(getPreviewTrip());
 
     try {
-      await user.click(screen.getByRole("button", { name: "다음" }));
+      const nextButton = screen.getByRole("button", { name: "다음" });
+      await waitFor(() => expect(nextButton).toBeEnabled());
+      await user.click(nextButton);
       expect(
         screen.getByRole("heading", { name: "여행 정보를 한 번에 확인해요" }),
       ).toBeInTheDocument();
       const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
       await user.clear(titleInput);
       expect(
-        screen.getByRole("button", { name: "확인하고 만들기" }),
+        screen.getByRole("button", { name: "일정 생성" }),
       ).toBeDisabled();
+      expect(screen.getByText("일정 제목을 입력해 주세요.")).toBeInTheDocument();
       expect(createTripSpy).not.toHaveBeenCalled();
     } finally {
       createTripSpy.mockRestore();
       travelAreasSpy.mockRestore();
+    }
+  });
+
+  it("normalizes a reversed calendar selection into a forward date range", async () => {
+    await login();
+    cleanup();
+    const travelAreasSpy = vi
+      .spyOn(appDataApi, "listTravelAreaRecommendations")
+      .mockResolvedValue(getJejuTravelAreaResponse());
+    const createTripSpy = vi
+      .spyOn(appDataApi, "createTrip")
+      .mockResolvedValue(getPreviewTrip());
+    const user = userEvent.setup();
+    const today = getKstDateInputValue();
+    const tomorrow = addDaysToDateInput(today, 1);
+
+    try {
+      renderAppRoute("/trips/new");
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "다음" })).toBeEnabled(),
+      );
+      await user.click(screen.getByRole("button", { name: "다음" }));
+      await user.click(screen.getByTestId("trip-date-range-trigger"));
+      await user.click(
+        within(screen.getByTestId("trip-date-range-calendar")).getByRole(
+          "button",
+          { name: tomorrow },
+        ),
+      );
+      await user.click(
+        within(screen.getByTestId("trip-date-range-calendar")).getByRole(
+          "button",
+          { name: today },
+        ),
+      );
+
+      // 역순으로 골라도 절댓값 범위가 된다. 음수 일수는 나올 수 없다.
+      expect(
+        screen.queryByText("마지막 날은 첫날과 같거나 뒤여야 해요."),
+      ).toBeNull();
+      expect(screen.getByTestId("trip-date-range-summary")).toHaveTextContent(
+        `${today} ~ ${tomorrow}`,
+      );
+      expect(screen.getByRole("button", { name: "일정 생성" })).toBeEnabled();
+    } finally {
+      createTripSpy.mockRestore();
+      travelAreasSpy.mockRestore();
+    }
+  });
+
+  it("explains that course preference is required before creating a trip", async () => {
+    const profileSpy = vi
+      .spyOn(appDataApi, "getProfile")
+      .mockResolvedValue({ preferredRegions: null, style: null, budget: null });
+    const profileOptionsSpy = vi
+      .spyOn(appDataApi, "getProfileOptions")
+      .mockResolvedValue({
+        regions: ["제주"],
+        travelStyles: ["맛집"],
+        budgets: ["상관없음"],
+      });
+    await login();
+    cleanup();
+    const travelAreasSpy = vi
+      .spyOn(appDataApi, "listTravelAreaRecommendations")
+      .mockResolvedValue(getJejuTravelAreaResponse());
+    renderAppRoute("/trips/new");
+    const user = userEvent.setup();
+
+    try {
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "다음" })).toBeEnabled(),
+      );
+      await user.click(screen.getByRole("button", { name: "다음" }));
+
+      const createButton = screen.getByRole("button", { name: "일정 생성" });
+      expect(createButton).toBeDisabled();
+      expect(
+        screen.getByText("코스 취향을 선택해야 일정 생성이 가능해요."),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /변경/ }));
+      const styleDialog = screen.getByRole("dialog", {
+        name: "코스 취향 선택",
+      });
+      await user.click(within(styleDialog).getByRole("button", { name: "맛집" }));
+      await user.click(
+        within(styleDialog).getByRole("button", { name: "선택 완료" }),
+      );
+
+      await waitFor(() => expect(createButton).toBeEnabled());
+      expect(
+        screen.queryByText("코스 취향을 선택해야 일정 생성이 가능해요."),
+      ).not.toBeInTheDocument();
+    } finally {
+      travelAreasSpy.mockRestore();
+      profileOptionsSpy.mockRestore();
+      profileSpy.mockRestore();
     }
   });
 
@@ -863,11 +1057,19 @@ describe("Travel Hunter app — trip creation", () => {
         expect(screen.getByRole("button", { name: "다음" })).toBeEnabled(),
       );
       await user.click(screen.getByRole("button", { name: "다음" }));
-      fireEvent.click(screen.getByRole("button", { name: "확인하고 만들기" }));
+      await user.click(screen.getByRole("button", { name: /변경/ }));
+      const styleDialog = screen.getByRole("dialog", {
+        name: "코스 취향 선택",
+      });
+      await user.click(within(styleDialog).getByRole("button", { name: "맛집" }));
+      await user.click(
+        within(styleDialog).getByRole("button", { name: "선택 완료" }),
+      );
+      const createButton = screen.getByRole("button", { name: "일정 생성" });
+      await waitFor(() => expect(createButton).toBeEnabled());
+      fireEvent.click(createButton);
 
-      expect(
-        screen.getByRole("button", { name: "일정 생성 중" }),
-      ).toBeDisabled();
+      expect(await screen.findByRole("button", { name: "일정 생성 중" })).toBeDisabled();
       expect(screen.getByText("새 일정을 만들고 있어요.")).toBeInTheDocument();
 
       await waitFor(

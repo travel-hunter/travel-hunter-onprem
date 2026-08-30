@@ -27,7 +27,10 @@ import {
   getHomeBenefitPolicies,
   getHomePolicyIcon,
 } from "../data/displayConfig";
-import { dday } from "../utils";
+import {
+  formatPolicyDeadlineTag,
+  formatPolicyPeriodSummary,
+} from "../utils";
 
 const PROFILE_PROMPT_DISMISSAL_PREFIX =
   "travel-hunter-profile-completion-dismissed:";
@@ -170,7 +173,7 @@ export function HomePage() {
             </span>
             <span className="prototype-home-hero-meta">
               <span>{featuredPolicy.region}</span>
-              <span>{dday(featuredPolicy.deadline)}</span>
+              <span>{formatPolicyDeadlineTag(featuredPolicy)}</span>
             </span>
           </span>
           <span className="prototype-home-hero-cta">자세히 보기 →</span>
@@ -444,45 +447,59 @@ function normalizeCarouselIndex(index: number, length: number) {
   return ((index % length) + length) % length;
 }
 
+function getHomePolicyScheduleLabel(policy: Policy) {
+  return formatPolicyPeriodSummary(policy);
+}
+
+function getHomePolicyDeadlineBadge(policy: Policy) {
+  return formatPolicyDeadlineTag(policy);
+}
+
 function PrototypePolicyCard({ policy }: { policy: Policy }) {
+  const scheduleLabel = getHomePolicyScheduleLabel(policy);
+  const deadlineBadge = getHomePolicyDeadlineBadge(policy);
+
   return (
     <Link
       className="prototype-home-policy-card"
       draggable={false}
       to={`/policies/${policy.slug}`}
     >
-      <div className="prototype-home-policy-card-head">
-        <div className="prototype-home-policy-label" aria-hidden="true">
-          {getHomePolicyIcon(policy)}
+      <div className="prototype-home-policy-visual" aria-hidden="true">
+        {getHomePolicyIcon(policy)}
+      </div>
+
+      <div className="prototype-home-policy-content">
+        <div className="prototype-home-policy-kicker-row">
+          <em className="prototype-home-policy-category">{policy.category}</em>
+          <span className="prototype-home-policy-deadline">
+            {deadlineBadge}
+          </span>
         </div>
-        <em className="prototype-home-policy-category">{policy.category}</em>
-      </div>
-      <div className="prototype-home-policy-card-copy">
+
         <strong>{policy.title}</strong>
-        <p className="prototype-home-policy-summary">
-          {getPolicyCardSummary(policy)}
-        </p>
-      </div>
-      <div className="prototype-home-policy-card-meta">
-        <span className="prototype-home-policy-schedule">
-          신청 마감 {formatPolicyCardDeadline(policy.deadline)} · {dday(policy.deadline)}
+
+        <span className="prototype-home-policy-benefit">
+          {policy.amount}
         </span>
+      </div>
+
+      <div className="prototype-home-policy-card-meta">
+        {scheduleLabel && (
+          <span className="prototype-home-policy-schedule">
+            {scheduleLabel}
+          </span>
+        )}
         <span className="prototype-home-policy-condition">
           조건: {getPolicyCardCondition(policy)}
         </span>
       </div>
+
       <small>
-        <span>{policy.amount}</span>
-        <span>{dday(policy.deadline)}</span>
+        <span>상세 보기</span>
       </small>
     </Link>
   );
-}
-
-function getPolicyCardSummary(policy: Policy) {
-  const summary = policy.summary.trim();
-  if (summary) return summary;
-  return `${policy.amount || "혜택"}을 받을 수 있는 정책입니다.`;
 }
 
 function getPolicyCardCondition(policy: Policy) {
@@ -521,12 +538,6 @@ function summarizeHomePolicyCondition(condition: string) {
     .trim();
   if (compact.length <= 26) return compact;
   return `${compact.slice(0, 25).trim()}…`;
-}
-
-function formatPolicyCardDeadline(deadline: string) {
-  const date = new Date(deadline);
-  if (Number.isNaN(date.getTime())) return "상시";
-  return `${date.getMonth() + 1}.${date.getDate()}`;
 }
 
 function getRecommendationSaving(recommendation: RegionRecommendation) {

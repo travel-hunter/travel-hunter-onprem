@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from app.services.dgtourcard_parser import parse_dgtourcard_benefits
+from app.services.dgtourcard_parser import (
+    enrich_dgtourcard_benefits_with_detail_pages,
+    parse_dgtourcard_benefits,
+    parse_local_half_trip_detail_fields,
+)
 
 
 DGTOURCARD_DATA_HTML = """
@@ -64,13 +68,12 @@ def test_parse_dgtourcard_benefits_reads_official_data_attributes() -> None:
         today=date(2026, 5, 23),
     )
 
-    assert [record.city for record in records] == ["밀양", "하동", "영광", "제천", "강진"]
+    assert [record.city for record in records] == ["밀양", "하동", "영광", "제천"]
     assert [record.status for record in records] == [
         "scheduled",
         "active",
         "active",
         "ended",
-        "scheduled",
     ]
     assert records[1].source_category == "local_half_trip"
     assert records[1].source_name == "대한민국 반값여행"
@@ -80,7 +83,6 @@ def test_parse_dgtourcard_benefits_reads_official_data_attributes() -> None:
     assert records[1].benefit_value_text == "최대 20만원 환급"
     assert records[1].detail_url == "https://hadongtrip.kr/index.php"
     assert records[2].detail_url == "https://www.yeonggwang.go.kr/travel/"
-    assert records[4].detail_url is None
 
 
 def test_parse_dgtourcard_benefits_falls_back_to_section_markup() -> None:
@@ -137,8 +139,9 @@ def test_parse_dgtourcard_benefits_handles_june_july_status_variants() -> None:
         today=date(2026, 6, 16),
     )
 
-    assert [record.status for record in before_start] == ["scheduled", "scheduled", "ended"]
-    assert [record.status for record in after_start] == ["scheduled", "active", "ended"]
+    assert [record.city for record in before_start] == ["영월", "거창"]
+    assert [record.status for record in before_start] == ["scheduled", "scheduled"]
+    assert [record.status for record in after_start] == ["scheduled", "active"]
     assert after_start[1].start_date == date(2026, 6, 16)
     assert after_start[1].raw_payload["tripPeriod"] == "2026.07.01~2026.07.31"
 
@@ -149,20 +152,20 @@ def test_parse_dgtourcard_benefits_reads_current_detail_aside_fields() -> None:
     <aside class="cl-posi-detail step-7"
         data-trvid="7"
         data-mtpcdocdnm="전라남도"
-        data-signgucdnm="강진군"
-        data-trvnm="2026-전라남도 강진"
-        data-link="https://www.gangjintour.com/"
+        data-signgucdnm="하동군"
+        data-trvnm="2026-경상남도 하동"
+        data-link="https://hadongtrip.kr/index.php"
         data-evtbgndt="2026-06-10"
         data-evtenddt="2026-08-31"
         data-sttscd="ONGOING"
         data-sttsnm="신청접수중">
-      <h2><em>강진</em><span>신청접수중</span></h2>
+      <h2><em>하동</em><span>신청접수중</span></h2>
       <dl>
         <dt>신청기간 : </dt>
         <dd>2026.06.10-2026.08.31<br>● 여행기간 : 6.10~8.31<br>- 6.10(수) 9시부터</dd>
       </dl>
-      <dl><dt>지역화폐 : </dt><dd>chak 앱(모바일 강진사랑상품권)</dd></dl>
-      <dl><dt>특이사항 : </dt><dd>강진군 관광지 2개소 이상 방문</dd></dl>
+      <dl><dt>지역화폐 : </dt><dd>chak 앱(모바일 하동사랑상품권)</dd></dl>
+      <dl><dt>특이사항 : </dt><dd>하동군 관광지 2개소 이상 방문</dd></dl>
       <dl><dt>문의전화 :</dt><dd><a href="tel:061-433-3349">061-433-3349</a></dd></dl>
     </aside>
     </body></html>
@@ -177,23 +180,23 @@ def test_parse_dgtourcard_benefits_reads_current_detail_aside_fields() -> None:
 
     assert len(records) == 1
     record = records[0]
-    assert record.city == "강진"
+    assert record.city == "하동"
     assert record.status == "active"
-    assert record.detail_url == "https://www.gangjintour.com/"
+    assert record.detail_url == "https://hadongtrip.kr/index.php"
     assert record.start_date == date(2026, 6, 10)
     assert record.end_date == date(2026, 8, 31)
     assert record.raw_payload["applicationDetail"].startswith("2026.06.10-2026.08.31")
     assert record.raw_payload["tripPeriod"] == "6.10~8.31"
-    assert record.raw_payload["localCurrency"] == "chak 앱(모바일 강진사랑상품권)"
-    assert record.raw_payload["notes"] == "강진군 관광지 2개소 이상 방문"
+    assert record.raw_payload["localCurrency"] == "chak 앱(모바일 하동사랑상품권)"
+    assert record.raw_payload["notes"] == "하동군 관광지 2개소 이상 방문"
     assert record.contact_text == "061-433-3349"
 
 
 def test_parse_dgtourcard_benefits_keeps_canonical_key_stable_when_trip_period_detail_changes() -> None:
     first_html = """
     <html><body>
-    <aside data-trvid="7" data-signgucdnm="강진군" data-trvnm="2026-전라남도 강진"
-        data-link="https://www.gangjintour.com/" data-evtbgndt="2026-06-10"
+    <aside data-trvid="3" data-signgucdnm="하동군" data-trvnm="2026-경상남도 하동"
+        data-link="https://hadongtrip.kr/index.php" data-evtbgndt="2026-06-10"
         data-evtenddt="2026-08-31" data-sttsnm="신청접수중">
       <dl><dt>신청기간 : </dt><dd>2026.06.10-2026.08.31<br>● 여행기간 : 6.10~8.31</dd></dl>
     </aside>
@@ -201,8 +204,8 @@ def test_parse_dgtourcard_benefits_keeps_canonical_key_stable_when_trip_period_d
     """
     changed_trip_period_html = """
     <html><body>
-    <aside data-trvid="7" data-signgucdnm="강진군" data-trvnm="2026-전라남도 강진"
-        data-link="https://www.gangjintour.com/" data-evtbgndt="2026-06-10"
+    <aside data-trvid="3" data-signgucdnm="하동군" data-trvnm="2026-경상남도 하동"
+        data-link="https://hadongtrip.kr/index.php" data-evtbgndt="2026-06-10"
         data-evtenddt="2026-08-31" data-sttsnm="신청접수중">
       <dl><dt>신청기간 : </dt><dd>2026.06.10-2026.08.31<br>● 여행기간 : 7.1~8.31</dd></dl>
     </aside>
@@ -225,3 +228,114 @@ def test_parse_dgtourcard_benefits_keeps_canonical_key_stable_when_trip_period_d
     assert first_records[0].canonical_key == changed_records[0].canonical_key
     assert first_records[0].raw_payload["tripPeriod"] == "6.10~8.31"
     assert changed_records[0].raw_payload["tripPeriod"] == "7.1~8.31"
+
+
+def test_parse_dgtourcard_benefits_ignores_official_non_participating_regions() -> None:
+    html = """
+    <html><body>
+    <a data-trvid="7" data-town="강진" data-trvnm="2026-전라남도 강진"
+       data-evtbgndt="2026-06-10" data-evtenddt="2026-08-31" data-sttsnm="신청접수중">강진</a>
+    <aside data-trvid="11" data-signgucdnm="남해군" data-trvnm="2026-경상남도 남해"
+       data-evtbgndt="2026-06-10" data-evtenddt="2026-08-31" data-sttsnm="신청접수중"></aside>
+    <section><h2>영암 신청접수중</h2><p>신청기간 : 2026.06.10-2026.08.31</p></section>
+    <section><h2>횡성 신청접수중</h2><p>신청기간 : 2026.06.10-2026.08.31</p></section>
+    </body></html>
+    """
+
+    records = parse_dgtourcard_benefits(
+        html,
+        collected_page_url="https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+        fetched_at=datetime(2026, 6, 16, tzinfo=UTC),
+        today=date(2026, 6, 16),
+    )
+
+    assert records == []
+
+
+def test_parse_local_half_trip_detail_fields_reads_participation_target_lines() -> None:
+    html = """
+    <div id="load_content">
+      <div class="msection event-info">
+        <div>
+          <dl>
+            <dt><span>지원내용</span></dt>
+            <dd><p>여행비 50% 환급</p></dd>
+          </dl>
+          <dl>
+            <dt><span>참여대상</span></dt>
+            <dd>
+              <p>강진군 외 지역에 거주하는 사전신청 관광객 누구나</p>
+              <p><em>※</em> 단, 완도군, 해남군, 영암군, 장흥군 거주자는 지원 대상 제외</p>
+            </dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+    """
+
+    fields = parse_local_half_trip_detail_fields(html)
+
+    assert fields["participantTarget"] == (
+        "강진군 외 지역에 거주하는 사전신청 관광객 누구나\n"
+        "※ 단, 완도군, 해남군, 영암군, 장흥군 거주자는 지원 대상 제외"
+    )
+    assert fields["supportDetail"] == "여행비 50% 환급"
+
+
+def test_parse_local_half_trip_detail_fields_reads_yeonggwang_section_rows() -> None:
+    html = """
+    <div class="main_section_row">
+      <span class="main_section_label">참여대상</span>
+      <div class="main_section_cont">
+        <p>영광 관외 거주 사전신청 관광객 누구나</p>
+        <p>제외지역: 함평군, 장성군, 무안군, 고창군</p>
+      </div>
+    </div>
+    <div class="main_section_row">
+      <span class="main_section_label">지원내용</span>
+      <div class="main_section_cont">
+        <p>영광 여행 비용의 최대 50% 모바일 영광사랑상품권 지급</p>
+        <p>최대 환급 금액: 2인이상 최대 20만원까지</p>
+      </div>
+    </div>
+    <div class="main_section_row">
+      <span class="main_section_label">유의사항</span>
+      <div class="main_section_cont">
+        <ul><li>신청 대표자 본인명의의 증빙서류만 제출 가능</li></ul>
+      </div>
+    </div>
+    """
+
+    fields = parse_local_half_trip_detail_fields(html)
+
+    assert fields["participantTarget"] == (
+        "영광 관외 거주 사전신청 관광객 누구나\n"
+        "제외지역: 함평군, 장성군, 무안군, 고창군"
+    )
+    assert fields["supportDetail"] == (
+        "영광 여행 비용의 최대 50% 모바일 영광사랑상품권 지급\n"
+        "최대 환급 금액: 2인이상 최대 20만원까지"
+    )
+    assert fields["detailNotes"] == "신청 대표자 본인명의의 증빙서류만 제출 가능"
+
+
+def test_enrich_dgtourcard_benefits_with_detail_pages_adds_participant_target() -> None:
+    records = parse_dgtourcard_benefits(
+        DGTOURCARD_DATA_HTML,
+        collected_page_url="https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+        fetched_at=datetime(2026, 6, 16, tzinfo=UTC),
+        today=date(2026, 6, 16),
+    )
+
+    enriched = enrich_dgtourcard_benefits_with_detail_pages(
+        records,
+        fetch_detail_html=lambda detail_url: """
+        <dl>
+          <dt>참여대상</dt>
+          <dd><p>강진군 외 지역에 거주하는 사전신청 관광객 누구나</p></dd>
+        </dl>
+        """,
+    )
+
+    assert enriched[0].raw_payload["participantTarget"] == "강진군 외 지역에 거주하는 사전신청 관광객 누구나"
+    assert enriched[0].field_completeness >= 95

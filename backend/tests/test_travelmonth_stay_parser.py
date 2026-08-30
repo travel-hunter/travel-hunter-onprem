@@ -9,8 +9,8 @@ STAY_HTML = """
 <html><body>
 <section data-stay-discount>
   <h2>2026 대한민국 숙박세일 페스타</h2>
-  <p>쿠폰 발급기간 : 2026.6.11 ~ 2026.7.31 예산 소진 시 조기 종료</p>
-  <p>입실기간 : 6월 11일 ~ 7월 31일</p>
+  <p>쿠폰 발급기간 : 2026.6.11 ~ 2026.8.31 예산 소진 시 조기 종료</p>
+  <p>입실기간 : 6월 11일 ~ 8월 31일</p>
   <p>할인혜택 : 비수도권 숙박상품 2/3/5/7만원 할인권 지원</p>
   <a href="/travelmonth/benefits/stay.do">자세히 보기</a>
 </section>
@@ -26,12 +26,12 @@ KTOSTAY_HTML = """
     <ul class="coupon-use-info">
       <li><div class="visit-info-row">
         <p class="txt-title"><strong>발급기간</strong></p>
-        <ul class="schedule-info"><li><strong class="txt-period">2026.6.11<em>(목)</em>~7.31<em>(금)</em></strong></li>
+        <ul class="schedule-info"><li><strong class="txt-period">2026.6.11<em>(목)</em>~8.31<em>(월)</em></strong></li>
         <li>매일 오전 10시부터 선착순 발급 (단, 기한 내 소진 시 발급 불가)</li></ul>
       </div></li>
       <li><div class="visit-info-row">
         <p class="txt-title"><strong>입실기간</strong></p>
-        <ul class="schedule-info"><li><strong class="txt-period"><span class="only_mo">2026.</span>6.11<em>(목)</em>~7.31<em>(금)</em></strong></li></ul>
+        <ul class="schedule-info"><li><strong class="txt-period"><span class="only_mo">2026.</span>6.11<em>(목)</em>~8.31<em>(월)</em></strong></li></ul>
       </div></li>
       <li><div class="visit-info-row">
         <p class="txt-title"><strong>사용지역</strong></p>
@@ -92,7 +92,7 @@ def test_parse_stay_discount_benefits_extracts_amount_period_and_raw_payload() -
     assert record.status == "active"
     assert record.freshness_status == "fresh"
     assert record.start_date == date(2026, 6, 11)
-    assert record.end_date == date(2026, 7, 31)
+    assert record.end_date == date(2026, 8, 31)
     assert record.benefit_value_type == "amount"
     assert record.extracted_amount_krw == 70000
     assert record.benefit_value_text == "2/3/5/7만원 할인권"
@@ -116,10 +116,12 @@ def test_parse_ktostay_population_decline_areas_and_common_fields() -> None:
     assert record.source_url == "https://ktostay.visitkorea.or.kr/"
     assert record.detail_url == "https://ktostay.visitkorea.or.kr/"
     assert record.collected_page_url == "https://ktostay.visitkorea.or.kr/"
+    assert record.logical_key == "stay-discount:2026-summer"
+    assert record.canonical_key_version == "snapshot-v1"
     assert record.status == "active"
     assert record.freshness_status == "fresh"
     assert record.start_date == date(2026, 6, 11)
-    assert record.end_date == date(2026, 7, 31)
+    assert record.end_date == date(2026, 8, 31)
     assert record.extracted_amount_krw == 70000
     assert record.benefit_value_text == "2/3/5/7만원 할인권"
 
@@ -138,13 +140,67 @@ def test_parse_ktostay_population_decline_areas_and_common_fields() -> None:
     assert "참여 온라인 여행사" in str(payload["usageMethod"])
     assert len(payload["discountTiers"]) == 4
     assert "14만원 이상" in str(payload["discountTiers"][-1])
-    assert record.contact_text is not None
-    assert "할인혜택" in record.contact_text
+    assert record.contact_text is None
+
+
+def test_parse_ktostay_current_august_period_includes_campaign_provenance() -> None:
+    records = parse_stay_discount_benefits(
+        KTOSTAY_HTML,
+        collected_page_url="https://ktostay.visitkorea.or.kr/",
+        fetched_at=datetime(2026, 8, 19, tzinfo=UTC),
+        today=date(2026, 8, 19),
+    )
+
+    assert len(records) == 1
+    record = records[0]
+    assert record.logical_key == "stay-discount:2026-summer"
+    assert record.canonical_key_version == "snapshot-v1"
+    assert record.start_date == date(2026, 6, 11)
+    assert record.end_date == date(2026, 8, 31)
+    assert record.status == "active"
+    assert record.freshness_status == "fresh"
+    assert "8.31" in str(record.raw_payload["issuePeriod"])
+    assert "8.31" in str(record.raw_payload["stayPeriod"])
+    assert record.raw_payload["eligibleAreaCount"] == 85
+
+
+def test_parse_ktostay_keeps_typed_evidence_without_rebuilding_contact_text() -> None:
+    fetched_at = datetime(2026, 6, 16, tzinfo=UTC)
+
+    first = parse_stay_discount_benefits(
+        KTOSTAY_HTML,
+        collected_page_url="https://ktostay.visitkorea.or.kr/",
+        fetched_at=fetched_at,
+        today=date(2026, 6, 16),
+    )[0]
+    second = parse_stay_discount_benefits(
+        KTOSTAY_HTML,
+        collected_page_url="https://ktostay.visitkorea.or.kr/",
+        fetched_at=fetched_at,
+        today=date(2026, 6, 16),
+    )[0]
+
+    assert first.contact_text is second.contact_text is None
+    assert first.raw_payload == second.raw_payload
+    assert first.raw_list_text == second.raw_list_text
+    assert first.raw_detail_text == second.raw_detail_text
+    assert first.detail_url == second.detail_url == "https://ktostay.visitkorea.or.kr/"
+    assert len(first.raw_payload["discountTiers"]) == 4
+    assert "7만원 미만" in first.raw_payload["discountTiers"][0]
+    assert "2만원 할인" in first.raw_payload["discountTiers"][0]
+    assert "14만원 이상" in first.raw_payload["discountTiers"][-1]
+    assert "7만원 할인" in first.raw_payload["discountTiers"][-1]
+    assert first.raw_payload["issuePeriod"].startswith("2026.6.11")
+    assert first.raw_payload["stayPeriod"].startswith("2026. 6.11")
+    assert first.raw_payload["usageArea"]
+    assert first.raw_payload["usagePlace"]
+    assert first.raw_payload["usageMethod"]
+    assert first.raw_payload["earlyCloseWarning"] is True
 
 
 def test_parse_stay_discount_benefits_uses_fallback_text_record() -> None:
     records = parse_stay_discount_benefits(
-        "<html><body>숙박세일 페스타 입실기간 : 6월 11일 ~ 7월 31일 혜택 : 5만원 숙박 할인</body></html>",
+        "<html><body>숙박세일 페스타 입실기간 : 6월 11일 ~ 8월 31일 혜택 : 5만원 숙박 할인</body></html>",
         collected_page_url="https://korean.visitkorea.or.kr/travelmonth/benefits/stay.do",
         fetched_at=datetime(2026, 6, 10, tzinfo=UTC),
         today=date(2026, 6, 10),

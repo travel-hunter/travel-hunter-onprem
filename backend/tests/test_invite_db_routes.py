@@ -32,7 +32,7 @@ def invite_payload() -> dict[str, object]:
         "acceptedAt": "2026-05-05T00:00:00Z",
         "invited": True,
         "copied": False,
-        "role": "viewer",
+        "role": "editor",
         "alreadyMember": False,
     }
 
@@ -119,4 +119,4 @@ def test_db_invite_accept_returns_invite_state(monkeypatch) -> None:
     assert response.json()["tripId"] == "7"
     assert response.json()["acceptedAt"] == "2026-05-05T00:00:00Z"
     assert response.json()["invited"] is True
-    assert response.json()["role"] == "viewer"
+    assert response.json()["role"] == "editor"

@@ -1,10 +1,15 @@
 services:
   db:
     image: postgres:16-alpine
+    command: ["postgres", "-c", "timezone=Asia/Seoul", "-c", "log_timezone=Asia/Seoul"]
     environment:
+      TZ: 'Asia/Seoul'
+      PGTZ: 'Asia/Seoul'
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    ports:
+      - "55432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -17,21 +22,28 @@ services:
     build:
       context: ./backend
     environment:
-      APP_ENV: ${APP_ENV:-staging}
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
-      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?set AUTH_SECRET_KEY}
+      APP_ENV: ${APP_ENV:-docker}
+      TZ: Asia/Seoul
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://travelhunter:travelhunter@db:5432/travelhunter}
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-dev-only-change-me-secret-key-32-bytes}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-14}
       REFRESH_COOKIE_NAME: ${REFRESH_COOKIE_NAME:-travel_hunter_refresh}
       REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-true}
-      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:4173,http://localhost:4173}
       NOTIFICATION_SCHEDULER_ENABLED: ${NOTIFICATION_SCHEDULER_ENABLED:-false}
       NOTIFICATION_RUN_AT: ${NOTIFICATION_RUN_AT:-09:00}
       NOTIFICATION_POLL_SECONDS: ${NOTIFICATION_POLL_SECONDS:-60}
       NOTIFICATION_RETRY_ENABLED: ${NOTIFICATION_RETRY_ENABLED:-true}
       NOTIFICATION_RETRY_MAX_ATTEMPTS: ${NOTIFICATION_RETRY_MAX_ATTEMPTS:-3}
       NOTIFICATION_RETRY_DELAY_SECONDS: ${NOTIFICATION_RETRY_DELAY_SECONDS:-600}
-      TRAVEL_HUNTER_PUBLIC_BASE_URL: ${TRAVEL_HUNTER_PUBLIC_BASE_URL:-}
+      EXTERNAL_COLLECTION_SCHEDULER_ENABLED: ${EXTERNAL_COLLECTION_SCHEDULER_ENABLED:-false}
+      EXTERNAL_COLLECTION_RUN_AT: ${EXTERNAL_COLLECTION_RUN_AT:-03:00}
+      EXTERNAL_COLLECTION_POLL_SECONDS: ${EXTERNAL_COLLECTION_POLL_SECONDS:-60}
+      KAKAO_LOCAL_ENABLED: ${KAKAO_LOCAL_ENABLED:-false}
+      KAKAO_LOCAL_REST_API_KEY: ${KAKAO_LOCAL_REST_API_KEY:-}
+      KAKAO_LOCAL_TIMEOUT_SECONDS: ${KAKAO_LOCAL_TIMEOUT_SECONDS:-5}
+      TRAVEL_HUNTER_PUBLIC_BASE_URL: ${TRAVEL_HUNTER_PUBLIC_BASE_URL:-http://127.0.0.1:4173}
       PASSWORD_RESET_EXPIRE_MINUTES: ${PASSWORD_RESET_EXPIRE_MINUTES:-30}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -41,11 +53,13 @@ services:
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
       KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:-}
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
-      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-http://127.0.0.1:8000/api/auth/oauth/kakao/callback}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://127.0.0.1:8000/api/auth/oauth/google/callback}
       OAUTH_STATE_COOKIE_NAME: ${OAUTH_STATE_COOKIE_NAME:-travel_hunter_oauth_state}
+    ports:
+      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -54,37 +68,18 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
+      
   frontend:
     build:
       context: ./frontend
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:?set VITE_API_BASE_URL}
-    environment:
-      STAGING_DOMAIN: ${STAGING_DOMAIN:-}
-      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: ${STAGING_DOMAIN:-}
-    depends_on:
-      backend:
-        condition: service_healthy
-
-  caddy:
-    image: caddy:2-alpine
-    environment:
-      STAGING_DOMAIN: ${STAGING_DOMAIN:?set STAGING_DOMAIN}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://127.0.0.1:8000}
+        VITE_KAKAO_MAP_JS_KEY: ${VITE_KAKAO_MAP_JS_KEY:-}
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
+      - "4173:4173"
     depends_on:
       backend:
         condition: service_healthy
-      frontend:
-        condition: service_started
-
+        
 volumes:
   travelhunter-db:
-  caddy-data:
-  caddy-config:

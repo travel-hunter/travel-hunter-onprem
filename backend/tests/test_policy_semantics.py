@@ -155,7 +155,7 @@ def test_policy_source_identity_supports_policy_and_api_style_mappings() -> None
             "sourceType": "INTERNAL",
             "externalSourceRecordId": None,
             "sourceName": "seed",
-            "sourceCategory": "digital_tourism_card",
+            "sourceCategory": "digital_tourism_resident_card",
         }
     )
     assert api_identity.source_type == "INTERNAL"

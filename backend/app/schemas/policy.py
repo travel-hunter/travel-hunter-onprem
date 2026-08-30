@@ -9,12 +9,11 @@ PolicyActionStatus = Literal["infoOnly"]
 
 
 class PolicyStructuredDetail(BaseModel):
-    benefits: list[dict[str, Any]] = Field(default_factory=list)
-    conditions: list[dict[str, Any]] = Field(default_factory=list)
+    supportContent: list[dict[str, Any]] = Field(default_factory=list)
     periods: list[dict[str, Any]] = Field(default_factory=list)
-    links: list[dict[str, Any]] = Field(default_factory=list)
-    documents: list[dict[str, Any]] = Field(default_factory=list)
-    notices: list[dict[str, Any]] = Field(default_factory=list)
+    applicationTarget: list[dict[str, Any]] = Field(default_factory=list)
+    requiredDocuments: list[dict[str, Any]] = Field(default_factory=list)
+    notes: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class Policy(BaseModel):
@@ -25,6 +24,7 @@ class Policy(BaseModel):
     title: str
     org: str
     region: str
+    startDate: str | None = None
     deadline: str
     amount: str
     summary: str

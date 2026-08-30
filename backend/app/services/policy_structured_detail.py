@@ -6,20 +6,25 @@ from typing import Any
 from app.models import Policy
 from app.services.policy_semantics import (
     benefit_display_amount_for_policy,
-    policy_url_fields_for_policy,
     requirement_items_for_policy,
     safe_policy_url,
 )
 
 
 STRUCTURED_DETAIL_SECTION_KEYS = (
-    "benefits",
-    "conditions",
+    "supportContent",
     "periods",
-    "links",
-    "documents",
-    "notices",
+    "applicationTarget",
+    "requiredDocuments",
+    "notes",
 )
+LEGACY_STRUCTURED_DETAIL_SECTION_ALIASES = {
+    "supportContent": ("supportContent", "benefits"),
+    "periods": ("periods",),
+    "applicationTarget": ("applicationTarget", "conditions"),
+    "requiredDocuments": ("requiredDocuments", "documents"),
+    "notes": ("notes", "notices"),
+}
 STRUCTURED_DETAIL_ITEM_KEYS = {
     "title",
     "label",
@@ -29,12 +34,17 @@ STRUCTURED_DETAIL_ITEM_KEYS = {
     "url",
     "startDate",
     "endDate",
+    "type",
 }
 
 
 def _clean_text(value: object) -> str:
     return " ".join(str(value or "").split())
 
+
+def _clean_multiline_text(value: object) -> str:
+    lines = [_clean_text(part) for part in str(value or "").replace("\r", "\n").split("\n")]
+    return "\n".join(line for line in lines if line)
 
 def _date_text(value: date | None) -> str | None:
     return value.isoformat() if value is not None else None
@@ -69,7 +79,12 @@ def normalize_structured_detail(value: object) -> dict[str, list[dict[str, Any]]
 
     normalized = empty_structured_detail()
     for key in STRUCTURED_DETAIL_SECTION_KEYS:
-        raw_items = value.get(key)
+        raw_items = None
+        for alias in LEGACY_STRUCTURED_DETAIL_SECTION_ALIASES[key]:
+            candidate = value.get(alias)
+            if isinstance(candidate, list):
+                raw_items = candidate
+                break
         if not isinstance(raw_items, list):
             continue
         cleaned_items: list[dict[str, Any]] = []
@@ -86,11 +101,9 @@ def normalize_structured_detail(value: object) -> dict[str, list[dict[str, Any]]
                     if safe_url is not None:
                         cleaned_item[key_text] = safe_url
                     continue
-                text = _clean_text(item_value)
+                text = _clean_multiline_text(item_value) if key_text == "description" else _clean_text(item_value)
                 if text:
                     cleaned_item[key_text] = text
-            if key == "links" and "url" not in cleaned_item:
-                continue
             if cleaned_item:
                 cleaned_items.append(cleaned_item)
         normalized[key] = cleaned_items
@@ -98,6 +111,59 @@ def normalize_structured_detail(value: object) -> dict[str, list[dict[str, Any]]
     if is_effectively_empty_structured_detail(normalized):
         return None
     return normalized
+
+
+def _reviewed_period_item(
+    value: object,
+    *,
+    title: str,
+    period_type: str,
+) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    item: dict[str, Any] = {"title": title, "type": period_type}
+    conclusion = _clean_text(value.get("conclusion"))
+    if conclusion:
+        item["description"] = conclusion
+    for source_key, output_key in (("startDate", "startDate"), ("endDate", "endDate")):
+        date_value = _clean_text(value.get(source_key))
+        if date_value:
+            item[output_key] = date_value
+    return item if len(item) > 2 else None
+
+
+def _reviewed_evidence_detail_for_api(
+    policy: Policy,
+) -> dict[str, list[dict[str, Any]]] | None:
+    """Project reviewed evidence into the existing public structured-detail DTO.
+
+    The reconciliation manifest intentionally stores review metadata separately from
+    the screen DTO. This adapter keeps those DB bytes intact while exposing only the
+    already-supported list sections and typed application/usage periods.
+    """
+    value = policy.structured_detail
+    if not isinstance(value, dict) or not any(
+        key in value for key in ("applicationPeriod", "usagePeriod")
+    ):
+        return None
+
+    detail = build_structured_detail_from_policy(policy)
+    detail["periods"] = []
+    application = _reviewed_period_item(
+        value.get("applicationPeriod"),
+        title="신청 기간",
+        period_type="application",
+    )
+    usage = _reviewed_period_item(
+        value.get("usagePeriod"),
+        title="여행 기간",
+        period_type="usage",
+    )
+    if application is not None:
+        detail["periods"].append(application)
+    if usage is not None:
+        detail["periods"].append(usage)
+    return normalize_structured_detail(detail)
 
 
 def build_structured_detail_from_policy(policy: Policy) -> dict[str, list[dict[str, Any]]]:
@@ -113,10 +179,10 @@ def build_structured_detail_from_policy(policy: Policy) -> dict[str, list[dict[s
         benefit_amount = benefit_display_amount_for_policy(policy)
         if benefit_amount:
             benefit_item["amount"] = _clean_text(benefit_amount)
-        detail["benefits"].append(benefit_item)
+        detail["supportContent"].append(benefit_item)
 
     requirements = requirement_items_for_policy(policy)
-    detail["conditions"].extend(
+    detail["applicationTarget"].extend(
         {"title": "조건", "description": requirement}
         for requirement in requirements
     )
@@ -136,25 +202,21 @@ def build_structured_detail_from_policy(policy: Policy) -> dict[str, list[dict[s
     if period_item:
         detail["periods"].append(period_item)
 
-    url_fields = policy_url_fields_for_policy(policy)
-    apply_url = url_fields["applyUrl"]
-    official_url = url_fields["officialUrl"]
-    if apply_url is not None:
-        detail["links"].append({"label": "신청하기", "url": apply_url})
-    if official_url is not None and official_url != apply_url:
-        detail["links"].append({"label": "공식 안내", "url": official_url})
 
-    detail["documents"].extend(
+    detail["requiredDocuments"].extend(
         {"title": "필요 서류", "description": document.document_name}
         for document in policy.documents
         if _has_text(document.document_name)
     )
 
     if _has_text(policy.policy_comment) and policy.policy_comment != policy.benefit_detail:
-        detail["notices"].append({"title": "확인 필요 사항", "description": _clean_text(policy.policy_comment)})
+        detail["notes"].append({"title": "비고", "description": _clean_text(policy.policy_comment)})
 
     return detail
 
 
 def structured_detail_for_api(policy: Policy) -> dict[str, list[dict[str, Any]]] | None:
+    reviewed_detail = _reviewed_evidence_detail_for_api(policy)
+    if reviewed_detail is not None:
+        return reviewed_detail
     return normalize_structured_detail(policy.structured_detail)

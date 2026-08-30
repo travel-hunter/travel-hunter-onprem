@@ -210,7 +210,6 @@ class Policy(Base):
     external_source_record_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("external_source_records.id", ondelete="SET NULL"),
-        unique=True,
         index=True,
     )
     source_url: Mapped[str | None] = mapped_column(String(500))
@@ -286,6 +285,8 @@ class ExternalSourceRecord(Base):
     source_category: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     external_id: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
     canonical_key: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    logical_key: Mapped[str | None] = mapped_column(String(200), index=True)
+    canonical_key_version: Mapped[str | None] = mapped_column(String(30))
     detail_url: Mapped[str | None] = mapped_column(String(500))
     collected_page_url: Mapped[str] = mapped_column(String(500), nullable=False)
     title: Mapped[str] = mapped_column(String(300), nullable=False)

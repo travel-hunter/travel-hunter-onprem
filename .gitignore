@@ -143,6 +143,7 @@ celerybeat.pid
 
 # Environments
 .env
+backend/.env.local
 .envrc
 deploy/.env.staging
 deploy/.env.tunnel

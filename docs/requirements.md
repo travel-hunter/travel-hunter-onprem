@@ -28,9 +28,9 @@ Travel Hunter는 국내 여행자가 여행 혜택 정책을 찾고, 여행 일�
 |---|---|---|
 | Guest | 로그인 전 사용자 | 로그인, 회원가입, 비밀번호 재설정, 초대 링크 진입 후 로그인 유도 |
 | Member | 인증된 사용자 | 정책 탐색/저장, 일정 생성/편집, 초대 생성/수락, 프로필 설정 |
-| Trip Owner | 일정을 생성한 사용자 | 일정 삭제, 장소 편집, 초대 권한 설정 |
-| Trip Editor | editor 권한으로 초대 수락한 멤버 | 일정 장소 편집 |
-| Trip Viewer | viewer 권한으로 초대 수락한 멤버 | 일정 열람 |
+| Trip Owner | 일정을 생성한 사용자 | 일정 삭제, 장소 편집, editor 초대 링크 관리 |
+| Trip Editor | editor 권한으로 초대 수락한 멤버 | 일정 장소 편집, editor 초대 링크 관리 |
+| Trip Viewer | 기존 viewer 권한 멤버 | 일정 열람 |
 
 ## 3. 기능 요구사항
 
@@ -89,10 +89,10 @@ Travel Hunter는 국내 여행자가 여행 혜택 정책을 찾고, 여행 일�
 
 | ID | 요구사항 | Acceptance |
 |---|---|---|
-| FR-INVITE-001 | 사용자는 일정 초대 링크를 만들 수 있다. | 초대 token과 URL이 생성되고 복사 가능한 형태로 표시된다. |
-| FR-INVITE-002 | 사용자는 초대 권한을 viewer/editor 중 선택할 수 있다. | 선택한 role은 `trip_invites.role`에 저장되고 수락 시 `trip_members.role`에 반영된다. |
+| FR-INVITE-001 | 사용자는 editor 일정 초대 링크를 만들 수 있다. | 초대 token과 URL이 생성되고 복사 가능한 형태로 표시된다. |
+| FR-INVITE-002 | 신규 친구 초대 권한은 editor로 고정한다. | 신규 초대는 `trip_invites.role="editor"`로 저장되고 수락 시 `trip_members.role="editor"`로 반영된다. 기존 viewer 멤버는 읽기 전용으로 남지만 viewer 초대 링크 생성·수락은 지원하지 않는다. |
 | FR-INVITE-003 | 초대 수신자는 링크로 초대를 수락할 수 있다. | 비로그인 사용자는 로그인 후 원래 초대 URL로 복귀하고, 수락 시 일정 멤버로 추가된다. |
-| FR-INVITE-004 | 초대 링크는 외부 발송이 아닌 링크 활성화/공유 중심으로 표현한다. | UI는 실제 email/SMS/Kakao 발송처럼 오해되지 않는 문구를 사용한다. |
+| FR-INVITE-004 | 초대 링크는 링크 활성화/공유를 기본으로 하고 email은 보조 전송 수단으로 제공한다. | SMTP 미설정/실패 시에도 editor 초대 링크는 유지되며, SMS/Kakao 발송처럼 오해되지 않는 문구를 사용한다. |
 
 ### 3.7 마감 알림
 

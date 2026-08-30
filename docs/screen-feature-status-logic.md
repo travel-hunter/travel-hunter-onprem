@@ -26,7 +26,7 @@
 | 수집 대상 분류 | 완료 | `local_half_trip`, `stay_discount`를 public 정책/추천 입력으로 지원하고, `regional_benefit`과 `traffic_benefit`은 legacy source evidence로만 유지한다. |
 | HTML 파싱 | 완료 | source category별 parser가 HTML에서 제목, 지역, 기간, 혜택 문구, 금액/할인율, 상세 URL 등을 추출한다. |
 | 원천 레코드 저장 | 완료 | `external_source_records` 테이블에 `source_name + source_category + canonical_key` 기준으로 upsert한다. |
-| 정책 테이블 반영 | 완료 | `local_half_trip` 신청접수중/준비중 레코드와 active/fresh `stay_discount` 원천 레코드를 `policies` 테이블로 승격한다. `local_half_trip` slug는 `travelmonth-{external_source_record_id}` 형식이다. `stay_discount`는 canonical 정책 1건을 승격하되 정책 목록/추천에서는 비수도권 인구감소지역 85개 지자체별 `stay-discount-{sidoSlug}-{citySlug}` alias로 투영한다. |
+| 정책 테이블 반영 | 완료 | `local_half_trip` 신청접수중/준비중 레코드와 active/fresh `stay_discount` 원천 레코드를 `policies` 테이블로 승격한다. `local_half_trip` slug는 `travelmonth-{external_source_record_id}` 형식이다. `digital_tourism_resident_card`는 공식 참여지역 52개를 지역별 canonical `dgtour-{지역}` slug로 승격하고 기존 `dgtour-{city}-{n}`/과거 `travelmonth-*` URL은 같은 지역 canonical 정책으로 해석한다. `stay_discount`는 canonical 정책 1건을 승격하되 정책 목록/추천에서는 비수도권 인구감소지역 85개 지자체별 `stay-discount-{sidoSlug}-{citySlug}` alias로 투영한다. |
 | 만료/비활성 처리 | 완료 | 공개 승격 대상이 아닌 마감/unknown/stale 및 legacy source 연결 정책을 `hidden` 상태로 숨긴다. |
 | 커밋 | 완료 | 수집/정규화 후 DB commit을 수행한다. 일부 source가 실패해도 성공한 source가 있으면 `partial_success`로 기록한다. |
 
@@ -215,5 +215,5 @@ Kakao Local provider가 없거나 외부 후보가 충분하지 않으면 내장
 ### 2026-06-11 - 정책 수집 로컬 확장
 
 - `stay_discount` source가 공식 `https://ktostay.visitkorea.or.kr/` 숙박세일 페스타 숙박 할인권과 비수도권 인구감소지역 85개 지자체를 파싱해 `external_source_records.raw_payload.eligibleAreas`에 저장하고 active/fresh canonical 레코드를 `policies`로 승격한다. 정책 목록/검색/지역 추천에서는 canonical을 숨기고 `stay-discount-{sidoSlug}-{citySlug}` alias 85건으로 표시하며, 제목은 `[고성] ...`처럼 시/군 접두어를 붙이고 목록 메타 지역은 `강원` 같은 광역자치단체로 맞춘다. 상세 지원 내용은 원문 반복 대신 결제 금액별 할인 조건과 발급·입실 기간을 항목화한다. 상세/저장/일정 연결은 canonical 정책으로 중복을 방지한다. `local_half_trip`은 준비중 지역도 정책 목록에 표시하고 제목은 `[합천] 대한민국 반값여행 지원`처럼 지자체명을 대괄호 접두어로 맞춘다.
-- 대한민국 반값여행 parser는 `신청접수`, `6월 중 예정`, `6.16 10시부터`, `마감` 같은 6-7월 상태 문구를 구분하고 여행기간을 raw payload에 보존한다.
+- 대한민국 반값여행 parser는 `신청접수`, `6월 중 예정`, `6.16 10시부터`, `마감` 같은 6-7월 상태 문구를 구분하고 여행기간을 raw payload에 보존한다. 디지털관광주민증은 VisitKorea 공식 참여지역 allowlist 52개를 materialize해 `digital_tourism_resident_card` source로 수집하고, 지역별 canonical `dgtour-{지역}` slug로 공개하며, 각 지역 `getRegnMbrbList.json` 전체 페이지의 제휴처 혜택을 `raw_payload.partnerBenefits`에 보존한 뒤 상세 `supportContent`에 요약/대표 혜택으로 노출한다. 강진/남해/영암/횡성처럼 allowlist 밖 지역은 public 목록/상세/추천/저장/일정 연결 후보에서 제외한다.
 - 일정 상세 추천 정책은 지역, 일정 날짜 겹침, 카테고리, 여행 스타일 텍스트만으로 점수화하며 LLM/AI 판단은 사용하지 않는다.

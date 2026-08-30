@@ -14,6 +14,7 @@ import {
   type Trip,
 } from "../../api";
 import { App } from "../App";
+import { policyTripErrorMessage } from "../../pages/PolicyPages";
 import { AppProviders } from "../AppRoot";
 import {
   examplePolicyDetail,
@@ -29,6 +30,30 @@ import {
 import { getLink, login, renderAppRoute } from "../../test/renderAppRoute";
 
 describe("Travel Hunter app — policies & trip picker", () => {
+  it("explains that only one stay discount policy fits a trip", () => {
+    // 숙박세일은 지역마다 정책 행이 따로 있어 백엔드가 409로 막는다.
+    // 기본 문구는 "잠시 후 다시 시도"라 원인을 오해하게 만든다.
+    expect(
+      policyTripErrorMessage(
+        new Error("Trip already has a stay discount policy"),
+      ),
+    ).toBe(
+      "숙박세일 페스타 정책은 일정당 하나만 연결할 수 있어요. 기존 정책을 먼저 해제해 주세요.",
+    );
+  });
+
+  it("keeps the existing policy link error messages", () => {
+    expect(policyTripErrorMessage(new Error("Policy not found"))).toBe(
+      "정책 정보를 찾을 수 없어요. 다시 확인해 주세요.",
+    );
+    expect(policyTripErrorMessage(new Error("Trip not found"))).toBe(
+      "일정을 찾을 수 없어요. 다른 일정을 선택해 주세요.",
+    );
+    expect(policyTripErrorMessage(new Error("boom"))).toBe(
+      "일정에 혜택을 담지 못했어요. 잠시 후 다시 시도해 주세요.",
+    );
+  });
+
   it("filters policies from the unified filter sheet after applying", async () => {
     const policies: Policy[] = [
       examplePolicyDetail,
@@ -89,6 +114,85 @@ describe("Travel Hunter app — policies & trip picker", () => {
       );
       expect(document.body).toHaveTextContent("강릉 숙박 할인권");
       expect(getLink(examplePolicyPath)).toBeInTheDocument();
+    } finally {
+      listPoliciesSpy.mockRestore();
+    }
+  });
+
+  it("shows digital resident policies as always-issued instead of deadline-unknown on the list", async () => {
+    const policies: Policy[] = [
+      {
+        ...examplePolicyDetail,
+        id: "travelmonth-dgtour-miryang",
+        slug: "travelmonth-dgtour-miryang",
+        label: "DG",
+        tag: "지역할인",
+        title: "[밀양] 디지털관광주민증 혜택",
+        org: "밀양 지자체 · 한국관광공사",
+        region: "경남",
+        deadline: "",
+        amount: "지역 제휴 혜택",
+        summary: "디지털관광주민증 발급 지역의 제휴 혜택입니다.",
+        category: "지역할인",
+        officialUrl: "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=48&signguCd=48270",
+        applyUrl: null,
+        sourceType: "external",
+      },
+    ];
+    const listPoliciesSpy = vi
+      .spyOn(appDataApi, "listPolicies")
+      .mockResolvedValue(policies);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+
+      expect(await screen.findByText("[밀양] 디지털관광주민증 혜택")).toBeInTheDocument();
+      expect(document.body).toHaveTextContent("상시 발급");
+      expect(document.body).toHaveTextContent("경남 · 상시 발급 · 제휴처별 운영기간 확인");
+      expect(document.body).not.toHaveTextContent("마감일 확인 필요");
+      expect(document.body).not.toHaveTextContent("경남 · ~");
+    } finally {
+      listPoliciesSpy.mockRestore();
+    }
+  });
+
+  it("does not show start-date unknown copy on policy list cards", async () => {
+    const policies: Policy[] = [
+      {
+        ...examplePolicyDetail,
+        id: "deadline-only-list-policy",
+        slug: "deadline-only-list-policy",
+        title: "마감일만 확인된 목록 정책",
+        region: "전국",
+        deadline: "2026-12-31",
+        startDate: null,
+      },
+      {
+        ...examplePolicyDetail,
+        id: "unknown-period-list-policy",
+        slug: "unknown-period-list-policy",
+        title: "기간 미확인 목록 정책",
+        region: "강원",
+        deadline: "",
+        startDate: null,
+      },
+    ];
+    const listPoliciesSpy = vi
+      .spyOn(appDataApi, "listPolicies")
+      .mockResolvedValue(policies);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+
+      expect(await screen.findByText("마감일만 확인된 목록 정책")).toBeInTheDocument();
+      expect(document.body).toHaveTextContent("전국 · 2026.12.31 마감");
+      expect(document.body).toHaveTextContent("기간 미확인 목록 정책");
+      expect(document.body).toHaveTextContent("강원");
+      expect(document.body).not.toHaveTextContent("시작일 확인 필요");
     } finally {
       listPoliciesSpy.mockRestore();
     }
@@ -779,7 +883,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
       expect(document.querySelectorAll(".trip-select-row")).toHaveLength(2);
       expect(screen.getByRole("link", { name: "새 일정에 담기" })).toHaveAttribute(
         "href",
-        `/trips/new?policySlug=${encodeURIComponent(examplePolicySlug)}&region=%EC%98%81%EA%B4%91&sido=%EC%A0%84%EB%82%A8`,
+        `/trips/new?policySlug=${encodeURIComponent("dgtour-영광")}&region=%EC%98%81%EA%B4%91&sido=%EC%A0%84%EB%82%A8`,
       );
     } finally {
       listTripsSpy.mockRestore();
@@ -788,6 +892,11 @@ describe("Travel Hunter app — policies & trip picker", () => {
 
   it("keeps the trip-attached state scoped to the selected policy", async () => {
     const originalGetPolicy = appDataApi.getPolicy.bind(appDataApi);
+    const previewTrip = {
+      ...getPreviewTrip(),
+      id: "policy-scope-trip",
+      title: "제주 3일 여행",
+    };
     const otherPolicy: Policy = {
       id: "city-pass",
       slug: "city-pass",
@@ -813,6 +922,19 @@ describe("Travel Hunter app — policies & trip picker", () => {
           ? Promise.resolve(otherPolicy)
           : originalGetPolicy(slug),
       );
+    const listTripsSpy = vi
+      .spyOn(appDataApi, "listTrips")
+      .mockResolvedValue([previewTrip]);
+    const addPolicyToTripSpy = vi
+      .spyOn(appDataApi, "addPolicyToTrip")
+      .mockResolvedValue({
+        tripId: previewTrip.id,
+        policyId: examplePolicySlug,
+        added: true,
+      });
+    const getTripSpy = vi
+      .spyOn(appDataApi, "getTrip")
+      .mockResolvedValue(previewTrip);
 
     try {
       await login();
@@ -851,6 +973,9 @@ describe("Travel Hunter app — policies & trip picker", () => {
       ).not.toBeInTheDocument();
     } finally {
       getPolicySpy.mockRestore();
+      listTripsSpy.mockRestore();
+      addPolicyToTripSpy.mockRestore();
+      getTripSpy.mockRestore();
     }
   });
 });

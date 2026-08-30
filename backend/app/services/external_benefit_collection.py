@@ -1,15 +1,25 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from math import ceil
+import re
+from urllib.parse import urljoin, urlparse
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models import ExternalSourceRecord
 from app.repositories import external_sources as external_source_repository
+from app.services import digital_tourism_resident_card as dgtour_identity
 from app.services import policy_normalization
-from app.services.dgtourcard_parser import parse_dgtourcard_benefits
+from app.services.dgtourcard_parser import (
+    enrich_dgtourcard_benefits_with_detail_pages,
+    parse_dgtourcard_benefits,
+    parse_local_half_trip_detail_fields,
+)
 from app.services.travelmonth_collection import (
     TRAVELMONTH_REGIONAL_BENEFIT_URL,
     CollectionResult,
@@ -29,6 +39,7 @@ from app.services.travelmonth_traffic_parser import (
 from app.services.travelmonth_traffic_parser import parse_traffic_benefits
 
 DGTOURCARD_URL = "https://korean.visitkorea.or.kr/dgtourcard/tour50.do"
+DIGITAL_TOURISM_RESIDENT_CARD_URL = dgtour_identity.SOURCE_URL
 
 
 @dataclass(frozen=True)
@@ -108,24 +119,147 @@ def collect_external_benefits_from_live_sources(
     all_rows = []
     for source in _source_registry():
         try:
-            html = fetch_external_source_html(source.url, timeout=timeout)
-            rows, result = _collect_source_records(
-                db,
-                source_category=source.source_category,
-                parser=source.parser,
-                html=html,
-                fetched_at=fetched_at,
-                today=today,
-            )
+            if source.source_category == dgtour_identity.SOURCE_CATEGORY:
+                rows, result = _collect_digital_tourism_records(
+                    db,
+                    fetched_at=fetched_at,
+                    today=today,
+                    timeout=timeout,
+                )
+            else:
+                html = fetch_external_source_html(source.url, timeout=timeout)
+                rows, result = _collect_source_records(
+                    db,
+                    source_category=source.source_category,
+                    parser=source.parser,
+                    html=html,
+                    fetched_at=fetched_at,
+                    today=today,
+                    timeout=timeout,
+                )
             all_rows.extend(rows)
             source_results.append(result)
         except Exception as exc:
             source_results.append(_source_failure_result(source, exc))
+    if any(
+        source.source_category == "local_half_trip" and source.outcome == "success"
+        for source in source_results
+    ):
+        enrich_existing_local_half_trip_detail_fields(db, timeout=timeout)
     if all_rows:
         policy_normalization.promote_external_benefits_to_policies(db)
     db.commit()
     return _build_result(source_results, len(all_rows))
 
+
+
+def fetch_digital_tourism_partner_benefits(
+    *,
+    city: str,
+    mtpc_do_cd: str,
+    signgu_cd: str,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    client: httpx.Client | None = None,
+) -> list[dict[str, object]]:
+    close_client = client is None
+    http_client = client or httpx.Client(timeout=timeout, follow_redirects=True, headers=DEFAULT_HEADERS)
+    try:
+        rows: list[dict[str, object]] = []
+        for category_code, _category_name in dgtour_identity.PARTNER_BENEFIT_CATEGORY_ORDER:
+            page_no = 1
+            total_count: int | None = None
+            while True:
+                payload = {
+                    "mtpcDoCd": mtpc_do_cd,
+                    "signguCd": signgu_cd,
+                    "mbrbBnefClCd": category_code,
+                    "pageNo": str(page_no),
+                    "tipPageNo": "1",
+                    "orderDiv": "UTZT",
+                }
+                response = http_client.post(
+                    dgtour_identity.REGIONAL_MEMBER_BENEFIT_ENDPOINT,
+                    data=payload,
+                    headers={
+                        **DEFAULT_HEADERS,
+                        "Accept": "application/json, text/javascript, */*; q=0.01",
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Origin": "https://korean.visitkorea.or.kr",
+                        "Referer": dgtour_identity.official_url_for_city(city) or dgtour_identity.SOURCE_URL,
+                    },
+                    timeout=timeout,
+                    follow_redirects=True,
+                )
+                response.raise_for_status()
+                result = response.json()
+                page_rows = result.get("resultList") if isinstance(result, dict) else None
+                if not isinstance(page_rows, list):
+                    break
+                typed_page_rows = [row for row in page_rows if isinstance(row, dict)]
+                rows.extend(typed_page_rows)
+                if total_count is None:
+                    total_count = _digital_tourism_total_count(typed_page_rows)
+                if not typed_page_rows:
+                    break
+                if total_count is None:
+                    break
+                if page_no >= max(1, ceil(total_count / dgtour_identity.REGIONAL_BENEFIT_PAGE_SIZE)):
+                    break
+                page_no += 1
+        return dgtour_identity.partner_benefits_from_api_rows(rows)
+    finally:
+        if close_client:
+            http_client.close()
+
+
+def _digital_tourism_total_count(rows: list[dict[str, object]]) -> int | None:
+    if not rows:
+        return 0
+    total = rows[0].get("totCnt")
+    return total if isinstance(total, int) else None
+
+
+def collect_digital_tourism_partner_benefits_by_city(
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, list[dict[str, object]]]:
+    benefits_by_city: dict[str, list[dict[str, object]]] = {}
+    with httpx.Client(timeout=timeout, follow_redirects=True, headers=DEFAULT_HEADERS) as client:
+        for city, _region, mtpc_do_cd, signgu_cd in dgtour_identity.data.REGIONAL_URL_CODE_ROWS:
+            benefits_by_city[city] = fetch_digital_tourism_partner_benefits(
+                city=city,
+                mtpc_do_cd=mtpc_do_cd,
+                signgu_cd=signgu_cd,
+                timeout=timeout,
+                client=client,
+            )
+    return benefits_by_city
+
+
+def _collect_digital_tourism_records(
+    db: Session,
+    *,
+    fetched_at: datetime,
+    today: date,
+    timeout: float,
+) -> tuple[list[object], SourceCollectionResult]:
+    materialized = dgtour_identity.materialize_participating_region_sources(
+        fetched_at=fetched_at,
+        today=today,
+    )
+    benefits_by_city = collect_digital_tourism_partner_benefits_by_city(timeout=timeout)
+    enriched = dgtour_identity.apply_partner_benefit_enrichment_by_city(
+        materialized,
+        benefits_by_city,
+    )
+    rows = external_source_repository.upsert_external_source_records(db, enriched)
+    return rows, SourceCollectionResult(
+        source_category=dgtour_identity.SOURCE_CATEGORY,
+        parsed_count=len(enriched),
+        created_or_updated_count=len(rows),
+        outcome="success",
+    )
 
 def fetch_external_source_html(
     url: str,
@@ -142,6 +276,130 @@ def fetch_external_source_html(
     return response.text
 
 
+
+def fetch_local_half_trip_detail_html(
+    url: str,
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> str:
+    html = fetch_external_source_html(url, timeout=timeout)
+    ajax_url = _local_half_trip_ajax_content_url(url, html)
+    if ajax_url is None:
+        landing_url = _local_half_trip_landing_page_url(url, html)
+        if landing_url is not None:
+            try:
+                landing_html = fetch_external_source_html(landing_url, timeout=timeout)
+            except Exception:
+                landing_html = html
+            else:
+                landing_ajax_url = _local_half_trip_ajax_content_url(landing_url, landing_html)
+                if landing_ajax_url is not None:
+                    ajax_url = landing_ajax_url
+                else:
+                    html = landing_html
+        if ajax_url is None:
+            return html
+    try:
+        return fetch_external_source_html(ajax_url, timeout=timeout)
+    except Exception:
+        return html
+
+
+def enrich_existing_local_half_trip_detail_fields(
+    db: Session,
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> int:
+    records = list(
+        db.scalars(
+            select(ExternalSourceRecord)
+            .where(ExternalSourceRecord.source_category == "local_half_trip")
+            .where(ExternalSourceRecord.detail_url.is_not(None))
+            .where(ExternalSourceRecord.status.in_(("active", "scheduled")))
+            .where(ExternalSourceRecord.freshness_status.in_(("fresh", "unknown")))
+            .order_by(ExternalSourceRecord.id)
+        ).all()
+    )
+    updated_count = 0
+    for record in records:
+        try:
+            fields = parse_local_half_trip_detail_fields(
+                fetch_local_half_trip_detail_html(str(record.detail_url), timeout=timeout)
+            )
+        except Exception:
+            continue
+        if not fields:
+            continue
+        payload = dict(record.raw_payload or {})
+        changed = False
+        for key, value in fields.items():
+            if payload.get(key) != value:
+                payload[key] = value
+                changed = True
+        if not changed:
+            continue
+        record.raw_payload = payload
+        record.raw_detail_text = _merged_local_half_trip_detail_text(record.raw_detail_text, fields)
+        record.field_completeness = min(100, max(record.field_completeness, 95))
+        record.confidence = min(100, max(record.confidence, 95))
+        updated_count += 1
+    return updated_count
+
+
+def _merged_local_half_trip_detail_text(
+    raw_detail_text: str,
+    fields: dict[str, object],
+) -> str:
+    values = [
+        raw_detail_text,
+        fields.get("participantTarget"),
+        fields.get("supportDetail"),
+        fields.get("requiredDocumentsDetail"),
+        fields.get("detailNotes"),
+    ]
+    lines: list[str] = []
+    for value in values:
+        if not value:
+            continue
+        for line in re.split(r"[ \t]*\r?\n[ \t]*", str(value)):
+            text = " ".join(line.split())
+            if text and text not in lines:
+                lines.append(text)
+    return "\n".join(lines) if lines else raw_detail_text
+
+
+def _local_half_trip_landing_page_url(url: str, html: str) -> str | None:
+    for pattern in (
+        r"<meta[^>]+http-equiv=['\"]?refresh['\"]?[^>]+content=['\"][^'\"]*url=([^'\"]+)['\"]",
+        r"<meta[^>]+property=['\"]og:url['\"][^>]+content=['\"]([^'\"]+)['\"]",
+        r"<meta[^>]+property=['\"]twitter:url['\"][^>]+content=['\"]([^'\"]+)['\"]",
+    ):
+        match = re.search(pattern, html, flags=re.IGNORECASE)
+        if match is None:
+            continue
+        candidate = match.group(1).strip()
+        if not candidate:
+            continue
+        absolute_url = urljoin(url, candidate)
+        parsed = urlparse(absolute_url)
+        if parsed.scheme in {"http", "https"} and absolute_url.rstrip("/") != url.rstrip("/"):
+            return absolute_url
+    return None
+
+
+def _local_half_trip_ajax_content_url(url: str, html: str) -> str | None:
+    match = re.search(
+        r"DataLoad\(['\"]load_content['\"],\s*['\"][^'\"]*['\"],\s*['\"]([^'\"]+)['\"]",
+        html,
+    )
+    if match is None:
+        return None
+    parsed = urlparse(url)
+    ajax_path = match.group(1)
+    if not ajax_path or parsed.scheme not in {"http", "https"}:
+        return None
+    return urljoin(url, ajax_path)
+
 def _collect_source_records(
     db: Session,
     *,
@@ -150,8 +408,25 @@ def _collect_source_records(
     html: str,
     fetched_at: datetime,
     today: date,
+    timeout: float | None = None,
 ) -> tuple[list[object], SourceCollectionResult]:
     parsed = list(parser(html, fetched_at, today))
+    if source_category == "local_half_trip" and timeout is not None:
+        parsed = enrich_dgtourcard_benefits_with_detail_pages(
+            parsed,
+            fetch_detail_html=lambda detail_url: fetch_local_half_trip_detail_html(
+                detail_url,
+                timeout=timeout,
+            ),
+        )
+    if source_category == dgtour_identity.SOURCE_CATEGORY:
+        parsed = dgtour_identity.merge_materialized_and_parsed_sources(
+            dgtour_identity.materialize_participating_region_sources(
+                fetched_at=fetched_at,
+                today=today,
+            ),
+            parsed,
+        )
     rows = external_source_repository.upsert_external_source_records(db, parsed)
     return rows, SourceCollectionResult(
         source_category=source_category,
@@ -183,6 +458,8 @@ def _parser_for(source_category: str) -> Parser:
             fetched_at=fetched_at,
             today=today,
         )
+    if source_category == dgtour_identity.SOURCE_CATEGORY:
+        return lambda html, fetched_at, today: []
     if source_category == "stay_discount":
         return lambda html, fetched_at, today: parse_stay_discount_benefits(
             html,
@@ -210,6 +487,11 @@ def _source_registry() -> tuple[SourceDefinition, ...]:
             "local_half_trip",
             DGTOURCARD_URL,
             _parser_for("local_half_trip"),
+        ),
+        SourceDefinition(
+            dgtour_identity.SOURCE_CATEGORY,
+            DIGITAL_TOURISM_RESIDENT_CARD_URL,
+            _parser_for(dgtour_identity.SOURCE_CATEGORY),
         ),
         SourceDefinition(
             "stay_discount",

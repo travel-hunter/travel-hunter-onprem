@@ -6,11 +6,11 @@ from app.db.session import get_optional_db
 from app.models import User
 from app.schemas.trip import (
     ConfirmInviteRequest,
+    CreateTripPlacesRequest,
     CreateTripPlaceRequest,
     CreateTripRequest,
     DeleteTripResponse,
     InviteEmailResult,
-    InviteLinksState,
     InviteState,
     MoveTripPlaceRequest,
     PlaceSearchCandidate,
@@ -18,6 +18,7 @@ from app.schemas.trip import (
     SendInviteEmailRequest,
     Trip,
     TripPolicyResponse,
+    UpdateTripSettingsRequest,
     UpdateTripPlaceRequest,
     UpdateTripStatusRequest,
 )
@@ -151,6 +152,25 @@ def update_trip_status(
     return Trip(**trip)
 
 
+@router.patch("/{trip_id}/settings", response_model=Trip)
+def update_trip_settings(
+    trip_id: str,
+    payload: UpdateTripSettingsRequest,
+    db: Session | None = Depends(get_optional_db),
+    current_user: User | None = Depends(get_current_user),
+) -> Trip:
+    try:
+        trip = trip_service.update_trip_settings(
+            _require_db(db),
+            _require_user(current_user),
+            trip_id,
+            payload,
+        )
+    except trip_service.TripServiceError as error:
+        _raise_trip_error(error)
+    return Trip(**trip)
+
+
 @router.post("/{trip_id}/days/{day_number}/places", response_model=Trip)
 def add_place_to_trip_day(
     trip_id: str,
@@ -161,6 +181,27 @@ def add_place_to_trip_day(
 ) -> Trip:
     try:
         trip = trip_service.add_place_to_trip_day(
+            _require_db(db),
+            _require_user(current_user),
+            trip_id,
+            day_number,
+            payload,
+        )
+    except trip_service.TripServiceError as error:
+        _raise_trip_error(error)
+    return Trip(**trip)
+
+
+@router.post("/{trip_id}/days/{day_number}/places/batch", response_model=Trip)
+def add_places_to_trip_day(
+    trip_id: str,
+    day_number: int,
+    payload: CreateTripPlacesRequest,
+    db: Session | None = Depends(get_optional_db),
+    current_user: User | None = Depends(get_current_user),
+) -> Trip:
+    try:
+        trip = trip_service.add_places_to_trip_day(
             _require_db(db),
             _require_user(current_user),
             trip_id,
@@ -270,12 +311,12 @@ def search_trip_places(
     return [PlaceSearchCandidate(**item) for item in candidates]
 
 
-@router.get("/{trip_id}/invite", response_model=InviteLinksState)
+@router.get("/{trip_id}/invite", response_model=InviteState)
 def get_invite_state(
     trip_id: str,
     db: Session | None = Depends(get_optional_db),
     current_user: User | None = Depends(get_current_user),
-) -> InviteLinksState:
+) -> InviteState:
     invite_state = trip_service.get_invite_state(
         _require_db(db),
         _require_user(current_user),
@@ -283,7 +324,7 @@ def get_invite_state(
     )
     if invite_state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
-    return InviteLinksState(**invite_state)
+    return InviteState(**invite_state)
 
 
 @router.post("/{trip_id}/invite", response_model=InviteState)

@@ -42,15 +42,15 @@ export type PolicyStructuredDetailItem = {
   url?: string;
   startDate?: string;
   endDate?: string;
+  type?: string;
 };
 
 export type PolicyStructuredDetail = {
-  benefits: PolicyStructuredDetailItem[];
-  conditions: PolicyStructuredDetailItem[];
+  supportContent: PolicyStructuredDetailItem[];
   periods: PolicyStructuredDetailItem[];
-  links: PolicyStructuredDetailItem[];
-  documents: PolicyStructuredDetailItem[];
-  notices: PolicyStructuredDetailItem[];
+  applicationTarget: PolicyStructuredDetailItem[];
+  requiredDocuments: PolicyStructuredDetailItem[];
+  notes: PolicyStructuredDetailItem[];
 };
 
 export type Policy = {
@@ -61,6 +61,7 @@ export type Policy = {
   title: string;
   org: string;
   region: string;
+  startDate?: string | null;
   deadline: string;
   amount: string;
   summary: string;
@@ -259,6 +260,8 @@ export type Trip = {
   status: "draft" | "confirmed";
   revision: number;
   dates: string;
+  startDate: string;
+  endDate: string;
   people: string[];
   participantCount: number;
   expectedSaving: string;
@@ -340,7 +343,7 @@ export type TravelAreaRecommendationResponse = {
   emptyReason: "unsupported_sido" | "no_match" | null;
 };
 
-export type InviteRole = "viewer" | "editor";
+export type InviteRole = "editor";
 export type InviteEmailDeliveryStatus = "sent" | "notConfigured" | "failed";
 
 export type InviteState = {
@@ -355,12 +358,6 @@ export type InviteState = {
   copied: boolean;
   role: InviteRole;
   alreadyMember: boolean;
-};
-
-export type InviteLinksState = {
-  tripId: string;
-  viewer: InviteState | null;
-  editor: InviteState | null;
 };
 
 export type InviteEmailResult = {

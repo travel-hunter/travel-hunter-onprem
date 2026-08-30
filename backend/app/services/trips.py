@@ -20,11 +20,13 @@ from app.repositories import external_sources as external_source_repository
 from app.repositories import policies as policy_repository
 from app.repositories import trips as trip_repository
 from app.schemas.trip import (
+    CreateTripPlacesRequest,
     CreateTripPlaceRequest,
     CreateTripRequest,
     MAX_TRIP_PARTICIPANTS,
     MoveTripPlaceRequest,
     SendInviteEmailRequest,
+    UpdateTripSettingsRequest,
     UpdateTripPlaceRequest,
     UpdateTripStatusRequest,
 )
@@ -32,6 +34,7 @@ from app.services import email as email_service
 from app.services import itinerary_recommendations
 from app.services import local_half_trip_display
 from app.services import stay_discount_aliases
+from app.services import digital_tourism_policy_aliases
 from app.services.kakao_local import KakaoLocalClient, build_kakao_local_client
 from app.services.policy_semantics import (
     benefit_display_amount,
@@ -574,7 +577,7 @@ def _trip_policy_category_score(candidate: dict[str, object], trip: Trip) -> int
         score += 55 if trip_days >= 2 else 15
     if source_category == "traffic_benefit" or policy_type == "교통":
         score += 15
-    if source_category in {"local_half_trip", "regional_benefit"} or policy_type == "지역할인":
+    if source_category in {"local_half_trip", "digital_tourism_resident_card", "regional_benefit"} or policy_type == "지역할인":
         score += 10
     return score
 
@@ -699,9 +702,6 @@ def _list_recommended_policy_candidates(db: Session) -> list[dict[str, object]]:
         ):
             continue
         if stay_discount_aliases.is_stay_discount_canonical_policy(policy):
-            alias_areas = stay_discount_aliases.alias_areas_for_policy(db, policy)
-            if alias_areas:
-                candidates.extend(_stay_alias_to_trip_policy_candidate(policy, area) for area in alias_areas)
             continue
         external_record = (
             external_source_repository.get_external_source_record_by_id(
@@ -719,13 +719,22 @@ def _resolve_policy_for_request_slug(
     db: Session,
     policy_slug: str,
 ) -> tuple[Policy | None, stay_discount_aliases.StayDiscountAliasArea | None]:
+    policy = policy_repository.get_policy_by_slug(db, policy_slug)
+    if policy is not None:
+        return policy, None
     alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
     if alias_resolution is not None:
         policy = alias_resolution.canonical_policy
         if not is_public_policy(policy):
             return None, None
         return policy, alias_resolution.alias_area
-    return policy_repository.get_policy_by_slug(db, policy_slug), None
+    digital_policy = digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(
+        db,
+        policy_slug,
+    )
+    if digital_policy is not None:
+        return digital_policy, None
+    return None, None
 
 
 def _trip_role_for_user(trip: Trip, user: User | None) -> str:
@@ -805,6 +814,8 @@ def trip_to_api(
         "revision": trip.revision or 1,
         "travelAreaId": trip.travel_area_id,
         "dates": _format_dates(trip.start_date, trip.end_date),
+        "startDate": trip.start_date,
+        "endDate": trip.end_date,
         "people": people,
         "participantCount": trip.participant_count or max(1, len(people)),
         "expectedSaving": _format_saving(_policy_saving(trip)),
@@ -862,6 +873,13 @@ def _find_trip_day(trip: Trip, day_number: int) -> TripDay:
     raise TripServiceError(404, "Trip not found")
 
 
+def _find_trip_day_for_batch(trip: Trip, day_number: int) -> TripDay:
+    for trip_day in trip.days:
+        if trip_day.day_number == day_number:
+            return trip_day
+    raise TripServiceError(404, "Trip day not found")
+
+
 def _find_trip_place(trip: Trip, place_id: int) -> TripPlace:
     for trip_day in trip.days:
         for place in trip_day.places:
@@ -883,6 +901,67 @@ def _ordered_places(trip_day: TripDay) -> list[TripPlace]:
         trip_day.places,
         key=lambda place: (place.order_num is None, place.order_num or 0, place.id or 0),
     )
+
+
+def _delete_trip_day(db: Session, trip_day: TripDay) -> None:
+    if hasattr(db, "delete"):
+        db.delete(trip_day)
+
+
+def _apply_trip_date_range(
+    db: Session,
+    trip: Trip,
+    *,
+    start_date: date,
+    end_date: date,
+    overflow_place_strategy: str,
+) -> None:
+    next_day_count = (end_date - start_date).days + 1
+    ordered_days = sorted(trip.days, key=lambda day: day.day_number)
+    kept_days = [day for day in ordered_days if day.day_number <= next_day_count]
+    overflow_days = [day for day in ordered_days if day.day_number > next_day_count]
+
+    if not kept_days:
+        kept_days = [
+            trip_repository.add_trip_day(
+                db,
+                trip_id=trip.id,
+                day_number=1,
+                date_value=start_date,
+            )
+        ]
+
+    for day in kept_days:
+        day.date = start_date + timedelta(days=day.day_number - 1)
+
+    if overflow_place_strategy == "moveToLastDay" and overflow_days:
+        target_day = kept_days[-1]
+        target_places = _ordered_places(target_day)
+        for overflow_day in overflow_days:
+            target_places.extend(_ordered_places(overflow_day))
+            overflow_day.places = []
+        trip_repository.reorder_trip_day_places(target_day, target_places)
+
+    for overflow_day in overflow_days:
+        _delete_trip_day(db, overflow_day)
+        if overflow_day in trip.days:
+            trip.days.remove(overflow_day)
+
+    existing_numbers = {day.day_number for day in kept_days}
+    for day_number in range(1, next_day_count + 1):
+        if day_number not in existing_numbers:
+            day = trip_repository.add_trip_day(
+                db,
+                trip_id=trip.id,
+                day_number=day_number,
+                date_value=start_date + timedelta(days=day_number - 1),
+            )
+            kept_days.append(day)
+            existing_numbers.add(day_number)
+
+    trip.start_date = start_date
+    trip.end_date = end_date
+    trip.days = sorted(kept_days, key=lambda day: day.day_number)
 
 
 def list_trips(db: Session, user: User) -> list[dict[str, object]]:
@@ -993,8 +1072,23 @@ def add_policy_to_trip(
     if policy is None:
         raise TripServiceError(404, "Policy not found")
 
+    # 확인과 삽입 사이에 다른 요청이 끼어들면 숙박세일이 둘 이상 붙는다.
+    # 잠금을 얻을 때까지 앞선 트랜잭션이 커밋을 마치지 못하므로, 아래 확인은
+    # 항상 최신 상태를 본다.
+    trip_repository.lock_trip_row(db, trip_id=trip.id)
     existing = trip_repository.get_trip_policy(db, trip_id=trip.id, policy_id=policy.id)
     if existing is None:
+        # 숙박세일 페스타는 지역마다 정책 행이 따로 있어 policy_id 중복 검사를
+        # 통과한다. 일정 하나에는 지역 하나만 붙는다. 같은 지역을 다시 누르면
+        # existing이 있어 여기까지 오지 않으므로 기존처럼 조용히 성공한다.
+        if (
+            policy.source_category or ""
+        ) == stay_discount_aliases.SOURCE_CATEGORY and trip_repository.has_trip_policy_in_source_category(
+            db,
+            trip_id=trip.id,
+            source_category=stay_discount_aliases.SOURCE_CATEGORY,
+        ):
+            raise TripServiceError(409, "Trip already has a stay discount policy")
         trip_repository.add_trip_policy(db, trip_id=trip.id, policy_id=policy.id)
         db.commit()
 
@@ -1034,6 +1128,35 @@ def update_trip_status(
     return _refresh_trip_payload(db, trip.id, user)
 
 
+def update_trip_settings(
+    db: Session,
+    user: User,
+    trip_handle: str,
+    payload: UpdateTripSettingsRequest,
+) -> dict[str, object]:
+    trip = _resolve_required_trip(db, trip_handle, user)
+    _require_trip_editor(trip, user)
+    _bump_trip_revision_or_conflict(db, trip, payload.expectedRevision)
+
+    if payload.title is not None:
+        title = payload.title.strip()
+        if not title:
+            raise TripServiceError(422, "Trip title is required")
+        trip.title = title
+
+    if payload.startDate is not None and payload.endDate is not None:
+        _apply_trip_date_range(
+            db,
+            trip,
+            start_date=payload.startDate,
+            end_date=payload.endDate,
+            overflow_place_strategy=payload.overflowPlaceStrategy,
+        )
+
+    db.commit()
+    return _refresh_trip_payload(db, trip.id, user)
+
+
 def add_place_to_trip_day(
     db: Session,
     user: User,
@@ -1066,6 +1189,44 @@ def add_place_to_trip_day(
         source_provider=payload.sourceProvider,
         external_place_id=payload.externalPlaceId,
     )
+    db.commit()
+    return _refresh_trip_payload(db, trip.id, user)
+
+
+def add_places_to_trip_day(
+    db: Session,
+    user: User,
+    trip_handle: str,
+    day_number: int,
+    payload: CreateTripPlacesRequest,
+) -> dict[str, object]:
+    trip = _resolve_required_trip(db, trip_handle, user)
+    _require_trip_editor(trip, user)
+    trip_day = _find_trip_day_for_batch(trip, day_number)
+    labels = [place.label.strip() for place in payload.places]
+    if any(not label for label in labels):
+        raise TripServiceError(422, "Place label is required")
+    _bump_trip_revision_or_conflict(db, trip, payload.expectedRevision)
+
+    next_order = max((place.order_num or 0 for place in trip_day.places), default=0) + 1
+    for index, place in enumerate(payload.places):
+        trip_repository.add_trip_place(
+            db,
+            trip_day_id=trip_day.id,
+            place_name=labels[index],
+            visit_time=_parse_optional_time(place.time),
+            order_num=next_order + index,
+            memo=place.meta.strip() if place.meta is not None else None,
+            address=place.address.strip() if place.address else None,
+            latitude=place.latitude,
+            longitude=place.longitude,
+            category_group_code=place.categoryCode,
+            category_group_name=place.category,
+            place_url=place.placeUrl,
+            source_provider=place.sourceProvider,
+            external_place_id=place.externalPlaceId,
+        )
+
     db.commit()
     return _refresh_trip_payload(db, trip.id, user)
 
@@ -1338,11 +1499,18 @@ def _invite_accept_url(invite_token: str) -> str:
     return f"{settings.frontend_base_url()}/invites/{invite_token}/accept"
 
 
-INVITE_ROLES: tuple[str, str] = ("viewer", "editor")
+INVITE_ROLE = "editor"
+
+
+def _require_editor_invite_role(role: str | None) -> str:
+    invite_role = role or INVITE_ROLE
+    if invite_role != INVITE_ROLE:
+        raise TripServiceError(422, "Only editor invites are supported")
+    return INVITE_ROLE
 
 
 def _ensure_invite(db: Session, trip: Trip, user: User, role: str | None = None) -> TripInvite:
-    invite_role = role or "editor"
+    invite_role = _require_editor_invite_role(role)
     now = security.utc_now_naive()
     invite = trip_repository.get_latest_active_invite(
         db,
@@ -1385,19 +1553,6 @@ def invite_to_api(
     }
 
 
-def invite_links_to_api(
-    *,
-    trip_id: int,
-    viewer: TripInvite | None,
-    editor: TripInvite | None,
-) -> dict[str, object]:
-    return {
-        "tripId": str(trip_id),
-        "viewer": invite_to_api(viewer, trip_id=trip_id) if viewer is not None else None,
-        "editor": invite_to_api(editor, trip_id=trip_id) if editor is not None else None,
-    }
-
-
 def get_invite_state(
     db: Session,
     user: User,
@@ -1406,10 +1561,9 @@ def get_invite_state(
     trip = _resolve_editable_trip(db, trip_handle, user)
     if trip is None:
         return None
-    viewer = _ensure_invite(db, trip, user, "viewer")
-    editor = _ensure_invite(db, trip, user, "editor")
+    invite = _ensure_invite(db, trip, user, INVITE_ROLE)
     db.commit()
-    return invite_links_to_api(trip_id=trip.id, viewer=viewer, editor=editor)
+    return invite_to_api(invite, trip_id=trip.id)
 
 
 def confirm_invite_sent(
