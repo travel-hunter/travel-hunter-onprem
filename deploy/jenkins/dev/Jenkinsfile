@@ -12,7 +12,7 @@ pipeline {
         PROJECT_DIR = "/home/deploy/travel-hunter-onprem"
         BRANCH_NAME = "develop"
 
-        ENV_FILE = "deploy/.env.prod"
+        ENV_FILE = "deploy/.env.dev"
         COMPOSE_FILE = "compose.yaml"
         COMPOSE_PROJECT_NAME = "travel-hunter-onprem"
 
