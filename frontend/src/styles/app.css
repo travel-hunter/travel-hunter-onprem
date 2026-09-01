@@ -7504,12 +7504,14 @@
 
 .prototype-trip-detail-screen .day-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
-  margin-bottom: 22px;
-  overflow-x: visible;
+  margin-bottom: 16px;
+  overflow-x: auto;
   padding: 6px 16px 8px;
   scrollbar-width: none;
+  /* 좌우 여백은 JS 가 컨테이너 폭에 맞춰 넣는다.
+     첫날과 마지막날도 가운데에 설 수 있어야 하기 때문이다. */
 }
 
 .prototype-trip-detail-screen .day-tab {

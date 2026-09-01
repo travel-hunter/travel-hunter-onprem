@@ -32,7 +32,19 @@ import {
   buildTimelineRenderItems,
   buildTimelineSortableIds,
   isCrossDayTimelineDrag,
-  DAY_SWITCH_DELAY_MS,
+  DAY_EDGE_WIDTH_PX,
+  DAY_EDGE_FIRST_DELAY_MS,
+  DAY_EDGE_REPEAT_MS,
+  DAY_WHEEL_THRESHOLD,
+  PLACE_DRAG_TOUCH_DELAY_MS,
+  PLACE_DRAG_TOUCH_TOLERANCE_PX,
+  PLACE_DRAG_MOUSE_DISTANCE_PX,
+  resolveDayEdgeZone,
+  resolveDayEdgeDepth,
+  resolveDayEdgeInterval,
+  resolveDayStripPadding,
+  resolveDayStripScrollLeft,
+  resolveWheelSteps,
   DAY_TAB_POINTER_TOLERANCE_PX,
   PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
   shouldAllowPlaceDragAutoScroll,
@@ -840,8 +852,87 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     ).toBe(true);
   });
 
-  it("keeps the Day-switch delay short enough to feel immediate", () => {
-    expect(DAY_SWITCH_DELAY_MS).toBe(10);
+  it("does not switch the day merely by crossing the tab row", () => {
+    // 탭 위를 지나가는 것은 이동영역이 아니다. 가운데는 순서 변경 자리다.
+    expect(
+      resolveDayEdgeZone({ pointerX: 200, left: 0, right: 390, edgeWidth: 80 }),
+    ).toBe(0);
+  });
+
+  it("arms the edge zone only inside the edge band", () => {
+    expect(
+      resolveDayEdgeZone({ pointerX: 40, left: 0, right: 390, edgeWidth: 80 }),
+    ).toBe(-1);
+    expect(
+      resolveDayEdgeZone({ pointerX: 360, left: 0, right: 390, edgeWidth: 80 }),
+    ).toBe(1);
+    expect(
+      resolveDayEdgeZone({ pointerX: null, left: 0, right: 390, edgeWidth: 80 }),
+    ).toBe(0);
+  });
+
+  it("measures depth from the inner boundary outward", () => {
+    expect(
+      resolveDayEdgeDepth({ pointerX: 80, left: 0, right: 390, zone: -1, edgeWidth: 80 }),
+    ).toBe(0);
+    expect(
+      resolveDayEdgeDepth({ pointerX: 0, left: 0, right: 390, zone: -1, edgeWidth: 80 }),
+    ).toBe(1);
+    expect(
+      resolveDayEdgeDepth({ pointerX: 390, left: 0, right: 390, zone: 1, edgeWidth: 80 }),
+    ).toBe(1);
+  });
+
+  it("accelerates toward the outer edge", () => {
+    expect(resolveDayEdgeInterval(0)).toBe(DAY_EDGE_REPEAT_MS);
+    expect(Math.round(resolveDayEdgeInterval(1))).toBe(221);
+    expect(resolveDayEdgeInterval(1)).toBeLessThan(resolveDayEdgeInterval(0));
+  });
+
+  it("holds the confirmed edge-zone tuning", () => {
+    expect(DAY_EDGE_WIDTH_PX).toBe(80);
+    expect(DAY_EDGE_FIRST_DELAY_MS).toBe(900);
+    expect(DAY_EDGE_REPEAT_MS).toBe(620);
+    expect(DAY_WHEEL_THRESHOLD).toBe(100);
+  });
+
+  it("counts wheel deltas into whole days and carries the remainder", () => {
+    expect(resolveWheelSteps(0, 100)).toEqual({ steps: 1, rest: 0 });
+    expect(resolveWheelSteps(60, 60)).toEqual({ steps: 1, rest: 20 });
+    expect(resolveWheelSteps(0, -250)).toEqual({ steps: -2, rest: -50 });
+    expect(resolveWheelSteps(0, 40)).toEqual({ steps: 0, rest: 40 });
+  });
+
+  it("pads both ends so the first and last day can sit centered", () => {
+    expect(resolveDayStripPadding(390, 60, 60)).toEqual({ left: 165, right: 165 });
+    expect(resolveDayStripPadding(100, 200, 200)).toEqual({ left: 0, right: 0 });
+  });
+
+  it("clamps the centering scroll at both ends", () => {
+    expect(
+      resolveDayStripScrollLeft({
+        tabOffsetLeft: 0,
+        tabWidth: 60,
+        containerWidth: 390,
+        scrollWidth: 2000,
+      }),
+    ).toBe(0);
+    expect(
+      resolveDayStripScrollLeft({
+        tabOffsetLeft: 1980,
+        tabWidth: 60,
+        containerWidth: 390,
+        scrollWidth: 2000,
+      }),
+    ).toBe(1610);
+  });
+
+  it("uses a long touch hold and leaves the mouse sensor alone", () => {
+    // 목록 스크롤을 살리려면 터치 홀드가 길어야 한다.
+    // 마우스는 거리 기준이라 지연을 걸면 오히려 어색해진다.
+    expect(PLACE_DRAG_TOUCH_DELAY_MS).toBe(800);
+    expect(PLACE_DRAG_TOUCH_TOLERANCE_PX).toBe(8);
+    expect(PLACE_DRAG_MOUSE_DISTANCE_PX).toBe(8);
   });
 
   it("keeps a Day target when collision temporarily reports a timeline card", () => {
@@ -1081,12 +1172,14 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
         ).toBeInTheDocument(),
       );
 
+      // 30일 일정에서 감싸면 알약이 다섯 줄로 쌓여 화면을 덮는다.
+      // 한 줄로 두고 가로로 스크롤한다.
       const dayTabsCss = readFileSync("src/styles/app.css", "utf8");
       expect(dayTabsCss).toMatch(
-        /\.prototype-trip-detail-screen \.day-tabs\s*\{[^}]*flex-wrap:\s*wrap/s,
+        /\.prototype-trip-detail-screen \.day-tabs\s*\{[^}]*flex-wrap:\s*nowrap/s,
       );
       expect(dayTabsCss).toMatch(
-        /\.prototype-trip-detail-screen \.day-tabs\s*\{[^}]*overflow-x:\s*visible/s,
+        /\.prototype-trip-detail-screen \.day-tabs\s*\{[^}]*overflow-x:\s*auto/s,
       );
     } finally {
       getTripSpy.mockRestore();

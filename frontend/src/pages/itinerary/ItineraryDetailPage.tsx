@@ -493,7 +493,109 @@ export function isPointerInsideClientRect(
 export const DAY_TAB_POINTER_TOLERANCE_PX = 12;
 
 /** 하이라이트가 켜진 뒤 실제로 날짜가 열리기까지의 지연. 사실상 즉시 전환에 가깝다. */
-export const DAY_SWITCH_DELAY_MS = 10;
+/* ── Day 스트립 ─────────────────────────────────────────────────
+   탭 위를 지나가는 것으로는 날짜가 바뀌지 않는다. 화면 좌우 끝 이동영역에
+   머무는 것으로만 바뀐다. 값은 시안에서 손으로 조절해 확정했다. */
+
+/** 화면 좌우 끝에서 이만큼이 날짜 넘김 구역 */
+export const DAY_EDGE_WIDTH_PX = 80;
+/** 이동영역에 들어간 뒤 첫 전환까지. 스쳐 지나가는 것과 머무는 것을 가른다 */
+export const DAY_EDGE_FIRST_DELAY_MS = 900;
+/** 계속 대고 있을 때 다음 날짜까지 */
+export const DAY_EDGE_REPEAT_MS = 620;
+/** 맨 끝에서는 반복 간격을 이 값으로 나눈다 */
+export const DAY_EDGE_ACCEL = 2.8;
+/** 굴림량이 이만큼 쌓여야 하루. 마우스 휠 한 칸이 보통 100 안팎이다 */
+export const DAY_WHEEL_THRESHOLD = 100;
+/** 목록 스크롤과 카드 집기를 가르는 값. 짧으면 스크롤하려다 카드가 집힌다 */
+export const PLACE_DRAG_TOUCH_DELAY_MS = 800;
+export const PLACE_DRAG_TOUCH_TOLERANCE_PX = 8;
+/** 마우스는 홀드가 아니라 거리 기준이다. 여기에 지연을 걸면 안 된다 */
+export const PLACE_DRAG_MOUSE_DISTANCE_PX = 8;
+
+/** 첫날·마지막날도 가운데에 설 수 있도록 양 끝에 줄 여백 */
+export function resolveDayStripPadding(
+  containerWidth: number,
+  firstWidth: number,
+  lastWidth: number,
+): { left: number; right: number } {
+  return {
+    left: Math.max(0, (containerWidth - firstWidth) / 2),
+    right: Math.max(0, (containerWidth - lastWidth) / 2),
+  };
+}
+
+/** 활성 탭을 중앙에 놓는 scrollLeft */
+export function resolveDayStripScrollLeft({
+  tabOffsetLeft,
+  tabWidth,
+  containerWidth,
+  scrollWidth,
+}: {
+  tabOffsetLeft: number;
+  tabWidth: number;
+  containerWidth: number;
+  scrollWidth: number;
+}): number {
+  const target = tabOffsetLeft - (containerWidth - tabWidth) / 2;
+  return Math.max(0, Math.min(target, Math.max(0, scrollWidth - containerWidth)));
+}
+
+/** -1 왼쪽 · 0 없음 · 1 오른쪽 */
+export function resolveDayEdgeZone({
+  pointerX,
+  left,
+  right,
+  edgeWidth = DAY_EDGE_WIDTH_PX,
+}: {
+  pointerX: number | null;
+  left: number;
+  right: number;
+  edgeWidth?: number;
+}): -1 | 0 | 1 {
+  if (pointerX == null) return 0;
+  if (pointerX >= left && pointerX < left + edgeWidth) return -1;
+  if (pointerX <= right && pointerX > right - edgeWidth) return 1;
+  return 0;
+}
+
+/** 안쪽 경계 0 → 맨 끝 1 */
+export function resolveDayEdgeDepth({
+  pointerX,
+  left,
+  right,
+  zone,
+  edgeWidth = DAY_EDGE_WIDTH_PX,
+}: {
+  pointerX: number;
+  left: number;
+  right: number;
+  zone: -1 | 1;
+  edgeWidth?: number;
+}): number {
+  const raw =
+    zone < 0
+      ? (left + edgeWidth - pointerX) / edgeWidth
+      : (pointerX - (right - edgeWidth)) / edgeWidth;
+  return Math.max(0, Math.min(1, raw));
+}
+
+/** 바깥쪽으로 갈수록 짧아지는 반복 간격 */
+export function resolveDayEdgeInterval(depth: number): number {
+  const clamped = Math.max(0, Math.min(1, depth));
+  return DAY_EDGE_REPEAT_MS / (1 + (DAY_EDGE_ACCEL - 1) * clamped);
+}
+
+/** 휠 누적을 하루 단위로 끊는다. 남는 양은 다음 굴림으로 넘긴다 */
+export function resolveWheelSteps(
+  carried: number,
+  delta: number,
+  threshold: number = DAY_WHEEL_THRESHOLD,
+): { steps: number; rest: number } {
+  const total = carried + delta;
+  const steps = Math.trunc(total / threshold);
+  return { steps, rest: total - steps * threshold };
+}
 
 export function pointerDistanceToClientRect(
   point: { x: number; y: number } | null,
@@ -1647,6 +1749,7 @@ export function ItineraryDetailPage() {
   const placeBasketIdRef = useRef(0);
   const placeDragAutoSwitchTimerRef = useRef<number | null>(null);
   const placeDragAutoSwitchDayRef = useRef<number | null>(null);
+  const dayTabsRef = useRef<HTMLDivElement | null>(null);
   const placeDragScrollLockRef = useRef(false);
   const placeDragPointerRef = useRef<{ x: number; y: number } | null>(null);
   const placeDragContentBoundsRef = useRef<{
@@ -1767,9 +1870,15 @@ export function ItineraryDetailPage() {
   const hasLinkedPolicyFallback =
     linkedPolicies.length === 0 && hasPolicySaving(trip?.expectedSaving);
   const dragSensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    /* 마우스는 홀드가 아니라 거리 기준이다. 여기에 지연을 걸면 안 된다. */
+    useSensor(MouseSensor, {
+      activationConstraint: { distance: PLACE_DRAG_MOUSE_DISTANCE_PX },
+    }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 120, tolerance: 8 },
+      activationConstraint: {
+        delay: PLACE_DRAG_TOUCH_DELAY_MS,
+        tolerance: PLACE_DRAG_TOUCH_TOLERANCE_PX,
+      },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -2104,6 +2213,139 @@ export function ItineraryDetailPage() {
     setSelectedMapPlaceId(null);
     updateDetailSearchParams({ day, place: null });
   };
+
+  /* 날짜를 한 칸씩 옮긴다. 이동영역·휠·화살표가 모두 이걸 쓴다. */
+  const shiftVisibleDay = useCallback(
+    (step: number) => {
+      if (!dayNumbers.length) return;
+      const first = dayNumbers[0];
+      const last = dayNumbers[dayNumbers.length - 1];
+      setActiveDay((current) => {
+        const target = Math.min(Math.max(current + step, first), last);
+        if (target !== current) {
+          updateDetailSearchParams({ day: target, place: null });
+        }
+        return target;
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dayNumbers.join(",")],
+  );
+
+  /* 보고 있는 날짜를 스트립 가운데로. 양 끝 여백 덕분에 첫날·마지막날도 중앙에 선다.
+     드래그 중에는 부드러운 스크롤을 쓰지 않는다. 포인터 판정과 어긋난다. */
+  useEffect(() => {
+    const strip = dayTabsRef.current;
+    if (!strip) return;
+    const first = strip.firstElementChild as HTMLElement | null;
+    const last = strip.lastElementChild as HTMLElement | null;
+    if (!first || !last) return;
+
+    const pad = resolveDayStripPadding(
+      strip.clientWidth,
+      first.offsetWidth,
+      last.offsetWidth,
+    );
+    strip.style.paddingLeft = `${pad.left}px`;
+    strip.style.paddingRight = `${pad.right}px`;
+
+    const active = strip.querySelector<HTMLElement>(
+      `[data-day-drop-id="${dayDropId(visibleDay)}"]`,
+    );
+    if (!active) return;
+    const left = resolveDayStripScrollLeft({
+      tabOffsetLeft: active.offsetLeft,
+      tabWidth: active.offsetWidth,
+      containerWidth: strip.clientWidth,
+      scrollWidth: strip.scrollWidth,
+    });
+    if (typeof strip.scrollTo === "function") {
+      strip.scrollTo({ left, behavior: draggingPlaceId ? "auto" : "smooth" });
+    } else {
+      strip.scrollLeft = left;
+    }
+  }, [visibleDay, dayNumbers.length, draggingPlaceId]);
+
+  /* 좌우 이동영역. 포인터가 멈춰 있어도 진행해야 하므로 이벤트가 아니라 타이머로 돈다.
+     pointermove 안에서 처리하면 손가락을 흔들어야만 날짜가 넘어간다. */
+  useEffect(() => {
+    if (!draggingPlaceId) return;
+    let zone: -1 | 0 | 1 = 0;
+    let nextAt = 0;
+    const timer = window.setInterval(() => {
+      const container = document.querySelector<HTMLElement>(".app-container");
+      const pointer = placeDragPointerRef.current;
+      if (!container || !pointer) {
+        zone = 0;
+        nextAt = 0;
+        return;
+      }
+      const rect = container.getBoundingClientRect();
+      const next = resolveDayEdgeZone({
+        pointerX: pointer.x,
+        left: rect.left,
+        right: rect.right,
+      });
+      if (next === 0) {
+        zone = 0;
+        nextAt = 0;
+        return;
+      }
+      if (next !== zone) {
+        zone = next;
+        nextAt = Date.now() + DAY_EDGE_FIRST_DELAY_MS;
+        return;
+      }
+      if (Date.now() < nextAt) return;
+      const depth = resolveDayEdgeDepth({
+        pointerX: pointer.x,
+        left: rect.left,
+        right: rect.right,
+        zone: next,
+      });
+      shiftVisibleDay(next);
+      nextAt = Date.now() + resolveDayEdgeInterval(depth);
+    }, 50);
+    return () => window.clearInterval(timer);
+  }, [draggingPlaceId, shiftVisibleDay]);
+
+  /* PC 입력. 드래그 중에는 페이지 스크롤이 잠겨 있어 휠이 놀고 있다.
+     마우스를 움직이지 않고 날짜만 바꿀 수 있어 가장자리보다 자연스럽다. */
+  useEffect(() => {
+    if (!draggingPlaceId) return;
+    let carried = 0;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const delta =
+        Math.abs(event.deltaY) >= Math.abs(event.deltaX)
+          ? event.deltaY
+          : event.deltaX;
+      const { steps, rest } = resolveWheelSteps(carried, delta);
+      carried = rest;
+      if (steps) shiftVisibleDay(steps);
+    };
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        shiftVisibleDay(-1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        shiftVisibleDay(1);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        shiftVisibleDay(-dayNumbers.length);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        shiftVisibleDay(dayNumbers.length);
+      }
+    };
+    window.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [draggingPlaceId, shiftVisibleDay, dayNumbers.length]);
 
   const openDateEditor = () => {
     if (!trip) return;
@@ -2987,18 +3229,11 @@ export function ItineraryDetailPage() {
         position: (sortableIdsByDay[targetDay] ?? []).length + 1,
       });
     }
-    if (targetDay === visibleDay) {
-      clearPlaceDragAutoSwitch();
-      return;
-    }
-    if (placeDragAutoSwitchDayRef.current === targetDay) return;
+    /* 탭 위를 지나가는 것으로는 날짜를 바꾸지 않는다. 30일 일정에서 이 경로가
+       스쳐 지나가기만 해도 발동해 의도치 않은 전환을 만들었다.
+       화면을 바꾸는 일은 좌우 이동영역·휠·화살표 키가 맡는다.
+       탭 강조(setDragOverDay)와 탭에 드롭해 옮기는 길은 그대로 둔다. */
     clearPlaceDragAutoSwitch();
-    placeDragAutoSwitchDayRef.current = targetDay;
-    placeDragAutoSwitchTimerRef.current = window.setTimeout(() => {
-      placeDragAutoSwitchTimerRef.current = null;
-      setActiveDay(targetDay);
-      updateDetailSearchParams({ day: targetDay, place: null });
-    }, DAY_SWITCH_DELAY_MS);
   };
 
   const handlePlaceDragEnd = (event: DragEndEvent) => {
@@ -3525,6 +3760,7 @@ export function ItineraryDetailPage() {
           aria-label="일정 날짜 선택"
           className="day-tabs"
           data-itinerary-day-tabs
+          ref={dayTabsRef}
         >
           {dayNumbers.map((day) => (
             <DroppableDayTab
