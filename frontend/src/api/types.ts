@@ -259,6 +259,8 @@ export type Trip = {
   title: string;
   status: "draft" | "confirmed";
   revision: number;
+  region: string;
+  travelAreaId: string | null;
   dates: string;
   startDate: string;
   endDate: string;
@@ -341,6 +343,22 @@ export type TravelAreaRecommendationResponse = {
   query: string | null;
   items: TravelAreaRecommendation[];
   emptyReason: "unsupported_sido" | "no_match" | null;
+};
+
+export type TravelAreaOption = {
+  travelAreaId: string;
+  travelAreaName: string;
+  sido: string;
+  areaType: "whole" | "recommended" | "administrative";
+  includedCities: string[];
+};
+
+export type TravelAreaCatalog = {
+  sido: string;
+  sourceAsOf: string;
+  wholeArea: TravelAreaOption;
+  recommendedAreas: TravelAreaOption[];
+  administrativeAreas: TravelAreaOption[];
 };
 
 export type InviteRole = "editor";
