@@ -35,16 +35,16 @@ import {
   DAY_EDGE_WIDTH_PX,
   DAY_EDGE_FIRST_DELAY_MS,
   DAY_EDGE_REPEAT_MS,
-  DAY_WHEEL_THRESHOLD,
   PLACE_DRAG_TOUCH_DELAY_MS,
   PLACE_DRAG_TOUCH_TOLERANCE_PX,
   PLACE_DRAG_MOUSE_DISTANCE_PX,
   resolveDayEdgeZone,
   resolveDayEdgeDepth,
   resolveDayEdgeInterval,
+  preferPreviousCollision,
   resolveDayStripPadding,
   resolveDayStripScrollLeft,
-  resolveWheelSteps,
+  resolveTimeSortedPosition,
   DAY_TAB_POINTER_TOLERANCE_PX,
   PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
   shouldAllowPlaceDragAutoScroll,
@@ -859,6 +859,59 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     ).toBe(0);
   });
 
+  it("hides the cross-day placeholder like the same-day one", () => {
+    // 같은 날짜는 끌던 카드를 opacity 0 으로 감춰 자리만 남긴다.
+    // 다른 날짜의 자리표시도 똑같이 보이지 않아야 한다.
+    const css = readFileSync("src/styles/app.css", "utf8");
+    expect(css).toMatch(
+      /\.timeline-slot\.dragging \.timeline-sortable-card\s*\{[^}]*opacity:\s*0/s,
+    );
+    expect(css).toMatch(
+      /\.prototype-trip-detail-screen \.timeline-ghost-card\s*\{[^}]*opacity:\s*0;/s,
+    );
+    expect(css).not.toMatch(
+      /\.prototype-trip-detail-screen \.timeline-ghost-card\s*\{[^}]*border:\s*1px dashed/s,
+    );
+  });
+
+  it("keeps the runner-up winner to stop the two-way flicker", () => {
+    const a = { id: "a" };
+    const b = { id: "b" };
+    const c = { id: "c" };
+    // 직전 승자가 2등으로 밀렸으면 되돌린다. 이게 깜박임을 막는다.
+    expect(preferPreviousCollision([b, a, c], "a")).toEqual([a, b, c]);
+    // 이미 1등이면 손대지 않는다
+    expect(preferPreviousCollision([a, b, c], "a")).toEqual([a, b, c]);
+    // 3등 밖으로 밀렸으면 포인터가 실제로 떠난 것이다. 붙들지 않는다.
+    expect(preferPreviousCollision([b, c, a], "a")).toEqual([b, c, a]);
+    // 기억이 없거나 후보가 하나면 그대로
+    expect(preferPreviousCollision([b, a], null)).toEqual([b, a]);
+    expect(preferPreviousCollision([b], "a")).toEqual([b]);
+  });
+
+  it("styles the drag edge zones without color", () => {
+    // 색 대신 은은한 어둠과 화살표로만 알린다. 붉은 채움을 되살리지 않는다.
+    const css = readFileSync("src/styles/app.css", "utf8");
+    expect(css).toMatch(/\.itinerary-day-edge\.left\s*\{[^}]*linear-gradient/s);
+    expect(css).toMatch(/\.itinerary-day-edge\.right\s*\{[^}]*linear-gradient/s);
+    expect(css).not.toMatch(/\.itinerary-day-edge[^{]*\{[^}]*rgba\(255,\s*94/s);
+  });
+
+  it("keeps the edge zone armed beyond the app column", () => {
+    // PC 는 앱이 가운데 좁은 칸이라 카드를 옆으로 끌면 칸 밖으로 나간다.
+    // 거기서 꺼지면 "사이드로 옮겨도 안 넘어간다"가 된다.
+    expect(
+      resolveDayEdgeZone({ pointerX: -120, left: 550, right: 1370, edgeWidth: 80 }),
+    ).toBe(-1);
+    expect(
+      resolveDayEdgeZone({ pointerX: 1900, left: 550, right: 1370, edgeWidth: 80 }),
+    ).toBe(1);
+    // 밖으로 아무리 나가도 깊이는 1 을 넘지 않는다
+    expect(
+      resolveDayEdgeDepth({ pointerX: -500, left: 0, right: 390, zone: -1, edgeWidth: 80 }),
+    ).toBe(1);
+  });
+
   it("arms the edge zone only inside the edge band", () => {
     expect(
       resolveDayEdgeZone({ pointerX: 40, left: 0, right: 390, edgeWidth: 80 }),
@@ -893,14 +946,6 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     expect(DAY_EDGE_WIDTH_PX).toBe(80);
     expect(DAY_EDGE_FIRST_DELAY_MS).toBe(900);
     expect(DAY_EDGE_REPEAT_MS).toBe(620);
-    expect(DAY_WHEEL_THRESHOLD).toBe(100);
-  });
-
-  it("counts wheel deltas into whole days and carries the remainder", () => {
-    expect(resolveWheelSteps(0, 100)).toEqual({ steps: 1, rest: 0 });
-    expect(resolveWheelSteps(60, 60)).toEqual({ steps: 1, rest: 20 });
-    expect(resolveWheelSteps(0, -250)).toEqual({ steps: -2, rest: -50 });
-    expect(resolveWheelSteps(0, 40)).toEqual({ steps: 0, rest: 40 });
   });
 
   it("pads both ends so the first and last day can sit centered", () => {
@@ -925,6 +970,88 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
         scrollWidth: 2000,
       }),
     ).toBe(1610);
+  });
+
+  it("drops an edited place below places sharing the same time", () => {
+    // 15:00 을 09:00 으로 고치면 기존 09:00 들 밑, 11:00 앞에 선다
+    const places = [
+      { id: "a", time: "09:00" },
+      { id: "b", time: "09:00" },
+      { id: "c", time: "11:00" },
+      { id: "d", time: "15:00" },
+    ];
+    expect(
+      resolveTimeSortedPosition({ places, movingPlaceId: "d", nextTime: "09:00" }),
+    ).toBe(3);
+  });
+
+  it("keeps an edited place last when nothing is later", () => {
+    const places = [
+      { id: "a", time: "09:00" },
+      { id: "b", time: "11:00" },
+    ];
+    expect(
+      resolveTimeSortedPosition({ places, movingPlaceId: "a", nextTime: "23:00" }),
+    ).toBe(2);
+  });
+
+  it("moves an edited place to the front when everything is later", () => {
+    const places = [
+      { id: "a", time: "09:00" },
+      { id: "b", time: "11:00" },
+    ];
+    expect(
+      resolveTimeSortedPosition({ places, movingPlaceId: "b", nextTime: "07:00" }),
+    ).toBe(1);
+  });
+
+  it("skips untimed places when finding the spot", () => {
+    const places = [
+      { id: "a", time: "09:00" },
+      { id: "b", time: null },
+      { id: "c", time: "15:00" },
+      { id: "d", time: "20:00" },
+    ];
+    expect(
+      resolveTimeSortedPosition({ places, movingPlaceId: "d", nextTime: "10:00" }),
+    ).toBe(3);
+  });
+
+  it("stacks untimed places at the top in arrival order", () => {
+    // 시간이 없으면 맨 위. 이미 위에 있는 무시간 장소들 다음에 선다.
+    expect(
+      resolveTimeSortedPosition({
+        places: [{ id: "a", time: "09:00" }],
+        movingPlaceId: "b",
+        nextTime: null,
+      }),
+    ).toBe(1);
+    expect(
+      resolveTimeSortedPosition({
+        places: [
+          { id: "x", time: null },
+          { id: "y", time: "" },
+          { id: "a", time: "09:00" },
+        ],
+        movingPlaceId: "b",
+        nextTime: null,
+      }),
+    ).toBe(3);
+  });
+
+  it("keeps untimed places above when placing a timed one", () => {
+    // 무시간 장소는 위에 모여 있다. 건너뛰고 더 늦은 시간을 찾는다.
+    expect(
+      resolveTimeSortedPosition({
+        places: [
+          { id: "x", time: null },
+          { id: "a", time: "09:00" },
+          { id: "c", time: "15:00" },
+        ],
+        movingPlaceId: "d",
+        nextTime: "10:00",
+      }),
+    ).toBe(3);
   });
 
   it("uses a long touch hold and leaves the mouse sensor alone", () => {
@@ -1012,6 +1139,29 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
+  it("starts the trip hero copy beside the back button", () => {
+    const css = readFileSync("src/styles/app.css", "utf8");
+
+    // 뒤로가기 버튼은 left 14px 에 20px 이다. 왼쪽 여백이 34px 보다 작으면 글이 버튼에 깔린다.
+    const hero = /\.prototype-trip-detail-hero\s*\{([^}]*)\}/s.exec(css)?.[1] ?? "";
+    const padding = /padding:\s*([^;]+);/.exec(hero)?.[1] ?? "";
+    const left = Number(padding.trim().split(/\s+/)[3]?.replace("px", ""));
+    expect(left).toBeGreaterThanOrEqual(34);
+    // 글이 아래로 쏠리지 않도록 위 여백은 버튼 높이보다 작아야 한다.
+    const top = Number(padding.trim().split(/\s+/)[0]?.replace("px", ""));
+    expect(top).toBeLessThanOrEqual(38);
+  });
+
+  it("keeps the place editor day row scrollable in one line", () => {
+    const css = readFileSync("src/styles/app.css", "utf8");
+
+    // 날짜가 30개여도 줄바꿈 없이 한 줄로 밀어서 찾는다.
+    expect(css).toMatch(/\.place-day-options\s*\{[^}]*flex-wrap:\s*nowrap/s);
+    expect(css).toMatch(/\.place-day-options\s*\{[^}]*overflow-x:\s*auto/s);
+    // PC 에서는 끌 수 있다는 표시가 없으면 안 움직이는 줄 안다.
+    expect(css).toMatch(/\.place-day-options\s*\{[^}]*cursor:\s*grab/s);
+  });
+
   it("keeps the itinerary drag target and spacing affordance styles present", () => {
     const css = readFileSync("src/styles/app.css", "utf8");
 
@@ -1052,8 +1202,13 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     expect(css).not.toMatch(
       /\.app-container\.itinerary-place-drag-scroll-locked\s*\{[^}]*overflow:\s*hidden/s,
     );
+    // 드롭 대상 폭은 평소 폭과 같아야 한다. 커지면 30개 탭이 한꺼번에
+    // 밀려 드래그를 시작하는 순간 가운데 정렬이 어긋난다.
     expect(css).toMatch(
-      /\.prototype-trip-detail-screen \.day-tab\.drop-target\s*\{[^}]*min-width:\s*76px/s,
+      /\.prototype-trip-detail-screen \.day-tab\.drop-target\s*\{[^}]*min-width:\s*74px/s,
+    );
+    expect(css).toMatch(
+      /\.prototype-trip-detail-screen \.day-tab\s*\{[^}]*min-width:\s*74px/s,
     );
     expect(css).not.toMatch(
       /\.prototype-trip-detail-screen \.day-tab\.drop-target em\s*\{/,
@@ -2782,7 +2937,12 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       renderAppRoute("/trips/104");
 
       const editLink = await screen.findByRole("link", { name: "일정 편집" });
+      const hero = editLink.closest(".prototype-trip-detail-hero");
+      const title = hero?.querySelector(".prototype-trip-hero-copy h1");
       expect(editLink).toHaveAttribute("href", "/trips/104/edit");
+      expect(hero).not.toBeNull();
+      expect(editLink.parentElement).toBe(hero);
+      expect(title).toHaveTextContent("Editable trip");
     } finally {
       getTripSpy.mockRestore();
     }

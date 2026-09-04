@@ -7068,7 +7068,7 @@
 
 .prototype-trip-detail-screen .top-bar {
   position: absolute;
-  top: 50px;
+  top: 18px;
   left: 14px;
   right: auto;
   z-index: 20;
@@ -7078,7 +7078,7 @@
   width: auto;
   min-height: 20px;
   gap: 0;
-  transform: translateY(-50%);
+  transform: none;
   background: transparent;
   border: 0;
   padding: 0;
@@ -7122,18 +7122,20 @@
 
 .prototype-trip-detail-hero {
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  height: 100px;
-  min-height: 100px;
+  /* 글이 뒤로가기 버튼 오른쪽에서 시작한다. .top-bar 는 히어로 밖에서 절대 배치돼
+     기준점이 달라, 버튼 폭만 계산해 붙이면 글자가 버튼에 깔린다. 넉넉히 띄운다. */
+  min-height: 120px;
   margin: 0;
   overflow: hidden;
   border-radius: 0;
-  padding: 30px 16px 8px 54px;
+  padding: 16px 88px 18px 72px;
   background: linear-gradient(120deg, #ff5e5b88, #ffc93ccc);
   box-shadow: var(--shadow-none);
   color: #fff;
+}
+
+.prototype-trip-hero-copy {
+  min-width: 0;
 }
 
 .prototype-trip-detail-hero .prototype-detail-dday-chip {
@@ -7151,16 +7153,18 @@
 }
 
 .prototype-trip-detail-hero h1 {
-  max-width: 330px;
-  margin: 4px 0 0;
+  max-width: none;
+  margin: 6px 0 0;
   color: #fff;
-  font-size: 18px;
+  font-size: 24px;
   font-weight: 800;
+  line-height: 1.22;
   letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
 }
 
 .prototype-trip-detail-hero p {
-  margin: 2px 0 0;
+  margin: 5px 0 0;
   color: rgba(255, 255, 255, 0.92);
   font-size: 13px;
   font-weight: 400;
@@ -7176,12 +7180,14 @@
 }
 
 .prototype-trip-hero-edit {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: fit-content;
   min-height: 30px;
-  margin-top: 8px;
   border: 1px solid rgba(255, 255, 255, 0.54);
   border-radius: 999px;
   padding: 0 12px;
@@ -7502,52 +7508,245 @@
   background: #f2f2f5;
 }
 
-.prototype-trip-detail-screen .day-tabs {
+/* 드래그 중 좌우 이동영역 표시.
+   색을 쓰지 않는다. 은은한 어둠과 화살표 진하기로만 알린다. */
+.itinerary-day-edge {
+  position: fixed;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.itinerary-day-edge.left {
+  background: linear-gradient(
+    90deg,
+    rgba(23, 23, 40, 0.13),
+    rgba(23, 23, 40, 0)
+  );
+}
+
+.itinerary-day-edge.right {
+  background: linear-gradient(
+    270deg,
+    rgba(23, 23, 40, 0.13),
+    rgba(23, 23, 40, 0)
+  );
+}
+
+.itinerary-day-edge span {
+  font-size: 22px;
+  font-weight: 900;
+  color: #b9bac6;
+  opacity: 0.35;
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itinerary-day-edge span {
+    transition: none;
+  }
+}
+
+/* 손잡이는 화면에서 감췄지만 키보드로 순서를 바꾸는 유일한 활성자다.
+   `.prototype-trip-detail-screen .drag-handle`(0,2,0)이 `.sr-only`(0,1,0)를 이겨
+   34px 크기와 테두리가 살아 있었고, clip 이 outline 까지 잘라 초점이 안 보였다.
+   여기서 확실히 감추고, 초점이 오면 다시 드러낸다. */
+.prototype-trip-detail-screen .drag-handle.sr-only {
+  position: absolute;
+  width: 1px;
+  min-width: 0;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.prototype-trip-detail-screen .drag-handle.sr-only:focus-visible {
+  z-index: 3;
+  width: auto;
+  min-width: 34px;
+  height: auto;
+  min-height: 34px;
+  padding: 0 8px;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: var(--gray-50);
+}
+
+/* 장소 편집기의 날짜 고르기.
+   네이티브 select 는 항목 높이를 운영체제가 정해 손댈 수 없어 칩 줄로 둔다.
+   날짜마다 장소가 몇 개인지 같이 보여준다. */
+.place-day-picker {
+  display: grid;
+  gap: 6px;
+}
+
+.place-day-options {
   display: flex;
   flex-wrap: nowrap;
-  gap: 6px;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 4px;
+  scrollbar-width: none;
+  cursor: grab;
+  user-select: none;
+}
+.place-day-options:active {
+  cursor: grabbing;
+}
+
+.place-day-options::-webkit-scrollbar {
+  display: none;
+}
+
+.place-day-chip {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 2px;
+  justify-items: center;
+  min-width: 74px;
+  min-height: 62px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-card, #ececf1);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--gray-700, #4f5568);
+  font-family: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.place-day-chip strong {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.place-day-chip em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gray-500, #8c8ca1);
+}
+.place-day-chip i {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--gray-400, #b4b4c2);
+}
+.place-day-chip.selected {
+  border-color: var(--primary-500, #ff5e5b);
+  background: #fff5f4;
+  color: var(--primary-600, #e84845);
+}
+.place-day-chip.selected em,
+.place-day-chip.selected i {
+  color: var(--primary-600, #e84845);
+}
+.place-day-chip:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.prototype-trip-detail-screen .day-tabs {
+  /* offsetLeft 기준을 스트립 자신으로 만든다. 없으면 offsetParent 가
+     .app-container 라 margin-left 만큼 중앙 정렬이 어긋난다. */
+  position: relative;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
   margin-bottom: 16px;
   overflow-x: auto;
   padding: 6px 16px 8px;
   scrollbar-width: none;
+  cursor: grab;
   /* 좌우 여백은 JS 가 컨테이너 폭에 맞춰 넣는다.
      첫날과 마지막날도 가운데에 설 수 있어야 하기 때문이다. */
+  user-select: none;
 }
 
+/* 일정 화면 위 날짜 줄은 장소 수정 시트의 날짜 버튼과 같은 것을 고르는 자리다.
+   같은 버튼을 쓴다. 날짜와 그 날 장소 수가 같이 보인다. */
 .prototype-trip-detail-screen .day-tab {
-  display: flex;
+  display: grid;
   flex: 0 0 auto;
-  min-height: 24px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 999px;
-  padding: 3px 9px;
-  background: #f2f2f5;
-  color: #8c8ca1;
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1;
+  gap: 2px;
+  justify-items: center;
+  min-width: 74px;
+  min-height: 62px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-card, #ececf1);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--gray-700, #4f5568);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+}
+.prototype-trip-detail-screen .day-tabs:active {
+  cursor: grabbing;
 }
 .prototype-trip-detail-screen .day-tabs::-webkit-scrollbar {
   display: none;
 }
 
 .prototype-trip-detail-screen .day-tab strong {
-  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .prototype-trip-detail-screen .day-tab > span {
-  display: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gray-500, #8c8ca1);
+}
+
+.prototype-trip-detail-screen .day-tab > i {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--gray-400, #b4b4c2);
 }
 
 .prototype-trip-detail-screen .day-tab.active {
-  background: #ff5e5b;
-  color: #fff;
+  border-color: var(--primary-500, #ff5e5b);
+  background: #fff5f4;
+  color: var(--primary-600, #e84845);
 }
 
+.prototype-trip-detail-screen .day-tab.active > span,
+.prototype-trip-detail-screen .day-tab.active > i {
+  color: var(--primary-600, #e84845);
+}
+
+/* 드롭 대상일 때 폭이 커지면 30개 탭이 한꺼번에 밀려 가운데 정렬이 어긋난다.
+   평소 폭과 같은 값이어야 한다. */
 .prototype-trip-detail-screen .day-tab.drop-target {
-  min-width: 76px;
+  min-width: 74px;
+}
+
+/* 카드가 올라온 날짜는 테두리 링으로 알린다. 바탕을 진하게 채우면
+   날짜와 장소 수 글자가 같은 붉은색이라 묻힌다. */
+.prototype-trip-detail-screen .day-tab.drop-target.over,
+.prototype-trip-detail-screen .day-tab.active.drop-target.over {
+  background: #fff5f4;
+  color: var(--primary-600, #e84845);
+  box-shadow: 0 0 0 2px rgba(255, 94, 91, 0.3);
+}
+
+.prototype-trip-detail-screen .day-tab.active.drop-target.over > span,
+.prototype-trip-detail-screen .day-tab.active.drop-target.over > i {
+  color: var(--primary-600, #e84845);
 }
 
 .list-map-toggle {
@@ -8064,15 +8263,19 @@ body.itinerary-place-drag-scroll-locked,
 
 /* 다른 날짜에서 끌고 온 카드의 자리표시. 실제 카드와 같은 흐름에 놓여
    자리를 차지하므로 dnd-kit이 주변 카드를 같은 날짜와 동일하게 밀어낸다. */
+/* 다른 날짜에서 끌고 온 카드의 자리표시.
+   같은 날짜에서는 끌던 카드가 `opacity: 0` 으로 자리만 남기므로
+   (.timeline-slot.dragging .timeline-sortable-card), 여기도 똑같이 감춘다.
+   자리는 그대로 벌어지고, 끌고 있는 카드는 포인터를 따라다니는 오버레이가 보여준다. */
 .prototype-trip-detail-screen .timeline-ghost-card {
   display: flex;
   align-items: center;
   gap: 10px;
   box-sizing: border-box;
-  border: 1px dashed var(--primary-500);
-  background: rgba(255, 94, 91, 0.08);
-  color: #4f5568;
-  opacity: 0.72;
+  border: 1px solid transparent;
+  background: transparent;
+  color: transparent;
+  opacity: 0;
   pointer-events: none;
 }
 
@@ -8116,7 +8319,12 @@ body.itinerary-place-drag-scroll-locked,
 
 .prototype-trip-detail-screen .place-detail {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  /* 손잡이 칸을 없앴다. 카드 전체가 잡는 자리다. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  /* delay 기반 TouchSensor 는 none 이 아니라 manipulation 이어야 한다.
+     none 을 주면 카드 위에서 목록 세로 스크롤이 막힌다. */
+  touch-action: manipulation;
+  cursor: grab;
   gap: 4px 8px;
   min-height: 64px;
   border: 1px solid var(--border-card);
@@ -8127,7 +8335,7 @@ body.itinerary-place-drag-scroll-locked,
 }
 .prototype-trip-detail-screen .place-copy {
   min-width: 0;
-  grid-column: 2;
+  grid-column: 1;
   grid-row: 1;
 }
 
@@ -8202,9 +8410,7 @@ body.itinerary-place-drag-scroll-locked,
 }
 
 .prototype-trip-detail-screen .drag-handle {
-  position: static;
-  grid-column: 1;
-  grid-row: 1;
+  position: absolute;
   width: 34px;
   min-width: 34px;
   height: 34px;
@@ -8214,7 +8420,7 @@ body.itinerary-place-drag-scroll-locked,
 }
 
 .prototype-trip-detail-screen .place-actions {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 1;
   align-self: start;
   justify-content: flex-end;
@@ -8226,7 +8432,7 @@ body.itinerary-place-drag-scroll-locked,
 }
 
 .prototype-trip-detail-screen .place-moving-badge {
-  grid-column: 2 / 4;
+  grid-column: 1 / 3;
   grid-row: 2;
   justify-self: start;
   min-height: 22px;
@@ -11791,12 +11997,12 @@ a.prototype-stat-card:active {
 }
 
 .prototype-trip-detail-screen .recommendation-preview-place .place-copy {
-  grid-column: 2;
+  grid-column: 1;
   grid-row: 1;
 }
 
 .prototype-trip-detail-screen .recommendation-preview-place-actions {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 1;
 }
 
@@ -11876,7 +12082,7 @@ a.prototype-stat-card:active {
 
 @media (max-width: 520px) {
   .prototype-trip-detail-screen .place-detail {
-    grid-template-columns: 34px minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 4px 7px;
     min-height: 58px;
     padding: 8px 9px;
@@ -11929,13 +12135,13 @@ a.prototype-stat-card:active {
 
 @media (max-width: 520px) {
   .prototype-trip-detail-screen .recommendation-preview-place .place-copy {
-    grid-column: 2 / 4;
+    /* 손잡이 칸이 사라져 2열이 됐다. padding-top 34px 은 그 손잡이 자리였다. */
+    grid-column: 1 / 3;
     grid-row: 1;
-    padding-top: 34px;
   }
 
   .prototype-trip-detail-screen .recommendation-preview-place-actions {
-    grid-column: 3;
+    grid-column: 2;
     grid-row: 1;
     z-index: 2;
   }
@@ -11943,4 +12149,112 @@ a.prototype-stat-card:active {
   .prototype-trip-detail-screen .recommendation-preview-meta {
     width: 100%;
   }
+}
+
+.trip-region-selector {
+  display: grid;
+  gap: 14px;
+}
+
+.trip-region-selector__sido-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
+  gap: 8px;
+}
+
+.trip-region-selector__sido,
+.trip-region-selector__area,
+.trip-region-selector__error-panel button {
+  min-height: 38px;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.trip-region-selector__sido {
+  padding: 0 10px;
+  font-weight: 700;
+}
+
+.trip-region-selector__sido.is-selected,
+.trip-region-selector__area.is-selected {
+  border-color: rgba(255, 94, 91, 0.72);
+  background: #fff5f4;
+  color: var(--primary);
+}
+
+.trip-region-selector__catalog {
+  display: grid;
+  gap: 12px;
+}
+
+.trip-region-selector__group {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+}
+
+.trip-region-selector__group legend {
+  padding: 0 6px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.trip-region-selector__area-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 8px;
+}
+
+.trip-region-selector__area {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  min-height: 58px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.trip-region-selector__area-name {
+  font-weight: 800;
+}
+
+.trip-region-selector__area-cities,
+.trip-region-selector__status,
+.trip-region-selector__error {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.trip-region-selector__error,
+.trip-region-selector__error-panel {
+  color: #b42318;
+}
+
+.trip-region-selector__error-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(180, 35, 24, 0.22);
+  border-radius: 8px;
+  background: #fff5f4;
+}
+
+.trip-region-selector__error-panel button {
+  flex: 0 0 auto;
+  padding: 0 12px;
+  color: #b42318;
+  font-weight: 700;
+}
+
+.trip-region-selector button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
 }
