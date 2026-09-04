@@ -1632,7 +1632,8 @@ Query params:
       "travelAreaName": "제주시",
       "sido": "제주",
       "areaType": "administrative",
-      "includedCities": ["제주"]
+      "includedCities": ["제주"],
+      "group": null
     }
   ]
 }
@@ -1646,6 +1647,14 @@ Query params:
   Non-autonomous 구 inside a 일반시 are not separate options.
 - Curated travel areas and administrative areas are never mixed into one group. A client
   that shows them together should still label the groups separately.
+- `group` folds a long administrative list. It is a `string | null` on every option and is
+  filled only for 광역시도 with more than 13 administrative units — 서울, 부산, 경기, 강원,
+  충남, 전북, 전남, 경북, 경남. Smaller ones return `null` on every option and are meant to
+  be rendered flat. `administrativeAreas` is ordered so that one group's options are
+  contiguous; a client can fold by walking the array in order without sorting it.
+  Group names are display strings and may change; they are not identifiers. Official
+  divisions are used where they exist (서울 5개 권역생활권, 경기북부청 관할 10개 시군,
+  강원 영동/영서).
 
 **Errors**
 - 400: `Unsupported travel area sido`

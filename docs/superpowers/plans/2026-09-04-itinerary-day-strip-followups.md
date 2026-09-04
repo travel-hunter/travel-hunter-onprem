@@ -274,17 +274,102 @@ hidden 이 되고 `dgtour-영광-8` 이 active 가 되자 6건이 깨졌다.
 
 ---
 
+### Task 9: 세부 지역을 권역으로 접는다
+
+**Files:**
+- Modify: `backend/app/data/administrative_areas.py`
+- Modify: `backend/app/services/travel_area_catalog.py`
+- Modify: `backend/app/schemas/travel_areas.py`, `backend/app/api/routes/travel_areas.py`
+- Modify: `frontend/src/api/types.ts`, `frontend/src/components/trip/TripRegionSelector.tsx`
+- Modify: `frontend/src/styles/app.css`
+- Test: `backend/tests/test_travel_area_catalog.py`, `test_travel_area_catalog_routes.py`
+- Test: `frontend/src/components/trip/TripRegionSelector.test.tsx`
+
+**Interfaces:**
+- Produces: `ADMINISTRATIVE_GROUPS_BY_SIDO`, `TravelAreaOption.group: str | None`
+
+- [x] **Step 1: 빠짐·중복을 잡는 실패 테스트를 먼저 쓴다**
+
+권역 배정은 판단이 갈린다. 안성을 경기 남부에 둘지 동부에 둘지는 논쟁이 가능하다.
+논쟁이 **불가능한** 부분만 기계로 막는다.
+
+```python
+duplicated = 두 권역에 든 단위      -> 0
+missing    = 어느 권역에도 없는 단위 -> 0
+unknown    = 스냅샷에 없는 단위      -> 0
+```
+
+13개 초과면 반드시 묶이고 이하면 반드시 평평한지도 함께 본다.
+
+- [x] **Step 2: `시군구 -> 권역` 정적 매핑을 넣는다**
+
+좌표가 없어 인접·거리로 자동 분류할 수 없다. 손으로 배정하되 공식 구분이 있는 곳은 따른다.
+
+| 시도 | 권역 | 근거 |
+|---|---|---|
+| 서울 25 | 도심 3 / 동북 8 / 서북 3 / 서남 7 / 동남 4 | 서울시 5개 권역생활권 |
+| 경기 31 | 북부 10 / 서부 8 / 남부 8 / 동부 5 | 북부 10개는 경기북부청 관할 |
+| 강원 18 | 영동 7 / 영서 11 | 태백산맥 |
+| 부산 16 | 원도심·중부 6 / 동부 6 / 서부 4 | 낙동강·수영강 축 |
+| 충남·전북·전남·경북·경남 | 3권역씩 | 공식 근거가 약해 해안·내륙·산악 축 |
+
+**13개를 넘는 9개 시도만 묶는다.** 광주·대전·울산(5개), 제주(2개)까지 접으면 클릭만 는다.
+
+- [x] **Step 3: 카탈로그와 응답에 `group` 을 싣는다**
+
+권역이 있는 시도는 권역 순서대로, 없는 시도는 가나다 순서 그대로 낸다.
+같은 권역이 이어져 나오므로 화면은 배열을 순서대로 걸으며 접으면 된다.
+권역이 없으면 `null` 이라 기존 화면은 그대로 평평하게 그린다.
+
+- [x] **Step 4: 화면에서 권역마다 접는다**
+
+처음엔 접어 두고 버튼에 그 권역이 몇 곳인지 숫자를 붙인다. 펼치지 않고도 규모를 안다.
+**고른 지역이 든 권역은 펼친 채로 연다** — 접혀 있으면 편집 화면에서 무엇을 골랐는지 안 보인다.
+
+- [x] **Step 5: 행정지역 버튼의 도시 되풀이를 없앤다**
+
+`고양시` 아래에 `고양` 이 또 나왔다. 전체와 추천 권역은 어느 도시를 아우르는지가
+정보이므로 그대로 둔다.
+
+- [x] **Step 6: 게이트 실행** — frontend 348 passed, backend 701 passed.
+
+---
+
+### Task 10: 모지바케 검사기가 제어문자도 잡게 한다
+
+**Files:**
+- Modify: `frontend/scripts/check-mojibake.cjs`
+
+- [x] **Step 1: 원인**
+
+Task 9 에서 CSS `content` 에 유니코드 이스케이프를 쓰려다 `` 가 8진으로 풀려
+파일에 0x15 가 박혔다. 화면에는 정체불명 글자로 보였고 **검사기는 통과했다.**
+U+FFFD 와 몇몇 깨짐 패턴만 보고 제어문자는 안 봤기 때문이다.
+
+- [x] **Step 2: 정규식 리터럴을 쓰지 않는다**
+
+`/[ -...]/` 로 쓰려다 검사기 파일에 제어문자를 6개 박았다. 같은 실수다.
+`charCodeAt` 으로 코드포인트를 센다.
+
+- [x] **Step 3: 실제로 잡히는지 확인한다**
+
+0x15 가 든 탐침 파일을 만들어 검사기가 잡아내는 것을 보고 지웠다. 넣기만 하고
+동작을 안 보면 검사기가 있다는 착각만 남는다.
+
+---
+
 ## 실행 결과 (2026-09-04)
 
 | 항목 | 결과 |
 |---|---|
 | `npm run typecheck` | PASS |
-| `npx vitest run` | **344 passed / 0 failed** (28 files) |
+| `npx vitest run` | **348 passed / 0 failed** (28 files) |
 | `npm run build` | PASS |
 | `npm run test:mojibake` | 없음 |
 | `git diff --check` | 깨끗 |
 
-커밋: `6e5b4ee`(Task 1~7), `ec41c2e`(Task 8).
+커밋: `6e5b4ee`(Task 1~7), `ec41c2e`(Task 8), `9815c30`(Task 9 Step 1~4, Task 10),
+`3235fd6`(Task 9 Step 5).
 
 Task 1~7 은 같은 파일에 지역·달력 통합 작업과 겹쳐 있어 파일 단위로 나눌 수 없었다.
 `git add -p` 가 이 환경에서 대화형으로 돌지 않아 한 커밋에 담았고, 커밋 메시지에

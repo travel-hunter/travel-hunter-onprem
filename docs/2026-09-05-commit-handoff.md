@@ -1,7 +1,8 @@
 # Codex 인계 — 커밋과 push
 
 작성: 2026-09-05 / 작성자: Claude 세션
-브랜치: `feature/itinerary-day-strip` (HEAD `de1c315`)
+브랜치: `feature/itinerary-day-strip`
+마지막 코드 커밋: `3235fd6` (이 문서를 담은 커밋이 그 뒤에 온다)
 작업 트리: **깨끗함.** 스테이지된 것 없음.
 
 push / PR / merge 는 네 몫이다. 나는 커밋까지만 했다.
@@ -24,9 +25,15 @@ push / PR / merge 는 네 몫이다. 나는 커밋까지만 했다.
 
 ---
 
-## 2. 이번에 만든 커밋 7개
+## 2. 이번에 만든 커밋
+
+아래는 코드 커밋이고, 문서 커밋이 그 뒤로 몇 개 더 붙는다.
 
 ```
+3235fd6 fix(travel-areas): 행정지역 버튼의 도시 되풀이를 없앤다
+9815c30 feat(travel-areas): 세부 지역을 권역으로 접어 보여준다
+ef5a3c4 docs: 인계문의 남은 작업을 Task 8 로 좁힌다
+b8d51ce docs(contract): 지역 카탈로그와 일정 지역 수정을 계약 문서에 반영한다
 de1c315 docs: 일정 화면 후속 조정의 계획서를 남긴다
 8583c0b docs: 지역·달력 통합 설계와 두 세션 사이의 인계 기록을 남긴다
 ec41c2e test(policy): 마이페이지·정책 테스트를 실제 DB 상태에서 떼어낸다
@@ -36,18 +43,18 @@ f31ae58 feat(travel-areas): 전국 행정지역 카탈로그와 일정 지역 �
 d0f77a8 feat(itinerary): day 선택을 한 줄 스트립과 가장자리 이동영역으로 바꾼다
 ```
 
-`d0f77a8` 은 09-01 커밋인데 아직 원격에 없다. 나머지 6개가 09-04 작업이다.
+`d0f77a8` 은 09-01 커밋인데 아직 원격에 없다. 나머지는 09-04~09-05 작업이다.
 
 ### 커밋 직전 게이트
 
 | 항목 | 결과 |
 |---|---|
 | `npm run typecheck` | PASS |
-| `npx vitest run` | **344 passed / 0 failed** (28 files) |
+| `npx vitest run` | **348 passed / 0 failed** (28 files) |
 | `npm run build` | PASS |
 | `npm run test:mojibake` | 없음 |
 | `git diff --check` | 깨끗 |
-| `pytest` | **696 passed / 1 failed** |
+| `pytest` | **701 passed / 1 failed** |
 
 백엔드 실패 1건은 `test_restricted_atomic_artifact_and_sidecar_round_trip` 이다.
 Windows 임시 디렉터리 권한에 걸리는 간헐적 환경 이슈로, 통과할 때도 있다.
@@ -67,14 +74,20 @@ Windows 임시 디렉터리 권한에 걸리는 간헐적 환경 이슈로, 통�
 
 ## 3. push 우선순위
 
-### 1순위 `feature/itinerary-day-strip` (+7)
+### 1순위 `feature/itinerary-day-strip`
 
 지금 작업. 테스트 전부 초록. 계획서
 `docs/superpowers/plans/2026-09-03-trip-region-calendar-unification.md` 의 Task 1~6 과
-`docs/superpowers/plans/2026-09-04-itinerary-day-strip-followups.md` 전부를 담는다.
+`docs/superpowers/plans/2026-09-04-itinerary-day-strip-followups.md   (Task 1~10)` 전부를 담는다.
 
-Task 7(계약 문서 동기화)은 끝냈다 — 커밋 `b8d51ce`.
+Task 7(계약 문서 동기화)은 끝냈다 — 커밋 `b8d51ce`, `group` 필드까지 반영.
 **남은 것은 Task 8 의 5173 수동 확인뿐이다.** 자동 게이트는 전부 통과한 상태다.
+
+09-05 에 세부 지역 권역 접기를 더했다(`9815c30`, `3235fd6`). 시·군·구가 13개를
+넘는 9개 시도(서울 25, 경기 31, 전남·경북 22 …)를 권역으로 접는다. 배정은 판단이
+갈릴 수 있어 **빠짐·중복만 테스트로 막았다** — 9개 시도 190개 단위가 정확히 분할된다.
+배정을 옮기려면 `backend/app/data/administrative_areas.py` 의
+`ADMINISTRATIVE_GROUPS_BY_SIDO` 한 곳만 고치면 되고, 옮기다 빠뜨리면 테스트가 잡는다.
 
 ### 2순위 `feature/dgtour-canonical-slug` (+8, 08-27)
 
@@ -141,6 +154,15 @@ feature/dgtour-canonical-slug:docs/superpowers/specs/2026-08-27-dgtour-slug-inve
 백엔드 컨테이너는 소스를 이미지에 COPY 해서 굽는다. 소스를 고쳐도
 `docker compose -f compose.local.yaml build backend` 없이는 반영되지 않는다.
 09-04 에 한 번 재빌드했다.
+
+### 검사기에 제어문자 검사가 붙었다
+
+CSS `content` 에 유니코드 이스케이프를 쓰려다 8진으로 풀려 0x15 가 파일에 박혔고
+화면에 정체불명 글자로 보였는데, `npm run test:mojibake` 는 통과했었다.
+이제 제어문자도 잡는다. 정규식 리터럴로 검사하면 검사기 자신에게 제어문자를 박게 되므로
+`charCodeAt` 으로 센다. 탐침 파일로 실제 검출을 확인했다.
+
+**CSS 에 유니코드 이스케이프를 쓰지 마라.** 실제 문자를 넣는 편이 안전하다.
 
 ### 미해결 버그 하나
 

@@ -631,9 +631,10 @@
         "travelAreaName": "string",
         "sido": "string",
         "areaType": "string enum(whole|recommended|administrative)",
-        "includedCities": "array of string"
+        "includedCities": "array of string",
+        "group": "string | null"
       },
-      "dbModeBehavior": "Static administrative snapshot merged with curated travel areas. No runtime network call. Every registered sido returns exactly one wholeArea; recommendedAreas and administrativeAreas may be empty (세종 has no sub-areas). Administrative units are 시·군 for 도, 자치구·군 for 광역시, and 제주시·서귀포시 for 제주; non-autonomous 구 inside a 일반시 are excluded. Curated and administrative areas are never merged into one group. Unsupported sido returns 400 Unsupported travel area sido; a missing sido returns 422."
+      "dbModeBehavior": "Static administrative snapshot merged with curated travel areas. No runtime network call. Every registered sido returns exactly one wholeArea; recommendedAreas and administrativeAreas may be empty (세종 has no sub-areas). Administrative units are 시·군 for 도, 자치구·군 for 광역시, and 제주시·서귀포시 for 제주; non-autonomous 구 inside a 일반시 are excluded. Curated and administrative areas are never merged into one group. Unsupported sido returns 400 Unsupported travel area sido; a missing sido returns 422. Administrative options carry a group label only for sido with more than 13 units (서울, 부산, 경기, 강원, 충남, 전북, 전남, 경북, 경남); smaller sido return null on every option. administrativeAreas is ordered so one group's options are contiguous."
     },
     {
       "method": "GET",
