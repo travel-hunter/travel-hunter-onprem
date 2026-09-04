@@ -82,8 +82,17 @@ export function resolveTripSido(
   return SIDO_SET.has(head) ? head : null;
 }
 
+/* 행정지역은 이름이 곧 도시라 포함 도시를 또 적으면 "고양시 / 고양" 처럼 되풀이된다.
+   전체와 추천 권역은 어느 도시를 아우르는지가 정보이므로 그대로 둔다. */
+function showsIncludedCities(area: TravelAreaOption) {
+  return area.areaType !== "administrative" && area.includedCities.length > 0;
+}
+
 function areaButtonLabel(area: TravelAreaOption) {
-  return [area.travelAreaName, area.includedCities.join(", ")].filter(Boolean).join(" ");
+  if (!showsIncludedCities(area)) return area.travelAreaName;
+  return [area.travelAreaName, area.includedCities.join(", ")]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function AreaOptionButton({
@@ -107,7 +116,11 @@ function AreaOptionButton({
       onClick={() => onSelect(area)}
     >
       <span className="trip-region-selector__area-name">{area.travelAreaName}</span>
-      <span className="trip-region-selector__area-cities">{area.includedCities.join(", ")}</span>
+      {showsIncludedCities(area) && (
+        <span className="trip-region-selector__area-cities">
+          {area.includedCities.join(", ")}
+        </span>
+      )}
     </button>
   );
 }

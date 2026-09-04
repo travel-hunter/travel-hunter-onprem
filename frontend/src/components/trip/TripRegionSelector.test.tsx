@@ -144,7 +144,8 @@ describe("TripRegionSelector", () => {
       />,
     );
 
-    expect(await screen.findByRole("button", { name: "경기 22 경기 22" })).toBeInTheDocument();
+    // 행정지역은 이름만 낸다. 포함 도시를 되풀이하지 않는다.
+    expect(await screen.findByRole("button", { name: "경기 22" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "제주", pressed: false })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "경기", pressed: true })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("button", { name: "제주 동부 제주시, 서귀포시" })).not.toBeInTheDocument();
@@ -241,6 +242,56 @@ describe("TripRegionSelector 권역 접기", () => {
         await screen.findByRole("button", { name: /수원시/ }),
       ).toHaveAttribute("aria-pressed", "true");
       expect(screen.queryByRole("button", { name: /고양시/ })).toBeNull();
+    } finally {
+      catalogSpy.mockRestore();
+    }
+  });
+});
+
+describe("TripRegionSelector 버튼 표기", () => {
+  const catalog: TravelAreaCatalog = {
+    sido: "제주",
+    sourceAsOf: "2026-09-05",
+    wholeArea: {
+      travelAreaId: "whole:jeju",
+      travelAreaName: "제주 전체",
+      sido: "제주",
+      areaType: "whole",
+      includedCities: ["제주", "서귀포"],
+    },
+    recommendedAreas: [jejuEast],
+    administrativeAreas: [
+      {
+        travelAreaId: "admin:jeju:jejusi",
+        travelAreaName: "제주시",
+        sido: "제주",
+        areaType: "administrative",
+        includedCities: ["제주"],
+      },
+    ],
+  };
+
+  it("행정지역에는 포함 도시를 되풀이하지 않는다", async () => {
+    const catalogSpy = vi
+      .spyOn(appDataApi, "getTravelAreaCatalog")
+      .mockResolvedValue(catalog);
+    try {
+      render(
+        <TripRegionSelector
+          selectedSido="제주"
+          value={null}
+          onSidoChange={vi.fn()}
+          onChange={vi.fn()}
+        />,
+      );
+      const admin = await screen.findByRole("button", { name: "제주시" });
+      // "제주시" 아래에 "제주" 가 또 붙으면 군더더기다.
+      expect(admin.textContent).toBe("제주시");
+
+      // 추천 권역과 전체는 어느 도시를 아우르는지가 정보다. 그대로 둔다.
+      const recommended = screen.getByRole("button", { name: /제주 동부/ });
+      expect(recommended.textContent).toContain("제주");
+      expect(recommended.textContent).toContain("서귀포");
     } finally {
       catalogSpy.mockRestore();
     }
