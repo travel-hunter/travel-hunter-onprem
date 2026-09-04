@@ -9,7 +9,7 @@ from typing import Callable, Protocol
 from app.data.itinerary_catalog import ITINERARY_PLACE_CATALOG
 
 try:
-    from app.data.travel_areas import get_travel_area
+    from app.services.travel_area_catalog import resolve_travel_area as get_travel_area
 except ModuleNotFoundError:
     def get_travel_area(_area_id: str | None):
         return None
