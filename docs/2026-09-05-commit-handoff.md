@@ -73,8 +73,8 @@ Windows 임시 디렉터리 권한에 걸리는 간헐적 환경 이슈로, 통�
 `docs/superpowers/plans/2026-09-03-trip-region-calendar-unification.md` 의 Task 1~6 과
 `docs/superpowers/plans/2026-09-04-itinerary-day-strip-followups.md` 전부를 담는다.
 
-**Task 7(계약 문서 동기화)과 Task 8(전체 검증·5173 수동 확인)이 남았다.**
-PR 로 올리기 전에 그 둘을 마칠지, 지금 상태로 올리고 후속 PR 로 뺄지는 네가 정해라.
+Task 7(계약 문서 동기화)은 끝냈다 — 커밋 `b8d51ce`.
+**남은 것은 Task 8 의 5173 수동 확인뿐이다.** 자동 게이트는 전부 통과한 상태다.
 
 ### 2순위 `feature/dgtour-canonical-slug` (+8, 08-27)
 
