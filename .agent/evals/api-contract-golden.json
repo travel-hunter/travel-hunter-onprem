@@ -617,6 +617,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/travel-areas?sido=%EC%A0%9C%EC%A3%BC",
+      "status": 200,
+      "requiredFields": {
+        "sido": "string",
+        "sourceAsOf": "YYYY-MM-DD string",
+        "wholeArea": "object",
+        "recommendedAreas": "array",
+        "administrativeAreas": "array"
+      },
+      "itemRequiredFields": {
+        "travelAreaId": "string (opaque)",
+        "travelAreaName": "string",
+        "sido": "string",
+        "areaType": "string enum(whole|recommended|administrative)",
+        "includedCities": "array of string"
+      },
+      "dbModeBehavior": "Static administrative snapshot merged with curated travel areas. No runtime network call. Every registered sido returns exactly one wholeArea; recommendedAreas and administrativeAreas may be empty (세종 has no sub-areas). Administrative units are 시·군 for 도, 자치구·군 for 광역시, and 제주시·서귀포시 for 제주; non-autonomous 구 inside a 일반시 are excluded. Curated and administrative areas are never merged into one group. Unsupported sido returns 400 Unsupported travel area sido; a missing sido returns 422."
+    },
+    {
+      "method": "GET",
       "path": "/api/trips",
       "status": 200,
       "requiredArrayItemFields": {
@@ -678,7 +698,8 @@
         "revision": "number",
         "travelAreaId": "string|null",
         "startDate": "YYYY-MM-DD string",
-        "endDate": "YYYY-MM-DD string"
+        "endDate": "YYYY-MM-DD string",
+        "region": "string"
       },
       "dbModePolicySlugBehavior": "When policySlug is present, create the trip and link trip_policies; unknown policySlug returns 404 Policy not found.",
       "durationDaysBehavior": "Optional durationDays defaults to 3, accepts any value >= 1, controls trips.end_date and generated trip_days when startDate/endDate are absent.",
@@ -706,7 +727,8 @@
         "currentUserRole": "string enum(owner|editor|viewer)",
         "revision": "number",
         "startDate": "YYYY-MM-DD string",
-        "endDate": "YYYY-MM-DD string"
+        "endDate": "YYYY-MM-DD string",
+        "region": "string"
       },
       "dbModeRecommendationBehavior": "recommendedPolicies follows strict municipality/city matching; province-only 광역 matches are excluded, and whole-sido travel areas such as 서울 전체 only allow explicit localities inside that sido."
     },
@@ -719,7 +741,8 @@
         "title": "Updated trip",
         "startDate": "2026-07-12",
         "endDate": "2026-07-18",
-        "overflowPlaceStrategy": "moveToLastDay"
+        "overflowPlaceStrategy": "moveToLastDay",
+        "travelAreaId": "jeju-west"
       },
       "requiredFields": {
         "id": "string",
@@ -728,10 +751,12 @@
         "endDate": "YYYY-MM-DD string",
         "revision": "number",
         "days": "object",
-        "currentUserRole": "string enum(owner|editor|viewer)"
+        "currentUserRole": "string enum(owner|editor|viewer)",
+        "region": "string",
+        "travelAreaId": "string | null"
       },
       "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale.",
-      "dbModeBehavior": "Requires owner/editor access, updates whole-trip title and canonical date range without parsing presentation-only dates, adds missing days, and handles overflow days by moveToLastDay or delete. Viewer access returns 403 Trip edit permission required."
+      "dbModeBehavior": "Requires owner/editor access, updates whole-trip title, travel area, and canonical date range without parsing presentation-only dates, adds missing days, and handles overflow days by moveToLastDay or delete. When travelAreaId is present it is resolved through the shared travel-area resolver and stored with trips.region in one transaction; an unknown id returns 400 Travel area not found without bumping revision. Omitting travelAreaId leaves the stored area unchanged. Changing the area does not move or delete places, days, or linked policies. Viewer access returns 403 Trip edit permission required."
     },
     {
       "method": "DELETE",
@@ -783,7 +808,8 @@
         "status": "string enum(draft|confirmed)",
         "days": "object",
         "currentUserRole": "string enum(owner|editor|viewer)",
-        "revision": "number"
+        "revision": "number",
+        "region": "string"
       },
       "dbModeBehavior": "Requires owner/editor access, stores trips.status, and returns the updated Trip. Accepts both confirmed and draft. The frontend trip list displays draft/confirmed status without an inline confirmation panel; the detail page can cancel confirmation by sending draft. Viewer access returns 403 Trip edit permission required."
     },
@@ -802,7 +828,8 @@
         "title": "string",
         "revision": "number",
         "days": "object",
-        "currentUserRole": "string enum(owner|editor|viewer)"
+        "currentUserRole": "string enum(owner|editor|viewer)",
+        "region": "string"
       },
       "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale.",
       "dbModeBehavior": "Requires owner/editor access, atomically compares and increments trips.revision, inserts trip_places, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
@@ -834,7 +861,8 @@
         "title": "string",
         "revision": "number",
         "days": "object",
-        "currentUserRole": "string enum(owner|editor|viewer)"
+        "currentUserRole": "string enum(owner|editor|viewer)",
+        "region": "string"
       },
       "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale.",
       "dbModeBehavior": "Requires owner/editor access, atomically compares and increments trips.revision once, appends 1-50 selected search-place candidates to the requested trip day, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
@@ -854,7 +882,8 @@
         "title": "string",
         "revision": "number",
         "days": "object",
-        "currentUserRole": "string enum(owner|editor|viewer)"
+        "currentUserRole": "string enum(owner|editor|viewer)",
+        "region": "string"
       },
       "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale.",
       "dbModeBehavior": "Requires owner/editor access, atomically compares and increments trips.revision, updates editable trip_places fields, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
@@ -873,7 +902,8 @@
         "title": "string",
         "days": "object",
         "currentUserRole": "string enum(owner|editor|viewer)",
-        "revision": "number"
+        "revision": "number",
+        "region": "string"
       },
       "dbModeBehavior": "Requires owner/editor access, atomically compares and increments trips.revision, updates trip_places.trip_day_id when day changes, normalizes affected trip_places.order_num values to consecutive 1-based positions, and returns the updated Trip. Viewer access returns 403 Trip edit permission required.",
       "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale."
@@ -890,7 +920,8 @@
         "title": "string",
         "revision": "number",
         "days": "object",
-        "currentUserRole": "string enum(owner|editor|viewer)"
+        "currentUserRole": "string enum(owner|editor|viewer)",
+        "region": "string"
       },
       "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale.",
       "dbModeBehavior": "Requires owner/editor access, atomically compares and increments trips.revision, deletes trip_places, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
