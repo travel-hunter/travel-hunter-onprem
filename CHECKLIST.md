@@ -2,22 +2,21 @@
 
 ## Current Status
 
-- Active task/status: 일정 상세의 Day 선택을 가로 한 줄 스트립으로 바꾸고, 드래그 중 날짜 전환을 탭 호버에서 좌우 이동영역·휠·화살표 키로 옮겼다. 30일 일정에서 알약이 다섯 줄로 쌓이던 문제와, 탭 위를 스쳐 지나가기만 해도 날짜가 바뀌던 문제를 함께 없앤다.
-- Scope guard: 변경 범위는 `frontend/src/pages/itinerary/ItineraryDetailPage.tsx`, `frontend/src/styles/app.css`, `frontend/src/app/__tests__/trip-detail.test.tsx` 로 제한한다. 카드·타임라인·색·아이콘 등 화면 디자인, 탭에 직접 드롭해 옮기는 기능, 2026-08-26 뷰포트 잠금 결과물, 백엔드·API·스키마는 건드리지 않는다.
+- Active task/status: 일정 상세 헤더에서 뒤로가기 버튼과 제목 영역을 분리하고, 제목을 24px로 키웠다. 편집 버튼은 제목 흐름에서 빼 헤더 오른쪽 하단에 고정했으며 5173 Vite 서버에 반영됐다.
+- Scope guard: `frontend/src/pages/itinerary/ItineraryDetailPage.tsx`, `frontend/src/styles/app.css`, `frontend/src/app/__tests__/trip-detail.test.tsx`, `CHECKLIST.md`만 수정했다. 같은 파일에 있던 Day 스트립·드래그 작업은 보존했고 백엔드·API·스키마는 건드리지 않았다.
 
 ## Recent Validation
 
-- PASS: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx` — 104 passed.
-- PASS: `cd frontend && SKIP_E2E_DB_START=1 npx vitest run` — 303 passed, 0 failed.
+- PASS: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx` — 114 passed.
 - PASS: `cd frontend && npm run typecheck`.
-- PASS: `cd frontend && npm run test:mojibake` — mojibake 없음.
 - PASS: `cd frontend && npm run build`.
-- PASS: `git diff --check`, 변경 파일 3개 모두 U+FFFD 0.
-- 확정된 조작값(시안에서 손으로 조절해 결정): 이동영역 폭 80px, 머무는 시간 900ms, 반복 간격 620ms, 바깥쪽 가속 2.8배, 휠 민감도 100, 터치 집는 시간 800ms.
-- 미실행: 실기기·브라우저 확인은 운영자 몫이다. 아래 Active Risks 의 확인 목록 참조.
+- PASS: `cd frontend && npm run test:mojibake` — mojibake 없음.
+- PASS: `http://127.0.0.1:5173` — HTTP 200, Vite client 및 변경된 TSX/CSS 제공 확인.
+- PARTIAL: `cd frontend && SKIP_E2E_DB_START=1 npm test` — 307 passed, 6 failed. 실패는 `mypage.test.tsx` 5건과 `policies.test.tsx` 1건에서 DB의 `dgtour-영광-8`과 테스트 기대값 `dgtour-영광`이 달라 발생했으며 이번 헤더 변경 범위 밖이다.
 
 ## Active Risks
 
+- 360px·390px·430px 실제 브라우저에서 매우 긴 일정 제목의 줄바꿈과 오른쪽 하단 편집 버튼 간격을 육안 확인해야 한다. 5173에는 최신 코드가 반영돼 있다.
 - **Day 스트립 실기기 확인 미완.** 30일 일정으로 아래를 확인해야 한다.
   - [ ] Day 줄이 한 줄로 보이고 보고 있는 날짜가 가운데에 온다
   - [ ] Day 1 과 마지막 날도 가운데에 선다
