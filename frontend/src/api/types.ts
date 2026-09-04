@@ -351,6 +351,8 @@ export type TravelAreaOption = {
   sido: string;
   areaType: "whole" | "recommended" | "administrative";
   includedCities: string[];
+  /* 시·군·구가 많은 광역시도에서만 채워진다. 화면이 이 값으로 접어 보여준다. */
+  group?: string | null;
 };
 
 export type TravelAreaCatalog = {

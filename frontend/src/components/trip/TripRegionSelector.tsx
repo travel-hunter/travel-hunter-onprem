@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { appDataApi, type TravelAreaCatalog, type TravelAreaOption } from "../../api";
 
 const SIDO_OPTIONS = [
@@ -145,6 +145,65 @@ function AreaGroup({
   );
 }
 
+/* 시·군·구가 많은 광역시도는 한 줄로 늘어놓으면 고르기 어렵다.
+   권역마다 접어 두고, 그 안에 몇 곳이 있는지 함께 보여준다. */
+function CollapsibleAreaGroup({
+  legend,
+  areas,
+  selectedAreaId,
+  disabled,
+  onSelect,
+}: {
+  legend: string;
+  areas: TravelAreaOption[];
+  selectedAreaId: string | null;
+  disabled?: boolean;
+  onSelect: (area: TravelAreaOption) => void;
+}) {
+  const holdsSelection = areas.some(
+    (area) => area.travelAreaId === selectedAreaId,
+  );
+  /* 고른 지역이 든 권역은 펼친 채로 연다. 접혀 있으면 무엇을 골랐는지 안 보인다. */
+  const [isOpen, setIsOpen] = useState(holdsSelection);
+  const wasHolding = useRef(holdsSelection);
+  if (holdsSelection && !wasHolding.current) {
+    wasHolding.current = true;
+    if (!isOpen) setIsOpen(true);
+  } else if (!holdsSelection) {
+    wasHolding.current = false;
+  }
+
+  if (areas.length === 0) return null;
+
+  return (
+    <div className="trip-region-selector__region">
+      <button
+        aria-expanded={isOpen}
+        className="trip-region-selector__region-toggle"
+        disabled={disabled}
+        onClick={() => setIsOpen((open) => !open)}
+        type="button"
+      >
+        <span>{legend}</span>
+        <em>{areas.length}</em>
+      </button>
+      {isOpen && (
+        <div className="trip-region-selector__area-list">
+          {areas.map((area) => (
+            <AreaOptionButton
+              key={area.travelAreaId}
+              area={area}
+              isSelected={area.travelAreaId === selectedAreaId}
+              disabled={disabled}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TripRegionSelector({
   selectedSido,
   value,
@@ -251,6 +310,25 @@ export function TripRegionSelector({
   const activeCatalog = catalog?.sido === selectedSido ? catalog : null;
   /* 카탈로그가 아직 없어도 동적 권역은 고를 수 있어야 한다. 정책 연계나 옛 도시 질의로
      들어온 경우 그 하나가 유일한 선택지일 수 있다. */
+  /* 백엔드가 권역을 붙여 보내면 그 순서대로 묶는다. 안 붙은 시도는 빈 배열이라
+     아래에서 예전처럼 평평하게 그린다. */
+  const administrativeGroups = (() => {
+    const source = withoutSuppressed(activeCatalog?.administrativeAreas ?? []);
+    const order: string[] = [];
+    const buckets = new Map<string, TravelAreaOption[]>();
+    for (const area of source) {
+      if (!area.group) return [] as [string, TravelAreaOption[]][];
+      if (!buckets.has(area.group)) {
+        buckets.set(area.group, []);
+        order.push(area.group);
+      }
+      buckets.get(area.group)!.push(area);
+    }
+    return order.map(
+      (name) => [name, buckets.get(name) ?? []] as [string, TravelAreaOption[]],
+    );
+  })();
+
   const recommendedAreas = [
     ...withoutSuppressed(activeCatalog?.recommendedAreas ?? []),
     ...shownExtras,
@@ -308,7 +386,22 @@ export function TripRegionSelector({
             disabled={disabled}
             onSelect={onChange}
           />
-          {activeCatalog && (
+          {activeCatalog && administrativeGroups.length > 0 && (
+            <fieldset className="trip-region-selector__group">
+              <legend>시·군·구</legend>
+              {administrativeGroups.map(([groupName, groupAreas]) => (
+                <CollapsibleAreaGroup
+                  key={groupName}
+                  legend={groupName}
+                  areas={groupAreas}
+                  selectedAreaId={selectedAreaId}
+                  disabled={disabled}
+                  onSelect={onChange}
+                />
+              ))}
+            </fieldset>
+          )}
+          {activeCatalog && administrativeGroups.length === 0 && (
             <AreaGroup
               legend="시·군·구"
               areas={withoutSuppressed(activeCatalog.administrativeAreas)}

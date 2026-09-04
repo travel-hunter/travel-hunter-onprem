@@ -4,7 +4,11 @@ from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import quote
 
-from app.data.administrative_areas import ADMINISTRATIVE_AREAS_BY_SIDO, ADMINISTRATIVE_AREAS_SOURCE_AS_OF
+from app.data.administrative_areas import (
+    ADMINISTRATIVE_AREAS_BY_SIDO,
+    ADMINISTRATIVE_AREAS_SOURCE_AS_OF,
+    ADMINISTRATIVE_GROUPS_BY_SIDO,
+)
 from app.data.travel_areas import TravelArea, get_travel_area, list_travel_areas
 
 AreaType = Literal["whole", "recommended", "administrative", "policy"]
@@ -37,6 +41,8 @@ class TravelAreaOption:
     sido: str
     area_type: AreaType
     included_cities: tuple[str, ...]
+    # 시·군·구가 많은 광역시도에서만 붙는다. 화면이 이 값으로 접어 보여준다.
+    group: str | None = None
 
 
 @dataclass(frozen=True)
@@ -70,10 +76,7 @@ def list_travel_area_catalog(sido: str) -> TravelAreaCatalog:
         for area in list_travel_areas()
         if area.sido == normalized_sido and not _is_legacy_whole_area(area)
     )
-    administrative_areas = tuple(
-        _administrative_option(normalized_sido, locality)
-        for locality in ADMINISTRATIVE_AREAS_BY_SIDO[normalized_sido]
-    )
+    administrative_areas = _administrative_options(normalized_sido)
     return TravelAreaCatalog(
         sido=normalized_sido,
         source_as_of=ADMINISTRATIVE_AREAS_SOURCE_AS_OF,
@@ -107,13 +110,34 @@ def _recommended_option(area: TravelArea) -> TravelAreaOption:
     )
 
 
-def _administrative_option(sido: str, locality: str) -> TravelAreaOption:
+def _administrative_options(sido: str) -> tuple[TravelAreaOption, ...]:
+    """권역이 정의된 시도는 권역 순서대로, 아닌 곳은 스냅샷 순서(가나다) 그대로 낸다."""
+    groups = ADMINISTRATIVE_GROUPS_BY_SIDO.get(sido)
+    if not groups:
+        return tuple(
+            _administrative_option(sido, locality)
+            for locality in ADMINISTRATIVE_AREAS_BY_SIDO[sido]
+        )
+    return tuple(
+        _administrative_option(sido, locality, group=group_name)
+        for group_name, localities in groups
+        for locality in localities
+    )
+
+
+def _administrative_option(
+    sido: str,
+    locality: str,
+    *,
+    group: str | None = None,
+) -> TravelAreaOption:
     return TravelAreaOption(
         id=make_administrative_area_id(sido, locality),
         name=locality,
         sido=sido,
         area_type="administrative",
         included_cities=(_normalize_included_city(locality),),
+        group=group,
     )
 
 

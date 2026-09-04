@@ -9,6 +9,8 @@ class TravelAreaOptionResponse(BaseModel):
     sido: str
     areaType: Literal["whole", "recommended", "administrative"]
     includedCities: list[str]
+    # 시·군·구가 많은 광역시도에서만 채워진다. 나머지는 null 이다.
+    group: str | None = None
 
 
 class TravelAreaCatalogResponse(BaseModel):

@@ -109,3 +109,53 @@ def test_resolver_supports_every_id_family(area_id: str, name: str) -> None:
 def test_resolver_rejects_unknown_whole_and_administrative_ids() -> None:
     assert resolve_travel_area("whole:%EC%97%86%EB%8A%94%EC%A7%80%EC%97%AD") is None
     assert resolve_travel_area("admin:%EC%A0%9C%EC%A3%BC:%EC%97%86%EB%8A%94%EC%8B%9C") is None
+
+
+def test_grouped_sidos_partition_their_units_exactly():
+    """권역 배정은 판단이 갈릴 수 있어도 빠짐·중복은 없어야 한다."""
+    from app.data.administrative_areas import (
+        ADMINISTRATIVE_AREAS_BY_SIDO,
+        ADMINISTRATIVE_GROUPS_BY_SIDO,
+    )
+
+    for sido, groups in ADMINISTRATIVE_GROUPS_BY_SIDO.items():
+        assert sido in ADMINISTRATIVE_AREAS_BY_SIDO, f"{sido} 는 스냅샷에 없다"
+        expected = set(ADMINISTRATIVE_AREAS_BY_SIDO[sido])
+        assigned: list[str] = []
+        for _group_name, units in groups:
+            assigned.extend(units)
+
+        duplicated = sorted({u for u in assigned if assigned.count(u) > 1})
+        assert not duplicated, f"{sido}: 두 권역에 든 단위 {duplicated}"
+
+        missing = sorted(expected - set(assigned))
+        assert not missing, f"{sido}: 어느 권역에도 없는 단위 {missing}"
+
+        unknown = sorted(set(assigned) - expected)
+        assert not unknown, f"{sido}: 스냅샷에 없는 단위 {unknown}"
+
+
+def test_only_large_sidos_are_grouped():
+    """작은 시도까지 접으면 클릭만 늘어난다. 13개 초과만 묶는다."""
+    from app.data.administrative_areas import (
+        ADMINISTRATIVE_AREAS_BY_SIDO,
+        ADMINISTRATIVE_GROUPS_BY_SIDO,
+    )
+
+    for sido, units in ADMINISTRATIVE_AREAS_BY_SIDO.items():
+        if len(units) > 13:
+            assert sido in ADMINISTRATIVE_GROUPS_BY_SIDO, f"{sido} ({len(units)}) 는 묶여야 한다"
+        else:
+            assert sido not in ADMINISTRATIVE_GROUPS_BY_SIDO, f"{sido} ({len(units)}) 는 평평해야 한다"
+
+
+def test_catalog_exposes_group_on_administrative_options():
+    catalog = list_travel_area_catalog("경기")
+    groups = [area.group for area in catalog.administrative_areas]
+    assert None not in groups, "묶인 시도의 행정지역에는 권역이 붙어야 한다"
+    # 같은 권역이 흩어지지 않고 이어져 나온다. 화면이 그 순서로 묶어 그린다.
+    assert groups == sorted(groups, key=lambda g: groups.index(g))
+    assert "경기 북부" in groups
+
+    flat = list_travel_area_catalog("대전")
+    assert all(area.group is None for area in flat.administrative_areas)

@@ -34,4 +34,5 @@ def _option_response(option: TravelAreaOption) -> TravelAreaOptionResponse:
         sido=option.sido,
         areaType=option.area_type,
         includedCities=list(option.included_cities),
+        group=option.group,
     )
