@@ -117,3 +117,15 @@ def test_seed_policies_deletes_legacy_dummy_policies_from_existing_db(sqlite_db_
         select(Policy.slug).where(Policy.slug.in_(["local-vacation", "sokcho-stay", "busan-cashback"]))
     ).all()
     assert remaining == []
+
+
+def test_seed_policies_replaces_unlinked_numbered_dgtour_seed_with_canonical_slug(
+    sqlite_db_session,
+) -> None:
+    seed_policies(sqlite_db_session)
+    sqlite_db_session.commit()
+
+    slugs = set(sqlite_db_session.scalars(select(Policy.slug)).all())
+
+    assert "dgtour-영광" in slugs
+    assert "dgtour-영광-8" not in slugs

@@ -43,13 +43,17 @@ from app.services.policy_semantics import (
 )
 
 try:
-    from app.data.travel_areas import get_travel_area, list_travel_areas
+    from app.data.travel_areas import list_travel_areas
+    from app.services.travel_area_catalog import resolve_travel_area
 except ModuleNotFoundError:
-    def get_travel_area(_area_id: str | None):
+    def resolve_travel_area(_area_id: str | None):
         return None
 
     def list_travel_areas():
         return ()
+
+
+get_travel_area = resolve_travel_area
 
 
 NUMERIC_TRIP_ID_PATTERN = re.compile(r"^[1-9][0-9]*$")
@@ -813,6 +817,7 @@ def trip_to_api(
         "status": trip.status or "confirmed",
         "revision": trip.revision or 1,
         "travelAreaId": trip.travel_area_id,
+        "region": trip.region or "",
         "dates": _format_dates(trip.start_date, trip.end_date),
         "startDate": trip.start_date,
         "endDate": trip.end_date,
@@ -1136,6 +1141,11 @@ def update_trip_settings(
 ) -> dict[str, object]:
     trip = _resolve_required_trip(db, trip_handle, user)
     _require_trip_editor(trip, user)
+    travel_area = None
+    if payload.travelAreaId is not None:
+        travel_area = resolve_travel_area(payload.travelAreaId.strip())
+        if travel_area is None:
+            raise TripServiceError(400, "Travel area not found")
     _bump_trip_revision_or_conflict(db, trip, payload.expectedRevision)
 
     if payload.title is not None:
@@ -1143,6 +1153,10 @@ def update_trip_settings(
         if not title:
             raise TripServiceError(422, "Trip title is required")
         trip.title = title
+
+    if travel_area is not None:
+        trip.travel_area_id = travel_area.id
+        trip.region = travel_area.name
 
     if payload.startDate is not None and payload.endDate is not None:
         _apply_trip_date_range(

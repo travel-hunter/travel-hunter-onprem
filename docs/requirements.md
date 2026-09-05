@@ -76,6 +76,9 @@ Travel Hunter는 국내 여행자가 여행 혜택 정책을 찾고, 여행 일�
 | FR-TRIP-004 | owner는 일정을 삭제할 수 있다. | 삭제 후 목록에서 제거되고 연결 데이터는 cascade 또는 서비스 규칙에 따라 정리된다. |
 | FR-TRIP-005 | owner/editor는 장소를 추가/수정/삭제할 수 있다. | 장소 변경은 `trip_places`에 저장되고 새로고침 후에도 유지된다. viewer는 편집할 수 없다. |
 | FR-TRIP-006 | 일정 상세/편집 handle은 numeric string `Trip.id`만 지원한다. | DB mode 응답의 canonical `Trip.id`는 numeric string이며 non-numeric handle은 not found로 처리된다. |
+| FR-TRIP-007 | 사용자는 17개 광역시도 아래의 행정 시·군·구를 빠짐없이 세부 지역으로 선택할 수 있다. | `GET /api/travel-areas?sido=`가 광역시도마다 `전체` 1개와 그 아래 행정지역을 모두 반환한다. 추천 여행권역은 행정지역과 다른 그룹으로 표시된다. 세종은 하위 없이 `세종 전체`만 제공한다. |
+| FR-TRIP-008 | owner/editor는 기존 일정의 세부 지역을 다른 지역이나 추천 여행권역으로 바꿀 수 있다. | `PATCH /api/trips/{id}/settings`에 `travelAreaId`를 보내면 `region`과 함께 갱신된다. 장소·Day·연결 정책은 그대로 유지된다. 알 수 없는 id는 400이며 revision도 바뀌지 않는다. 지역을 손대지 않으면 요청에 포함하지 않아 기존 지역이 유지된다. |
+| FR-TRIP-009 | 일정 생성, 직접 편집, 상세 기간 수정은 같은 날짜 범위 달력을 쓴다. | 세 화면 모두 요약 카드 → 달력 열기 → 첫날/마지막날 선택 → 범위 강조 → 완료 흐름을 따르고, 역순으로 골라도 정방향 범위로 저장된다. |
 
 ### 3.5 AI 추천
 

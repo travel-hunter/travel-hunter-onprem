@@ -40,6 +40,8 @@ export function getPreviewTrip(): Trip {
     title: "부산 여행 1",
     status: "confirmed",
     revision: 1,
+    region: "부산 전체",
+    travelAreaId: "busan-all",
     dates: "2026.06.12 - 06.13",
     startDate: "2026-06-12",
     endDate: "2026-06-13",

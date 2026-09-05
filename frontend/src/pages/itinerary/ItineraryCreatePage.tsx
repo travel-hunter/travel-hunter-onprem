@@ -1,7 +1,11 @@
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { appDataApi, type TravelAreaRecommendation } from "../../api";
+import {
+  appDataApi,
+  type TravelAreaOption,
+  type TravelAreaRecommendation,
+} from "../../api";
 import { useSession } from "../../app/session";
 import { useAsyncResource } from "../../api/useAsyncResource";
 import { getPreferenceIcon } from "../../components/preferenceDisplay";
@@ -14,13 +18,14 @@ import {
   getDefaultTripDateRange,
   normalizeTripDateRange,
 } from "../../utils/dateDefaults";
+import { TripDateRangePicker } from "../../components/trip/TripDateRangePicker";
+import { TripRegionSelector } from "../../components/trip/TripRegionSelector";
+import { tripDateDayCount } from "../../utils/tripDateRange";
 
 const TRIP_CREATE_TOTAL_STEPS = 2;
 const broadTravelAreaRegions = new Set<string>(tripCreatePrimaryRegionValues);
-const calendarWeekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
 const NO_TRAVEL_AREA_HEADING = "세부 지역 선택";
 type TripCreateStep = 1 | 2;
-type DatePickerAnchor = "start" | "end";
 type SelectedTravelArea = Pick<
   TravelAreaRecommendation,
   | "travelAreaId"
@@ -31,65 +36,39 @@ type SelectedTravelArea = Pick<
   | "tags"
 >;
 
-function parseDateInput(value: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return null;
-  const date = new Date(
-    Number(match[1]),
-    Number(match[2]) - 1,
-    Number(match[3]),
-  );
-  if (
-    date.getFullYear() !== Number(match[1]) ||
-    date.getMonth() !== Number(match[2]) - 1 ||
-    date.getDate() !== Number(match[3])
-  ) {
-    return null;
-  }
-  return date;
+/* 선택기는 카탈로그의 TravelAreaOption 을 주고받고, 이 화면의 기존 로직은
+   추천 API 의 TravelAreaRecommendation 을 쓴다. 둘을 오가는 얇은 어댑터다. */
+function optionFromSelectedArea(
+  area: SelectedTravelArea | null,
+): TravelAreaOption | null {
+  if (!area) return null;
+  return {
+    travelAreaId: area.travelAreaId,
+    travelAreaName: area.travelAreaName,
+    sido: area.sido,
+    areaType: "recommended",
+    includedCities: area.includedCities,
+  };
 }
 
-function tripDateDayCount(startDate: string, endDate: string): number | null {
-  const start = parseDateInput(startDate);
-  const end = parseDateInput(endDate);
-  if (!start || !end) return null;
-  return Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
-}
-
-function formatDateInput(date: Date): string {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
-}
-
-function startOfMonth(value: string): Date {
-  const parsed = parseDateInput(value) ?? new Date();
-  return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
-}
-
-function addMonths(date: Date, months: number): Date {
-  return new Date(date.getFullYear(), date.getMonth() + months, 1);
-}
-
-function formatCalendarMonth(date: Date): string {
-  return `${date.getFullYear()}년 ${date.getMonth() + 1}월`;
-}
-
-function buildCalendarDays(month: Date): Date[] {
-  const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
-  const start = new Date(firstDay);
-  start.setDate(firstDay.getDate() - firstDay.getDay());
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + index);
-    return date;
-  });
-}
-
-function isDateInputInRange(value: string, startDate: string, endDate: string): boolean {
-  return value >= startDate && value <= endDate;
+function recommendationFromOption(
+  option: TravelAreaOption,
+): TravelAreaRecommendation {
+  return {
+    travelAreaId: option.travelAreaId,
+    travelAreaName: option.travelAreaName,
+    sido: option.sido,
+    includedCities: option.includedCities,
+    summary: "",
+    tags: [],
+    reason: "",
+    policyCount: 0,
+    localPolicyCount: 0,
+    nationwidePolicyCount: 0,
+    endingSoonCount: 0,
+    estimatedValueKrw: 0,
+    score: 0,
+  };
 }
 
 function generatedTripTitle(region: string, dayCount: number | null): string {
@@ -189,11 +168,6 @@ export function ItineraryCreatePage() {
   const [styleDraft, setStyleDraft] = useState(profile.style ?? "");
   const [startDate, setStartDate] = useState(defaultTripStartDate);
   const [endDate, setEndDate] = useState(defaultTripEndDate);
-  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-  const [datePickerAnchor, setDatePickerAnchor] = useState<DatePickerAnchor>("start");
-  const [calendarMonth, setCalendarMonth] = useState(() =>
-    startOfMonth(defaultTripStartDate),
-  );
   const [titleDraft, setTitleDraft] = useState(
     generatedTripTitle(initialRegion, initialDayCount),
   );
@@ -518,22 +492,7 @@ export function ItineraryCreatePage() {
     );
   };
 
-  const openDatePicker = () => {
-    setCalendarMonth(startOfMonth(startDate));
-    setIsDatePickerOpen(true);
-  };
 
-  const selectCalendarDate = (value: string) => {
-    if (datePickerAnchor === "start") {
-      updateDates(value, value);
-      setDatePickerAnchor("end");
-      setCalendarMonth(startOfMonth(value));
-      return;
-    }
-    updateDates(startDate, value);
-    setDatePickerAnchor("start");
-    setCalendarMonth(startOfMonth(value));
-  };
 
   const goNext = () => {
     if (!canProceed) return;
@@ -615,76 +574,26 @@ export function ItineraryCreatePage() {
         {step === 1 && (
           <section className="prototype-create-step-panel">
             <h2>여행 지역 선택</h2>
-            <div className="prototype-region-grid">
-              {tripCreatePrimaryRegions.map((region) => (
-                <button
-                  className={
-                    selectedRegionButton === region.value ? "active" : ""
-                  }
-                  key={region.value}
-                  onClick={() => selectRegion(region.value)}
-                  type="button"
-                >
-                  <span aria-hidden="true">{region.emoji}</span>
-                  <strong>{region.label}</strong>
-                </button>
-              ))}
-            </div>
-            {requiresTravelAreaSelection && (
-              <div className="prototype-travel-area-choice">
-                <div className="prototype-travel-area-heading">
-                  <h3>
-                    {travelAreaChoiceSido
-                      ? `${travelAreaChoiceSido} 세부 지역 선택`
-                      : NO_TRAVEL_AREA_HEADING}
-                  </h3>
-                </div>
-                {isTravelAreaLoading && (
-                  <p className="prototype-travel-area-status">
-                    세부 지역을 불러오는 중
-                  </p>
-                )}
-                {travelAreaError && (
-                  <p className="prototype-travel-area-status invalid">
-                    {travelAreaError}
-                  </p>
-                )}
-                {!isTravelAreaLoading &&
-                  !travelAreaError &&
-                  travelAreaRecommendations.length === 0 && (
-                    <p className="prototype-travel-area-status">
-                      선택 가능한 세부 지역이 없습니다. 다른 지역을 선택하세요.
-                    </p>
-                  )}
-                {travelAreaRecommendations.length > 0 && (
-                  <div
-                    className="prototype-travel-area-grid"
-                    aria-label="세부 지역 선택"
-                  >
-                    {travelAreaRecommendations.map((area) => (
-                      <button
-                        className={
-                          selectedTravelArea?.travelAreaId === area.travelAreaId
-                            ? "prototype-travel-area-card active"
-                            : "prototype-travel-area-card"
-                        }
-                        key={area.travelAreaId}
-                        onClick={() => selectTravelArea(area)}
-                        type="button"
-                      >
-                        <strong>{area.travelAreaName}</strong>
-                        <small>{area.summary}</small>
-                        <span className="prototype-travel-area-tags">
-                          {area.tags.slice(0, 4).map((tag) => (
-                            <em key={tag}>{tag}</em>
-                          ))}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* 편집 화면과 같은 선택기다. 시도 목록만 이 화면의 이모지·순서를 쓴다. */}
+            <TripRegionSelector
+              error={travelAreaError || undefined}
+              extraAreas={travelAreaRecommendations.map((area) => ({
+                travelAreaId: area.travelAreaId,
+                travelAreaName: area.travelAreaName,
+                sido: area.sido,
+                areaType: "recommended" as const,
+                includedCities: area.includedCities,
+              }))}
+              onChange={(option) =>
+                applyTravelArea(recommendationFromOption(option), {
+                  syncUrl: true,
+                })
+              }
+              onSidoChange={selectRegion}
+              selectedSido={travelAreaChoiceSido}
+              sidoOptions={tripCreatePrimaryRegions}
+              value={optionFromSelectedArea(selectedTravelArea)}
+            />
           </section>
         )}
 
@@ -737,23 +646,18 @@ export function ItineraryCreatePage() {
                 <span>2</span>
                 <div>
                   <h3 id="trip-date-section-title">여행 기간</h3>
-                  <p>Select a start and end date for the trip.</p>
+                  <p>출발일과 도착일을 고릅니다.</p>
                 </div>
               </div>
-              <button
-                aria-controls="trip-date-range-picker"
-                aria-expanded={isDatePickerOpen}
-                className="trip-date-range-card"
-                data-testid="trip-date-range-trigger"
-                onClick={openDatePicker}
-                type="button"
-              >
-                <span>여행 날짜</span>
-                <strong data-testid="trip-date-range-summary">
-                  {startDate} ~ {endDate}
-                </strong>
-                <em>{dayCount ? `${dayCount}일` : "날짜를 선택하세요"}</em>
-              </button>
+              {/* 편집 화면·상세 기간 수정과 같은 컴포넌트다. */}
+              <TripDateRangePicker
+                onChange={({ startDate: next, endDate: nextEnd }) =>
+                  updateDates(next, nextEnd)
+                }
+                value={{ startDate, endDate }}
+              />
+              {/* 화면에는 안 보인다. 테스트와 e2e 가 달을 넘기지 않고
+                  날짜를 바로 지정하기 위한 통로다. */}
               <div className="prototype-date-fields prototype-date-fields-hidden">
                 <label>
                   출발일
@@ -776,77 +680,6 @@ export function ItineraryCreatePage() {
                   />
                 </label>
               </div>
-              {isDatePickerOpen && (
-                <div
-                  aria-label="여행 날짜 범위"
-                  className="trip-date-calendar"
-                  data-testid="trip-date-range-calendar"
-                  id="trip-date-range-picker"
-                  role="dialog"
-                >
-                  <div className="trip-date-calendar-head">
-                    <button
-                      aria-label="이전 달"
-                      onClick={() => setCalendarMonth((current) => addMonths(current, -1))}
-                      type="button"
-                    >
-                      이전
-                    </button>
-                    <strong>{formatCalendarMonth(calendarMonth)}</strong>
-                    <button
-                      aria-label="다음 달"
-                      onClick={() => setCalendarMonth((current) => addMonths(current, 1))}
-                      type="button"
-                    >
-                      다음
-                    </button>
-                  </div>
-                  <p className="trip-date-calendar-guide">
-                    {datePickerAnchor === "start" ? "첫날을 선택하세요" : "마지막 날을 선택하세요"}
-                  </p>
-                  <div className="trip-date-calendar-grid" role="grid">
-                    {calendarWeekdayLabels.map((label) => (
-                      <span className="trip-date-weekday" key={label}>
-                        {label}
-                      </span>
-                    ))}
-                    {buildCalendarDays(calendarMonth).map((date) => {
-                      const value = formatDateInput(date);
-                      const isCurrentMonth = date.getMonth() === calendarMonth.getMonth();
-                      const isStart = value === startDate;
-                      const isEnd = value === endDate;
-                      const isInsideRange = isDateInputInRange(value, startDate, endDate);
-                      const className = [
-                        "trip-date-day",
-                        isCurrentMonth ? "" : "outside-month",
-                        isInsideRange ? "in-range" : "",
-                        isStart ? "range-start" : "",
-                        isEnd ? "range-end" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ");
-                      return (
-                        <button
-                          aria-label={value}
-                          className={className}
-                          key={value}
-                          onClick={() => selectCalendarDate(value)}
-                          type="button"
-                        >
-                          {date.getDate()}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <button
-                    className="trip-date-calendar-done"
-                    onClick={() => setIsDatePickerOpen(false)}
-                    type="button"
-                  >
-                    Done
-                  </button>
-                </div>
-              )}
               {dateRangeError && (
                 <p className="prototype-checkout-error">{dateRangeError}</p>
               )}

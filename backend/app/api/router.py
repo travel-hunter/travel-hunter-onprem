@@ -10,6 +10,7 @@ from app.api.routes import (
     profile,
     recommendations,
     trips,
+    travel_areas,
 )
 
 api_router = APIRouter()
@@ -21,4 +22,5 @@ api_router.include_router(profile.router)
 api_router.include_router(policies.router)
 api_router.include_router(recommendations.router)
 api_router.include_router(trips.router)
+api_router.include_router(travel_areas.router)
 api_router.include_router(invites.router)

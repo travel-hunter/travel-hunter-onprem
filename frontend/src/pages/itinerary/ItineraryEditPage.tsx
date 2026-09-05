@@ -1,8 +1,13 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { appDataApi, isApiError, type Trip } from "../../api";
+import { appDataApi, isApiError, type TravelAreaOption, type Trip } from "../../api";
 import { useAsyncResource } from "../../api/useAsyncResource";
 import { Button, ErrorState, LoadingState, TopBar } from "../../components/ui";
+import {
+  TripRegionSelector,
+  resolveTripSido,
+} from "../../components/trip/TripRegionSelector";
+import { TripDateRangePicker } from "../../components/trip/TripDateRangePicker";
 import { normalizeTripDateRange } from "../../utils/dateDefaults";
 
 type OverflowPlaceStrategy = "moveToLastDay" | "delete";
@@ -28,6 +33,12 @@ export function ItineraryEditPage() {
   const [endDate, setEndDate] = useState("");
   const [overflowPlaceStrategy, setOverflowPlaceStrategy] =
     useState<OverflowPlaceStrategy>("moveToLastDay");
+  const [selectedSido, setSelectedSido] = useState<string | null>(null);
+  const [selectedArea, setSelectedArea] = useState<TravelAreaOption | null>(
+    null,
+  );
+  // 복원된 것과 사용자가 고른 것을 가른다. 손대지 않았으면 지역을 보내지 않는다.
+  const [regionTouched, setRegionTouched] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -37,6 +48,12 @@ export function ItineraryEditPage() {
     setTitle(loadedTrip.title);
     setStartDate(loadedTrip.startDate);
     setEndDate(loadedTrip.endDate);
+    // 저장된 지역의 광역시도를 먼저 정해야 선택기가 그 카탈로그를 불러온다.
+    setSelectedSido(
+      resolveTripSido(loadedTrip.travelAreaId, loadedTrip.region),
+    );
+    setSelectedArea(null);
+    setRegionTouched(false);
   }, [loadedTrip]);
 
   if (isLoading) return <LoadingState label="일정을 불러오는 중입니다" />;
@@ -64,8 +81,8 @@ export function ItineraryEditPage() {
     );
   }
 
-  // 두 입력이 서로 독립이라 입력 도중에 맞바꾸면 방금 고친 칸이 튄다.
-  // 화면에는 입력한 그대로 두고, 미리보기와 저장에만 정규화한 범위를 쓴다.
+  // 달력이 이미 정방향으로 되돌려 주지만, 저장 직전에 한 번 더 거른다.
+  // 다른 경로로 상태가 들어와도 일수가 음수가 될 길을 남기지 않는다.
   const { startDate: normalizedStartDate, endDate: normalizedEndDate } =
     normalizeTripDateRange(startDate, endDate);
   const nextDayCount = dayCountFromDateInputs(
@@ -102,6 +119,10 @@ export function ItineraryEditPage() {
       const updatedTrip = await appDataApi.updateTripSettings(trip.id, {
         expectedRevision: trip.revision,
         title: trimmedTitle,
+        // 지역을 안 건드렸으면 보내지 않는다. 생략하면 백엔드가 기존 지역을 그대로 둔다.
+        ...(regionTouched && selectedArea
+          ? { travelAreaId: selectedArea.travelAreaId }
+          : {}),
         startDate: normalizedStartDate,
         endDate: normalizedEndDate,
         overflowPlaceStrategy,
@@ -128,14 +149,33 @@ export function ItineraryEditPage() {
           일정 제목
           <input aria-label="Trip title" value={title} onChange={(event) => setTitle(event.target.value)} />
         </label>
-        <label className="field">
-          시작일
-          <input aria-label="Start date" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
-        </label>
-        <label className="field">
-          종료일
-          <input aria-label="End date" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
-        </label>
+        <TripRegionSelector
+          disabled={isSaving}
+          onChange={(area) => {
+            setSelectedArea(area);
+            setRegionTouched(true);
+          }}
+          onRestore={setSelectedArea}
+          onSidoChange={(sido) => {
+            setSelectedSido(sido);
+            setSelectedArea(null);
+            setRegionTouched(true);
+          }}
+          restoreAreaId={trip.travelAreaId}
+          restoreAreaName={trip.region}
+          selectedSido={selectedSido}
+          value={selectedArea}
+        />
+        {/* 생성 화면과 같은 범위 달력이다. 네이티브 date 입력 두 개는
+            표기와 항목 높이를 운영체제가 정해 화면마다 달라 보였다. */}
+        <TripDateRangePicker
+          disabled={isSaving}
+          onChange={({ startDate: nextStartDate, endDate: nextEndDate }) => {
+            setStartDate(nextStartDate);
+            setEndDate(nextEndDate);
+          }}
+          value={{ startDate, endDate }}
+        />
         {overflowPlaceCount > 0 && (
           <fieldset className="trip-date-overflow-options">
             <legend>제외되는 날짜의 장소 {overflowPlaceCount}개를 어떻게 처리할까요?</legend>

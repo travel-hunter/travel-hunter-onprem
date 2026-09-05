@@ -135,6 +135,20 @@ def test_get_travel_area_resolves_id_and_display_fields() -> None:
     assert "설악산" in area.aliases
 
 
+def test_get_travel_area_resolves_whole_and_administrative_ids() -> None:
+    whole_area = get_travel_area("whole:%EC%A0%9C%EC%A3%BC")
+    administrative_area = get_travel_area("admin:%EC%A0%9C%EC%A3%BC:%EC%84%9C%EA%B7%80%ED%8F%AC%EC%8B%9C")
+
+    assert whole_area is not None
+    assert whole_area.name == "제주 전체"
+    assert whole_area.sido == "제주"
+    assert whole_area.included_cities == ("제주",)
+    assert administrative_area is not None
+    assert administrative_area.name == "서귀포시"
+    assert administrative_area.sido == "제주"
+    assert administrative_area.included_cities == ("서귀포",)
+
+
 def test_sido_filter_returns_only_that_sido(db: Session) -> None:
     result = recommend_travel_areas(db, sido="전남", today=date(2026, 5, 26))
 

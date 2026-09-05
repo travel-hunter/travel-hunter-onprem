@@ -114,9 +114,7 @@ describe("Travel Hunter app — trip creation", () => {
         screen.getByText("선택한 정책을 새 일정에 연결할게요"),
       ).toBeInTheDocument();
       await waitFor(() =>
-        expect(screen.getByRole("button", { name: /제주 전체/ })).toHaveClass(
-          "active",
-        ),
+        expect(screen.getByRole("button", { name: /제주 전체/ })).toHaveAttribute("aria-pressed", "true"),
       );
       await user.click(screen.getByRole("button", { name: "다음" }));
       expect(
@@ -217,9 +215,7 @@ describe("Travel Hunter app — trip creation", () => {
     try {
       renderAppRoute("/trips/new");
       await waitFor(() =>
-        expect(screen.getByRole("button", { name: /제주 전체/ })).toHaveClass(
-          "active",
-        ),
+        expect(screen.getByRole("button", { name: /제주 전체/ })).toHaveAttribute("aria-pressed", "true"),
       );
       await user.click(screen.getByRole("button", { name: "다음" }));
 
@@ -268,14 +264,10 @@ describe("Travel Hunter app — trip creation", () => {
       renderAppRoute("/trips/new?region=%EB%B6%80%EC%82%B0");
       const user = userEvent.setup();
       await waitFor(() =>
-        expect(screen.getByRole("button", { name: /부산/ })).toHaveClass(
-          "active",
-        ),
+        expect(screen.getByRole("button", { name: /부산/ })).toHaveAttribute("aria-pressed", "true"),
       );
       await waitFor(() =>
-        expect(screen.getByRole("button", { name: /부산 전체/ })).toHaveClass(
-          "active",
-        ),
+        expect(screen.getByRole("button", { name: /부산 전체/ })).toHaveAttribute("aria-pressed", "true"),
       );
       const nextButton = screen.getByRole("button", { name: "다음" });
       await waitFor(() => expect(nextButton).toBeEnabled());
@@ -335,15 +327,11 @@ describe("Travel Hunter app — trip creation", () => {
       const user = userEvent.setup();
 
       await waitFor(() =>
-        expect(screen.getByRole("button", { name: /부산/ })).toHaveClass(
-          "active",
-        ),
+        expect(screen.getByRole("button", { name: /부산/ })).toHaveAttribute("aria-pressed", "true"),
       );
       resolveTravelAreas(getBusanTravelAreaResponse());
       await waitFor(() =>
-        expect(screen.getByRole("button", { name: /부산 전체/ })).toHaveClass(
-          "active",
-        ),
+        expect(screen.getByRole("button", { name: /부산 전체/ })).toHaveAttribute("aria-pressed", "true"),
       );
       await user.click(screen.getByRole("button", { name: "다음" }));
       const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
@@ -466,12 +454,8 @@ describe("Travel Hunter app — trip creation", () => {
     try {
       renderAppRoute(`/trips/new?region=${encodeURIComponent("합천")}`);
 
-      expect(await screen.findByRole("button", { name: /합천/ })).toHaveClass(
-        "active",
-      );
-      expect(screen.getByRole("button", { name: "경남" })).toHaveClass(
-        "active",
-      );
+      expect(await screen.findByRole("button", { name: /합천/ })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByRole("button", { name: "경남" })).toHaveAttribute("aria-pressed", "true");
       expect(travelAreasSpy).toHaveBeenCalledWith(
         expect.objectContaining({ query: "합천" }),
       );
@@ -524,7 +508,7 @@ describe("Travel Hunter app — trip creation", () => {
       renderAppRoute("/trips/new?travelAreaId=gangwon-sokcho-goseong-yangyang");
       expect(
         await screen.findByRole("button", { name: /속초·고성·양양/ }),
-      ).toHaveClass("active");
+      ).toHaveAttribute("aria-pressed", "true");
       const nextButton = screen.getByRole("button", { name: "다음" });
       await waitFor(() => expect(nextButton).toBeEnabled());
       await user.click(nextButton);
@@ -608,7 +592,7 @@ describe("Travel Hunter app — trip creation", () => {
 
       expect(
         await screen.findByRole("button", { name: /제주 전체/ }),
-      ).toHaveClass("active");
+      ).toHaveAttribute("aria-pressed", "true");
       expect(travelAreasSpy).toHaveBeenCalledWith(
         expect.objectContaining({ sido: "제주" }),
       );
@@ -628,9 +612,7 @@ describe("Travel Hunter app — trip creation", () => {
     try {
       renderAppRoute("/trips/new?region=%EA%B2%BD%EC%A3%BC");
 
-      expect(await screen.findByRole("button", { name: /경주/ })).toHaveClass(
-        "active",
-      );
+      expect(await screen.findByRole("button", { name: /경주/ })).toHaveAttribute("aria-pressed", "true");
       expect(travelAreasSpy).toHaveBeenCalledWith(
         expect.objectContaining({ query: "경주" }),
       );
@@ -652,7 +634,7 @@ describe("Travel Hunter app — trip creation", () => {
 
       expect(
         await screen.findByRole("button", { name: /속초·고성·양양/ }),
-      ).toHaveClass("active");
+      ).toHaveAttribute("aria-pressed", "true");
       expect(travelAreasSpy).toHaveBeenCalledWith(
         expect.objectContaining({ query: "속초" }),
       );
@@ -674,7 +656,7 @@ describe("Travel Hunter app — trip creation", () => {
 
       expect(
         await screen.findByRole("button", { name: /강릉·동해·삼척/ }),
-      ).toHaveClass("active");
+      ).toHaveAttribute("aria-pressed", "true");
       expect(travelAreasSpy).toHaveBeenCalledWith(
         expect.objectContaining({ query: "강릉" }),
       );
@@ -812,12 +794,10 @@ describe("Travel Hunter app — trip creation", () => {
       renderAppRoute("/trips/new?travelAreaId=gangwon-sokcho-goseong-yangyang");
       expect(
         await screen.findByRole("button", { name: /속초·고성·양양/ }),
-      ).toHaveClass("active");
+      ).toHaveAttribute("aria-pressed", "true");
       await user.click(screen.getByRole("button", { name: /부산/ }));
       await waitFor(() =>
-        expect(screen.getByRole("button", { name: /부산 전체/ })).toHaveClass(
-          "active",
-        ),
+        expect(screen.getByRole("button", { name: /부산 전체/ })).toHaveAttribute("aria-pressed", "true"),
       );
       await user.click(screen.getByRole("button", { name: "다음" }));
       expect(
@@ -984,6 +964,37 @@ describe("Travel Hunter app — trip creation", () => {
       expect(screen.getByRole("button", { name: "일정 생성" })).toBeEnabled();
     } finally {
       createTripSpy.mockRestore();
+      travelAreasSpy.mockRestore();
+    }
+  });
+
+  it("keeps the trip date step written in Korean", async () => {
+    await login();
+    cleanup();
+    const travelAreasSpy = vi
+      .spyOn(appDataApi, "listTravelAreaRecommendations")
+      .mockResolvedValue(getJejuTravelAreaResponse());
+    const user = userEvent.setup();
+
+    try {
+      renderAppRoute("/trips/new");
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "다음" })).toBeEnabled(),
+      );
+      await user.click(screen.getByRole("button", { name: "다음" }));
+
+      expect(
+        screen.getByText("출발일과 도착일을 고릅니다."),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByTestId("trip-date-range-trigger"));
+      const calendar = screen.getByTestId("trip-date-range-calendar");
+      expect(
+        within(calendar).getByRole("button", { name: "완료" }),
+      ).toBeInTheDocument();
+      // 달력 안에는 영어 낱말이 남아 있으면 안 된다. 날짜 숫자만 있다.
+      expect(calendar.textContent ?? "").not.toMatch(/[A-Za-z]{3,}/);
+    } finally {
       travelAreasSpy.mockRestore();
     }
   });

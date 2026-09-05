@@ -15,6 +15,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+# 스크립트를 직접 실행할 때도 app 패키지를 찾을 수 있게 한다
+# (normalize_external_policies.py 와 같은 방식).
+APP_ROOT = Path(__file__).resolve().parents[1]
+if str(APP_ROOT) not in sys.path:
+    sys.path.insert(0, str(APP_ROOT))
+
+from app.services import digital_tourism_resident_card as official  # noqa: E402
+
 DEFAULT_POLICY_DATA_PATH = Path(__file__).parent.parent / "app" / "data" / "dgtourcard_policies.json"
 REQUIRED_FIELDS = {
     "slug",
@@ -30,6 +38,7 @@ REQUIRED_FIELDS = {
     "officialUrl",
 }
 OPTIONAL_URL_FIELDS = ("officialUrl", "applyUrl")
+DIGITAL_TOURISM_SOURCE_CATEGORY = "digital_tourism_resident_card"
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 MOJIBAKE_MARKERS = ("占", "獄", "夷", "揶", "筌")
 BLOCKED_URL_HOST_MARKERS = ("localhost", "127.0.0.1", "example.com", "example.org", "example.net")
@@ -88,6 +97,18 @@ def validate_policy_data(path: Path = DEFAULT_POLICY_DATA_PATH) -> list[str]:
         elif slug in seen_slugs:
             errors.append(f"중복 slug: {slug}")
         seen_slugs.add(slug)
+
+        if str(policy.get("sourceCategory") or "") == DIGITAL_TOURISM_SOURCE_CATEGORY:
+            if slug.rsplit("-", 1)[-1].isdigit():
+                errors.append(f"{slug} must not end with a page-order suffix.")
+            if str(policy.get("status") or "active") == "active":
+                canonical_slug = official.canonical_policy_slug_for_city(
+                    official.city_from_policy_slug(slug)
+                )
+                if canonical_slug and slug != canonical_slug:
+                    errors.append(
+                        f"{slug} must use the canonical dgtour slug {canonical_slug}."
+                    )
 
         deadline = str(policy.get("deadline", "")).strip()
         if deadline and not DATE_RE.match(deadline):
