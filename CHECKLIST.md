@@ -2,17 +2,18 @@
 
 ## Current Status
 
-- Active task/status: 일정의 지역·기간 선택을 통합했다. 전국 행정 시·군·구 카탈로그를 새로 만들어 권역으로 접어 보여주고, 기존 일정의 세부 지역을 바꿔 저장할 수 있게 했다. 생성·직접 편집·상세 기간 수정이 같은 범위 달력을 쓴다. 함께 day 스트립을 마우스로 밀 수 있게 하고 스트립 버튼에 날짜와 장소 수를 실었다.
+- Active task/status: `develop` 이 두 건을 받았다. **#51** 일정의 지역·기간 선택 통합 — 전국 행정 시·군·구 카탈로그를 권역으로 접어 보여주고, 기존 일정의 세부 지역을 바꿔 저장하며, 생성·직접 편집·상세 기간 수정이 같은 달력을 쓴다. day 스트립도 함께 다듬었다. **#52** 디지털관광주민증 정책 슬러그를 canonical city 기준으로 고정.
 - Scope guard: `backend/app/{data,services,schemas,api}`, `backend/tests`, `frontend/src/{api,components/trip,pages/itinerary,utils,styles,app/__tests__,test}`, `frontend/scripts`, `docs`, `.agent/evals`. 정책 수집·크롤러·알림·배포 설정은 건드리지 않았다.
-- 브랜치 `feature/itinerary-day-strip`, `origin/develop` 대비 14커밋. **push / PR 은 하지 않았다.**
+- 두 PR 이 합쳐진 상태는 각 PR 에서 따로 검증되지 않아 2026-09-05 에 별도로 돌렸다. 결과는 아래 Recent Validation 이다.
+- 열려 있는 draft PR: #53 backend-mode e2e·dev Jenkins 테스트 단계, #54 운영 DB 이전 기록, #55 로컬 런타임 문서, #56 드래그 가로 오버플로. **#53·#54 는 `CHECKLIST.md` 충돌이 있었고 2026-09-05 에 `origin/develop` 을 병합해 풀었다.**
 
 ## Recent Validation
 
 - PASS: `cd frontend && npm run typecheck`
-- PASS: `cd frontend && npx vitest run` — **348 passed / 0 failed** (28 files)
+- PASS: `cd frontend && npx vitest run` — **348 passed / 0 failed** (28 files) / #51+#52 병합 후 재실행
 - PASS: `cd frontend && npm run build`
 - PASS: `cd frontend && npm run test:mojibake` — 이번에 제어문자 검사를 추가했고 탐침 파일로 실제 검출을 확인했다
-- PASS: `cd backend && python -m pytest` — **701 passed / 1 failed / 23 skipped**
+- PASS: `cd backend && python -m pytest` — **708 passed / 1 failed / 23 skipped** / #52 가 더한 테스트 포함
 - PASS: `docker compose -f compose.yaml config`, `docker compose -f compose.local.yaml config` (출력은 버림 — 환경변수가 펼쳐진다)
 - PASS: `git diff --check`
 - PASS: `GET /api/travel-areas` 실응답 확인 — 경기 31개가 북부 10 / 서부 8 / 남부 8 / 동부 5 로 갈리고 연천군이 포함된다. 세종은 하위 없이 "세종 전체"만 나온다.
@@ -47,12 +48,8 @@ Windows 임시 디렉터리 권한에 걸리는 **간헐적 환경 이슈**로 �
   옮기려면 `backend/app/data/administrative_areas.py` 의 `ADMINISTRATIVE_GROUPS_BY_SIDO` 한 곳만 고치면 되고,
   옮기다 빠뜨리면 테스트가 잡는다.
 
-- **원격에 사본이 없다.** 이 컴퓨터에만 있는 커밋이 35개, 8개 가지다. 자세한 내용과 push 우선순위는
-  `docs/2026-09-05-commit-handoff.md`.
-
-- **`feature/dgtour-canonical-slug` 미병합.** 2026-09-03 정책 수집이 돌자 슬러그가 바뀌어 프론트 테스트
-  6건이 깨졌다. 이번엔 테스트를 실제 DB 에서 떼어내 막았지만 원인은 그 가지가 병합돼야 사라진다.
-  **로컬 DB 에 정책 수집을 돌리지 말 것.**
+- **해소됨(2026-09-05).** dgtour 슬러그 근본 수정은 #52 로 병합됐다. 로컬에만 있던 가지 8개는
+  모두 push 돼 원격에 사본이 생겼고 #53~#56 으로 올라가 있다.
 
 ## 참고 문서
 
