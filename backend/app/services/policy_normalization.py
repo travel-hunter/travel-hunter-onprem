@@ -552,4 +552,10 @@ def _hide_legacy_dgtour_seed_policies(db: Session) -> None:
             and dgtour_identity.is_participating_city(dgtour_identity.city_from_title(policy.title or ""))
         ):
             continue
+        # 정식 도시 슬러그는 시드에서 온 행이라 외부 레코드가 아직 없어도 정본이다.
+        # 참여도시가 아니면 canonical_policy_slug_for_city 가 None 이라 걸리지 않는다.
+        if policy.slug and policy.slug == dgtour_identity.canonical_policy_slug_for_city(
+            dgtour_identity.city_from_policy_slug(policy.slug)
+        ):
+            continue
         policy.status = "hidden"

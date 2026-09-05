@@ -6,6 +6,11 @@
     python scripts/crawl_dgtourcard.py
 
 결과물: backend/app/data/dgtourcard_policies.json
+
+주의: backend/app/data/dgtourcard_policies.json 은 현재 이 스크립트의 산출물이 아니라
+손으로 관리되고 있다. sourceCanonicalKey / structuredDetail / status 등 이 스크립트가
+만들지 못하는 필드가 들어 있으므로, 그대로 덮어쓰면 그 필드들이 사라진다.
+--output 으로 다른 경로에 쓰고 차이를 확인한 뒤 반영할 것.
 """
 
 from __future__ import annotations
@@ -18,6 +23,8 @@ import unicodedata
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
+
+from app.services.digital_tourism_resident_card import canonical_policy_slug_for_city
 
 try:
     import httpx
@@ -177,7 +184,8 @@ def extract_map_entries(html: str) -> list[dict[str, str]]:
         entry_id = m.group(2).strip()
         signgucd = m.group(3).strip()
         province = SIGNGU_PREFIX_PROVINCE.get(signgucd[:2], city)
-        key = f"{city}:{entry_id}"
+        # 한 도시는 하나의 정책이다. entry_id 가 달라도 같은 도시면 합친다.
+        key = city
         if key not in seen:
             seen.add(key)
             entries.append({"city": city, "id": entry_id, "province": province})
@@ -214,7 +222,7 @@ def parse_policies_from_html(html: str, *, target_url: str = DEFAULT_TARGET_URL)
                 summary=f"디지털관광주민증 소지자 대상 {city}({province}) 지역 방문 시 혜택을 제공합니다.",
                 url=target_url,
             )
-            policy["slug"] = f"dgtour-{slugify(city)}-{entry['id']}"
+            policy["slug"] = canonical_policy_slug_for_city(city) or f"dgtour-{slugify(city)}"
             policies.append(policy)
     else:
         table_parser = TableParser()

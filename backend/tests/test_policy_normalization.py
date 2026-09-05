@@ -1726,6 +1726,56 @@ def test_promoting_local_half_trip_hides_legacy_dgtour_seed_policies(
 
 
 
+def test_promoting_local_half_trip_keeps_canonical_dgtour_seed_visible(
+    db: Session,
+) -> None:
+    """정식 슬러그 시드 행은 외부 레코드가 없어도 숨겨지면 안 된다.
+
+    시드가 정식 슬러그를 쓰게 되면 그 행은 frozen_legacy_dgtour_slugs() 에 없고
+    external_source_record_id 도 None 이라, _hide_legacy_dgtour_seed_policies 의
+    보호 조건 두 가지를 모두 통과하지 못한다.
+    """
+    from app.services import digital_tourism_resident_card as dgtour
+
+    upsert_external_source_records(
+        db,
+        [
+            make_source(
+                canonical_key="active-half-trip",
+                external_id="active-half-trip",
+                source_name="대한민국 반값여행",
+                source_url="https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+                source_category="local_half_trip",
+                collected_page_url="https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+                title="Hadong half trip support",
+                region="Gyeongnam",
+                city="Hadong",
+            )
+        ],
+    )
+    canonical_seed = Policy(
+        slug="dgtour-영광",
+        title="[영광] 디지털관광주민증 혜택",
+        organization="한국관광공사",
+        policy_type="지역할인",
+        description="canonical seed",
+        benefit_detail="지역 제휴 혜택",
+        target_condition="디지털관광주민증 발급자",
+        region="전남",
+        status="active",
+        source_category=dgtour.SOURCE_CATEGORY,
+        source_canonical_key=dgtour.canonical_key_for_city("영광"),
+    )
+    db.add(canonical_seed)
+    db.flush()
+
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    promote_external_benefits_to_policies(db)
+
+    assert canonical_seed.status == "active"
+
+
 def test_promoting_digital_tourism_prefers_hidden_canonical_slug_over_active_legacy_seed(
     db: Session,
 ) -> None:

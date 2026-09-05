@@ -70,6 +70,9 @@ def test_seed_dgtour_active_policies_use_official_participating_regions_and_urls
         title = str(policy["title"])
         city = title[1 : title.index("]")] if title.startswith("[") and "]" in title else ""
         assert city in official.PARTICIPATING_CITY_REGIONS
+        canonical_slug = official.canonical_policy_slug_for_city(city)
+        assert canonical_slug is not None
+        assert policy["slug"] == canonical_slug
         official_url = str(policy.get("officialUrl") or "")
         assert official.is_visitkorea_dgtourcard_url(official_url)
         assert "haenam50.kr" not in official_url
@@ -94,5 +97,51 @@ def test_seed_dgtour_non_participating_regions_are_hidden() -> None:
     )
     by_slug = {policy["slug"]: policy for policy in policies}
 
-    for slug in ("dgtour-강진-7", "dgtour-남해-11", "dgtour-영암-12", "dgtour-횡성-14"):
+    for slug in ("dgtour-강진", "dgtour-남해", "dgtour-영암", "dgtour-횡성"):
         assert by_slug[slug]["status"] == "hidden"
+
+
+def test_seed_dgtour_slugs_never_carry_a_page_order_suffix() -> None:
+    from pathlib import Path
+
+    policies = json.loads(
+        (Path(__file__).parents[1] / "app" / "data" / "dgtourcard_policies.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    numbered = [
+        str(policy["slug"])
+        for policy in policies
+        if str(policy["slug"]).rsplit("-", 1)[-1].isdigit()
+    ]
+
+    assert numbered == []
+
+
+def test_validate_policy_data_rejects_a_page_order_suffix_on_any_dgtour_slug(
+    tmp_path,
+) -> None:
+    from pathlib import Path
+
+    from scripts.validate_policy_data import validate_policy_data
+
+    policies = json.loads(
+        (Path(__file__).parents[1] / "app" / "data" / "dgtourcard_policies.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    hidden = next(
+        policy
+        for policy in policies
+        if str(policy.get("status")) == "hidden"
+        and str(policy["slug"]).startswith("dgtour-")
+    )
+    hidden["slug"] = f"{hidden['slug']}-99"
+
+    target = tmp_path / "policies.json"
+    target.write_text(json.dumps(policies, ensure_ascii=False), encoding="utf-8")
+
+    errors = validate_policy_data(target)
+
+    assert any("-99" in error for error in errors)
