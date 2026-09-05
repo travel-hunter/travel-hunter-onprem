@@ -66,6 +66,9 @@
   옮기려면 `backend/app/data/administrative_areas.py` 의 `ADMINISTRATIVE_GROUPS_BY_SIDO` 한 곳만 고치면 되고,
   옮기다 빠뜨리면 테스트가 잡는다.
 
+- **해소됨(2026-09-05).** dgtour 슬러그 근본 수정은 #52 로 병합됐다. 로컬에만 있던 가지 8개는
+  모두 push 돼 원격에 사본이 생겼고 #53~#56 으로 올라가 있다.
+
 ## Cleanup Policy
 
 - Keep this file slim: current status, latest validation evidence, active remaining risks only.
