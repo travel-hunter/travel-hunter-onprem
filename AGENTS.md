@@ -89,6 +89,7 @@ A task is done only when:
 - The required validation commands were run, or a clear blocker is recorded.
 - README, env examples, `PLANS.md`, or `CHECKLIST.md` were updated when the task changes usage, setup, API, or workflow.
 - Before finishing a task that touches project state, keep `CHECKLIST.md` slim: update only current status, recent validation evidence, and active remaining risks; remove stale historical task logs instead of appending long chronology.
+- Update `CHECKLIST.md` when the branch is ready to merge, not while work is in progress. This file records one current state; when several live branches each rewrite `Current Status` and `Recent Validation`, they collide on the same lines every time. Two draft PRs conflicted this way on 2026-09-05 while branches that left the file alone merged clean. Keep branch-specific narrative in the pull request body.
 - Validate checklist cleanup with `git diff --check -- CHECKLIST.md` when `CHECKLIST.md` changes.
 - When Korean text files are edited, they were verified UTF-8-clean per the Encoding rule in "Non-Negotiable Rules" (no replacement characters, no unexpected garbled Hanja).
 - Remaining risks are explicit.
