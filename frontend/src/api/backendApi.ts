@@ -57,6 +57,7 @@ import {
   ProfileOptions,
   Recommendation,
   RegionRecommendation,
+  TravelAreaCatalog,
   TravelAreaRecommendationResponse,
   Trip,
   User,
@@ -135,6 +136,8 @@ export const backendApi: AppDataApi = {
     const query = params.toString();
     return apiClient.get<TravelAreaRecommendationResponse>(`/api/recommendations/travel-areas${query ? `?${query}` : ""}`);
   },
+  getTravelAreaCatalog: (sido: string): Promise<TravelAreaCatalog> =>
+    apiClient.get<TravelAreaCatalog>(`/api/travel-areas${queryString({ sido })}`),
   getPolicy: (policySlug = ""): Promise<Policy> => apiClient.get<Policy>(`/api/policies/${policySlug}`),
   savePolicy: (policySlug: string): Promise<SavePolicyResponse> => apiClient.post<SavePolicyResponse>(`/api/me/saved-policies/${policySlug}`),
   listSavedPolicies: (): Promise<Policy[]> => apiClient.get<Policy[]>("/api/me/saved-policies"),

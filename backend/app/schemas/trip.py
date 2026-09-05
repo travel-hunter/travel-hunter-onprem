@@ -69,6 +69,7 @@ class Trip(BaseModel):
     status: TripStatus
     revision: int
     travelAreaId: str | None = None
+    region: str
     dates: str
     startDate: date
     endDate: date
@@ -212,6 +213,7 @@ class UpdateTripStatusRequest(BaseModel):
 class UpdateTripSettingsRequest(BaseModel):
     expectedRevision: int = Field(ge=1)
     title: str | None = Field(default=None, min_length=1, max_length=100)
+    travelAreaId: str | None = Field(default=None, max_length=120)
     startDate: date | None = None
     endDate: date | None = None
     overflowPlaceStrategy: TripDateOverflowStrategy = "moveToLastDay"

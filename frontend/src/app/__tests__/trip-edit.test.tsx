@@ -5,6 +5,35 @@ import { appDataApi, type Trip } from "../../api";
 import { getPreviewTrip } from "../../test/fixtures";
 import { login, renderAppRoute } from "../../test/renderAppRoute";
 
+const jejuCatalog = {
+  sido: "제주",
+  sourceAsOf: "2026-09-03",
+  wholeArea: {
+    travelAreaId: "jeju-all",
+    travelAreaName: "제주 전체",
+    sido: "제주",
+    areaType: "whole" as const,
+    includedCities: ["제주", "서귀포"],
+  },
+  recommendedAreas: [
+    {
+      travelAreaId: "jeju-east",
+      travelAreaName: "제주 동부",
+      sido: "제주",
+      areaType: "recommended" as const,
+      includedCities: ["제주", "서귀포"],
+    },
+    {
+      travelAreaId: "jeju-west",
+      travelAreaName: "제주 서부",
+      sido: "제주",
+      areaType: "recommended" as const,
+      includedCities: ["제주", "서귀포"],
+    },
+  ],
+  administrativeAreas: [],
+};
+
 describe("Travel Hunter app trip edit", () => {
   it("prefills canonical DTO dates and saves settings without parsing display dates", async () => {
     const trip: Trip = {
@@ -27,6 +56,10 @@ describe("Travel Hunter app trip edit", () => {
       dates: "2026-06-02 ~ 2026-06-04",
     };
     const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    // 지역 선택기가 실제 백엔드를 치면 결과가 로컬 DB 상태에 휘둘린다.
+    const catalogSpy = vi
+      .spyOn(appDataApi, "getTravelAreaCatalog")
+      .mockResolvedValue(jejuCatalog);
     const updateSettingsSpy = vi
       .spyOn(appDataApi, "updateTripSettings")
       .mockResolvedValue(updatedTrip);
@@ -40,18 +73,19 @@ describe("Travel Hunter app trip edit", () => {
       const titleInput = await screen.findByRole("textbox", {
         name: "Trip title",
       });
-      const startInput = screen.getByLabelText("Start date");
-      const endInput = screen.getByLabelText("End date");
-
-      expect(startInput).toHaveValue("2026-06-01");
-      expect(endInput).toHaveValue("2026-06-03");
+      // 네이티브 date 입력은 없어졌다. 생성 화면과 같은 범위 달력을 쓴다.
+      expect(screen.queryByLabelText("Start date")).toBeNull();
+      expect(screen.queryByLabelText("End date")).toBeNull();
+      expect(screen.getByTestId("trip-date-range-summary")).toHaveTextContent(
+        "2026-06-01 ~ 2026-06-03",
+      );
 
       await user.clear(titleInput);
       await user.type(titleInput, "Updated canonical trip");
-      await user.clear(startInput);
-      await user.type(startInput, "2026-06-02");
-      await user.clear(endInput);
-      await user.type(endInput, "2026-06-04");
+      await user.click(screen.getByTestId("trip-date-range-trigger"));
+      await user.click(screen.getByRole("button", { name: "2026-06-02" }));
+      await user.click(screen.getByRole("button", { name: "2026-06-04" }));
+      await user.click(screen.getByRole("button", { name: "완료" }));
       await user.click(document.querySelector('button[type="submit"]') as HTMLButtonElement);
 
       await waitFor(() =>
@@ -65,6 +99,7 @@ describe("Travel Hunter app trip edit", () => {
       );
     } finally {
       getTripSpy.mockRestore();
+      catalogSpy.mockRestore();
       updateSettingsSpy.mockRestore();
     }
   });
@@ -81,6 +116,10 @@ describe("Travel Hunter app trip edit", () => {
       currentUserRole: "owner",
     };
     const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    // 지역 선택기가 실제 백엔드를 치면 결과가 로컬 DB 상태에 휘둘린다.
+    const catalogSpy = vi
+      .spyOn(appDataApi, "getTravelAreaCatalog")
+      .mockResolvedValue(jejuCatalog);
     const updateSettingsSpy = vi
       .spyOn(appDataApi, "updateTripSettings")
       .mockResolvedValue({ ...trip, revision: 4 });
@@ -91,10 +130,11 @@ describe("Travel Hunter app trip edit", () => {
       renderAppRoute("/trips/92/edit");
       const user = userEvent.setup();
 
-      const startInput = await screen.findByLabelText("Start date");
-      // 시작일을 종료일보다 뒤로 바꾼다 — 지금은 일수가 음수가 되어 저장이 막힌다.
-      await user.clear(startInput);
-      await user.type(startInput, "2026-06-10");
+      await user.click(await screen.findByTestId("trip-date-range-trigger"));
+      // 끝날을 첫날보다 앞서 고른다. 달력이 정방향으로 되돌려야 한다.
+      await user.click(screen.getByRole("button", { name: "2026-06-10" }));
+      await user.click(screen.getByRole("button", { name: "2026-06-03" }));
+      await user.click(screen.getByRole("button", { name: "완료" }));
       await user.click(
         document.querySelector('button[type="submit"]') as HTMLButtonElement,
       );
@@ -110,6 +150,112 @@ describe("Travel Hunter app trip edit", () => {
       );
     } finally {
       getTripSpy.mockRestore();
+      catalogSpy.mockRestore();
+      updateSettingsSpy.mockRestore();
+    }
+  });
+
+  it("restores the saved travel area and saves a different one", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "93",
+      title: "제주 동부 여행",
+      revision: 5,
+      region: "제주 동부",
+      travelAreaId: "jeju-east",
+      startDate: "2026-06-01",
+      endDate: "2026-06-03",
+      days: { 1: [], 2: [], 3: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const catalogSpy = vi
+      .spyOn(appDataApi, "getTravelAreaCatalog")
+      .mockResolvedValue(jejuCatalog);
+    const updateSettingsSpy = vi
+      .spyOn(appDataApi, "updateTripSettings")
+      .mockResolvedValue({ ...trip, revision: 6 });
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/93/edit");
+      const user = userEvent.setup();
+
+      // 저장돼 있던 제주 동부가 되살아나 있어야 한다.
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: /제주 동부/ }),
+        ).toHaveAttribute("aria-pressed", "true"),
+      );
+      expect(catalogSpy).toHaveBeenCalledWith("제주");
+
+      await user.click(screen.getByRole("button", { name: /제주 서부/ }));
+      await user.click(
+        document.querySelector('button[type="submit"]') as HTMLButtonElement,
+      );
+
+      await waitFor(() =>
+        expect(updateSettingsSpy).toHaveBeenCalledWith("93", {
+          expectedRevision: 5,
+          title: "제주 동부 여행",
+          travelAreaId: "jeju-west",
+          startDate: "2026-06-01",
+          endDate: "2026-06-03",
+          overflowPlaceStrategy: "moveToLastDay",
+        }),
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      catalogSpy.mockRestore();
+      updateSettingsSpy.mockRestore();
+    }
+  });
+
+  it("omits travelAreaId when the region was not touched", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "94",
+      title: "제주 동부 여행",
+      revision: 2,
+      region: "제주 동부",
+      travelAreaId: "jeju-east",
+      startDate: "2026-06-01",
+      endDate: "2026-06-03",
+      days: { 1: [], 2: [], 3: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const catalogSpy = vi
+      .spyOn(appDataApi, "getTravelAreaCatalog")
+      .mockResolvedValue(jejuCatalog);
+    const updateSettingsSpy = vi
+      .spyOn(appDataApi, "updateTripSettings")
+      .mockResolvedValue({ ...trip, revision: 3 });
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/94/edit");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: /제주 동부/ }),
+        ).toHaveAttribute("aria-pressed", "true"),
+      );
+      await user.click(
+        document.querySelector('button[type="submit"]') as HTMLButtonElement,
+      );
+
+      await waitFor(() => expect(updateSettingsSpy).toHaveBeenCalled());
+      // 복원만 하고 손대지 않았으면 지역은 보내지 않는다.
+      expect(updateSettingsSpy.mock.calls[0][1]).not.toHaveProperty(
+        "travelAreaId",
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      catalogSpy.mockRestore();
       updateSettingsSpy.mockRestore();
     }
   });
@@ -124,6 +270,9 @@ describe("Travel Hunter app trip edit", () => {
       currentUserRole: "viewer",
     };
     const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const catalogSpy = vi
+      .spyOn(appDataApi, "getTravelAreaCatalog")
+      .mockResolvedValue(jejuCatalog);
     const updateSettingsSpy = vi.spyOn(appDataApi, "updateTripSettings");
 
     try {
@@ -136,6 +285,7 @@ describe("Travel Hunter app trip edit", () => {
       expect(updateSettingsSpy).not.toHaveBeenCalled();
     } finally {
       getTripSpy.mockRestore();
+      catalogSpy.mockRestore();
       updateSettingsSpy.mockRestore();
     }
   });

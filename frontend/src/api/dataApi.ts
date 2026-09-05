@@ -17,6 +17,7 @@ import {
   ProfileOptions,
   Recommendation,
   RegionRecommendation,
+  TravelAreaCatalog,
   TravelAreaRecommendationResponse,
   Trip,
   User,
@@ -215,6 +216,7 @@ export type TripSettingsUpdateRequest = {
   title?: string;
   startDate?: string;
   endDate?: string;
+  travelAreaId?: string;
   overflowPlaceStrategy?: "moveToLastDay" | "delete";
 };
 
@@ -248,6 +250,7 @@ export type AppDataApi = {
   listPolicies: () => Promise<Policy[]>;
   listRegionRecommendations: (options?: { style?: string | null; region?: string | null; preferredRegions?: string[] | null; limit?: number }) => Promise<RegionRecommendation[]>;
   listTravelAreaRecommendations: (options?: TravelAreaRecommendationOptions) => Promise<TravelAreaRecommendationResponse>;
+  getTravelAreaCatalog: (sido: string) => Promise<TravelAreaCatalog>;
   getPolicy: (policySlug?: string) => Promise<Policy>;
   savePolicy: (policySlug: string) => Promise<SavePolicyResponse>;
   listSavedPolicies: () => Promise<Policy[]>;

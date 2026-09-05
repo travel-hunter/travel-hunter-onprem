@@ -69,6 +69,7 @@ chmod 600 ~/.travel-hunter-smoke.env
 - [ ] API 변경이 있으면 `docs/mvp-api-contract.md`와 frontend/backend/evals가 같이 갱신됐다.
 - [ ] DB migration 변경이 있으면 `alembic upgrade head --sql` 결과를 확인했다.
 - [ ] 운영 DB backup 필요 여부를 확인했다.
+- [ ] **시드 데이터(`backend/app/data/*.json`) 변경이 있으면 아래 "시드 데이터 변경" 절차를 밟았다.**
 - [ ] `VITE_API_BASE_URL`, `CORS_ORIGINS`, `REFRESH_COOKIE_SECURE` 값이 배포 domain 기준이다.
 - [ ] 머지 전 필요한 보안 검토를 완료하고 모든 HIGH 항목을 해소했다.
 
@@ -89,6 +90,54 @@ seed가 필요한 환경에서만 실행:
 ```bash
 docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml run --rm backend python -m app.db.seed
 ```
+
+### 시드 데이터 변경
+
+`backend/app/data/*.json`의 **slug나 식별자**가 바뀌면 seed는 새 데이터를 넣는 것으로 끝나지 않는다.
+`db/seed.py`는 시드 목록에 없는 기존 행을 정리하는데, 그 행에 사용자 링크가 있으면 삭제 대신
+`status = "hidden"`으로 돌린다. 그리고 `repositories/policies.py`의 저장·적용 정책 조회 세 곳이
+모두 `status == "active"`로 거르므로, **그 링크는 사용자 화면에서 사라진다.**
+
+`alembic upgrade head --sql`에는 이 변화가 전혀 나타나지 않는다. 마이그레이션이 아니기 때문이다.
+기존 데이터가 있는 환경에서는 아래를 밟는다.
+
+- [ ] **백업.** 뜨는 것으로 끝내지 않고 판독까지 확인한다.
+
+  ```bash
+  docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml exec -T db     sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > <경로>/before-seed.dump
+  pg_restore -l <경로>/before-seed.dump | head     # TOC를 못 읽으면 덤프가 깨진 것이다. 중단한다
+  sha256sum <경로>/before-seed.dump                # 기록해 둔다
+  ```
+
+- [ ] **seed 직전** 행 수를 잰다. 앞선 단계와 시간이 벌어졌으면 다시 잰다.
+
+  ```sql
+  SELECT 'policies', count(*) FROM policies
+  UNION ALL SELECT 'trip_policies', count(*) FROM trip_policies
+  UNION ALL SELECT 'user_saved_policies', count(*) FROM user_saved_policies;
+  ```
+
+- [ ] **영향받는 행에 링크가 있는지** 확인한다. 개발 환경에서 "링크 0건"이었다는 사실은
+      다른 환경의 근거가 되지 않는다.
+
+  ```sql
+  SELECT p.slug, p.status,
+         (SELECT count(*) FROM trip_policies tp WHERE tp.policy_id = p.id) AS trips,
+         (SELECT count(*) FROM user_saved_policies u WHERE u.policy_id = p.id) AS saves
+  FROM policies p
+  WHERE p.slug LIKE '<바뀌는 slug 패턴>'
+  ORDER BY p.slug;
+  ```
+
+- [ ] **seed 후** 같은 질의를 다시 돌려 비교한다. `trip_policies` / `user_saved_policies`가
+      **줄었다면 즉시 중단하고 백업에서 복원한다.** seed는 링크 행을 지우지 않는다 —
+      정책 행의 `status`만 바꾼다. 링크 수가 줄었다면 예상 밖의 일이 벌어진 것이다.
+      늘어난 경우도 원인을 설명할 수 있을 때만 넘어간다
+      (예: `seed_dev_data`는 첫 active 정책을 시드 트립에 붙이므로, 그 정책의 정체가
+      바뀌면 링크가 하나 늘어난다).
+
+- [ ] **노출이 뒤집히는 정책이 있으면** 배포 기록에 남기고 관련자에게 알린다.
+      데이터가 지워진 것이 아니라 `status`가 바뀐 것이며 되돌릴 수 있다는 점도 함께 적는다.
 
 ## 배포 후 상태 확인
 

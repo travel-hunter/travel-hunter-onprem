@@ -40,7 +40,12 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent,
+  type MutableRefObject,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
+import { TripDateRangePicker } from "../../components/trip/TripDateRangePicker";
+import type { TripDateRangeValue } from "../../utils/tripDateRange";
 import {
   Link,
   useLocation,
@@ -493,7 +498,100 @@ export function isPointerInsideClientRect(
 export const DAY_TAB_POINTER_TOLERANCE_PX = 12;
 
 /** 하이라이트가 켜진 뒤 실제로 날짜가 열리기까지의 지연. 사실상 즉시 전환에 가깝다. */
-export const DAY_SWITCH_DELAY_MS = 10;
+/* ── Day 스트립 ─────────────────────────────────────────────────
+   탭 위를 지나가는 것으로는 날짜가 바뀌지 않는다. 화면 좌우 끝 이동영역에
+   머무는 것으로만 바뀐다. 값은 시안에서 손으로 조절해 확정했다. */
+
+/** 화면 좌우 끝에서 이만큼이 날짜 넘김 구역 */
+export const DAY_EDGE_WIDTH_PX = 80;
+/** 이동영역에 들어간 뒤 첫 전환까지. 스쳐 지나가는 것과 머무는 것을 가른다 */
+export const DAY_EDGE_FIRST_DELAY_MS = 900;
+/** 계속 대고 있을 때 다음 날짜까지 */
+export const DAY_EDGE_REPEAT_MS = 620;
+/** 맨 끝에서는 반복 간격을 이 값으로 나눈다 */
+export const DAY_EDGE_ACCEL = 2.8;
+export const PLACE_DRAG_TOUCH_DELAY_MS = 800;
+export const PLACE_DRAG_TOUCH_TOLERANCE_PX = 8;
+/** 마우스는 홀드가 아니라 거리 기준이다. 여기에 지연을 걸면 안 된다 */
+export const PLACE_DRAG_MOUSE_DISTANCE_PX = 8;
+/* 이만큼 넘게 밀어야 "끌었다"로 본다. 그 아래는 그냥 클릭이다. */
+export const DRAG_SCROLL_THRESHOLD_PX = 6;
+
+/** 첫날·마지막날도 가운데에 설 수 있도록 양 끝에 줄 여백 */
+export function resolveDayStripPadding(
+  containerWidth: number,
+  firstWidth: number,
+  lastWidth: number,
+): { left: number; right: number } {
+  return {
+    left: Math.max(0, (containerWidth - firstWidth) / 2),
+    right: Math.max(0, (containerWidth - lastWidth) / 2),
+  };
+}
+
+/** 활성 탭을 중앙에 놓는 scrollLeft */
+export function resolveDayStripScrollLeft({
+  tabOffsetLeft,
+  tabWidth,
+  containerWidth,
+  scrollWidth,
+}: {
+  tabOffsetLeft: number;
+  tabWidth: number;
+  containerWidth: number;
+  scrollWidth: number;
+}): number {
+  const target = tabOffsetLeft - (containerWidth - tabWidth) / 2;
+  return Math.max(0, Math.min(target, Math.max(0, scrollWidth - containerWidth)));
+}
+
+/** -1 왼쪽 · 0 없음 · 1 오른쪽 */
+export function resolveDayEdgeZone({
+  pointerX,
+  left,
+  right,
+  edgeWidth = DAY_EDGE_WIDTH_PX,
+}: {
+  pointerX: number | null;
+  left: number;
+  right: number;
+  edgeWidth?: number;
+}): -1 | 0 | 1 {
+  if (pointerX == null) return 0;
+  /* 바깥쪽에는 경계를 두지 않는다. PC 에서는 앱이 화면 가운데 좁은 칸이라
+     카드를 옆으로 끌면 칸 밖으로 쉽게 나간다. 거기서 판정이 꺼지면
+     "사이드로 옮겨도 안 넘어간다"가 된다. 밖으로 나가면 가장 깊은 것으로 본다. */
+  if (pointerX < left + edgeWidth) return -1;
+  if (pointerX > right - edgeWidth) return 1;
+  return 0;
+}
+
+/** 안쪽 경계 0 → 맨 끝 1 */
+export function resolveDayEdgeDepth({
+  pointerX,
+  left,
+  right,
+  zone,
+  edgeWidth = DAY_EDGE_WIDTH_PX,
+}: {
+  pointerX: number;
+  left: number;
+  right: number;
+  zone: -1 | 1;
+  edgeWidth?: number;
+}): number {
+  const raw =
+    zone < 0
+      ? (left + edgeWidth - pointerX) / edgeWidth
+      : (pointerX - (right - edgeWidth)) / edgeWidth;
+  return Math.max(0, Math.min(1, raw));
+}
+
+/** 바깥쪽으로 갈수록 짧아지는 반복 간격 */
+export function resolveDayEdgeInterval(depth: number): number {
+  const clamped = Math.max(0, Math.min(1, depth));
+  return DAY_EDGE_REPEAT_MS / (1 + (DAY_EDGE_ACCEL - 1) * clamped);
+}
 
 export function pointerDistanceToClientRect(
   point: { x: number; y: number } | null,
@@ -616,6 +714,7 @@ export function resolveRaisedTimelineHeightLock(
 
 /** dnd-kit 자동 스크롤이 발동하는 가장자리 폭. 컨테이너 높이 대비 비율이다. */
 export const PLACE_DRAG_AUTO_SCROLL_THRESHOLD = 0.2;
+
 
 /**
  * 위쪽 자동 스크롤의 상한. Day 탭은 타임라인보다 위에 있어서, 탭을 겨냥해
@@ -916,6 +1015,38 @@ export function resolveGhostDropOverId({
   return dayPositionDropId(crossDayPreview.dayNumber, crossDayPreview.position);
 }
 
+/**
+ * 1등과 2등이 서로 뒤바뀌는 진동을 막는다.
+ *
+ * 자리를 벌리는 동작은 형제 카드를 transform 으로 민다. transform 은
+ * getBoundingClientRect() 를 바꾸고, MeasuringStrategy.Always 라 매 프레임 다시
+ * 잰다. 그래서 "벌린다 → 좌표가 바뀐다 → 판정이 뒤집힌다 → 닫힌다 → 좌표가
+ * 돌아온다" 가 되먹임 고리를 이룬다. 카드가 겹칠 때 자리가 빠르게 깜박인 이유다.
+ *
+ * 직전 승자를 **무조건** 붙들면 안 된다. closestCenter 는 모든 대상을 순위로
+ * 돌려주므로 직전 승자가 항상 목록에 남아 드래그가 굳어버린다.
+ * 진동은 1등과 2등 사이에서만 일어나므로, 직전 승자가 **바로 다음 순위로
+ * 밀려났을 때만** 유지한다. 3등 밖으로 밀렸다면 포인터가 실제로 떠난 것이다.
+ *
+ * 조정할 문턱값이 없다. 순위만 본다.
+ */
+export function preferPreviousCollision<T extends { id: unknown }>(
+  collisions: T[],
+  previousId: unknown,
+): T[] {
+  if (previousId == null || collisions.length < 2) return collisions;
+  if (collisions[0]?.id === previousId) return collisions;
+  if (collisions[1]?.id !== previousId) return collisions;
+  return [collisions[1], collisions[0], ...collisions.slice(2)];
+}
+
+/** 직전 판정 결과. 드래그가 끝나면 resetPlaceDragCollisionMemory 로 지운다. */
+let lastPlaceDragOverId: unknown = null;
+
+export function resetPlaceDragCollisionMemory(): void {
+  lastPlaceDragOverId = null;
+}
+
 const placeDragCollisionDetection: CollisionDetection = (args) => {
   // 순서가 중요하다. 구체적인 대상을 먼저 고르면 [day-area, 활성카드]에서
   // 활성카드가 남고, 그걸 빼면 후보가 통째로 비어 드롭이 무시된다.
@@ -924,8 +1055,11 @@ const placeDragCollisionDetection: CollisionDetection = (args) => {
       excludeActiveCollision(collisions, args.active?.id ?? null),
     );
   const pointerCollisions = narrow(pointerWithin(args));
-  if (pointerCollisions.length > 0) return pointerCollisions;
-  return narrow(closestCenter(args));
+  const resolved =
+    pointerCollisions.length > 0 ? pointerCollisions : narrow(closestCenter(args));
+  const stable = preferPreviousCollision(resolved, lastPlaceDragOverId);
+  lastPlaceDragOverId = stable[0]?.id ?? null;
+  return stable;
 };
 
 function parsePlaceTime(
@@ -1369,6 +1503,53 @@ function displayedPlaceWarningKey(place: DisplayedPlace): string | null {
   return place.id ?? place.previewTimelineId ?? null;
 }
 
+/**
+ * 시간을 고친 장소가 들어갈 자리를 찾는다. 1부터 세는 위치를 돌려준다.
+ *
+ * 자기보다 **늦은** 첫 장소 앞에 선다. 같은 시간은 늦은 게 아니므로 그 뒤에 붙는다.
+ * 15시를 9시로 고치면 기존 9시들 밑으로 간다.
+ * 시간이 없는 장소는 맨 위에 모인다. 비교에서는 건너뛴다.
+ *
+ * 손으로 끌어 옮겨 생긴 시간 역전은 여기서 다루지 않는다.
+ * 그건 timeOrderWarningPlaceIds 가 경고로 알린다.
+ */
+export function resolveTimeSortedPosition({
+  places,
+  movingPlaceId,
+  nextTime,
+}: {
+  places: { id?: string | null; time?: string | null }[];
+  movingPlaceId: string;
+  nextTime: string | null;
+}): number {
+  const others = places.filter((place) => place.id !== movingPlaceId);
+  const minutes = placeTimeMinutes(nextTime ?? "");
+
+  /* 시간이 없으면 맨 위에 쌓는다. 시간 없는 것들끼리는 도착 순서로 쌓이도록
+     이미 위에 있는 무시간 장소들 다음에 선다. 같은 시간이 뒤에 붙는 것과 같은 규칙이다. */
+  if (minutes === null) {
+    let index = 0;
+    while (
+      index < others.length &&
+      placeTimeMinutes(others[index]?.time ?? "") === null
+    ) {
+      index += 1;
+    }
+    return index + 1;
+  }
+
+  let index = others.length;
+  for (let i = 0; i < others.length; i += 1) {
+    const other = placeTimeMinutes(others[i]?.time ?? "");
+    // 시간 없는 장소는 위에 모여 있다. 건너뛰고 더 늦은 시간을 찾는다.
+    if (other !== null && other > minutes) {
+      index = i;
+      break;
+    }
+  }
+  return index + 1;
+}
+
 function timeOrderWarningPlaceIds(places: DisplayedPlace[]): Set<string> {
   const warningIds = new Set<string>();
   let previousMinutes: number | null = null;
@@ -1646,7 +1827,15 @@ export function ItineraryDetailPage() {
   const placeSearchRequestRef = useRef(0);
   const placeBasketIdRef = useRef(0);
   const placeDragAutoSwitchTimerRef = useRef<number | null>(null);
-  const placeDragAutoSwitchDayRef = useRef<number | null>(null);
+  const dayTabsRef = useRef<HTMLDivElement | null>(null);
+  const dayStripDragScroll = useDragScroll(dayTabsRef);
+  const dayEdgeLeftRef = useRef<HTMLDivElement | null>(null);
+  const dayEdgeRightRef = useRef<HTMLDivElement | null>(null);
+  /* 자동 스크롤을 멈춰야 할 때 이 값을 올린다. canPlaceDragAutoScroll 의
+     정체성이 바뀌고, 그게 dnd-kit 자동 스크롤 effect 의 의존성이라
+     effect 가 다시 돌면서 스스로 clearAutoScrollInterval() 을 부른다. */
+  const [autoScrollBrakeTick, setAutoScrollBrakeTick] = useState(0);
+  const autoScrollBrakedRef = useRef(false);
   const placeDragScrollLockRef = useRef(false);
   const placeDragPointerRef = useRef<{ x: number; y: number } | null>(null);
   const placeDragContentBoundsRef = useRef<{
@@ -1767,9 +1956,15 @@ export function ItineraryDetailPage() {
   const hasLinkedPolicyFallback =
     linkedPolicies.length === 0 && hasPolicySaving(trip?.expectedSaving);
   const dragSensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    /* 마우스는 홀드가 아니라 거리 기준이다. 여기에 지연을 걸면 안 된다. */
+    useSensor(MouseSensor, {
+      activationConstraint: { distance: PLACE_DRAG_MOUSE_DISTANCE_PX },
+    }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 120, tolerance: 8 },
+      activationConstraint: {
+        delay: PLACE_DRAG_TOUCH_DELAY_MS,
+        tolerance: PLACE_DRAG_TOUCH_TOLERANCE_PX,
+      },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -1780,7 +1975,6 @@ export function ItineraryDetailPage() {
       window.clearTimeout(placeDragAutoSwitchTimerRef.current);
     }
     placeDragAutoSwitchTimerRef.current = null;
-    placeDragAutoSwitchDayRef.current = null;
   }, []);
   const updatePlaceDragPointer = useCallback((event: Event) => {
     if (event instanceof PointerEvent || event instanceof MouseEvent) {
@@ -1964,7 +2158,11 @@ export function ItineraryDetailPage() {
       anchorRect: actionsElement?.getBoundingClientRect() ?? null,
       thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
     });
-  }, []);
+    // autoScrollBrakeTick 은 이 함수의 정체성을 바꾸기 위한 것이다.
+    // dnd-kit 은 canScroll 을 의존성으로 들고 있어, 정체성이 바뀌면
+    // 자동 스크롤 effect 가 다시 돌며 멈출지 다시 판단한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoScrollBrakeTick]);
   const restrictPlaceDragToContent = useCallback<Modifier>(({ transform }) => {
     const bounds = placeDragContentBoundsRef.current;
     const appContainer = document.querySelector<HTMLElement>(".app-container");
@@ -2099,11 +2297,248 @@ export function ItineraryDetailPage() {
     );
   };
 
+  /* 편집기의 날짜 선택지. 일정의 모든 날짜가 들어간다. */
+  const placeEditorDayOptions = dayNumbers.map((day) => ({
+    dayNumber: day,
+    dateLabel: trip ? formatDayDateLabel(trip.dates, day) : "",
+    count: trip ? (trip.days[day]?.length ?? 0) : 0,
+  }));
+
+  /* 편집기를 열면 고른 날짜가 바로 보여야 한다. 35일 일정에서 Day 30 을
+     수정하는데 줄이 맨 앞에 있으면 어디가 선택됐는지 알 수 없다. */
+  const scrollSelectedDayIntoView = useCallback(
+    (node: HTMLButtonElement | null) => {
+      if (!node) return;
+      const strip = node.parentElement;
+      if (!strip) return;
+      strip.scrollLeft = Math.max(
+        0,
+        node.offsetLeft - (strip.clientWidth - node.offsetWidth) / 2,
+      );
+    },
+    [],
+  );
+
   const selectTripDay = (day: number) => {
     setActiveDay(day);
     setSelectedMapPlaceId(null);
     updateDetailSearchParams({ day, place: null });
   };
+
+  /* 날짜를 한 칸씩 옮긴다. 이동영역·휠·화살표가 모두 이걸 쓴다. */
+  const shiftVisibleDay = useCallback(
+    (step: number) => {
+      if (!dayNumbers.length) return;
+      const first = dayNumbers[0];
+      const last = dayNumbers[dayNumbers.length - 1];
+      setActiveDay((current) => {
+        const target = Math.min(Math.max(current + step, first), last);
+        if (target !== current) {
+          updateDetailSearchParams({ day: target, place: null });
+        }
+        return target;
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dayNumbers.join(",")],
+  );
+
+  /* 보고 있는 날짜를 스트립 가운데로. 양 끝 여백 덕분에 첫날·마지막날도 중앙에 선다.
+     드래그 중에는 부드러운 스크롤을 쓰지 않는다. 포인터 판정과 어긋난다. */
+  const layoutDayStrip = useCallback((smooth: boolean) => {
+    const strip = dayTabsRef.current;
+    if (!strip) return;
+    const first = strip.firstElementChild as HTMLElement | null;
+    const last = strip.lastElementChild as HTMLElement | null;
+    if (!first || !last) return;
+
+    const pad = resolveDayStripPadding(
+      strip.clientWidth,
+      first.offsetWidth,
+      last.offsetWidth,
+    );
+    strip.style.paddingLeft = `${pad.left}px`;
+    strip.style.paddingRight = `${pad.right}px`;
+
+    const active = strip.querySelector<HTMLElement>(
+      `[data-day-drop-id="${dayDropId(visibleDay)}"]`,
+    );
+    if (!active) return;
+    const left = resolveDayStripScrollLeft({
+      tabOffsetLeft: active.offsetLeft,
+      tabWidth: active.offsetWidth,
+      containerWidth: strip.clientWidth,
+      scrollWidth: strip.scrollWidth,
+    });
+    if (typeof strip.scrollTo === "function") {
+      strip.scrollTo({ left, behavior: smooth ? "smooth" : "auto" });
+    } else {
+      strip.scrollLeft = left;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleDay]);
+
+  useEffect(() => {
+    layoutDayStrip(!draggingPlaceId);
+  }, [layoutDayStrip, dayNumbers.length, draggingPlaceId]);
+
+  /* 창 크기가 바뀌면 여백이 낡는다. 여백은 컨테이너 폭으로 계산하기 때문이다.
+     화면 회전이나 창 크기 변경 뒤 날짜를 바꾸기 전까지 어긋난 채로 남았다. */
+  useEffect(() => {
+    const onResize = () => layoutDayStrip(false);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [layoutDayStrip]);
+
+  /* 이동영역 표시를 그린다. 매 포인터 이동마다 리렌더하면 무거우므로
+     상태가 아니라 DOM 을 직접 만진다. 색은 쓰지 않고 어둠과 화살표로만 알린다. */
+  const paintDayEdges = useCallback(
+    (rect: DOMRect, pointerX: number | null) => {
+      const left = dayEdgeLeftRef.current;
+      const right = dayEdgeRightRef.current;
+      if (!left || !right) return;
+      for (const [el, side] of [
+        [left, "left"],
+        [right, "right"],
+      ] as const) {
+        el.style.top = `${rect.top}px`;
+        el.style.height = `${rect.height}px`;
+        el.style.width = `${DAY_EDGE_WIDTH_PX}px`;
+        if (side === "left") el.style.left = `${rect.left}px`;
+        else el.style.left = `${rect.right - DAY_EDGE_WIDTH_PX}px`;
+      }
+      const zone = resolveDayEdgeZone({
+        pointerX,
+        left: rect.left,
+        right: rect.right,
+      });
+      for (const [el, side] of [
+        [left, -1],
+        [right, 1],
+      ] as const) {
+        const mark = el.firstElementChild as HTMLElement | null;
+        if (!mark) continue;
+        if (zone !== side || pointerX == null) {
+          mark.style.opacity = "";
+          mark.style.transform = "";
+          continue;
+        }
+        const depth = resolveDayEdgeDepth({
+          pointerX,
+          left: rect.left,
+          right: rect.right,
+          zone: side,
+        });
+        mark.style.opacity = (0.4 + 0.6 * depth).toFixed(2);
+        mark.style.transform = `scale(${(1 + 0.35 * depth).toFixed(2)})`;
+      }
+    },
+    [],
+  );
+
+  /* 좌우 이동영역. 포인터가 멈춰 있어도 진행해야 하므로 이벤트가 아니라 타이머로 돈다.
+     pointermove 안에서 처리하면 손가락을 흔들어야만 날짜가 넘어간다. */
+  useEffect(() => {
+    if (!draggingPlaceId) return;
+    let zone: -1 | 0 | 1 = 0;
+    let nextAt = 0;
+    autoScrollBrakedRef.current = false;
+    /* 첫 틱(50ms) 전에 요소가 엉뚱한 자리에 잠깐 보이지 않도록 즉시 한 번 그린다. */
+    const startContainer = document.querySelector<HTMLElement>(".app-container");
+    if (startContainer) {
+      paintDayEdges(
+        startContainer.getBoundingClientRect(),
+        placeDragPointerRef.current?.x ?? null,
+      );
+    }
+    const timer = window.setInterval(() => {
+      const container = document.querySelector<HTMLElement>(".app-container");
+      const pointer = placeDragPointerRef.current;
+      if (!container) return;
+      if (!pointer) {
+        paintDayEdges(container.getBoundingClientRect(), null);
+        zone = 0;
+        nextAt = 0;
+        return;
+      }
+      const rect = container.getBoundingClientRect();
+      paintDayEdges(rect, pointer.x);
+
+      /* 자동 스크롤 제동. dnd-kit 은 한 번 시작한 스크롤을 멈출 판정을
+         포인터가 멈춰 있는 동안 다시 하지 않는다. 여기서 직접 붙잡는다. */
+      const actions = document.querySelector<HTMLElement>(
+        "[data-itinerary-actions]",
+      );
+      if (actions) {
+        /* 스크롤을 되돌리지 않는다. 되돌리면 dnd-kit 이 다시 올리고 우리가 다시
+           내리는 싸움이 되어 화면이 드드득거린다. 대신 canScroll 의 정체성을
+           바꿔 dnd-kit 이 스스로 멈추게 한다. 한 번만 알리면 된다. */
+        const allowed = shouldAllowPlaceDragAutoScroll({
+          pointerY: pointer.y,
+          containerRect: rect,
+          anchorRect: actions.getBoundingClientRect(),
+          thresholdRatio: PLACE_DRAG_AUTO_SCROLL_THRESHOLD,
+        });
+        if (!allowed && !autoScrollBrakedRef.current) {
+          autoScrollBrakedRef.current = true;
+          setAutoScrollBrakeTick((tick) => tick + 1);
+        } else if (allowed && autoScrollBrakedRef.current) {
+          autoScrollBrakedRef.current = false;
+        }
+      }
+      const next = resolveDayEdgeZone({
+        pointerX: pointer.x,
+        left: rect.left,
+        right: rect.right,
+      });
+      if (next === 0) {
+        zone = 0;
+        nextAt = 0;
+        return;
+      }
+      if (next !== zone) {
+        zone = next;
+        nextAt = Date.now() + DAY_EDGE_FIRST_DELAY_MS;
+        return;
+      }
+      if (Date.now() < nextAt) return;
+      const depth = resolveDayEdgeDepth({
+        pointerX: pointer.x,
+        left: rect.left,
+        right: rect.right,
+        zone: next,
+      });
+      shiftVisibleDay(next);
+      nextAt = Date.now() + resolveDayEdgeInterval(depth);
+    }, 50);
+    return () => window.clearInterval(timer);
+  }, [draggingPlaceId, shiftVisibleDay, paintDayEdges]);
+
+  /* 드래그 중 키보드로 날짜를 옮긴다.
+     휠은 쓰지 않는다. 드래그 중에도 휠은 목록 상하 스크롤을 맡아야 하고,
+     둘을 같이 걸면 한 번 굴릴 때 스크롤과 날짜 전환이 동시에 일어난다. */
+  useEffect(() => {
+    if (!draggingPlaceId) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        shiftVisibleDay(-1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        shiftVisibleDay(1);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        shiftVisibleDay(-dayNumbers.length);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        shiftVisibleDay(dayNumbers.length);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [draggingPlaceId, shiftVisibleDay, dayNumbers.length]);
 
   const openDateEditor = () => {
     if (!trip) return;
@@ -2785,11 +3220,53 @@ export function ItineraryDetailPage() {
         payload.sourceProvider = placeForm.sourceProvider;
       if (placeForm.externalPlaceId !== undefined)
         payload.externalPlaceId = placeForm.externalPlaceId;
-      const nextTrip = await appDataApi.updateTripPlace(
+      let nextTrip = await appDataApi.updateTripPlace(
         trip.id,
         placeEditor.place.id ?? "",
         payload,
       );
+
+      /* 날짜나 시간을 고쳤으면 그 카드만 알맞은 자리로 옮긴다.
+         손으로 끌어 옮겨 생긴 역전은 건드리지 않는다 — 그건 "시간 확인" 경고가 맡는다. */
+      const editedPlaceId = placeEditor.place.id;
+      if (placeEditor.mode === "edit" && editedPlaceId) {
+        const located = findTripPlaceById(nextTrip, editedPlaceId);
+        const targetDay = placeEditor.dayNumber;
+        const timeChanged = (placeEditor.place.time ?? "") !== time;
+        const dayChanged = Boolean(located) && located!.dayNumber !== targetDay;
+        if (located && (timeChanged || dayChanged)) {
+          const targetPlaces = nextTrip.days[targetDay] ?? [];
+          const position = resolveTimeSortedPosition({
+            places: targetPlaces,
+            movingPlaceId: editedPlaceId,
+            nextTime: time,
+          });
+          const alreadyThere =
+            !dayChanged && position === located.index + 1;
+          if (!alreadyThere) {
+            try {
+              nextTrip = await appDataApi.moveTripPlace(
+                nextTrip.id,
+                editedPlaceId,
+                {
+                  dayNumber: targetDay,
+                  position,
+                  expectedRevision: nextTrip.revision,
+                },
+              );
+              if (dayChanged) {
+                // 옮긴 날짜로 화면이 따라가지 않으면 카드가 사라진 것처럼 보인다.
+                setActiveDay(targetDay);
+                updateDetailSearchParams({ day: targetDay, place: null });
+              }
+            } catch {
+              /* 자리 이동만 실패한 경우다. 나머지 수정은 이미 저장됐으니 되돌리지 않는다.
+                 되돌리면 사용자가 방금 한 수정이 사라진다. */
+            }
+          }
+        }
+      }
+
       if (placeEditor.mode === "edit" && placeEditor.place.id)
         clearDraft(tripPlaceEditDraftKey(trip.id, placeEditor.place.id));
       setTrip(nextTrip);
@@ -2872,6 +3349,7 @@ export function ItineraryDetailPage() {
   };
 
   const handlePlaceDragStart = (event: DragStartEvent) => {
+    resetPlaceDragCollisionMemory();
     const placeId = isPreviewActive
       ? String(event.active.id)
       : parsePlaceDragId(event.active.id);
@@ -2987,18 +3465,11 @@ export function ItineraryDetailPage() {
         position: (sortableIdsByDay[targetDay] ?? []).length + 1,
       });
     }
-    if (targetDay === visibleDay) {
-      clearPlaceDragAutoSwitch();
-      return;
-    }
-    if (placeDragAutoSwitchDayRef.current === targetDay) return;
+    /* 탭 위를 지나가는 것으로는 날짜를 바꾸지 않는다. 30일 일정에서 이 경로가
+       스쳐 지나가기만 해도 발동해 의도치 않은 전환을 만들었다.
+       화면을 바꾸는 일은 좌우 이동영역과 화살표 키가 맡는다.
+       탭 강조(setDragOverDay)와 탭에 드롭해 옮기는 길은 그대로 둔다. */
     clearPlaceDragAutoSwitch();
-    placeDragAutoSwitchDayRef.current = targetDay;
-    placeDragAutoSwitchTimerRef.current = window.setTimeout(() => {
-      placeDragAutoSwitchTimerRef.current = null;
-      setActiveDay(targetDay);
-      updateDetailSearchParams({ day: targetDay, place: null });
-    }, DAY_SWITCH_DELAY_MS);
   };
 
   const handlePlaceDragEnd = (event: DragEndEvent) => {
@@ -3042,6 +3513,7 @@ export function ItineraryDetailPage() {
     });
     placeDragContentBoundsRef.current = null;
     placeDragPointerRef.current = null;
+    resetPlaceDragCollisionMemory();
     clearPlaceDragAutoSwitch();
     unlockPlaceDragViewportScroll();
     setCrossDayDragPreview(null);
@@ -3099,6 +3571,7 @@ export function ItineraryDetailPage() {
   const handlePlaceDragCancel = () => {
     placeDragContentBoundsRef.current = null;
     placeDragPointerRef.current = null;
+    resetPlaceDragCollisionMemory();
     clearPlaceDragAutoSwitch();
     unlockPlaceDragViewportScroll();
     setCrossDayDragPreview(null);
@@ -3278,23 +3751,23 @@ export function ItineraryDetailPage() {
         }
       />
       <div className="prototype-trip-detail-hero">
-        <div>
+        <div className="prototype-trip-hero-copy">
           <span className="prototype-detail-dday-chip">{tripDdayLabel}</span>
           <h1>{trip.title}</h1>
           <p>📅 {trip.dates}</p>
-          {canEditTrip && (
-            <Link
-              aria-label="일정 편집"
-              className="prototype-trip-hero-edit"
-              to={`/trips/${encodeURIComponent(trip.id)}/edit`}
-            >
-              편집
-            </Link>
-          )}
         </div>
         <div className="prototype-trip-hero-icon" aria-hidden="true">
           {tripRegionEmojiLabel}
         </div>
+        {canEditTrip && (
+          <Link
+            aria-label="일정 편집"
+            className="prototype-trip-hero-edit"
+            to={`/trips/${encodeURIComponent(trip.id)}/edit`}
+          >
+            편집
+          </Link>
+        )}
       </div>
       <div className="trip-summary">
         <div className="between">
@@ -3521,14 +3994,39 @@ export function ItineraryDetailPage() {
           </section>
         )}
 
+        {canEditTrip && draggingPlaceId && (
+          <>
+            {/* 카드를 집으면 양옆에 이동영역이 드러난다. 여기 머물면 날짜가 넘어간다.
+                깊이는 화살표가 진해지고 커지는 것으로만 알린다. */}
+            <div
+              aria-hidden="true"
+              className="itinerary-day-edge left"
+              data-itinerary-day-edge="left"
+              ref={dayEdgeLeftRef}
+            >
+              <span>‹</span>
+            </div>
+            <div
+              aria-hidden="true"
+              className="itinerary-day-edge right"
+              data-itinerary-day-edge="right"
+              ref={dayEdgeRightRef}
+            >
+              <span>›</span>
+            </div>
+          </>
+        )}
+
         <div
           aria-label="일정 날짜 선택"
           className="day-tabs"
           data-itinerary-day-tabs
+          {...dayStripDragScroll}
         >
           {dayNumbers.map((day) => (
             <DroppableDayTab
               canDrop={canEditTrip && Boolean(draggingPlaceId)}
+              count={trip.days[day]?.length ?? 0}
               dateLabel={formatDayDateLabel(trip.dates, day)}
               day={day}
               isActive={visibleDay === day}
@@ -3710,14 +4208,9 @@ export function ItineraryDetailPage() {
           error={dateEditor.error}
           endDate={dateEditor.endDate}
           isSaving={dateEditor.isSaving}
-          onChangeEndDate={(endDate) =>
+          onChangeDateRange={({ startDate, endDate }) =>
             setDateEditor((current) =>
-              current ? { ...current, endDate, error: "" } : current,
-            )
-          }
-          onChangeStartDate={(startDate) =>
-            setDateEditor((current) =>
-              current ? { ...current, startDate, error: "" } : current,
+              current ? { ...current, startDate, endDate, error: "" } : current,
             )
           }
           onChangeStrategy={(overflowPlaceStrategy) =>
@@ -3734,6 +4227,8 @@ export function ItineraryDetailPage() {
       )}
       {placeEditor && (
         <PlaceEditorSheet
+          dayNumber={placeEditor.dayNumber}
+          dayOptions={placeEditorDayOptions}
           error={placeError}
           form={placeForm}
           isLoadingSearch={isLoadingPlaceSearch}
@@ -3741,6 +4236,12 @@ export function ItineraryDetailPage() {
           mode={placeEditor.mode}
           onChange={updatePlaceForm}
           onClose={closePlaceEditor}
+          onDayChange={(nextDay) =>
+            setPlaceEditor((current) =>
+              current ? { ...current, dayNumber: nextDay } : current,
+            )
+          }
+          onSelectedDayRef={scrollSelectedDayIntoView}
           onDiscardDraft={discardPlaceDraft}
           onSearchChange={updatePlaceSearchQuery}
           onSelectSearchCandidate={selectPlaceSearchCandidate}
@@ -3782,8 +4283,7 @@ function TripDateEditorSheet({
   endDate,
   error,
   isSaving,
-  onChangeEndDate,
-  onChangeStartDate,
+  onChangeDateRange,
   onChangeStrategy,
   onClose,
   onSubmit,
@@ -3794,8 +4294,7 @@ function TripDateEditorSheet({
   endDate: string;
   error: string;
   isSaving: boolean;
-  onChangeEndDate: (value: string) => void;
-  onChangeStartDate: (value: string) => void;
+  onChangeDateRange: (value: TripDateRangeValue) => void;
   onChangeStrategy: (value: "moveToLastDay" | "delete") => void;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -3824,24 +4323,13 @@ function TripDateEditorSheet({
           </IconButton>
         </div>
 
-        <label className="field">
-          시작일
-          <input
-            name="startDate"
-            type="date"
-            value={startDate}
-            onChange={(event) => onChangeStartDate(event.target.value)}
-          />
-        </label>
-        <label className="field">
-          종료일
-          <input
-            name="endDate"
-            type="date"
-            value={endDate}
-            onChange={(event) => onChangeEndDate(event.target.value)}
-          />
-        </label>
+        {/* 생성 화면과 같은 범위 달력을 쓴다. 네이티브 date 입력은 항목 높이와
+            표기를 운영체제가 정해 화면마다 달라 보였다. */}
+        <TripDateRangePicker
+          disabled={isSaving}
+          onChange={onChangeDateRange}
+          value={{ startDate, endDate }}
+        />
 
         {overflowPlaceCount > 0 && (
           <fieldset className="trip-date-overflow-options">
@@ -4180,6 +4668,7 @@ function PlaceDetailDialog({
 
 function DroppableDayTab({
   canDrop,
+  count,
   dateLabel,
   day,
   isActive,
@@ -4187,6 +4676,7 @@ function DroppableDayTab({
   onSelect,
 }: {
   canDrop: boolean;
+  count: number;
   dateLabel: string;
   day: number;
   isActive: boolean;
@@ -4209,7 +4699,9 @@ function DroppableDayTab({
 
   return (
     <button
-      aria-label={`Day ${day} ${dateLabel}`}
+      aria-label={`Day ${day} ${dateLabel} ${
+        count > 0 ? `${count}곳` : "비어 있음"
+      }`}
       className={className}
       data-day-drop-id={dayDropId(day)}
       key={day}
@@ -4219,6 +4711,7 @@ function DroppableDayTab({
     >
       <strong>Day {day}</strong>
       <span>{dateLabel}</span>
+      <i>{count > 0 ? `${count}곳` : "비어 있음"}</i>
     </button>
   );
 }
@@ -4389,6 +4882,11 @@ function SortablePlaceItem({
     .filter(Boolean)
     .join(" ");
   const sortableListeners = listeners ?? {};
+  /* 카드 전체에는 포인터 리스너만 건다. onKeyDown 까지 걸면 카드 안쪽 버튼에서
+     올라온 Enter·Space 가 키보드 드래그를 시작시킨다. 키보드 경로는 아래
+     화면에서 감춘 활성자 버튼이 맡는다. */
+  const { onKeyDown: _sortableKeyDown, ...cardPointerListeners } =
+    sortableListeners as Record<string, unknown>;
   const moveWithKeyboard = (
     event: KeyboardEvent<HTMLButtonElement>,
   ): boolean => {
@@ -4434,6 +4932,14 @@ function SortablePlaceItem({
       ref={setNodeRef}
     >
       <div className="timeline-sortable-card">
+      {/* 손잡이를 없애고 카드 아무 데나 잡을 수 있게 한다. 34px 짜리 목표를
+          겨냥하는 것보다 손에 맞는다. 안쪽 버튼들은
+          activationConstraint(마우스 8px · 터치 800ms) 덕분에 짧은 탭으로 그대로 눌린다.
+
+          포인터 리스너만 카드에 건다. useSortable 의 attributes 에는
+          role="button" 이 들어 있는데, 그걸 카드에 붙이면 ARIA 규칙상
+          안쪽 컨트롤이 접근성 트리에서 사라진다. attributes 는 아래
+          화면에서 감춘 활성자 버튼이 계속 들고 있는다. */}
       <article
         style={cardStyle}
         className={
@@ -4441,10 +4947,11 @@ function SortablePlaceItem({
             ? "place-detail recommendation-preview-place"
             : "place-detail"
         }
+        {...(canEditTrip && canSortPlace && !disabled ? cardPointerListeners : {})}
       >
         {canEditTrip && canSortPlace && (
           <button
-            className="drag-handle"
+            className="drag-handle sr-only"
             type="button"
             aria-label={`${place.label} 순서 이동`}
             disabled={disabled}
@@ -4454,9 +4961,7 @@ function SortablePlaceItem({
               if (!moveWithKeyboard(event))
                 sortableListeners.onKeyDown?.(event);
             }}
-          >
-            <GripVertical size={16} />
-          </button>
+          />
         )}
         {isRecommendationPreviewPlace && place.previewId ? (
           <button
@@ -4808,8 +5313,84 @@ function PlacePreviewMapCard({
   );
 }
 
+/**
+ * 가로 줄을 손이나 마우스로 끌어서 민다.
+ *
+ * `overflow-x: auto` 만으로는 마우스로 끌 수 없다. 손가락은 브라우저가
+ * 알아서 굴려주지만 마우스는 휠뿐이라, 데스크톱에서 "안 넘어간다" 가 된다.
+ *
+ * 끌고 나서 손을 떼면 그 자리의 칩이 눌리면 안 된다. 6px 넘게 움직였으면
+ * 뒤따라오는 click 을 잡아 삼킨다.
+ */
+/* 가로 줄을 마우스로 잡고 밀 수 있게 한다.
+   바깥에서 이미 ref 를 쓰고 있으면(예: 날짜 스트립 중앙 정렬) 그것을 받아 쓴다.
+
+   setPointerCapture 는 쓰지 않는다. 캡처가 걸리면 뒤따르는 click 이
+   눌린 버튼이 아니라 캡처한 컨테이너로 간다. 그러면 날짜를 눌러도 선택이 안 된다.
+   대신 window 에 리스너를 걸어 줄 밖으로 나가도 끝을 놓치지 않는다. */
+function useDragScroll(externalRef?: MutableRefObject<HTMLDivElement | null>) {
+  const ownRef = useRef<HTMLDivElement | null>(null);
+  const ref = externalRef ?? ownRef;
+  const swallowClick = useRef(false);
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => cleanupRef.current?.(), []);
+
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // 끌고 밖에서 손을 떼면 click 이 아예 안 온다. 그대로 두면 다음 클릭이 대신 먹힌다.
+    swallowClick.current = false;
+    const node = ref.current;
+    if (!node) return;
+    // 손가락은 브라우저 기본 가로 스크롤이 이미 잘 돈다.
+    // 여기서 가로채면 그 관성까지 뺏는다. 마우스·펜만 처리한다.
+    if (event.pointerType === "touch") return;
+
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startLeft = node.scrollLeft;
+    let moved = false;
+
+    const onMove = (moveEvent: globalThis.PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const dx = moveEvent.clientX - startX;
+      if (!moved && Math.abs(dx) > DRAG_SCROLL_THRESHOLD_PX) moved = true;
+      if (!moved) return;
+      // 끄는 동안 글자가 잡혀 반전되면 지저분하다.
+      moveEvent.preventDefault();
+      node.scrollLeft = startLeft - dx;
+    };
+    const finish = (endEvent: globalThis.PointerEvent) => {
+      if (endEvent.pointerId !== pointerId) return;
+      swallowClick.current = moved;
+      cleanupRef.current?.();
+    };
+
+    cleanupRef.current = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      cleanupRef.current = null;
+    };
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  };
+
+  /* 밀다가 칩 위에서 손을 떼면 그 날짜가 선택돼 버린다. 그 클릭만 먹는다. */
+  const onClickCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!swallowClick.current) return;
+    swallowClick.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  return { ref, onPointerDown, onClickCapture };
+}
+
 function PlaceEditorSheet({
   batchRecovery,
+  dayNumber,
+  dayOptions,
   error,
   form,
   isLoadingSearch,
@@ -4817,6 +5398,8 @@ function PlaceEditorSheet({
   mode,
   onChange,
   onClose,
+  onDayChange,
+  onSelectedDayRef,
   onDiscardDraft,
   onRemoveBasketItem,
   onRetryBasketDay,
@@ -4832,6 +5415,8 @@ function PlaceEditorSheet({
   restoredDraftMessage,
 }: {
   batchRecovery: BatchPlaceRecovery;
+  dayNumber: number;
+  dayOptions: { dayNumber: number; dateLabel: string; count: number }[];
   error: string;
   form: TripPlaceRequest;
   isLoadingSearch: boolean;
@@ -4839,6 +5424,8 @@ function PlaceEditorSheet({
   mode: "add" | "edit";
   onChange: (form: TripPlaceRequest) => void;
   onClose: () => void;
+  onDayChange: (dayNumber: number) => void;
+  onSelectedDayRef: (node: HTMLButtonElement | null) => void;
   onDiscardDraft: () => void;
   onRemoveBasketItem: (basketId: string) => void;
   onRetryBasketDay: (dayNumber: number) => void;
@@ -4853,6 +5440,7 @@ function PlaceEditorSheet({
   searchQuery: string;
   restoredDraftMessage: string;
 }) {
+  const dayDragScroll = useDragScroll();
   const hasPlaceBasket = mode === "add" && placeBasket.length > 0;
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
@@ -5015,6 +5603,45 @@ function PlaceEditorSheet({
           )}
           {mode === "edit" && (
             <>
+              {dayOptions.length > 1 && (
+                <div className="field place-day-picker">
+                  <span>날짜</span>
+                  {/* 네이티브 select 는 항목 높이를 운영체제가 정해 손댈 수 없다.
+                      칩 줄로 두면 칸을 넉넉히 잡고 장소 수까지 같이 보여줄 수 있다. */}
+                  <div
+                    aria-label="날짜 선택"
+                    className="place-day-options"
+                    role="radiogroup"
+                    {...dayDragScroll}
+                  >
+                    {dayOptions.map((option) => {
+                      const selected = option.dayNumber === dayNumber;
+                      return (
+                        <button
+                          aria-checked={selected}
+                          className={
+                            selected
+                              ? "place-day-chip selected"
+                              : "place-day-chip"
+                          }
+                          disabled={isSaving}
+                          key={option.dayNumber}
+                          onClick={() => onDayChange(option.dayNumber)}
+                          ref={selected ? onSelectedDayRef : undefined}
+                          role="radio"
+                          type="button"
+                        >
+                          <strong>Day {option.dayNumber}</strong>
+                          {option.dateLabel && <em>{option.dateLabel}</em>}
+                          <i>
+                            {option.count > 0 ? `${option.count}곳` : "비어 있음"}
+                          </i>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <PlaceTimePicker
                 disabled={isSaving}
                 value={form.time ?? ""}
