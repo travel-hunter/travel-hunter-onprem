@@ -50,7 +50,7 @@
 **Interfaces:**
 - Produces: `dayTabsRef` — 스트립 DOM 참조. Task 2 가 중앙 정렬에 쓴다.
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 `.day-tabs` 가 `nowrap` 이고 가로 스크롤이 되는지 스타일시트에서 확인한다.
 
@@ -66,12 +66,12 @@ it("day tabs stay on one row and scroll horizontally", () => {
 });
 ```
 
-- [ ] **Step 2: 테스트가 실패하는지 확인한다**
+- [x] **Step 2: 테스트가 실패하는지 확인한다**
 
 Run: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx -t "one row"`
 Expected: FAIL — 현재는 `flex-wrap: wrap` 이고 `overflow-x: visible` 이다.
 
-- [ ] **Step 3: CSS 를 고친다**
+- [x] **Step 3: CSS 를 고친다**
 
 ```css
 .prototype-trip-detail-screen .day-tabs {
@@ -88,7 +88,7 @@ Expected: FAIL — 현재는 `flex-wrap: wrap` 이고 `overflow-x: visible` 이�
 
 `margin-bottom` 은 22px 에서 16px 로 줄인다. 한 줄이 되어 아래 여백이 상대적으로 커 보인다.
 
-- [ ] **Step 4: 스트립 참조를 단다**
+- [x] **Step 4: 스트립 참조를 단다**
 
 `ItineraryDetailPage.tsx` 의 `day-tabs` div 에 ref 를 붙인다.
 
@@ -103,12 +103,12 @@ const dayTabsRef = useRef<HTMLDivElement | null>(null);
 >
 ```
 
-- [ ] **Step 5: 테스트가 통과하는지 확인한다**
+- [x] **Step 5: 테스트가 통과하는지 확인한다**
 
 Run: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx -t "one row"`
 Expected: PASS
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add frontend/src/styles/app.css frontend/src/pages/itinerary/ItineraryDetailPage.tsx frontend/src/app/__tests__/trip-detail.test.tsx
@@ -127,7 +127,7 @@ git commit -m "feat(itinerary): day 탭을 가로 한 줄 스트립으로"
 - Consumes: `dayTabsRef` (Task 1)
 - Produces: `centerActiveDayTab()` — 활성 탭을 중앙으로. Task 3·4 가 날짜 전환 후 호출한다.
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 ```ts
 it("centers the active day tab and pads both ends", () => {
@@ -138,12 +138,12 @@ it("centers the active day tab and pads both ends", () => {
 });
 ```
 
-- [ ] **Step 2: 테스트가 실패하는지 확인한다**
+- [x] **Step 2: 테스트가 실패하는지 확인한다**
 
 Run: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx -t "centers the active"`
 Expected: FAIL — 여백이 비어 있다.
 
-- [ ] **Step 3: 순수 함수로 계산부를 뺀다**
+- [x] **Step 3: 순수 함수로 계산부를 뺀다**
 
 테스트하기 쉽도록 DOM 접근과 계산을 나눈다.
 
@@ -177,7 +177,7 @@ export function resolveDayStripScrollLeft({
 }
 ```
 
-- [ ] **Step 4: 효과를 붙인다**
+- [x] **Step 4: 효과를 붙인다**
 
 `visibleDay` 가 바뀌거나 `dayNumbers` 가 바뀌면 여백을 다시 계산하고 활성 탭을 중앙으로 보낸다.
 드래그 중에는 `behavior: "auto"` 로, 평소에는 `"smooth"` 로 움직인다. 드래그 중 부드러운 스크롤은
@@ -208,7 +208,7 @@ useEffect(() => {
 }, [visibleDay, dayNumbers.length, draggingPlaceId]);
 ```
 
-- [ ] **Step 5: 순수 함수 단위 테스트를 더한다**
+- [x] **Step 5: 순수 함수 단위 테스트를 더한다**
 
 ```ts
 it("resolveDayStripScrollLeft clamps at both ends", () => {
@@ -221,12 +221,12 @@ it("resolveDayStripScrollLeft clamps at both ends", () => {
 });
 ```
 
-- [ ] **Step 6: 테스트가 통과하는지 확인한다**
+- [x] **Step 6: 테스트가 통과하는지 확인한다**
 
 Run: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx -t "day strip"`
 Expected: PASS
 
-- [ ] **Step 7: 커밋**
+- [x] **Step 7: 커밋**
 
 ```bash
 git commit -am "feat(itinerary): 보고 있는 day 를 스트립 가운데로 정렬"
@@ -244,7 +244,7 @@ git commit -am "feat(itinerary): 보고 있는 day 를 스트립 가운데로 �
 - Consumes: `centerActiveDayTab()` (Task 2), `placeDragPointerRef`
 - Produces: `resolveDayEdgeZone()`, `resolveDayEdgeInterval()` — 순수 함수. Task 5 테스트가 쓴다.
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 지나가는 것으로는 안 바뀌고, 머무는 것으로만 바뀌어야 한다.
 
@@ -268,12 +268,12 @@ it("accelerates toward the outer edge", () => {
 });
 ```
 
-- [ ] **Step 2: 테스트가 실패하는지 확인한다**
+- [x] **Step 2: 테스트가 실패하는지 확인한다**
 
 Run: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx -t "edge"`
 Expected: FAIL — 함수가 없다.
 
-- [ ] **Step 3: 상수와 순수 함수를 넣는다**
+- [x] **Step 3: 상수와 순수 함수를 넣는다**
 
 `DAY_SWITCH_DELAY_MS` 를 지우고 아래로 대체한다.
 
@@ -312,13 +312,13 @@ export function resolveDayEdgeInterval(depth: number): number {
 }
 ```
 
-- [ ] **Step 4: 탭 호버 전환을 걷어낸다**
+- [x] **Step 4: 탭 호버 전환을 걷어낸다**
 
 `handlePlaceDragOver` 안에서 `shouldScheduleDaySwitch` 로 `setActiveDay` 를 예약하던 블록을 지운다.
 `setDragOverDay` 로 탭을 강조하는 것과 `crossDayDragPreview` 는 남긴다 — 탭에 드롭해서 옮기는 길이
 살아 있어야 하기 때문이다.
 
-- [ ] **Step 5: 가장자리 이동영역을 타이머로 돌린다**
+- [x] **Step 5: 가장자리 이동영역을 타이머로 돌린다**
 
 포인터가 멈춰 있어도 진행해야 하므로 `pointermove` 가 아니라 `setInterval` 로 돈다.
 `moveDrag` 안에서 처리하면 손가락을 흔들어야만 날짜가 넘어간다.
@@ -351,17 +351,17 @@ useEffect(() => {
 }, [draggingPlaceId, dayNumbers.length]);
 ```
 
-- [ ] **Step 6: 테스트가 통과하는지 확인한다**
+- [x] **Step 6: 테스트가 통과하는지 확인한다**
 
 Run: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx -t "edge"`
 Expected: PASS
 
-- [ ] **Step 7: 기존 날짜 드래그 회귀 테스트를 돌린다**
+- [x] **Step 7: 기존 날짜 드래그 회귀 테스트를 돌린다**
 
 Run: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx`
 Expected: PASS. 탭 드롭으로 옮기는 기존 테스트가 깨지면 Step 4 에서 너무 많이 걷어낸 것이다.
 
-- [ ] **Step 8: 커밋**
+- [x] **Step 8: 커밋**
 
 ```bash
 git commit -am "feat(itinerary): 탭 호버 자동 전환을 가장자리 이동영역으로 교체"
@@ -379,7 +379,7 @@ git commit -am "feat(itinerary): 탭 호버 자동 전환을 가장자리 이동
 - Consumes: `draggingPlaceId`, `setActiveDay`
 - Produces: `DAY_WHEEL_THRESHOLD` 상수
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 ```ts
 it("changes day by wheel while dragging", () => {
@@ -390,12 +390,12 @@ it("changes day by wheel while dragging", () => {
 });
 ```
 
-- [ ] **Step 2: 테스트가 실패하는지 확인한다**
+- [x] **Step 2: 테스트가 실패하는지 확인한다**
 
 Run: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx -t "wheel"`
 Expected: FAIL
 
-- [ ] **Step 3: 순수 함수와 상수를 넣는다**
+- [x] **Step 3: 순수 함수와 상수를 넣는다**
 
 ```ts
 /** 굴림량이 이만큼 쌓여야 하루. 마우스 휠 한 칸이 보통 100 안팎이다 */
@@ -412,7 +412,7 @@ export function resolveWheelSteps(
 }
 ```
 
-- [ ] **Step 4: 리스너를 붙인다**
+- [x] **Step 4: 리스너를 붙인다**
 
 드래그 중에만 산다. 드래그 중에는 이미 `itinerary-place-drag-scroll-locked` 로 페이지 스크롤이
 잠겨 있어 휠이 놀고 있다.
@@ -450,12 +450,12 @@ useEffect(() => {
 }, [draggingPlaceId, dayNumbers.length]);
 ```
 
-- [ ] **Step 5: 테스트가 통과하는지 확인한다**
+- [x] **Step 5: 테스트가 통과하는지 확인한다**
 
 Run: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx -t "wheel"`
 Expected: PASS
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git commit -am "feat(itinerary): 드래그 중 휠과 화살표 키로 날짜 전환"
@@ -469,7 +469,7 @@ git commit -am "feat(itinerary): 드래그 중 휠과 화살표 키로 날짜 �
 - Modify: `frontend/src/pages/itinerary/ItineraryDetailPage.tsx`
 - Test: `frontend/src/app/__tests__/trip-detail.test.tsx`
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 ```ts
 it("uses a long touch hold and leaves the mouse sensor alone", () => {
@@ -479,12 +479,12 @@ it("uses a long touch hold and leaves the mouse sensor alone", () => {
 });
 ```
 
-- [ ] **Step 2: 테스트가 실패하는지 확인한다**
+- [x] **Step 2: 테스트가 실패하는지 확인한다**
 
 Run: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx -t "touch hold"`
 Expected: FAIL — 상수가 없다.
 
-- [ ] **Step 3: 상수를 뽑고 센서에 건다**
+- [x] **Step 3: 상수를 뽑고 센서에 건다**
 
 ```ts
 /** 목록 스크롤과 카드 집기를 가르는 값. 짧으면 스크롤하려다 카드가 집힌다 */
@@ -509,12 +509,12 @@ const dragSensors = useSensors(
 );
 ```
 
-- [ ] **Step 4: 테스트가 통과하는지 확인한다**
+- [x] **Step 4: 테스트가 통과하는지 확인한다**
 
 Run: `cd frontend && npx vitest run src/app/__tests__/trip-detail.test.tsx -t "touch hold"`
 Expected: PASS
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git commit -am "feat(itinerary): 터치 집는 시간을 800ms 로"
@@ -527,7 +527,7 @@ git commit -am "feat(itinerary): 터치 집는 시간을 800ms 로"
 **Files:**
 - Modify: `CHECKLIST.md`
 
-- [ ] **Step 1: 프런트 게이트**
+- [x] **Step 1: 프런트 게이트**
 
 ```bash
 cd frontend
@@ -539,12 +539,12 @@ npm run build
 
 Expected: 전부 PASS
 
-- [ ] **Step 2: 전체 프런트 테스트**
+- [x] **Step 2: 전체 프런트 테스트**
 
 Run: `cd frontend && npm test -- --run`
 Expected: PASS. 한 파일만 돌리지 않는다 — 그 구멍으로 예전에 `place-edit` 파손을 놓친 적이 있다.
 
-- [ ] **Step 3: 인코딩과 공백**
+- [x] **Step 3: 인코딩과 공백**
 
 ```bash
 git diff --check
@@ -556,7 +556,7 @@ git diff --check
 `develop` 에 머지되면 dev Jenkins 가 자동 배포한다. 직접 서버를 만지지 않는다.
 푸시와 PR 은 Codex 가 한다.
 
-- [ ] **Step 5: 실기기 확인 목록을 남긴다**
+- [x] **Step 5: 실기기 확인 목록을 남긴다**
 
 `CHECKLIST.md` 에 아래를 미확인으로 적는다. 브라우저·실기기 확인은 운영자 몫이다.
 
@@ -574,7 +574,7 @@ git diff --check
 [ ] 드래그 중 화면이 위아래로 출렁이지 않는다
 ```
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add CHECKLIST.md
@@ -598,3 +598,21 @@ git commit -m "docs: day 스트립 실기기 확인 목록"
 
 - 집는 시간 800ms 는 일반적인 길게 누르기(300~500ms)보다 길다. 목록 스크롤을 확실히 살리는
   대신 카드가 늦게 잡힌다. 실기기에서 답답하면 500ms 부터 다시 본다.
+
+---
+
+## 실행 결과 (2026-09-01, 기록은 2026-09-05)
+
+커밋 `d0f77a8`. 계획대로 구현됐고 산출물이 코드에 남아 있다 —
+`DAY_EDGE_WIDTH_PX` / `DAY_EDGE_FIRST_DELAY_MS` / `DAY_EDGE_REPEAT_MS` /
+`DAY_EDGE_ACCEL` / `PLACE_DRAG_TOUCH_DELAY_MS`, `resolveDayEdgeZone`,
+`resolveDayStripScrollLeft`, 휠·화살표 처리.
+
+확정된 조작값: 이동영역 80px, 머무는 시간 900ms, 반복 간격 620ms,
+바깥쪽 가속 2.8배, 휠 민감도 100, 터치 집는 시간 800ms.
+
+**Task 6 Step 4 만 미완이다.** push / PR 은 이 세션의 권한 밖이라 개발서버에
+아직 반영되지 않았다. 실기기 확인 목록은 `CHECKLIST.md` Active Risks 에 남겼다.
+
+이 절은 작업 뒤에 붙였다. 체크박스가 전부 비어 있어 계획서만 보면 아무것도
+안 한 것처럼 읽혔기 때문이다.

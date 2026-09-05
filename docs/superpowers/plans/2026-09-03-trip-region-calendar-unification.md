@@ -67,7 +67,7 @@
 - Consumes: 기존 `TravelArea`, `TRAVEL_AREAS`, `get_travel_area()`, `policy-region:` 규칙.
 - Produces: `TravelAreaOption`, `TravelAreaCatalog`, `list_travel_area_catalog(sido)`, `resolve_travel_area(area_id)`.
 
-- [ ] **Step 1: 공유 파일의 현재 diff를 읽는다**
+- [x] **Step 1: 공유 파일의 현재 diff를 읽는다**
 
 Run:
 
@@ -77,7 +77,7 @@ git diff -- backend/app/data/travel_areas.py backend/app/services/trips.py backe
 
 Expected: 사용자 변경이 있으면 범위를 식별하고 이후 patch에서 그대로 보존한다.
 
-- [ ] **Step 2: catalog 불변조건에 대한 실패 test를 작성한다**
+- [x] **Step 2: catalog 불변조건에 대한 실패 test를 작성한다**
 
 `backend/tests/test_travel_area_catalog.py`에 다음 핵심 계약을 작성한다.
 
@@ -116,13 +116,13 @@ def test_resolver_supports_every_id_family(area_id, name):
 
 모든 option ID의 중복이 없고 세종의 행정지역 배열이 비어 있는 test도 추가한다.
 
-- [ ] **Step 3: test가 기능 부재로 실패하는지 확인한다**
+- [x] **Step 3: test가 기능 부재로 실패하는지 확인한다**
 
 Run: `cd backend; python -m pytest tests/test_travel_area_catalog.py tests/test_travel_areas.py -q`
 
 Expected: FAIL because `travel_area_catalog` and administrative snapshot do not exist.
 
-- [ ] **Step 4: UTF-8 snapshot을 구현한다**
+- [x] **Step 4: UTF-8 snapshot을 구현한다**
 
 `administrative_areas.py`의 공개 형태를 다음과 같이 고정한다.
 
@@ -136,7 +136,7 @@ ADMINISTRATIVE_AREAS_BY_SIDO: dict[str, tuple[str, ...]] = {
 
 수량 검증 기준은 서울 25, 부산 16, 대구 9, 인천 10, 광주 5, 대전 5, 울산 5, 세종 0, 경기 31, 강원 18, 충북 11, 충남 15, 전북 14, 전남 22, 경북 22, 경남 18, 제주 2이다. 제주 행정시를 제품 선택 단위로 포함하고 일반시의 구는 제외한다.
 
-- [ ] **Step 5: catalog와 resolver를 최소 구현한다**
+- [x] **Step 5: catalog와 resolver를 최소 구현한다**
 
 ```python
 AreaType = Literal["whole", "recommended", "administrative", "policy"]
@@ -166,7 +166,7 @@ def make_administrative_area_id(sido: str, locality: str) -> str:
 
 `list_supported_sidos() -> tuple[str, ...]`는 snapshot key를 제품의 17개 고정 순서로 반환한다. `list_travel_area_catalog(sido: str) -> TravelAreaCatalog`는 지원 여부를 검사한 뒤 whole option 하나, 같은 sido의 기존 curated option, snapshot의 행정 option을 합성한다. `resolve_travel_area(area_id: str | None) -> TravelArea | None`는 새 ID를 decode한 뒤 snapshot membership을 확인하고, curated와 `policy-region:`은 기존 `get_travel_area()`에 위임한다. 기존 recommendation ranking은 `TRAVEL_AREAS`만 사용하므로 결과 순위를 바꾸지 않는다.
 
-- [ ] **Step 6: targeted backend test를 통과시킨다**
+- [x] **Step 6: targeted backend test를 통과시킨다**
 
 Run: `cd backend; python -m pytest tests/test_travel_area_catalog.py tests/test_travel_areas.py -q`
 
@@ -186,7 +186,7 @@ Expected: PASS; 기존 curated ID와 정책 동적 ID test도 유지된다.
 - Consumes: Task 1의 `list_travel_area_catalog(sido)`.
 - Produces: `GET /api/travel-areas?sido=<광역시도>`.
 
-- [ ] **Step 1: 정상·오류 route test를 작성한다**
+- [x] **Step 1: 정상·오류 route test를 작성한다**
 
 ```python
 def test_lists_grouped_jeju_catalog(client):
@@ -205,13 +205,13 @@ def test_rejects_unsupported_sido(client):
 
 `sido` 누락 422도 별도 test로 고정한다.
 
-- [ ] **Step 2: 404 실패를 확인한다**
+- [x] **Step 2: 404 실패를 확인한다**
 
 Run: `cd backend; python -m pytest tests/test_travel_area_catalog_routes.py -q`
 
 Expected: FAIL with 404.
 
-- [ ] **Step 3: camelCase DTO와 얇은 route를 구현한다**
+- [x] **Step 3: camelCase DTO와 얇은 route를 구현한다**
 
 ```python
 class TravelAreaOptionResponse(BaseModel):
@@ -231,7 +231,7 @@ class TravelAreaCatalogResponse(BaseModel):
 
 route는 service 반환값을 DTO로 바꾸고 `ValueError`만 400으로 변환한다. `api/router.py`에 새 router를 한 번 등록한다.
 
-- [ ] **Step 4: route test를 통과시킨다**
+- [x] **Step 4: route test를 통과시킨다**
 
 Run: `cd backend; python -m pytest tests/test_travel_area_catalog_routes.py -q`
 
@@ -252,7 +252,7 @@ Expected: PASS with grouped response and exact 400/422 behavior.
 - Consumes: Task 1의 `resolve_travel_area()`.
 - Produces: `Trip.region`, `UpdateTripSettingsRequest.travelAreaId`, 원자적 region/ID 갱신.
 
-- [ ] **Step 1: 실제 DB route 실패 test를 작성한다**
+- [x] **Step 1: 실제 DB route 실패 test를 작성한다**
 
 ```python
 def test_updates_region_without_replacing_trip_content(client, auth_headers, seeded_trip):
@@ -282,13 +282,13 @@ def test_rejects_unknown_area_without_mutation(client, auth_headers, seeded_trip
 
 whole/admin/curated/policy ID 생성·수정 parametrized test와 viewer 403, stale revision 409 회귀 test를 추가한다.
 
-- [ ] **Step 2: 새 필드 부재로 실패하는지 확인한다**
+- [x] **Step 2: 새 필드 부재로 실패하는지 확인한다**
 
 Run: `cd backend; python -m pytest tests/test_trip_db_routes.py -k "travel_area or region" -q`
 
 Expected: FAIL because settings ignores `travelAreaId` and response omits `region`.
 
-- [ ] **Step 3: schema와 response mapping을 구현한다**
+- [x] **Step 3: schema와 response mapping을 구현한다**
 
 ```python
 class Trip(BaseModel):
@@ -307,7 +307,7 @@ class UpdateTripSettingsRequest(BaseModel):
 
 `trip_to_api()`에 `"region": trip.region`을 추가한다.
 
-- [ ] **Step 4: resolver 검증과 DB 동시 갱신을 구현한다**
+- [x] **Step 4: resolver 검증과 DB 동시 갱신을 구현한다**
 
 ```python
 if payload.travelAreaId is not None:
@@ -320,7 +320,7 @@ if payload.travelAreaId is not None:
 
 ID 검증은 revision bump 전에 수행해 실패 요청이 revision도 바꾸지 않게 한다. 유효한 변경은 기존 단일 `db.commit()`에서 제목·지역·기간과 함께 저장한다. 생성과 itinerary recommendation의 resolver import도 교체한다.
 
-- [ ] **Step 5: backend 일정 test를 통과시킨다**
+- [x] **Step 5: backend 일정 test를 통과시킨다**
 
 Run: `cd backend; python -m pytest tests/test_trip_db_routes.py tests/test_itinerary_recommendations.py -q`
 
@@ -343,7 +343,7 @@ Expected: PASS; 장소·정책·권한·revision 동작이 유지된다.
 - Consumes: Task 2 catalog API, Task 3 Trip/settings DTO.
 - Produces: `TravelAreaCatalog`, `getTravelAreaCatalog(sido)`, controlled `TripRegionSelector`.
 
-- [ ] **Step 1: API serialization 실패 test를 작성한다**
+- [x] **Step 1: API serialization 실패 test를 작성한다**
 
 ```ts
 it("requests one complete sido catalog", async () => {
@@ -364,13 +364,13 @@ it("serializes travelAreaId in trip settings", async () => {
 });
 ```
 
-- [ ] **Step 2: API test가 method 부재로 실패하는지 확인한다**
+- [x] **Step 2: API test가 method 부재로 실패하는지 확인한다**
 
 Run: `cd frontend; npm test -- src/api/backendApi.test.ts`
 
 Expected: FAIL because new method/types are missing.
 
-- [ ] **Step 3: API type과 method를 구현한다**
+- [x] **Step 3: API type과 method를 구현한다**
 
 ```ts
 export type TravelAreaOption = {
@@ -392,7 +392,7 @@ export type TravelAreaCatalog = {
 
 `Trip`에 `travelAreaId: string | null`, `region: string`을 추가하고 settings request에 `travelAreaId?: string`을 추가한다. `AppDataApi.getTravelAreaCatalog()`와 URLSearchParams 기반 backend 구현을 추가한다.
 
-- [ ] **Step 4: selector의 그룹·완전성·오류 실패 test를 작성한다**
+- [x] **Step 4: selector의 그룹·완전성·오류 실패 test를 작성한다**
 
 ```tsx
 render(<TripRegionSelector selectedSido="제주" value={jejuEast} onSidoChange={onSidoChange} onChange={onChange} />);
@@ -404,13 +404,13 @@ expect(screen.getByRole("button", { name: "제주 동부" })).toHaveAttribute("a
 
 경기 fixture에 21개 이상을 넣어 마지막 항목도 표시되는지, 오류 시 기존 선택과 retry가 유지되는지, sido 변경 시 이전 세부 선택을 남기지 않는지 검증한다.
 
-- [ ] **Step 5: selector test가 component 부재로 실패하는지 확인한다**
+- [x] **Step 5: selector test가 component 부재로 실패하는지 확인한다**
 
 Run: `cd frontend; npm test -- src/components/trip/TripRegionSelector.test.tsx`
 
 Expected: FAIL because component is missing.
 
-- [ ] **Step 6: controlled selector를 구현한다**
+- [x] **Step 6: controlled selector를 구현한다**
 
 ```ts
 type TripRegionSelectorProps = {
@@ -425,7 +425,7 @@ type TripRegionSelectorProps = {
 
 17개 button은 `aria-pressed`를 쓴다. catalog를 `전체`, `추천 여행권역`, `시·군·구` 순서의 fieldset/legend로 렌더링한다. 빈 optional group만 숨기며 전체는 항상 보인다. loading 동안 기존 선택을 보존하고 오류·retry를 표시한다.
 
-- [ ] **Step 7: API/selector test와 typecheck를 통과시킨다**
+- [x] **Step 7: API/selector test와 typecheck를 통과시킨다**
 
 Run: `cd frontend; npm test -- src/api/backendApi.test.ts src/components/trip/TripRegionSelector.test.tsx; npm run typecheck`
 
@@ -446,7 +446,7 @@ Expected: PASS; 모든 Trip fixture가 새 계약을 만족한다.
 - Consumes: 기존 `normalizeTripDateRange()` 의미와 생성 화면의 calendar behavior.
 - Produces: `TripDateRangeValue`, 순수 date helpers, controlled `TripDateRangePicker`.
 
-- [ ] **Step 1: 순수 date helper 실패 test를 작성한다**
+- [x] **Step 1: 순수 date helper 실패 test를 작성한다**
 
 ```ts
 expect(parseTripDate("2026-09-10")?.getDate()).toBe(10);
@@ -456,13 +456,13 @@ expect(buildCalendarDays(new Date(2026, 8, 1))).toHaveLength(42);
 expect(tripDateDayCount("2026-09-10", "2026-09-12")).toBe(3);
 ```
 
-- [ ] **Step 2: helper 부재로 실패하는지 확인한다**
+- [x] **Step 2: helper 부재로 실패하는지 확인한다**
 
 Run: `cd frontend; npm test -- src/utils/tripDateRange.test.ts`
 
 Expected: FAIL because module is missing.
 
-- [ ] **Step 3: 날짜 유틸을 구현한다**
+- [x] **Step 3: 날짜 유틸을 구현한다**
 
 ```ts
 export type TripDateRangeValue = { startDate: string; endDate: string };
@@ -477,7 +477,7 @@ export function tripDateDayCount(startDate: string, endDate: string): number | n
 export function normalizeSelectedRange(startDate: string, endDate: string): TripDateRangeValue;
 ```
 
-- [ ] **Step 4: 달력 interaction 실패 test를 작성한다**
+- [x] **Step 4: 달력 interaction 실패 test를 작성한다**
 
 ```tsx
 const onChange = vi.fn();
@@ -490,7 +490,7 @@ expect(onChange).toHaveBeenLastCalledWith({ startDate: "2026-09-11", endDate: "2
 
 이전/다음 달, range class, 완료 닫기, disabled, error 연결도 별도 test로 작성한다.
 
-- [ ] **Step 5: controlled picker를 구현한다**
+- [x] **Step 5: controlled picker를 구현한다**
 
 ```ts
 type TripDateRangePickerProps = {
@@ -503,7 +503,7 @@ type TripDateRangePickerProps = {
 
 내부 state는 open 여부, 표시 월, `start | end` 단계뿐이다. 두 번째 선택에서 `normalizeSelectedRange()` 후 한 번에 `onChange`한다. trigger에 범위/일수, dialog에 42칸 grid, 한국어 요일, 범위 강조, 월 이동, 완료를 제공한다.
 
-- [ ] **Step 6: date test를 통과시킨다**
+- [x] **Step 6: date test를 통과시킨다**
 
 Run: `cd frontend; npm test -- src/utils/tripDateRange.test.ts src/components/trip/TripDateRangePicker.test.tsx`
 
@@ -526,7 +526,7 @@ Expected: PASS; 정방향과 역방향 선택 결과가 같다.
 - Consumes: Tasks 4–5의 API, selector, date picker.
 - Produces: 생성/settings payload와 세 화면의 동일한 날짜 선택 UX.
 
-- [ ] **Step 1: 현재 사용자 변경 diff를 다시 읽는다**
+- [x] **Step 1: 현재 사용자 변경 diff를 다시 읽는다**
 
 Run:
 
@@ -536,7 +536,7 @@ git diff -- frontend/src/pages/itinerary/ItineraryCreatePage.tsx frontend/src/pa
 
 Expected: 제목 가시성·편집 button 위치를 포함한 최신 변경을 확인하고 보존한다.
 
-- [ ] **Step 2: create page 실패 test를 작성한다**
+- [x] **Step 2: create page 실패 test를 작성한다**
 
 경기 catalog를 stub해 `연천군`까지 표시하고 선택 후 다음 payload를 검증한다.
 
@@ -549,7 +549,7 @@ expect(createTripSpy).toHaveBeenCalledWith(expect.objectContaining({
 
 광역시도만 고른 상태에서는 진행하지 않고 `전체 또는 세부 지역을 선택해 주세요`를 표시하는 test도 추가한다.
 
-- [ ] **Step 3: edit page 실패 test를 작성한다**
+- [x] **Step 3: edit page 실패 test를 작성한다**
 
 `travelAreaId: "jeju-east", region: "제주 동부"` trip을 불러 제주 서부로 변경하고 다음 settings payload를 단언한다.
 
@@ -563,17 +563,17 @@ expect(updateSettingsSpy).toHaveBeenCalledWith("91", expect.objectContaining({
 
 legacy `travelAreaId: null`은 exact region name, 그다음 해당 sido 전체로 화면 복원하되 저장 전 API를 호출하지 않는 test와 viewer read-only test를 추가한다.
 
-- [ ] **Step 4: 상세 기간 edit 실패 test를 작성한다**
+- [x] **Step 4: 상세 기간 edit 실패 test를 작성한다**
 
 `여행기간 수정`을 열었을 때 native `input[type=date]`가 없고 공통 `trip-date-range-trigger`가 있으며, 역순 선택이 정방향 settings payload로 저장되는지 검증한다. 기존 overflow strategy test는 유지한다.
 
-- [ ] **Step 5: 기존 UI에서 정확히 실패하는지 확인한다**
+- [x] **Step 5: 기존 UI에서 정확히 실패하는지 확인한다**
 
 Run: `cd frontend; npm test -- src/app/__tests__/trip-create.test.tsx src/app/__tests__/trip-edit.test.tsx src/app/__tests__/trip-detail.test.tsx`
 
 Expected: FAIL because create uses recommendation `limit=20`, edit has no region selector, and edit surfaces use native date inputs.
 
-- [ ] **Step 6: create page를 공통 component로 교체한다**
+- [x] **Step 6: create page를 공통 component로 교체한다**
 
 - `travelAreaId` query는 catalog에서 ID로 복원한다.
 - `region`/`sido`만 있으면 광역시도를 열되 `전체` 또는 세부지역을 명시적으로 고르게 한다.
@@ -581,15 +581,15 @@ Expected: FAIL because create uses recommendation `limit=20`, edit has no region
 - 직접 수정한 title은 지역 변경으로 덮어쓰지 않는다.
 - inline calendar helper/state/markup은 삭제하고 `TripDateRangePicker`를 사용한다.
 
-- [ ] **Step 7: direct edit page를 통합한다**
+- [x] **Step 7: direct edit page를 통합한다**
 
 catalog option의 sido와 `trip.travelAreaId`로 현재 선택을 복원한다. legacy fallback은 exact `trip.region`, `"<sido> 전체"`, whole option 순으로만 적용하고 저장 전 DB를 바꾸지 않는다. 선택 변경은 title을 건드리지 않으며 save payload에 `travelAreaId`를 포함한다. native date input은 공통 picker로 교체한다.
 
-- [ ] **Step 8: detail 기간 sheet를 통합한다**
+- [x] **Step 8: detail 기간 sheet를 통합한다**
 
 `TripDateEditorSheet`의 두 date input과 두 change callback을 `TripDateRangePicker`와 `onChangeDateRange(value)`로 교체한다. overflow 계산, revision conflict, save 후 active day 보정은 그대로 둔다.
 
-- [ ] **Step 9: 통합 test와 typecheck를 통과시킨다**
+- [x] **Step 9: 통합 test와 typecheck를 통과시킨다**
 
 Run:
 
@@ -615,15 +615,15 @@ Expected: PASS; 지역 변경과 공통 달력이 제목, 장소, 정책, 권한
 - Consumes: Tasks 1–6의 최종 API/UI.
 - Produces: 구현과 일치하는 프로젝트 소스 오브 트루스.
 
-- [ ] **Step 1: API contract를 갱신한다**
+- [x] **Step 1: API contract를 갱신한다**
 
 `GET /travel-areas` grouped response, `sourceAsOf`, 400/422, 네 ID family를 추가한다. Trip response `region`, PATCH settings optional `travelAreaId`, invalid ID 400, 기존 content 보존 규칙을 명시한다.
 
-- [ ] **Step 2: requirements와 implemented spec을 갱신한다**
+- [x] **Step 2: requirements와 implemented spec을 갱신한다**
 
 일정 생성/편집 설명을 `17개 광역시도 → 전체/추천 여행권역/시·군·구`, 기존 일정 지역 변경, 생성·편집 공통 달력으로 교체한다.
 
-- [ ] **Step 3: golden JSON을 동기화하고 검증한다**
+- [x] **Step 3: golden JSON을 동기화하고 검증한다**
 
 `.agent/evals/api-contract-golden.json`에 `/api/travel-areas`, Trip `region`, settings `travelAreaId` behavior를 추가한다.
 
@@ -643,13 +643,13 @@ Expected: exit code 0.
 - Consumes: Tasks 1–7의 완성 기능.
 - Produces: 자동/수동 검증 증거와 검증 후 단일 commit.
 
-- [ ] **Step 1: backend 전체 회귀를 실행한다**
+- [x] **Step 1: backend 전체 회귀를 실행한다**
 
 Run: `cd backend; python -m pytest`
 
 Expected: all backend tests PASS. DB schema가 바뀌지 않아 새 Alembic revision이 없다.
 
-- [ ] **Step 2: frontend 전체 회귀와 build를 실행한다**
+- [x] **Step 2: frontend 전체 회귀와 build를 실행한다**
 
 Run:
 
@@ -662,7 +662,7 @@ npm run build
 
 Expected: all commands PASS.
 
-- [ ] **Step 3: compose contract를 확인한다**
+- [x] **Step 3: compose contract를 확인한다**
 
 Run: `cd ..; docker compose -f compose.yaml config`
 
@@ -677,11 +677,11 @@ Expected: exit code 0.
 5. 기간 축소 overflow 처리와 viewer read-only를 확인한다.
 6. 360×780, 390×844, 430×932, 1024×768, 1440×900에서 overflow, clipping, dialog 이탈이 없는지 확인한다.
 
-- [ ] **Step 5: CHECKLIST를 최신 증거로 교체한다**
+- [x] **Step 5: CHECKLIST를 최신 증거로 교체한다**
 
 이번 상태, 명령별 PASS/FAIL, viewport 결과, 행정지역 snapshot 갱신 risk만 남기고 과거 task chronology를 추가하지 않는다.
 
-- [ ] **Step 6: UTF-8과 diff 위생을 확인한다**
+- [x] **Step 6: UTF-8과 diff 위생을 확인한다**
 
 Run:
 
@@ -693,7 +693,7 @@ git status --short
 
 Expected: diff check PASS, replacement character 없음, 의도한 변경만 존재한다.
 
-- [ ] **Step 7: 모든 검증 후에만 commit한다**
+- [x] **Step 7: 모든 검증 후에만 commit한다**
 
 하나라도 실패하면 commit하지 않고 수정 후 관련 검증부터 재실행한다. 모두 통과하면 의도한 파일만 명시적으로 stage하고 staged diff를 다시 검사한다.
 
@@ -704,3 +704,47 @@ git commit -m "feat: unify trip region and date selection"
 ```
 
 Expected: commit succeeds only after every automated and 5173 manual gate has passed.
+
+---
+
+## 실행 결과 (2026-09-03 ~ 09-05)
+
+Task 1~3 은 Codex 세션이, Task 4~8 은 Claude 세션이 이어받아 마쳤다.
+인수 시점과 그때 닫은 구멍은 `docs/2026-09-04-codex-handoff.md` 에 적혀 있다.
+
+| Task | 커밋 | 비고 |
+|---|---|---|
+| 1~3 백엔드 카탈로그·resolver·Trip 계약 | `f31ae58` | |
+| 4~5 API 계약·공용 선택기·공용 달력 | `388a2e4` | |
+| 6 생성·직접 편집·상세 통합 | `6e5b4ee` | |
+| 7 계약 문서·golden eval | `b8d51ce`, `1e03180` | |
+| 8 전체 검증 | — | Step 4(수동 확인)만 미완 |
+
+### 계획과 달라진 것
+
+**Task 6 Step 6.** 생성 화면의 지역 흐름을 통째로 갈아끼우지 않았다. 질의 사전선택
+로직(`travelAreaId` / `region` / `sido` / `policySlug`)은 그대로 두고 렌더링과 선택
+목록만 바꿨다. 그 로직에 10건 가까운 테스트가 붙어 있어 함께 갈아엎으면 회귀를
+가릴 위험이 컸다. 대신 선택기에 `sidoOptions`(이 화면의 이모지·순서)와
+`extraAreas`(카탈로그에 없는 동적 권역 병합)를 더했다.
+
+**Task 4 복원 규칙.** 복원을 `onChange` 로 흘리면 화면을 열기만 해도 "지역을 바꿨다"로
+기록돼, 손대지 않은 일정의 `travel_area_id` 가 저장 때 갈아치워졌다. 통로를
+`onRestore` 로 분리했다.
+
+**Task 8 Step 7.** 커밋은 수동 검증 전에 했다. 사용자 지시다. 한 번이 아니라
+논리 단위로 나눠 담았고, `git add -p` 가 이 환경에서 대화형으로 돌지 않아
+`ItineraryDetailPage.tsx` / `app.css` 는 헝크 단위로 못 갈랐다.
+
+**계획 밖에서 더한 것.** 시·군·구를 권역으로 접는 작업(`9815c30`, `3235fd6`)은
+이 계획서에 없다. 목록이 너무 길다는 지적을 받고 뒤에 붙였고,
+`docs/superpowers/plans/2026-09-04-itinerary-day-strip-followups.md` 의 Task 9 로 기록했다.
+
+### 검증
+
+frontend 348 passed / 0 failed (28 files), backend 701 passed / 1 failed,
+typecheck / build / mojibake / compose config / `git diff --check` 전부 통과.
+백엔드 실패 1건은 Windows 임시 디렉터리 권한에 걸리는 간헐적 환경 이슈다.
+
+이 절은 작업 뒤에 붙였다. 체크박스가 전부 비어 있어 계획서만 보면 아무것도
+안 한 것처럼 읽혔기 때문이다.
