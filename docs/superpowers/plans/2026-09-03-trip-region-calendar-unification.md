@@ -687,7 +687,7 @@ Run:
 
 ```powershell
 git diff --check
-rg -n "�" backend/app/data/administrative_areas.py backend/app/services/travel_area_catalog.py frontend/src/components/trip docs/superpowers docs/mvp-api-contract.md docs/requirements.md docs/implemented-feature-spec.md CHECKLIST.md
+rg -n "\x{FFFD}" backend/app/data/administrative_areas.py backend/app/services/travel_area_catalog.py frontend/src/components/trip docs/superpowers docs/mvp-api-contract.md docs/requirements.md docs/implemented-feature-spec.md CHECKLIST.md
 git status --short
 ```
 

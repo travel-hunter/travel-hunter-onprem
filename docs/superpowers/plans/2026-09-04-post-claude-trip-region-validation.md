@@ -316,7 +316,7 @@ Expected: PASS or no staged diff for the cached command.
 Run:
 
 ```powershell
-rg -n "�" backend frontend docs .agent CHECKLIST.md
+rg -n "\x{FFFD}" backend frontend docs .agent CHECKLIST.md
 ```
 
 Expected: No results in changed files. PowerShell console mojibake does not count; only literal U+FFFD in file content blocks completion.
