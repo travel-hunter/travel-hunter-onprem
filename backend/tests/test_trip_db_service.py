@@ -7,6 +7,8 @@ from pydantic import ValidationError
 from sqlalchemy import BigInteger, Integer, create_engine
 from sqlalchemy.orm import sessionmaker
 
+# 초대 링크 주소는 환경설정에서 온다. 리터럴로 박으면 .env 에 따라 갈린다.
+from app.core.config import settings
 from app.db.base import Base
 from app.models import (
     ExternalSourceRecord,
@@ -2139,7 +2141,7 @@ def test_invite_to_api_computes_display_flags() -> None:
 
     assert payload["id"] == "9"
     assert payload["tripId"] == "7"
-    assert payload["inviteUrl"] == "http://127.0.0.1:5173/invites/abc/accept"
+    assert payload["inviteUrl"] == f"{settings.frontend_base_url()}/invites/abc/accept"
     assert payload["invited"] is True
     assert payload["copied"] is False
     assert payload["role"] == "editor"

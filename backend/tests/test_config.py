@@ -9,11 +9,17 @@ def test_local_runtime_allows_development_defaults() -> None:
     Settings(app_env="local").validate_runtime()
 
 
+def test_local_frontend_base_url_defaults_to_docker_frontend() -> None:
+    settings = Settings(travel_hunter_public_base_url="")
+
+    assert settings.frontend_base_url() == "http://127.0.0.1:4173"
+
+
 def test_protected_runtime_rejects_localhost_and_dev_secret() -> None:
     settings = Settings(
         app_env="staging",
         auth_secret_key="dev-only-change-me-secret-key-32-bytes",
-        travel_hunter_public_base_url="http://127.0.0.1:5173",
+        travel_hunter_public_base_url="http://127.0.0.1:4173",
         cors_origins=("http://localhost:5173",),
         refresh_cookie_secure=False,
     )
