@@ -2,6 +2,8 @@ from datetime import datetime
 
 from fastapi.testclient import TestClient
 
+# 리다이렉트 대상은 환경설정에서 온다. 리터럴로 박으면 개발자 .env 에 따라 결과가 갈린다.
+from app.core.config import settings
 from app.api.routes import auth as auth_routes
 from app.api.routes import profile as profile_routes
 from app.main import app
@@ -321,7 +323,7 @@ def test_oauth_callback_provider_access_denied_redirects_without_refresh_cookie(
 
     assert response.status_code == 302
     assert response.headers["location"] == (
-        "http://127.0.0.1:5173/oauth/callback?error=access_denied&redirect=%2Ftrips"
+        f"{settings.frontend_base_url()}/oauth/callback?error=access_denied&redirect=%2Ftrips"
     )
     assert "raw-provider-message" not in response.headers["location"]
     assert "travel_hunter_refresh=" not in response.headers.get("set-cookie", "")
@@ -340,7 +342,7 @@ def test_oauth_callback_provider_error_with_invalid_state_redirects_invalid_stat
 
     assert response.status_code == 302
     assert response.headers["location"] == (
-        "http://127.0.0.1:5173/oauth/callback?error=invalid_state&redirect=%2Fhome"
+        f"{settings.frontend_base_url()}/oauth/callback?error=invalid_state&redirect=%2Fhome"
     )
     assert "travel_hunter_refresh=" not in response.headers.get("set-cookie", "")
     assert "travel_hunter_oauth_state=" in response.headers["set-cookie"]
@@ -367,7 +369,7 @@ def test_oauth_callback_service_error_redirects_without_refresh_cookie(monkeypat
 
     assert response.status_code == 302
     assert response.headers["location"] == (
-        "http://127.0.0.1:5173/oauth/callback?error=email_policy&redirect=%2Fhome"
+        f"{settings.frontend_base_url()}/oauth/callback?error=email_policy&redirect=%2Fhome"
     )
     assert "travel_hunter_refresh=" not in response.headers.get("set-cookie", "")
     assert "travel_hunter_oauth_state=" in response.headers["set-cookie"]
@@ -394,7 +396,7 @@ def test_oauth_callback_service_invalid_state_redirects_home_without_refresh_coo
 
     assert response.status_code == 302
     assert response.headers["location"] == (
-        "http://127.0.0.1:5173/oauth/callback?error=invalid_state&redirect=%2Fhome"
+        f"{settings.frontend_base_url()}/oauth/callback?error=invalid_state&redirect=%2Fhome"
     )
     assert "travel_hunter_refresh=" not in response.headers.get("set-cookie", "")
     assert "travel_hunter_oauth_state=" in response.headers["set-cookie"]
