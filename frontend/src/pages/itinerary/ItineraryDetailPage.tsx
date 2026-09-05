@@ -4867,9 +4867,12 @@ function SortablePlaceItem({
     id: sortableId,
     disabled: !canEditTrip || !canSortPlace || disabled,
   });
-  const sortableTransform = CSS.Transform.toString(transform);
   const cardStyle = {
-    transform: sortableTransform,
+    // Horizontal pointer movement is still used for Day-tab collision detection,
+    // but rendering it expands the scrollable timeline beyond the viewport.
+    transform: CSS.Transform.toString(
+      transform ? { ...transform, x: 0 } : null,
+    ),
     transition,
   };
   // 시간 수정창 아코디언 식별자. 미리보기 카드와 기존 카드 모두 값이 있다.
