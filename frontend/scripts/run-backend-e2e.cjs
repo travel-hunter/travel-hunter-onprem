@@ -47,6 +47,15 @@ const backendEnv = {
       "http://localhost:4173",
     ].join(","),
 };
+const composeEnv = {
+  ...backendEnv,
+  POSTGRES_DB: process.env.POSTGRES_DB || "travelhunter",
+  POSTGRES_USER: process.env.POSTGRES_USER || "travelhunter",
+  POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD || "travelhunter",
+  VITE_API_BASE_URL: process.env.VITE_API_BASE_URL || apiBaseUrl,
+  CLOUDFLARE_TUNNEL_TOKEN:
+    process.env.CLOUDFLARE_TUNNEL_TOKEN || "e2e-compose-interpolation-only",
+};
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -65,13 +74,14 @@ function run(command, args, options = {}) {
   }
 }
 
-function waitForCommand(command, args, timeoutMs = 60_000) {
+function waitForCommand(command, args, options = {}) {
+  const timeoutMs = options.timeoutMs || 60_000;
   const startedAt = Date.now();
 
   while (Date.now() - startedAt <= timeoutMs) {
     const result = spawnSync(command, args, {
       cwd: repoRoot,
-      env: process.env,
+      env: options.env || process.env,
       stdio: "ignore",
     });
     if (result.status === 0) return;
@@ -122,7 +132,9 @@ function stopProcess(child) {
 async function main() {
   if (!process.env.SKIP_E2E_DB_START) {
     console.log("[backend-e2e] Starting compose PostgreSQL on 127.0.0.1:55432...");
-    run(dockerCommand, ["compose", "-f", path.join(repoRoot, "compose.yaml"), "up", "-d", "db"]);
+    run(dockerCommand, ["compose", "-f", path.join(repoRoot, "compose.yaml"), "up", "-d", "db"], {
+      env: composeEnv,
+    });
     console.log("[backend-e2e] Waiting for PostgreSQL readiness...");
     waitForCommand(dockerCommand, [
       "compose",
@@ -136,7 +148,7 @@ async function main() {
       "travelhunter",
       "-d",
       "travelhunter",
-    ]);
+    ], { env: composeEnv });
   }
 
   console.log("[backend-e2e] Applying Alembic migrations...");

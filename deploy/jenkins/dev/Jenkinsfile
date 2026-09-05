@@ -93,6 +93,33 @@ pipeline {
             }
         }
 
+        stage('Backend Tests') {
+            steps {
+                sh '''
+                    echo "===== 백엔드 테스트 ====="
+                    cd ${PROJECT_DIR}
+
+                    # 배포 전에 검사한다. 테스트 전용 이미지를 따로 굽는다 —
+                    # 이름이 고정돼 compose 프로젝트명 규칙에 의존하지 않는다.
+                    docker build -t travel-hunter-backend-test ./backend
+
+                    # docker compose run 을 쓰지 않는다. compose 가 서비스 환경변수를
+                    # 주입하면 테스트가 깨진다. 예: FRONTEND_BASE_URL 이 4173 으로
+                    # 들어가면 기본값 5173 을 기대하는 test_invite_to_api_computes_display_flags
+                    # 가 실패한다. 배포 환경이 아니라 코드를 검사해야 하므로 환경변수 없이 돈다.
+                    #
+                    # tests/ 는 이미지에 없다 (Dockerfile 이 app/scripts/alembic 만 복사).
+                    # 저장소 전체를 마운트해야 한다 — 일부 테스트가 저장소 레이아웃을
+                    # 전제로 Path(__file__).parents[N] 로 경로를 계산한다.
+                    # DB 도 필요 없다. 백엔드 테스트는 SQLite 인메모리 픽스처를 쓴다.
+                    docker run --rm \
+                      -v ${PROJECT_DIR}:/repo \
+                      -w /repo/backend \
+                      travel-hunter-backend-test \
+                      python -m pytest tests -q
+                '''
+            }
+        }
 
         stage('Validate Compose') {
             steps {
