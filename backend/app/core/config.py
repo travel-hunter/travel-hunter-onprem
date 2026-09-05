@@ -128,7 +128,7 @@ class Settings:
         return self.app_env.strip().lower() in PROTECTED_APP_ENVS
 
     def frontend_base_url(self) -> str:
-        return self.travel_hunter_public_base_url.rstrip("/") or "http://127.0.0.1:5173"
+        return self.travel_hunter_public_base_url.rstrip("/") or "http://127.0.0.1:4173"
 
     def validate_runtime(self) -> None:
         if not self.is_protected_env:

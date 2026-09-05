@@ -9,6 +9,7 @@
     "test": "npm run test:mojibake && node scripts/run-backend-command.cjs vitest run",
     "test:mojibake": "node scripts/check-mojibake.cjs",
     "test:e2e": "node scripts/run-backend-e2e.cjs",
+    "test:e2e:containers": "node scripts/run-container-e2e.cjs",
     "test:watch": "vitest",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1"
