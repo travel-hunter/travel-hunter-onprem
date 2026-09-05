@@ -45,7 +45,19 @@ At the start of non-trivial work:
 - Trip routes use an internal trip id. Do not introduce public trip slugs unless a later plan explicitly changes the contract.
 - Frontend pages and components must access app data through `frontend/src/api/AppDataApi` and related API boundary files.
 - Backend routes must stay thin. Put request/response shapes in `app/schemas`, business behavior in `app/services`, DB queries in `app/repositories`, and seed/static data in `app/data`.
-- Never commit secrets. Keep `.env.example` documented and safe.
+- **Secrets: never commit, and never print.** `.env` 값, DB 비밀번호, `DATABASE_URL`,
+  Cloudflare 터널 토큰, OAuth/SMTP secret, `AUTH_SECRET_KEY`, 관리자 액세스 토큰은
+  커밋뿐 아니라 콘솔·로그·PR·Slack 어디에도 출력하지 않는다.
+  - 값을 그대로 뱉는 명령을 쓰지 않는다: `docker compose config`, `docker inspect <container>`,
+    필터 없는 `env`, 명령줄에 비밀번호가 들어가는 `psql "postgresql://user:pw@..."`.
+  - 확인이 필요하면 키 이름만 보거나(`sed 's/=.*/=/' .env`) 해시 지문으로 비교한다
+    (`sha256sum`, SQL 은 `left(md5(col),12)`). 컨테이너 DB 접속은 변수를 안에서 펼친다:
+    `docker exec <db> sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "..."'`.
+  - 구성 검증은 출력을 버린다: `docker compose --env-file <env> config > /dev/null`.
+  - 이미 노출됐다면 교체 외에 방법이 없다. 스크롤백과 로그에 남으므로 교체 대상을 명시해 보고한다.
+    `POSTGRES_PASSWORD` 는 `.env` 수정만으로 바뀌지 않는다. `ALTER USER ... WITH PASSWORD` 가 필요하다.
+  - 덤프·백업 파일은 `chmod 600` 으로 저장소 밖에 둔다.
+  - Keep `.env.example` documented and safe.
 - Any API shape change must update the API contract, frontend types, backend schemas/routes/services, tests, and `.agent/evals` together.
 - **Encoding (UTF-8 Korean text).** All source, docs, tests, and config files are UTF-8 and must stay UTF-8:
   - Do not rewrite Korean-bearing files through PowerShell `Set-Content` / `Out-File` or shell redirection; use `apply_patch` or a UTF-8-explicit tool (e.g. Node `fs.readFileSync(path, "utf8")` / `fs.writeFileSync(path, text, "utf8")`) for mechanical rewrites.
