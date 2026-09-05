@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from urllib.parse import quote, unquote
 
+from app.data.administrative_areas import ADMINISTRATIVE_AREAS_BY_SIDO
+
 
 @dataclass(frozen=True)
 class TravelArea:
@@ -18,6 +20,8 @@ class TravelArea:
 
 
 POLICY_REGION_AREA_ID_PREFIX = "policy-region:"
+WHOLE_AREA_ID_PREFIX = "whole:"
+ADMINISTRATIVE_AREA_ID_PREFIX = "admin:"
 
 _CITY_SUFFIXES = ("특별시", "광역시", "특별자치시", "특별자치도", "시", "군", "구")
 
@@ -138,6 +142,27 @@ def make_policy_region_area_id(sido: str, city: str) -> str:
     return f"{POLICY_REGION_AREA_ID_PREFIX}{quote(sido.strip(), safe='')}:{quote(city.strip(), safe='')}"
 
 
+def _is_known_policy_region_area(sido: str, city: str) -> bool:
+    normalized_city = _normalize_municipality(city)
+    if normalized_city is None:
+        return False
+    if resolve_municipality_sido(normalized_city, sido) == sido:
+        return True
+    if any(
+        _normalize_municipality(locality) == normalized_city
+        for locality in ADMINISTRATIVE_AREAS_BY_SIDO.get(sido, ())
+    ):
+        return True
+    return any(
+        area.sido == sido
+        and any(
+            _normalize_municipality(term) == normalized_city
+            for term in (*area.included_cities, *area.aliases)
+        )
+        for area in TRAVEL_AREAS
+    )
+
+
 def make_policy_region_area(sido: str, city: str) -> TravelArea:
     normalized_sido = sido.strip()
     normalized_city = _normalize_municipality(city) or city.strip()
@@ -164,7 +189,52 @@ def _policy_region_area_from_id(area_id: str) -> TravelArea | None:
     city = unquote(encoded_parts[1]).strip()
     if not sido or not city:
         return None
+    if not _is_known_policy_region_area(sido, city):
+        return None
     return make_policy_region_area(sido, city)
+
+
+def _whole_area_from_id(area_id: str) -> TravelArea | None:
+    if not area_id.startswith(WHOLE_AREA_ID_PREFIX):
+        return None
+    sido = unquote(area_id.removeprefix(WHOLE_AREA_ID_PREFIX)).strip()
+    if sido not in ADMINISTRATIVE_AREAS_BY_SIDO:
+        return None
+    return TravelArea(
+        area_id,
+        f"{sido} 전체",
+        sido,
+        (sido,),
+        (f"{sido} 전체", sido),
+        ("전체", "행정지역", sido),
+        ("지역 여행", "혜택", "맛집"),
+        f"{sido} 전체를 대상으로 하는 여행 지역입니다.",
+        70,
+    )
+
+
+def _administrative_area_from_id(area_id: str) -> TravelArea | None:
+    if not area_id.startswith(ADMINISTRATIVE_AREA_ID_PREFIX):
+        return None
+    encoded_parts = area_id.removeprefix(ADMINISTRATIVE_AREA_ID_PREFIX).split(":", 1)
+    if len(encoded_parts) != 2:
+        return None
+    sido = unquote(encoded_parts[0]).strip()
+    locality = unquote(encoded_parts[1]).strip()
+    if locality not in ADMINISTRATIVE_AREAS_BY_SIDO.get(sido, ()):
+        return None
+    included_city = _normalize_municipality(locality) or locality
+    return TravelArea(
+        area_id,
+        locality,
+        sido,
+        (included_city,),
+        (locality, included_city),
+        ("행정지역", "지역 여행", sido),
+        ("지역 여행", "혜택", "맛집"),
+        f"{locality} 행정지역을 대상으로 하는 {sido} 여행 지역입니다.",
+        65,
+    )
 
 
 TRAVEL_AREAS: tuple[TravelArea, ...] = (
@@ -244,4 +314,9 @@ def get_travel_area(area_id: str | None) -> TravelArea | None:
     if not area_id:
         return None
     normalized = area_id.strip()
-    return next((area for area in TRAVEL_AREAS if area.id == normalized), None) or _policy_region_area_from_id(normalized)
+    return (
+        _whole_area_from_id(normalized)
+        or _administrative_area_from_id(normalized)
+        or next((area for area in TRAVEL_AREAS if area.id == normalized), None)
+        or _policy_region_area_from_id(normalized)
+    )

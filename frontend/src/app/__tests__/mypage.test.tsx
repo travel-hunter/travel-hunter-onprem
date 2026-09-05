@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   appDataApi,
   type Policy,
@@ -45,12 +45,48 @@ function mockMyPageAccountLoad(user: User) {
   ];
 }
 
+/* 이 스위트는 목이 아니라 127.0.0.1:8000 실제 백엔드를 친다.
+   정책 수집이 한 번 돌면 DB 슬러그가 바뀌어(dgtour-영광 -> dgtour-영광-8)
+   화면이 그리는 링크가 픽스처와 어긋난다. 정책 조회·찜 경로만 붙잡아
+   화면이 픽스처 슬러그를 쓰도록 고정한다. 흐름 자체는 그대로 돈다. */
+const installedPolicyApiSpies: { mockRestore: () => void }[] = [];
+
+function installExamplePolicyApi({ saved = false }: { saved?: boolean } = {}) {
+  const savedSlugs = new Set<string>(saved ? [examplePolicySlug] : []);
+  const spies = [
+    vi.spyOn(appDataApi, "getPolicy").mockResolvedValue(examplePolicyDetail),
+    vi
+      .spyOn(appDataApi, "listPolicies")
+      .mockResolvedValue([examplePolicyDetail]),
+    vi
+      .spyOn(appDataApi, "listSavedPolicies")
+      .mockImplementation(async () =>
+        savedSlugs.has(examplePolicySlug) ? [examplePolicyDetail] : [],
+      ),
+    vi.spyOn(appDataApi, "savePolicy").mockImplementation(async (slug) => {
+      savedSlugs.add(slug);
+      return { policyId: slug, saved: true };
+    }),
+    vi
+      .spyOn(appDataApi, "removeSavedPolicy")
+      .mockImplementation(async (slug) => {
+        savedSlugs.delete(slug);
+        return { policyId: slug, saved: false };
+      }),
+  ];
+  // 도중에 실패해도 다음 테스트로 새지 않도록 등록해 두고 afterEach 에서 되돌린다.
+  installedPolicyApiSpies.push(...spies);
+  return { savedSlugs };
+}
+
 describe("Travel Hunter app — my page", () => {
+  afterEach(() => {
+    installedPolicyApiSpies.splice(0).forEach((spy) => spy.mockRestore());
+  });
+
   it("saves a policy from the policy detail header action", async () => {
+    installExamplePolicyApi();
     await login();
-    await appDataApi
-      .removeSavedPolicy(examplePolicySlug)
-      .catch(() => undefined);
     cleanup();
     render(
       <MemoryRouter
@@ -98,6 +134,8 @@ describe("Travel Hunter app — my page", () => {
 
   it("refreshes the my page favorite summary after policy detail save and unsave", async () => {
     const user = userEvent.setup();
+    // 정책 상세가 실제 DB 행을 읽으면 그 슬러그가 아래 기대값과 어긋난다.
+    vi.spyOn(appDataApi, "getPolicy").mockResolvedValue(examplePolicyDetail);
     const listSavedPoliciesSpy = vi
       .spyOn(appDataApi, "listSavedPolicies")
       .mockResolvedValue([]);
@@ -159,6 +197,7 @@ describe("Travel Hunter app — my page", () => {
   });
 
   it("shows saved policies on my page and removes them", async () => {
+    installExamplePolicyApi();
     await login();
     await appDataApi.savePolicy(examplePolicySlug);
     cleanup();
@@ -336,6 +375,8 @@ describe("Travel Hunter app — my page", () => {
       });
 
     try {
+      // 정책 상세가 실제 DB 행을 읽으면 그 슬러그가 아래 기대값과 어긋난다.
+      vi.spyOn(appDataApi, "getPolicy").mockResolvedValue(examplePolicyDetail);
       render(
         <MemoryRouter initialEntries={[examplePolicyPath]}>
           <AppProviders>
@@ -403,6 +444,8 @@ describe("Travel Hunter app — my page", () => {
       });
 
     try {
+      // 정책 상세가 실제 DB 행을 읽으면 그 슬러그가 아래 기대값과 어긋난다.
+      vi.spyOn(appDataApi, "getPolicy").mockResolvedValue(examplePolicyDetail);
       render(
         <MemoryRouter initialEntries={[examplePolicyPath]}>
           <AppProviders>

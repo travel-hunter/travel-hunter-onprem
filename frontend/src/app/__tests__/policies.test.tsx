@@ -868,6 +868,11 @@ describe("Travel Hunter app — policies & trip picker", () => {
       .spyOn(appDataApi, "listTrips")
       .mockResolvedValue(trips);
 
+    // 정책 상세가 실제 DB 행을 읽으면 그 슬러그가 아래 링크 기대값과 어긋난다.
+    const getPolicySpy = vi
+      .spyOn(appDataApi, "getPolicy")
+      .mockResolvedValue(examplePolicyDetail);
+
     try {
       await login();
       cleanup();
@@ -887,6 +892,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
       );
     } finally {
       listTripsSpy.mockRestore();
+      getPolicySpy.mockRestore();
     }
   });
 

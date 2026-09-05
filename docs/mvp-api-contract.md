@@ -921,13 +921,14 @@ Frontend behavior: `/trips` participant UI uses `people.length` and `people` nam
 
 ### PATCH /trips/{trip_id}/settings
 
-Whole-trip edit. Owner/editor only. This updates trip title and/or canonical trip dates without parsing presentation-only `Trip.dates`.
+Whole-trip edit. Owner/editor only. This updates trip title, travel area, and/or canonical trip dates without parsing presentation-only `Trip.dates`.
 
 **Request**
 ```json
 {
   "expectedRevision": 1,
   "title": "Updated Jeju trip",
+  "travelAreaId": "jeju-west",
   "startDate": "2026-07-12",
   "endDate": "2026-07-18",
   "overflowPlaceStrategy": "moveToLastDay"
@@ -936,12 +937,16 @@ Whole-trip edit. Owner/editor only. This updates trip title and/or canonical tri
 
 - `expectedRevision`: required optimistic revision.
 - `title`: optional, non-empty after trim when provided.
+- `travelAreaId`: optional opaque id. Resolved through the same catalog resolver as trip creation, so all four id families are accepted — `whole:`, `admin:`, curated ids, and dynamic `policy-region:`. When present, `trips.travel_area_id` and `trips.region` are updated together in one transaction. When absent, the stored travel area is left untouched.
 - `startDate`/`endDate`: optional pair. If provided, `endDate` must be on or after `startDate`; one-day and 7+ day ranges are valid.
 - `overflowPlaceStrategy`: required when shortening could leave places outside the new date range. `moveToLastDay` moves overflow places to the final remaining day; `delete` removes overflow-day places.
+
+Changing the travel area does not move, delete, or reorder places, days, or linked policies. Id validation runs before the revision bump, so a rejected request leaves `revision` unchanged.
 
 **Response 200** → `Trip`
 
 **Errors**
+- 400: `Travel area not found` — unknown `travelAreaId`, no mutation applied
 - 403: viewer cannot edit
 - 404: trip not found
 - 409: stale revision
@@ -1578,6 +1583,98 @@ Trip response includes:
 ```
 
 Existing trips can return `travelAreaId: null`.
+
+`Trip` also carries `region: string`, the stored display name of the trip's area. It is present on every trip, including legacy ones without a `travelAreaId`.
+
+---
+
+## 2026-09-03 Travel-area selection catalog
+
+The recommendation endpoint above ranks curated travel areas and caps results at
+`limit=20`. It is not a complete list of places a user may pick. This section adds a
+separate read-only catalog whose job is coverage, not ranking.
+
+### GET /travel-areas
+
+Returns every selectable area inside one 광역시도, grouped.
+
+Query params:
+
+| name | type | description |
+|---|---|---|
+| `sido` | string, required | One of the 17개 광역시도. |
+
+**Response 200**
+
+```json
+{
+  "sido": "제주",
+  "sourceAsOf": "2026-09-03",
+  "wholeArea": {
+    "travelAreaId": "whole:%EC%A0%9C%EC%A3%BC",
+    "travelAreaName": "제주 전체",
+    "sido": "제주",
+    "areaType": "whole",
+    "includedCities": ["제주"]
+  },
+  "recommendedAreas": [
+    {
+      "travelAreaId": "jeju-east",
+      "travelAreaName": "제주 동부",
+      "sido": "제주",
+      "areaType": "recommended",
+      "includedCities": ["제주", "서귀포"]
+    }
+  ],
+  "administrativeAreas": [
+    {
+      "travelAreaId": "admin:%EC%A0%9C%EC%A3%BC:%EC%A0%9C%EC%A3%BC%EC%8B%9C",
+      "travelAreaName": "제주시",
+      "sido": "제주",
+      "areaType": "administrative",
+      "includedCities": ["제주"],
+      "group": null
+    }
+  ]
+}
+```
+
+- `sourceAsOf` is the date the administrative snapshot was taken. The snapshot is
+  static and no runtime network call is made, so a source outage cannot block trip creation.
+- Every registered 광역시도 returns exactly one `wholeArea`. `recommendedAreas` and
+  `administrativeAreas` may be empty — 세종 has no sub-areas and returns `세종 전체` only.
+- Administrative units are 시·군 for 도, 자치구·군 for 광역시, and 제주시·서귀포시 for 제주.
+  Non-autonomous 구 inside a 일반시 are not separate options.
+- Curated travel areas and administrative areas are never mixed into one group. A client
+  that shows them together should still label the groups separately.
+- `group` folds a long administrative list. It is a `string | null` on every option and is
+  filled only for 광역시도 with more than 13 administrative units — 서울, 부산, 경기, 강원,
+  충남, 전북, 전남, 경북, 경남. Smaller ones return `null` on every option and are meant to
+  be rendered flat. `administrativeAreas` is ordered so that one group's options are
+  contiguous; a client can fold by walking the array in order without sorting it.
+  Group names are display strings and may change; they are not identifiers. Official
+  divisions are used where they exist (서울 5개 권역생활권, 경기북부청 관할 10개 시군,
+  강원 영동/영서).
+
+**Errors**
+- 400: `Unsupported travel area sido`
+- 422: `sido` missing
+
+### Travel area id families
+
+`travelAreaId` is an opaque string. Clients must not parse it. Four families exist and
+one resolver accepts all of them, in trip creation and in trip settings alike.
+
+| family | shape | example |
+|---|---|---|
+| whole | `whole:{urlencoded-sido}` | `whole:%EC%A0%9C%EC%A3%BC` |
+| administrative | `admin:{urlencoded-sido}:{urlencoded-locality}` | `admin:%EC%A0%9C%EC%A3%BC:%EC%A0%9C%EC%A3%BC%EC%8B%9C` |
+| curated | legacy static id | `jeju-west` |
+| policy-derived | `policy-region:{urlencoded-sido}:{urlencoded-city}` | `policy-region:%EC%A0%84%EB%82%A8:%EA%B0%95%EC%A7%84` |
+
+Display names may change without the id changing, so a stored trip keeps its area
+across catalog updates. The legacy `*-all` curated ids remain resolvable, but new
+selections use the canonical `whole:` id for a whole province.
 
 ## Admin user profile fields
 

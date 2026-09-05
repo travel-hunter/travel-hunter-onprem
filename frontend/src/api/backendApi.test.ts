@@ -70,6 +70,8 @@ describe("backendApi trip mutation methods", () => {
     title: "Updated trip",
     status: "draft",
     revision: 2,
+    region: "제주",
+    travelAreaId: "jeju-west",
     dates: "2026.06.15 - 06.20",
     startDate: "2026-06-15",
     endDate: "2026-06-20",
@@ -81,6 +83,39 @@ describe("backendApi trip mutation methods", () => {
     days: { 1: [] },
     currentUserRole: "owner",
   };
+
+  it("requests one complete sido travel-area catalog", async () => {
+    const catalogResponse = {
+      sido: "제주",
+      sourceAsOf: "2026-09-04",
+      wholeArea: {
+        travelAreaId: "jeju-all",
+        travelAreaName: "제주 전체",
+        sido: "제주",
+        areaType: "whole",
+        includedCities: ["제주시", "서귀포시"],
+      },
+      recommendedAreas: [],
+      administrativeAreas: [],
+    };
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(catalogResponse), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(backendApi.getTravelAreaCatalog("제주")).resolves.toEqual(catalogResponse);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/travel-areas?sido=%EC%A0%9C%EC%A3%BC`,
+      // GET 은 method 를 넘기지 않는다. 다른 조회 메서드와 같은 모양이다.
+      expect.objectContaining({
+        credentials: "include",
+      }),
+    );
+  });
 
   it("patches trip settings through the contract endpoint", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
@@ -111,6 +146,32 @@ describe("backendApi trip mutation methods", () => {
           startDate: "2026-06-15",
           endDate: "2026-06-20",
           overflowPlaceStrategy: "moveToLastDay",
+        }),
+      }),
+    );
+  });
+
+  it("serializes travelAreaId in trip settings", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(tripResponse), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await backendApi.updateTripSettings("7", {
+      expectedRevision: 4,
+      travelAreaId: "jeju-west",
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/trips/7/settings`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          expectedRevision: 4,
+          travelAreaId: "jeju-west",
         }),
       }),
     );

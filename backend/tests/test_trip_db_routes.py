@@ -1,10 +1,16 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from unittest.mock import Mock
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.api.routes import trips as trip_routes
+from app.db.base import Base
 from app.main import app
+from app.models import Policy, Trip, TripDay, TripMember, TripPlace, TripPolicy
 from app.models import User as UserModel
 from app.services import trips as trip_service
 
@@ -29,6 +35,7 @@ def trip_payload(trip_id: str = "7") -> dict[str, object]:
         "title": "Jeju 3-day trip",
         "status": "confirmed",
         "revision": 1,
+        "region": "Jeju",
         "dates": "2026.06.15 - 06.17",
         "startDate": date(2026, 6, 15),
         "endDate": date(2026, 6, 17),
@@ -73,6 +80,77 @@ def install_db_route_dependencies(monkeypatch, fake_db: object, user: UserModel 
     app.dependency_overrides[trip_routes.get_optional_db] = lambda: fake_db
     if user is not None:
         app.dependency_overrides[trip_routes.get_current_user] = lambda: user
+
+
+@pytest.fixture
+def sqlite_db_session():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    TestingSessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+    with TestingSessionLocal() as session:
+        yield session
+    Base.metadata.drop_all(engine)
+
+
+def seed_trip_for_region_update(sqlite_db_session, *, viewer: bool = False) -> tuple[UserModel, int]:
+    owner = UserModel(
+        id=101,
+        email="trip-owner@example.com",
+        password_hash="hashed",
+        nickname="Trip Owner",
+        onboarding_completed=True,
+    )
+    viewer_user = UserModel(
+        id=102,
+        email="trip-viewer@example.com",
+        password_hash="hashed",
+        nickname="Trip Viewer",
+        onboarding_completed=True,
+    )
+    policy = Policy(
+        id=103,
+        slug="fixture-policy",
+        title="Fixture policy",
+        benefit_amount=300000,
+        region="Jeju",
+        status="active",
+    )
+    trip = Trip(
+        id=104,
+        owner_id=owner.id,
+        title="Original trip",
+        status="draft",
+        revision=1,
+        start_date=date(2026, 6, 15),
+        end_date=date(2026, 6, 16),
+        region="Jeju",
+        travel_area_id=None,
+        participant_count=2,
+        description="Rest trip",
+    )
+    day = TripDay(id=105, trip_id=trip.id, day_number=1, date=date(2026, 6, 15))
+    place = TripPlace(
+        id=106,
+        trip_day_id=day.id,
+        place_name="Original place",
+        visit_time=time(9, 0),
+        order_num=1,
+        memo="Original memo",
+    )
+    membership = TripMember(
+        id=107,
+        trip_id=trip.id,
+        user_id=viewer_user.id,
+        role="viewer" if viewer else "editor",
+    )
+    trip_policy = TripPolicy(id=108, trip_id=trip.id, policy_id=policy.id)
+    sqlite_db_session.add_all([owner, viewer_user, policy, trip, day, place, membership, trip_policy])
+    sqlite_db_session.commit()
+    return (viewer_user if viewer else owner), trip.id
 
 
 def test_db_trip_routes_require_bearer_user(monkeypatch) -> None:
@@ -448,10 +526,17 @@ def test_db_trip_settings_update_route_returns_updated_trip(monkeypatch) -> None
         assert trip_id == "7"
         assert payload.expectedRevision == 1
         assert payload.title == "Updated trip"
+        assert payload.travelAreaId == "jeju-west"
         assert payload.startDate == date(2026, 6, 15)
         assert payload.endDate == date(2026, 6, 20)
         assert payload.overflowPlaceStrategy == "moveToLastDay"
-        return {**trip_payload(trip_id), "title": "Updated trip", "dates": "2026.06.15 - 06.20"}
+        return {
+            **trip_payload(trip_id),
+            "title": "Updated trip",
+            "region": "Jeju West",
+            "travelAreaId": "jeju-west",
+            "dates": "2026.06.15 - 06.20",
+        }
 
     monkeypatch.setattr(trip_routes.trip_service, "update_trip_settings", update_settings)
 
@@ -461,6 +546,7 @@ def test_db_trip_settings_update_route_returns_updated_trip(monkeypatch) -> None
             json={
                 "expectedRevision": 1,
                 "title": "Updated trip",
+                "travelAreaId": "jeju-west",
                 "startDate": "2026-06-15",
                 "endDate": "2026-06-20",
                 "overflowPlaceStrategy": "moveToLastDay",
@@ -472,7 +558,148 @@ def test_db_trip_settings_update_route_returns_updated_trip(monkeypatch) -> None
     assert response.status_code == 200
     assert response.json()["id"] == "7"
     assert response.json()["title"] == "Updated trip"
+    assert response.json()["region"] == "Jeju West"
+    assert response.json()["travelAreaId"] == "jeju-west"
     assert response.json()["dates"] == "2026.06.15 - 06.20"
+
+
+def test_db_trip_settings_updates_region_without_replacing_trip_content(sqlite_db_session) -> None:
+    user, trip_id = seed_trip_for_region_update(sqlite_db_session)
+    install_db_route_dependencies(None, sqlite_db_session, user)
+    before = client.get(f"/api/trips/{trip_id}").json()
+
+    try:
+        response = client.patch(
+            f"/api/trips/{trip_id}/settings",
+            json={"expectedRevision": before["revision"], "travelAreaId": "jeju-west"},
+        )
+        detail = client.get(f"/api/trips/{trip_id}")
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    after = response.json()
+    assert after["travelAreaId"] == "jeju-west"
+    assert after["region"] == "\uc81c\uc8fc \uc11c\ubd80"
+    assert after["revision"] == before["revision"] + 1
+    assert after["title"] == before["title"]
+    assert after["days"] == before["days"]
+    assert after["linkedPolicies"] == before["linkedPolicies"]
+    assert detail.json()["travelAreaId"] == "jeju-west"
+    assert detail.json()["region"] == "\uc81c\uc8fc \uc11c\ubd80"
+
+
+@pytest.mark.parametrize(
+    ("travel_area_id", "expected_region"),
+    [
+        ("whole:%EC%A0%9C%EC%A3%BC", "\uc81c\uc8fc \uc804\uccb4"),
+        ("admin:%EC%A0%9C%EC%A3%BC:%EC%A0%9C%EC%A3%BC%EC%8B%9C", "\uc81c\uc8fc\uc2dc"),
+        ("jeju-west", "\uc81c\uc8fc \uc11c\ubd80"),
+        ("policy-region:%EC%A0%9C%EC%A3%BC:%EC%95%A0%EC%9B%94", "\uc560\uc6d4"),
+    ],
+)
+def test_db_trip_settings_updates_region_for_supported_area_ids(
+    sqlite_db_session,
+    travel_area_id: str,
+    expected_region: str,
+) -> None:
+    user, trip_id = seed_trip_for_region_update(sqlite_db_session)
+    install_db_route_dependencies(None, sqlite_db_session, user)
+
+    try:
+        response = client.patch(
+            f"/api/trips/{trip_id}/settings",
+            json={"expectedRevision": 1, "travelAreaId": travel_area_id},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["travelAreaId"] == travel_area_id
+    assert response.json()["region"] == expected_region
+
+
+def test_db_trip_settings_rejects_unknown_area_without_mutation(sqlite_db_session) -> None:
+    user, trip_id = seed_trip_for_region_update(sqlite_db_session)
+    install_db_route_dependencies(None, sqlite_db_session, user)
+    before = client.get(f"/api/trips/{trip_id}").json()
+
+    try:
+        response = client.patch(
+            f"/api/trips/{trip_id}/settings",
+            json={"expectedRevision": before["revision"], "travelAreaId": "missing-area"},
+        )
+        after = client.get(f"/api/trips/{trip_id}").json()
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Travel area not found"}
+    assert after["revision"] == before["revision"]
+    assert after["region"] == before["region"]
+    assert after["travelAreaId"] == before["travelAreaId"]
+    assert after["title"] == before["title"]
+    assert after["days"] == before["days"]
+    assert after["linkedPolicies"] == before["linkedPolicies"]
+
+
+def test_db_trip_settings_rejects_unknown_policy_region_area_without_mutation(sqlite_db_session) -> None:
+    user, trip_id = seed_trip_for_region_update(sqlite_db_session)
+    install_db_route_dependencies(None, sqlite_db_session, user)
+    before = client.get(f"/api/trips/{trip_id}").json()
+
+    try:
+        response = client.patch(
+            f"/api/trips/{trip_id}/settings",
+            json={
+                "expectedRevision": before["revision"],
+                "travelAreaId": "policy-region:%EC%97%86%EB%8A%94:%EC%97%86%EB%8A%94",
+            },
+        )
+        after = client.get(f"/api/trips/{trip_id}").json()
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Travel area not found"}
+    assert after["revision"] == before["revision"]
+    assert after["region"] == before["region"]
+    assert after["travelAreaId"] == before["travelAreaId"]
+    assert after["title"] == before["title"]
+    assert after["days"] == before["days"]
+    assert after["linkedPolicies"] == before["linkedPolicies"]
+
+
+def test_db_trip_settings_rejects_viewer_region_update(sqlite_db_session) -> None:
+    user, trip_id = seed_trip_for_region_update(sqlite_db_session, viewer=True)
+    install_db_route_dependencies(None, sqlite_db_session, user)
+
+    try:
+        response = client.patch(
+            f"/api/trips/{trip_id}/settings",
+            json={"expectedRevision": 1, "travelAreaId": "jeju-west"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Trip edit permission required"}
+
+
+def test_db_trip_settings_rejects_stale_region_update(sqlite_db_session) -> None:
+    user, trip_id = seed_trip_for_region_update(sqlite_db_session)
+    install_db_route_dependencies(None, sqlite_db_session, user)
+
+    try:
+        response = client.patch(
+            f"/api/trips/{trip_id}/settings",
+            json={"expectedRevision": 2, "travelAreaId": "jeju-west"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Trip has changed. Refresh before saving."}
 
 
 def test_db_trip_place_crud_routes_return_updated_trip(monkeypatch) -> None:
