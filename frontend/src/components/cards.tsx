@@ -58,7 +58,7 @@ export function PolicyListCard({
   return (
     <SurfaceCard as="article" className="policy-list-card">
       <Link className="policy-list-card-link" to={`/policies/${policy.slug}`}>
-        <div className={`policy-list-icon ${getPolicyMoodTone(policy)}`}>
+        <div className={`policy-list-icon policy-list-media ${getPolicyMoodTone(policy)}`}>
           {photo ? (
             <PolicyThumbPhoto fallback={getPolicyMoodIcon(policy)} photo={photo} />
           ) : (

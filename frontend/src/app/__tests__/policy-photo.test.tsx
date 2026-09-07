@@ -88,6 +88,22 @@ describe("Travel Hunter app — policy region photos", () => {
     expect(screen.getAllByText("사진: 한국관광공사")).toHaveLength(1);
   });
 
+  it("uses the API attribution for a fallback-provider photo in the list", async () => {
+    const pixabayAttribution = "Photo: photographer via Pixabay";
+    vi.spyOn(appDataApi, "listPolicies").mockResolvedValue([
+      makePolicy({ photo: { ...photo, attribution: pixabayAttribution } }),
+    ]);
+    vi.spyOn(appDataApi, "listSavedPolicies").mockResolvedValue([]);
+
+    await login();
+    cleanup();
+    renderAppRoute("/policies");
+
+    await waitFor(() => {
+      expect(screen.getByText(pixabayAttribution)).toBeInTheDocument();
+    });
+  });
+
   it("omits the list attribution line when no policy has a photo", async () => {
     vi.spyOn(appDataApi, "listPolicies").mockResolvedValue([
       makePolicy({ photo: null }),

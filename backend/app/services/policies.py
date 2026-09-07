@@ -77,8 +77,15 @@ def _attach_region_photo(
     photos: RegionPhotoIndex | None,
     region: str | None,
     city: str | None,
+    *,
+    policy_id: int | None = None,
 ) -> None:
-    resolved = (photos or EMPTY_REGION_PHOTO_INDEX).resolve(region, city)
+    index = photos or EMPTY_REGION_PHOTO_INDEX
+    resolved = (
+        index.resolve_policy(policy_id, region, city)
+        if policy_id is not None
+        else index.resolve(region, city)
+    )
     if resolved is not None:
         payload["photo"] = resolved.to_api()
 
@@ -121,7 +128,13 @@ def policy_to_api(
         **policy_url_fields_for_policy(policy),
         "sourceType": source_type,
     }
-    _attach_region_photo(payload, photos, policy.region, policy.city)
+    _attach_region_photo(
+        payload,
+        photos,
+        policy.region,
+        policy.city,
+        policy_id=policy.id,
+    )
     if (
         stay_discount_aliases.is_stay_discount_canonical_policy(policy)
         or stay_discount_aliases.is_stay_discount_area_policy(policy)

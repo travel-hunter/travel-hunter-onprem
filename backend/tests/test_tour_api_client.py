@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+import httpx
 import pytest
 
 from app.core.config import Settings
@@ -21,7 +22,7 @@ def make_settings(**overrides: object) -> Settings:
     fields: dict[str, object] = {
         "tour_api_enabled": True,
         "tour_api_service_key": "test-service-key",
-        "tour_api_base_url": "https://apis.data.go.kr/B551011/KorService1",
+        "tour_api_base_url": "https://apis.data.go.kr/B551011/KorService2",
         "tour_api_timeout_seconds": 5.0,
     }
     fields.update(overrides)
@@ -140,3 +141,52 @@ def test_list_area_codes_parses_codes() -> None:
         ("38", "전라남도"),
         ("35", "경상북도"),
     ]
+
+
+def test_current_api_path_decodes_an_encoded_service_key_once() -> None:
+    calls: list[dict[str, Any]] = []
+    encoded_key = "test%2Fservice%2Bkey"
+    client = TourApiClient(
+        settings_obj=make_settings(
+            tour_api_service_key=encoded_key,
+            tour_api_base_url="https://apis.data.go.kr/B551011/KorService2",
+        ),
+        http_get=lambda url, **kwargs: (
+            calls.append({"url": url, **kwargs}) or FakeResponse(tour_api_body([]))
+        ),
+    )
+
+    client.list_area_codes()
+
+    assert calls[0]["url"].endswith("/KorService2/areaCode2")
+    assert calls[0]["params"]["serviceKey"] == "test/service+key"
+
+
+def test_http_error_does_not_include_service_key_in_configuration_error() -> None:
+    secret = "must-not-appear-in-error"
+    request = httpx.Request(
+        "GET", f"https://example.test/areaCode2?serviceKey={secret}"
+    )
+    response = httpx.Response(400, request=request)
+
+    def failing_get(url: str, **kwargs: Any) -> FakeResponse:
+        del url, kwargs
+
+        class ErrorResponse:
+            def raise_for_status(self) -> None:
+                response.raise_for_status()
+
+            def json(self) -> dict[str, Any]:
+                raise AssertionError("unreachable")
+
+        return ErrorResponse()  # type: ignore[return-value]
+
+    client = TourApiClient(
+        settings_obj=make_settings(tour_api_service_key=secret),
+        http_get=failing_get,
+    )
+
+    with pytest.raises(TourApiConfigurationError) as error:
+        client.list_area_codes()
+
+    assert secret not in str(error.value)

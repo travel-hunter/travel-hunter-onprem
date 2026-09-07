@@ -5,24 +5,24 @@ configuration error, frozen dataclass DTOs, a Protocol interface, settings
 validation that no-ops when disabled, and a factory that returns ``None`` when
 disabled so callers can skip gracefully.
 
-The exact endpoint version (KorService1 vs the ``_GW`` listings) is unverified
-until a service key exists; the base URL lives in settings so a version change
-is an env change, not a code change.
+The current public-data gateway uses KorService2 and its ``*2`` paths. The
+base URL remains configurable for future provider migrations.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Protocol
+from urllib.parse import unquote
 
 import httpx
 
 from app.core.config import Settings, settings
 
 
-AREA_CODE_PATH = "/areaCode1"
-AREA_BASED_LIST_PATH = "/areaBasedList1"
-SEARCH_KEYWORD_PATH = "/searchKeyword1"
+AREA_CODE_PATH = "/areaCode2"
+AREA_BASED_LIST_PATH = "/areaBasedList2"
+SEARCH_KEYWORD_PATH = "/searchKeyword2"
 CONTENT_TYPE_TOURIST_SPOT = "12"
 TOUR_API_DEFAULT_ROWS = 10
 # arrange=Q: 대표이미지가 있는 항목을 조회순으로. 실키 확보 후 실효성 재확인 대상.
@@ -159,7 +159,9 @@ class TourApiClient:
     def _request_items(
         self, path: str, params: dict[str, object]
     ) -> list[dict[str, Any]]:
-        key = self._settings.tour_api_service_key.strip()
+        # data.go.kr presents both encoded and decoded service keys. httpx
+        # encodes query values itself, so normalize an encoded copy once.
+        key = unquote(self._settings.tour_api_service_key.strip())
         if not key:
             raise TourApiConfigurationError("TOUR_API_SERVICE_KEY is required.")
         base_url = self._settings.tour_api_base_url.rstrip("/")
@@ -178,11 +180,18 @@ class TourApiClient:
             )
             response.raise_for_status()
             payload = response.json()
-        except httpx.HTTPError as exc:
-            raise TourApiConfigurationError(str(exc))
-        except ValueError as exc:
+        except httpx.HTTPStatusError as exc:
+            # str(exc) contains the request URL, including serviceKey.
+            raise TourApiConfigurationError(
+                f"TourAPI request failed (HTTP {exc.response.status_code})."
+            ) from None
+        except httpx.HTTPError:
+            raise TourApiConfigurationError("TourAPI request failed.") from None
+        except ValueError:
             # JSON이 아닌 응답(키 오류 시 XML 등)도 설정 문제로 승격한다.
-            raise TourApiConfigurationError(str(exc))
+            raise TourApiConfigurationError(
+                "TourAPI returned a non-JSON response."
+            ) from None
         return _items_from_payload(payload)
 
     def list_area_codes(

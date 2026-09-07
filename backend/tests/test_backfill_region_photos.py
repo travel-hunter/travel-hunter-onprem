@@ -71,6 +71,24 @@ def test_choose_representative_spot_returns_none_without_images() -> None:
     ) is None
 
 
+def test_choose_representative_spot_skips_images_used_by_another_city() -> None:
+    duplicate = make_spot(content_id="duplicate", first_image="https://example.test/shared.jpg")
+    unique = make_spot(
+        content_id="unique",
+        first_image="https://example.test/city.jpg",
+        addr1=None,
+    )
+
+    chosen = choose_representative_spot(
+        [duplicate, unique],
+        sido="?꾨궓",
+        excluded_image_urls={"https://example.test/shared.jpg"},
+    )
+
+    assert chosen is not None
+    assert chosen.content_id == "unique"
+
+
 def test_build_target_keys_dedupes_and_appends_sido_sentinels() -> None:
     keys = build_target_keys(
         policy_pairs=[("전남", "해남"), ("전남", "해남"), ("전남", None)],

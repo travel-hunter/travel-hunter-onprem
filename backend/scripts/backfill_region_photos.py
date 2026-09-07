@@ -16,7 +16,7 @@ import argparse
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 if str(APP_ROOT) not in sys.path:
@@ -79,9 +79,16 @@ def _addr_matches_sido(addr1: str | None, sido: str) -> bool:
 
 
 def choose_representative_spot(
-    spots: Iterable[TourApiSpot], *, sido: str
+    spots: Iterable[TourApiSpot],
+    *,
+    sido: str,
+    excluded_image_urls: Collection[str] = frozenset(),
 ) -> TourApiSpot | None:
-    with_image = [spot for spot in spots if spot.first_image]
+    with_image = [
+        spot
+        for spot in spots
+        if spot.first_image and spot.first_image not in excluded_image_urls
+    ]
     for spot in with_image:
         if _addr_matches_sido(spot.addr1, sido):
             return spot
@@ -154,6 +161,7 @@ def run_backfill(
 ) -> dict[str, object]:
     area_codes = provider.list_area_codes()
     area_code_by_sido: dict[str, str | None] = {}
+    used_image_urls: set[str] = set()
     unmapped_sidos: list[str] = []
     filled = refreshed = skipped = failed = 0
 
@@ -169,7 +177,8 @@ def run_backfill(
                 fetched_at = existing.fetched_at
                 if refresh_older_than is None or (
                     fetched_at is not None and fetched_at >= refresh_older_than
-                ):
+                ) and existing.hero_image_url not in used_image_urls:
+                    used_image_urls.add(existing.hero_image_url)
                     skipped += 1
                     continue
         try:
@@ -179,7 +188,23 @@ def run_backfill(
                 city=city,
                 area_code=area_code_by_sido[sido],
             )
-            spot = choose_representative_spot(spots, sido=sido)
+            spot = choose_representative_spot(
+                spots, sido=sido, excluded_image_urls=used_image_urls
+            )
+            if spot is None and city:
+                fallback_spots = _spots_for_target(
+                    provider,
+                    sido=sido,
+                    city=SIDO_LEVEL_CITY,
+                    area_code=area_code_by_sido[sido],
+                )
+                spot = choose_representative_spot(
+                    fallback_spots,
+                    sido=sido,
+                    excluded_image_urls=used_image_urls,
+                )
+            if spot is None:
+                spot = choose_representative_spot(spots, sido=sido)
         except Exception as exc:  # 개별 타깃 실패가 전체를 죽이면 안 된다.
             print(f"failed sido={sido} city={city or '(sido)'} error={exc}")
             failed += 1
@@ -202,6 +227,8 @@ def run_backfill(
                 storage_kind="remote",
                 fetched_at=datetime.now(UTC).replace(tzinfo=None),
             )
+        if spot.first_image:
+            used_image_urls.add(spot.first_image)
         if existing is not None:
             refreshed += 1
         else:

@@ -361,6 +361,34 @@ class RegionPhoto(Base):
     )
 
 
+class PolicyPhotoAssignment(Base):
+    __tablename__ = "policy_photos"
+    __table_args__ = (UniqueConstraint("policy_id"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    policy_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("policies.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_content_id: Mapped[str | None] = mapped_column(String(60))
+    image_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    thumbnail_url: Mapped[str | None] = mapped_column(String(500))
+    alt_text: Mapped[str] = mapped_column(String(200), nullable=False)
+    attribution_text: Mapped[str] = mapped_column(String(120), nullable=False)
+    relevance_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    assignment_reason: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="active"
+    )
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Trip(Base):
     __tablename__ = "trips"
 

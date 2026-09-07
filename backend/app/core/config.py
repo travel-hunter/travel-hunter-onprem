@@ -123,12 +123,17 @@ class Settings:
         "TOUR_API_ENABLED", "false"
     ).strip().lower() in {"1", "true", "yes", "on"}
     tour_api_service_key: str = os.getenv("TOUR_API_SERVICE_KEY", "")
-    # 엔드포인트 버전(KorService1 vs _GW)은 키 발급 후 첫 실호출로 확정한다.
-    # 버전이 바뀌어도 코드가 아니라 env만 바꾸면 되도록 base URL을 설정으로 뺐다.
+    # 공공데이터포털의 현행 국문 관광정보 GW는 KorService2를 사용한다.
+    # 제공기관이 다시 이전하더라도 base URL은 env로 조정할 수 있다.
     tour_api_base_url: str = os.getenv(
-        "TOUR_API_BASE_URL", "https://apis.data.go.kr/B551011/KorService1"
+        "TOUR_API_BASE_URL", "https://apis.data.go.kr/B551011/KorService2"
     )
     tour_api_timeout_seconds: float = float(os.getenv("TOUR_API_TIMEOUT_SECONDS", "5"))
+    pixabay_enabled: bool = os.getenv(
+        "PIXABAY_ENABLED", "false"
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    pixabay_api_key: str = os.getenv("PIXABAY_API_KEY", "")
+    pixabay_timeout_seconds: float = float(os.getenv("PIXABAY_TIMEOUT_SECONDS", "5"))
     oauth_state_cookie_name: str = os.getenv(
         "OAUTH_STATE_COOKIE_NAME", "travel_hunter_oauth_state"
     )

@@ -8,7 +8,7 @@ from sqlalchemy import Integer, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.base import Base
-from app.models import RegionPhoto
+from app.models import PolicyPhotoAssignment, RegionPhoto
 from app.repositories.region_photos import (
     get_region_photo,
     list_active_region_photos,
@@ -25,7 +25,10 @@ def session() -> Session:
     engine = create_engine("sqlite:///:memory:")
     id_column = RegionPhoto.__table__.c.id
     original_type = id_column.type
+    policy_photo_id_column = PolicyPhotoAssignment.__table__.c.id
+    policy_photo_original_type = policy_photo_id_column.type
     id_column.type = Integer()
+    policy_photo_id_column.type = Integer()
     try:
         Base.metadata.create_all(engine)
         TestingSessionLocal = sessionmaker(bind=engine)
@@ -34,6 +37,7 @@ def session() -> Session:
         Base.metadata.drop_all(engine)
     finally:
         id_column.type = original_type
+        policy_photo_id_column.type = policy_photo_original_type
 
 
 def add_photo(db: Session, **overrides: object) -> RegionPhoto:
@@ -89,6 +93,35 @@ def test_resolve_exact_city_hit(session: Session) -> None:
     assert resolved.attribution == "사진: 한국관광공사"
 
 
+def test_resolve_policy_assignment_before_region_fallback(session: Session) -> None:
+    add_photo(session)
+    session.add(
+        PolicyPhotoAssignment(
+            policy_id=42,
+            provider="tour_api",
+            provider_content_id="policy-specific",
+            image_url="https://tong.visitkorea.or.kr/cms/resource/policy.jpg",
+            thumbnail_url=None,
+            alt_text="Policy-specific landmark",
+            attribution_text="사진: 한국관광공사",
+            relevance_score=150,
+            assignment_reason="policy_keyword",
+            status="active",
+        )
+    )
+    session.commit()
+
+    index = build_region_photo_index(session)
+
+    assigned = index.resolve_policy(42, "전남", "해남")
+    fallback = index.resolve_policy(43, "전남", "해남")
+
+    assert assigned is not None
+    assert assigned.image_url.endswith("policy.jpg")
+    assert fallback is not None
+    assert fallback.image_url.endswith("haenam.jpg")
+
+
 def test_resolve_normalizes_city_suffix(session: Session) -> None:
     add_photo(session, city="영월", sido="강원",
               hero_image_url="https://tong.visitkorea.or.kr/yw.jpg")
@@ -139,3 +172,21 @@ def test_build_index_without_db_returns_empty_singleton() -> None:
 def test_build_index_degrades_to_empty_when_lookup_fails() -> None:
     # 사진은 장식 — 세션 이상/테이블 미생성이 정책 응답을 깨면 안 된다.
     assert build_region_photo_index(object()) is EMPTY_REGION_PHOTO_INDEX  # type: ignore[arg-type]
+
+
+def test_build_index_keeps_region_fallback_when_policy_table_is_unavailable(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services import region_photos as service
+
+    add_photo(session)
+    monkeypatch.setattr(
+        service,
+        "list_active_policy_photos",
+        lambda db: (_ for _ in ()).throw(RuntimeError("migration pending")),
+    )
+
+    resolved = build_region_photo_index(session).resolve("전남", "해남")
+
+    assert resolved is not None
+    assert resolved.image_url.endswith("haenam.jpg")

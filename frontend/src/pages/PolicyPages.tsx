@@ -680,6 +680,16 @@ export function PolicyListPage() {
     return sortPoliciesForList(filteredPolicies, selectedCategory === allFilter);
   }, [policies, selectedCategory, selectedRegion, selectedPeriod, selectedAmount, searchTerm, showSavedOnly, savedSlugs]);
 
+  const photoAttributions = useMemo(
+    () => Array.from(new Set(
+      visiblePolicies.flatMap((policy) => {
+        const photo = getPolicyPhoto(policy);
+        return photo?.attribution ? [photo.attribution] : [];
+      }),
+    )),
+    [visiblePolicies],
+  );
+
   const hasActiveFilters = activeFilterCount > 0;
 
   useEffect(() => {
@@ -792,9 +802,9 @@ export function PolicyListPage() {
           {visiblePolicies.map((policy) => (
             <PolicyListCard key={policy.id} policy={policy} isSaved={savedSlugs.has(policy.slug)} onToggleSave={handleToggleSave} />
           ))}
-          {visiblePolicies.some((policy) => Boolean(getPolicyPhoto(policy))) && (
-            <p className="policy-list-photo-credit">사진: 한국관광공사</p>
-          )}
+          {photoAttributions.map((attribution) => (
+            <p className="policy-list-photo-credit" key={attribution}>{attribution}</p>
+          ))}
         </div>
       )}
 

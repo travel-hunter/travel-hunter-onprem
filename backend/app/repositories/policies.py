@@ -19,6 +19,13 @@ def list_policies(db: Session) -> list[Policy]:
     return list(db.scalars(statement).all())
 
 
+def list_active_policies_for_photo_backfill(db: Session) -> list[Policy]:
+    """Return the minimal, stable policy set used by the photo backfill job."""
+
+    statement = select(Policy).where(_active_policy_clause()).order_by(Policy.id)
+    return list(db.scalars(statement).all())
+
+
 def get_policy_by_slug(db: Session, policy_slug: str) -> Policy | None:
     statement = (
         select(Policy)
