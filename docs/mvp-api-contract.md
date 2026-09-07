@@ -784,12 +784,20 @@ Account linking policy:
     "officialUrl": "https://example.com/official",
     "applyUrl": "https://example.com/apply",
     "sourceType": "internal",
-    "actionStatus": null
+    "actionStatus": null,
+    "photo": {
+      "imageUrl": "https://tong.visitkorea.or.kr/cms/resource/example.jpg",
+      "thumbnailUrl": "https://tong.visitkorea.or.kr/cms/resource/example_thumb.jpg",
+      "alt": "두륜산 케이블카",
+      "attribution": "사진: 한국관광공사"
+    }
   }
 ]
 ```
 
 `category` 허용 값: `"교통" | "숙박" | "여행상품" | "지역할인" | "이벤트" | "기타"`
+
+`photo`는 정책 지역 대표 관광지 사진이며 optional이다(`PolicyPhoto | null`). backend가 `region_photos` 조회 테이블에서 `(policies.region, policies.city)` → 시군구 사진 → 시도 대표 사진 순으로 해석해 내려주고, 해석 실패 시 `photo`는 `null`이며 frontend는 기존 그라디언트+이모지 시각을 그대로 사용한다. 사진 원천은 한국관광공사 TourAPI(공공누리 1유형)이고 `attribution`은 항상 비어 있지 않은 출처표시 문자열이다 — frontend는 사진을 렌더할 때 이 출처를 함께 표시해야 한다. `imageUrl`은 현재 원격(`tong.visitkorea.or.kr`) URL이며, 자체 보관(S3) 전환 시에도 이 DTO 모양은 바뀌지 않는다.
 `sourceType` 허용 값은 `"internal" | "external"`이며 API 호환과 내부 진단을 위해 유지한다. 사용자 화면은 `internal/external` 같은 구현 구분 문구를 노출하지 않는다. 사용자에게 노출되는 모든 정책은 정규화된 `policies` 레코드이므로 저장/일정 연결 동작을 동일하게 지원한다.
 
 `PolicyStructuredDetail` v1 섹션은 아래 다섯 배열만 표준으로 사용한다. 각 item은 화면 표시용 `title`/`label`, `description`/`value`, `amount`, `startDate`, `endDate`, 기간 의미를 나타내는 `type` 같은 문자열 필드를 느슨하게 담을 수 있다. 빈 배열은 허용하며 frontend는 빈 섹션을 숨긴다. 정책 대표 공식 안내/신청 링크는 top-level `officialUrl`/`applyUrl` CTA로 노출한다. 다만 디지털관광주민증처럼 본문 안의 개별 제휴처 상세로 직접 이동해야 하는 항목은 `structuredDetail.supportContent[*].url`에 HTTP(S) 링크를 담을 수 있다. 외부 수집 정책 상세에서 `structuredDetail`은 primary screen-ready contract다. frontend는 비어 있지 않은 `structuredDetail` 섹션을 그대로 우선 렌더링하고, 해당 섹션이 비어 있거나 누락된 경우에만 `summary`/`requirements`/`documents`/기간 값으로 section-by-section fallback을 수행한다. `requirements`는 legacy/simple fallback 재료이며, `structuredDetail.applicationTarget`이 하나라도 있으면 frontend는 `requirements`를 다시 분류하거나 조건·안내 섹션에 병합하지 않는다. 외부 source 의미 분류는 등록된 `sourceCategory` mapper만 수행하며, 미등록 source는 `contact_text`나 긴 원문을 조건으로 추측하지 않고 빈 조건으로 응답한다. `stay_discount` raw fallback은 공식 4단계 할인 조합, 필수 이용 근거, 시작·종료일이 모두 해석되는 발급·입실 기간이 완전할 때만 매핑한다. 표시용 `summary`/`amount`/`requirements`는 구조화된 지원 내용·신청 대상과 canonical 금액에서 파생하고, 불완전한 원문에는 하드코딩된 캠페인 문구를 보충하지 않는다.

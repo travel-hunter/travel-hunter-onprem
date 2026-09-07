@@ -2,7 +2,8 @@ import { Heart } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Policy, Trip } from "../api";
-import { getPolicyMoodIcon, getPolicyMoodTone, getTripRegionEmojiFromTitle } from "../data/displayConfig";
+import { getPolicyMoodIcon, getPolicyMoodTone, getPolicyPhoto, getTripRegionEmojiFromTitle } from "../data/displayConfig";
+import { PolicyThumbPhoto } from "./policyPhoto";
 import { formatPolicyDeadlineTag, formatPolicyPeriodSummary } from "../utils";
 import { canUsePolicyActions } from "../utils/policyCapabilities";
 import { SurfaceCard, Tag } from "./ui";
@@ -52,11 +53,18 @@ export function PolicyListCard({
   };
   const canSave = canUsePolicyActions(policy) && Boolean(onToggleSave);
   const periodSummary = compactPolicyPeriod(policy);
+  const photo = getPolicyPhoto(policy);
 
   return (
     <SurfaceCard as="article" className="policy-list-card">
       <Link className="policy-list-card-link" to={`/policies/${policy.slug}`}>
-        <div className={`policy-list-icon ${getPolicyMoodTone(policy)}`}>{getPolicyMoodIcon(policy)}</div>
+        <div className={`policy-list-icon policy-list-media ${getPolicyMoodTone(policy)}`}>
+          {photo ? (
+            <PolicyThumbPhoto fallback={getPolicyMoodIcon(policy)} photo={photo} />
+          ) : (
+            getPolicyMoodIcon(policy)
+          )}
+        </div>
         <div className="policy-list-copy">
           <div className="policy-list-badges">
             <span>{policy.amount}</span>

@@ -154,6 +154,12 @@ export function getPolicyVisual(policy: Pick<Policy, "slug"> & PolicyMoodSource)
   return { emoji, from: "#f2f7ff", to: "#b9d4ff" };
 }
 
+// 사진은 그라디언트를 대체하지 않고 위에 얹는 레이어다. 지금은 통과 함수지만
+// slug별 수동 오버라이드가 생기면 이 자리에서 갈아끼운다.
+export function getPolicyPhoto(policy: Pick<Policy, "photo">) {
+  return policy.photo ?? null;
+}
+
 export const tripCreateRegions = [
   "제주",
   "부산",

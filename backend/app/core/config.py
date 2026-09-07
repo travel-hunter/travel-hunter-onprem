@@ -119,6 +119,21 @@ class Settings:
     ).strip().lower() in {"1", "true", "yes", "on"}
     kakao_local_rest_api_key: str = os.getenv("KAKAO_LOCAL_REST_API_KEY", "")
     kakao_local_timeout_seconds: float = float(os.getenv("KAKAO_LOCAL_TIMEOUT_SECONDS", "5"))
+    tour_api_enabled: bool = os.getenv(
+        "TOUR_API_ENABLED", "false"
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    tour_api_service_key: str = os.getenv("TOUR_API_SERVICE_KEY", "")
+    # 공공데이터포털의 현행 국문 관광정보 GW는 KorService2를 사용한다.
+    # 제공기관이 다시 이전하더라도 base URL은 env로 조정할 수 있다.
+    tour_api_base_url: str = os.getenv(
+        "TOUR_API_BASE_URL", "https://apis.data.go.kr/B551011/KorService2"
+    )
+    tour_api_timeout_seconds: float = float(os.getenv("TOUR_API_TIMEOUT_SECONDS", "5"))
+    pixabay_enabled: bool = os.getenv(
+        "PIXABAY_ENABLED", "false"
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    pixabay_api_key: str = os.getenv("PIXABAY_API_KEY", "")
+    pixabay_timeout_seconds: float = float(os.getenv("PIXABAY_TIMEOUT_SECONDS", "5"))
     oauth_state_cookie_name: str = os.getenv(
         "OAUTH_STATE_COOKIE_NAME", "travel_hunter_oauth_state"
     )

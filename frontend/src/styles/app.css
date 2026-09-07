@@ -5517,23 +5517,43 @@
 
 .prototype-policy-list-screen .policy-list-card-link {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) 44px;
+  grid-template-columns: 148px minmax(0, 1fr) 44px;
   align-items: center;
   gap: 14px;
-  min-height: 118px;
-  padding: 16px;
+  min-height: 148px;
+  padding: 0 16px 0 0;
   color: inherit;
   text-decoration: none;
 }
 
 .prototype-policy-list-screen .policy-list-icon {
   display: grid;
-  width: 64px;
-  height: 64px;
+  width: 148px;
+  height: 148px;
   place-items: center;
   border-radius: 18px;
   font-size: 28px;
   line-height: 1;
+  overflow: hidden;
+}
+
+.prototype-policy-list-screen .policy-list-media {
+  border-radius: 18px 0 0 18px;
+}
+
+.prototype-policy-list-screen .policy-list-icon .policy-thumb-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+/* 공공누리 1유형 출처표시 — 사진이 1장이라도 렌더될 때 목록 하단에 1줄 */
+.prototype-policy-list-screen .policy-list-photo-credit {
+  margin: 4px 2px 0;
+  color: #8a8f9c;
+  font-size: 11px;
+  text-align: right;
 }
 
 .prototype-policy-list-screen .policy-list-icon.mint {
@@ -5648,17 +5668,21 @@
 
 @media (max-width: 520px) {
   .prototype-policy-list-screen .policy-list-card-link {
-    grid-template-columns: 54px minmax(0, 1fr) 40px;
+    grid-template-columns: 112px minmax(0, 1fr) 40px;
     gap: 12px;
-    min-height: 108px;
-    padding: 14px;
+    min-height: 112px;
+    padding: 0 14px 0 0;
   }
 
   .prototype-policy-list-screen .policy-list-icon {
-    width: 54px;
-    height: 54px;
+    width: 112px;
+    height: 112px;
     border-radius: 16px;
     font-size: 25px;
+  }
+
+  .prototype-policy-list-screen .policy-list-media {
+    border-radius: 16px 0 0 16px;
   }
 
   .prototype-policy-list-screen .policy-list-heart {
@@ -5687,6 +5711,30 @@
   justify-content: center;
   color: #1a1a2e;
   font-size: 88px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 지역 사진은 그라디언트 위에 얹는 레이어. 로드 실패 시 컴포넌트가 스스로 숨는다. */
+.prototype-policy-detail-screen .hero .policy-hero-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.prototype-policy-detail-screen .hero .policy-hero-credit {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  z-index: 2;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(20, 20, 34, 0.55);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .prototype-policy-detail-screen .overlay-nav {

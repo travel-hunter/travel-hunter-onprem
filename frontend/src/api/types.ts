@@ -53,6 +53,13 @@ export type PolicyStructuredDetail = {
   notes: PolicyStructuredDetailItem[];
 };
 
+export type PolicyPhoto = {
+  imageUrl: string;
+  thumbnailUrl?: string | null;
+  alt: string;
+  attribution: string;
+};
+
 export type Policy = {
   id: string;
   slug: string;
@@ -74,6 +81,7 @@ export type Policy = {
   applyUrl: string | null;
   sourceType?: "internal" | "external";
   actionStatus?: "infoOnly";
+  photo?: PolicyPhoto | null;
 };
 
 export type AppliedPolicyLinkedTrip = {

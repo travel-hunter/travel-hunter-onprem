@@ -188,6 +188,11 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 
 2026-07 first-pass cleanup은 schema 변경이 아니다. `benefit_amount`/`benefit_detail`, `target_condition`, `apply_url`/`official_url`, `source_type`, `source_canonical_key`, `status`의 의미를 helper와 문서로 정리했지만, `policies` 컬럼 drop/rename과 public `Policy` DTO 변경은 하지 않았다.
 
+지역 사진 관련 컬럼/테이블 (2026-09-07, `0036_region_photos`):
+
+- `policies.city`: 시군구 표시명(String(80), nullable). `external_source_records.city`를 승격 시 복사한다. 숙박세일 지역 alias 정책은 시도 단위 노출이므로 `NULL`로 명시 저장한다. 관리자 override/legacy dgtour 조기 반환 경로에서는 갱신하지 않으며, 그 경우 시도 대표 사진으로 폴백한다.
+- `region_photos`: 정책 카드 hero/썸네일용 지역 대표 관광지 사진 조회 테이블. `(provider, sido, city)` UNIQUE이며 `city`는 NOT NULL 기본 `''`(빈 문자열이 시도 대표 사진 sentinel — NULL이면 UNIQUE가 중복 upsert를 못 막는다). `sido`는 `policies.region`과 동일한 축약형(전남/경북)만 저장한다. `hero_image_url`/`thumb_image_url`/`provider_image_url`(원본 출처 보존), `storage_kind`(`remote`→S3 전환 시 `managed`), `attribution_text`(공공누리 1유형 출처표시, 기본 `사진: 한국관광공사`), `status`(`active`/`blocked` — 배포 없이 사진 차단), `fetched_at`(URL 부패 재검증 기준)을 담는다. 채움은 `backend/scripts/backfill_region_photos.py`(TourAPI, 키 없으면 no-op)가 담당한다.
+
 정책 상세 화면용 구조화 컬럼:
 
 - `structured_detail`: `supportContent`, `periods`, `applicationTarget`, `requiredDocuments`, `notes` 다섯 섹션을 담는 JSONB 정리본이다. raw 수집 JSON이 아니라 사용자 화면에서 바로 섹션 렌더링하기 위한 보조/장기 기준 데이터이며, 섹션이 없거나 비어 있으면 해당 섹션만 기존 `summary`/`requirements`/`documents` fallback을 사용한다. 공식 링크는 이 JSON에 중복 저장하지 않고 top-level `official_url`/`apply_url`에서 노출한다.

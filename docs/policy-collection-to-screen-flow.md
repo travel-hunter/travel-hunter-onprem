@@ -124,6 +124,14 @@ EXTERNAL_COLLECTION_POLL_SECONDS: "60"
 - CLI에서 1회 수집을 실행하는 경로다.
 - 내부적으로 live source collection service를 호출한다.
 
+### 4. 지역 사진 백필 (수집 후 별도 실행)
+
+파일: `backend/scripts/backfill_region_photos.py`
+
+- 정책 카드 hero/썸네일용 지역 대표 관광지 사진을 TourAPI(공공누리 1유형)에서 조회해 `region_photos` 테이블에 upsert한다. 수집/승격 경로에는 사진 호출이 없다 — TourAPI 장애가 수집 실패로 번지지 않게 하기 위해서다.
+- `TOUR_API_ENABLED=true` + `TOUR_API_SERVICE_KEY`가 없으면 `tour_api_disabled; no-op`을 출력하고 exit 0 한다.
+- 실행 순서: `python scripts/normalize_external_policies.py`(policies.city 채움) → `python scripts/backfill_region_photos.py`. 플래그: `--dry-run --limit N --refresh-older-than-days N --only-sido 전남`.
+
 ## source 수집 단계
 
 파일: `backend/app/services/external_benefit_collection.py`
