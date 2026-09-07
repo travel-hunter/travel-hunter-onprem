@@ -119,6 +119,16 @@ class Settings:
     ).strip().lower() in {"1", "true", "yes", "on"}
     kakao_local_rest_api_key: str = os.getenv("KAKAO_LOCAL_REST_API_KEY", "")
     kakao_local_timeout_seconds: float = float(os.getenv("KAKAO_LOCAL_TIMEOUT_SECONDS", "5"))
+    tour_api_enabled: bool = os.getenv(
+        "TOUR_API_ENABLED", "false"
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    tour_api_service_key: str = os.getenv("TOUR_API_SERVICE_KEY", "")
+    # 엔드포인트 버전(KorService1 vs _GW)은 키 발급 후 첫 실호출로 확정한다.
+    # 버전이 바뀌어도 코드가 아니라 env만 바꾸면 되도록 base URL을 설정으로 뺐다.
+    tour_api_base_url: str = os.getenv(
+        "TOUR_API_BASE_URL", "https://apis.data.go.kr/B551011/KorService1"
+    )
+    tour_api_timeout_seconds: float = float(os.getenv("TOUR_API_TIMEOUT_SECONDS", "5"))
     oauth_state_cookie_name: str = os.getenv(
         "OAUTH_STATE_COOKIE_NAME", "travel_hunter_oauth_state"
     )

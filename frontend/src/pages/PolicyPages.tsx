@@ -6,7 +6,8 @@ import { useAsyncResource } from "../api/useAsyncResource";
 import { useSession } from "../app/session";
 import { PolicyListCard } from "../components/cards";
 import { Button, EmptyState, ErrorState, IconButton, LinkButton, LoadingState, SurfaceCard, Tag, Toast } from "../components/ui";
-import { getDeadlinePolicies, getPolicyVisual } from "../data/displayConfig";
+import { getDeadlinePolicies, getPolicyPhoto, getPolicyVisual } from "../data/displayConfig";
+import { PolicyHeroPhoto } from "../components/policyPhoto";
 import { daysUntilPolicyDeadline, dday, formatPolicyDeadlineNotice, formatPolicyDeadlineTag, formatPolicyPeriodSummary, isDigitalTourismResidentCardPolicy, isSafePolicyDeadline } from "../utils";
 import { canUsePolicyActions } from "../utils/policyCapabilities";
 import { shareLinkWithFallback } from "../utils/share";
@@ -791,6 +792,9 @@ export function PolicyListPage() {
           {visiblePolicies.map((policy) => (
             <PolicyListCard key={policy.id} policy={policy} isSaved={savedSlugs.has(policy.slug)} onToggleSave={handleToggleSave} />
           ))}
+          {visiblePolicies.some((policy) => Boolean(getPolicyPhoto(policy))) && (
+            <p className="policy-list-photo-credit">사진: 한국관광공사</p>
+          )}
         </div>
       )}
 
@@ -1024,6 +1028,7 @@ export function PolicyDetailPage() {
 
   const applicationCta = getPolicyApplicationCta(policy);
   const visual = getPolicyVisual(policy);
+  const heroPhoto = getPolicyPhoto(policy);
   const structuredBenefitSections = getStructuredBenefitSections(policy);
   const structuredPeriodSections = getStructuredPeriodSections(policy);
   const structuredRequirementSections = getStructuredRequirementSections(policy);
@@ -1077,6 +1082,7 @@ export function PolicyDetailPage() {
   return (
     <section className="screen detail prototype-policy-detail-screen">
       <div className="hero" style={{ background: `linear-gradient(145deg, ${visual.from}, ${visual.to})` }}>
+        {heroPhoto && <PolicyHeroPhoto photo={heroPhoto} />}
         <div className="overlay-nav">
           <IconButton label="뒤로" onClick={() => navigate(-1)}>
             <ChevronLeft size={20} />
@@ -1097,7 +1103,7 @@ export function PolicyDetailPage() {
             </IconButton>
           </div>
         </div>
-        <div className="hero-label" aria-hidden="true">{visual.emoji}</div>
+        {!heroPhoto && <div className="hero-label" aria-hidden="true">{visual.emoji}</div>}
       </div>
 
       <div className="detail-body">

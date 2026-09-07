@@ -138,6 +138,17 @@ _AMBIGUOUS_POLICY_LOCALITY_SIDOS = {
 }
 
 
+def normalize_municipality_name(value: str | None) -> str | None:
+    """Public wrapper over the municipality suffix normalizer.
+
+    Region photo lookup and backfill must share the exact suffix rules used
+    for policy locality resolution, so expose the private helper instead of
+    duplicating the suffix table.
+    """
+
+    return _normalize_municipality(value)
+
+
 def make_policy_region_area_id(sido: str, city: str) -> str:
     return f"{POLICY_REGION_AREA_ID_PREFIX}{quote(sido.strip(), safe='')}:{quote(city.strip(), safe='')}"
 

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Qvb5y5cosfboD8EEsKeyvszr2H84OuyzEtqfkh0YDMtnzcJEWy42O5wdErSHbfY
+\restrict PcMyBnJ0vM5FzsCBhkHVINTl1a8p22d6bMzfeIQVkGiutsacrX58WRv6sWhn8rd
 
 -- Dumped from database version 16.14
 -- Dumped by pg_dump version 16.14
@@ -107,13 +107,12 @@ CREATE TABLE public.external_source_records (
     source_category character varying(80) NOT NULL,
     external_id character varying(160) NOT NULL,
     canonical_key character varying(160) NOT NULL,
-    logical_key character varying(200),
-    canonical_key_version character varying(30),
     detail_url character varying(500),
     collected_page_url character varying(500) NOT NULL,
     title character varying(300) NOT NULL,
     organizer_text character varying(300) NOT NULL,
     organizers jsonb NOT NULL,
+    region character varying(50),
     city character varying(80),
     is_nationwide boolean DEFAULT false NOT NULL,
     status_text character varying(50),
@@ -137,7 +136,9 @@ CREATE TABLE public.external_source_records (
     last_verified_at timestamp without time zone,
     freshness_status character varying(30) NOT NULL,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    logical_key character varying(200),
+    canonical_key_version character varying(30)
 );
 
 
@@ -309,6 +310,7 @@ CREATE SEQUENCE public.pending_social_signups_id_seq
 
 ALTER SEQUENCE public.pending_social_signups_id_seq OWNED BY public.pending_social_signups.id;
 
+
 --
 -- Name: policies; Type: TABLE; Schema: public; Owner: -
 --
@@ -344,6 +346,7 @@ CREATE TABLE public.policies (
     admin_override_enabled boolean DEFAULT false NOT NULL,
     updated_at timestamp without time zone DEFAULT now() NOT NULL,
     structured_detail jsonb,
+    city character varying(80),
     CONSTRAINT ck_policies_status_active_hidden CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'hidden'::character varying])::text[])))
 );
 
@@ -430,6 +433,48 @@ CREATE SEQUENCE public.recommendations_id_seq
 --
 
 ALTER SEQUENCE public.recommendations_id_seq OWNED BY public.recommendations.id;
+
+
+--
+-- Name: region_photos; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.region_photos (
+    id bigint NOT NULL,
+    provider character varying(30) NOT NULL,
+    sido character varying(50) NOT NULL,
+    city character varying(80) DEFAULT ''::character varying NOT NULL,
+    provider_content_id character varying(60),
+    content_title character varying(200),
+    hero_image_url character varying(500),
+    thumb_image_url character varying(500),
+    provider_image_url character varying(500),
+    storage_kind character varying(20) DEFAULT 'remote'::character varying NOT NULL,
+    attribution_text character varying(120) DEFAULT '사진: 한국관광공사'::character varying NOT NULL,
+    status character varying(20) DEFAULT 'active'::character varying NOT NULL,
+    fetched_at timestamp without time zone,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: region_photos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.region_photos_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: region_photos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.region_photos_id_seq OWNED BY public.region_photos.id;
 
 
 --
@@ -674,6 +719,7 @@ CREATE SEQUENCE public.trips_id_seq
 
 ALTER SEQUENCE public.trips_id_seq OWNED BY public.trips.id;
 
+
 --
 -- Name: user_saved_policies; Type: TABLE; Schema: public; Owner: -
 --
@@ -795,6 +841,7 @@ ALTER TABLE ONLY public.pending_signups ALTER COLUMN id SET DEFAULT nextval('pub
 
 ALTER TABLE ONLY public.pending_social_signups ALTER COLUMN id SET DEFAULT nextval('public.pending_social_signups_id_seq'::regclass);
 
+
 --
 -- Name: policies id; Type: DEFAULT; Schema: public; Owner: -
 --
@@ -814,6 +861,13 @@ ALTER TABLE ONLY public.policy_documents ALTER COLUMN id SET DEFAULT nextval('pu
 --
 
 ALTER TABLE ONLY public.recommendations ALTER COLUMN id SET DEFAULT nextval('public.recommendations_id_seq'::regclass);
+
+
+--
+-- Name: region_photos id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.region_photos ALTER COLUMN id SET DEFAULT nextval('public.region_photos_id_seq'::regclass);
 
 
 --
@@ -863,6 +917,7 @@ ALTER TABLE ONLY public.trip_policies ALTER COLUMN id SET DEFAULT nextval('publi
 --
 
 ALTER TABLE ONLY public.trips ALTER COLUMN id SET DEFAULT nextval('public.trips_id_seq'::regclass);
+
 
 --
 -- Name: user_saved_policies id; Type: DEFAULT; Schema: public; Owner: -
@@ -997,6 +1052,7 @@ ALTER TABLE ONLY public.pending_social_signups
 ALTER TABLE ONLY public.pending_social_signups
     ADD CONSTRAINT pending_social_signups_token_hash_key UNIQUE (token_hash);
 
+
 --
 -- Name: policies policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
@@ -1027,6 +1083,22 @@ ALTER TABLE ONLY public.policy_documents
 
 ALTER TABLE ONLY public.recommendations
     ADD CONSTRAINT recommendations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: region_photos region_photos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.region_photos
+    ADD CONSTRAINT region_photos_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: region_photos region_photos_provider_sido_city_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.region_photos
+    ADD CONSTRAINT region_photos_provider_sido_city_key UNIQUE (provider, sido, city);
 
 
 --
@@ -1131,6 +1203,7 @@ ALTER TABLE ONLY public.trip_policies
 
 ALTER TABLE ONLY public.trips
     ADD CONSTRAINT trips_pkey PRIMARY KEY (id);
+
 
 --
 -- Name: user_saved_policies user_saved_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -1241,12 +1314,12 @@ CREATE INDEX ix_external_source_records_end_date ON public.external_source_recor
 CREATE INDEX ix_external_source_records_external_id ON public.external_source_records USING btree (external_id);
 
 
-
 --
 -- Name: ix_external_source_records_logical_key; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_external_source_records_logical_key ON public.external_source_records USING btree (logical_key);
+
 
 --
 -- Name: ix_external_source_records_region; Type: INDEX; Schema: public; Owner: -
@@ -1291,13 +1364,6 @@ CREATE INDEX ix_notification_deliveries_user_id ON public.notification_deliverie
 
 
 --
--- Name: ix_users_withdrawn_email_hash; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_users_withdrawn_email_hash ON public.users USING btree (withdrawn_email_hash);
-
-
---
 -- Name: ix_password_reset_tokens_token_hash; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1330,6 +1396,7 @@ CREATE INDEX ix_pending_signups_token_hash ON public.pending_signups USING btree
 --
 
 CREATE INDEX ix_pending_social_signups_token_hash ON public.pending_social_signups USING btree (token_hash);
+
 
 --
 -- Name: ix_policies_external_source_record_id; Type: INDEX; Schema: public; Owner: -
@@ -1395,6 +1462,13 @@ CREATE INDEX ix_user_saved_policies_user_id ON public.user_saved_policies USING 
 
 
 --
+-- Name: ix_users_withdrawn_email_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_users_withdrawn_email_hash ON public.users USING btree (withdrawn_email_hash);
+
+
+--
 -- Name: admin_audit_logs admin_audit_logs_admin_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1440,6 +1514,7 @@ ALTER TABLE ONLY public.notification_deliveries
 
 ALTER TABLE ONLY public.password_reset_tokens
     ADD CONSTRAINT password_reset_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
 
 --
 -- Name: policy_documents policy_documents_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -1544,6 +1619,7 @@ ALTER TABLE ONLY public.trip_policies
 ALTER TABLE ONLY public.trips
     ADD CONSTRAINT trips_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id);
 
+
 --
 -- Name: user_saved_policies user_saved_policies_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
@@ -1564,4 +1640,4 @@ ALTER TABLE ONLY public.user_saved_policies
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Qvb5y5cosfboD8EEsKeyvszr2H84OuyzEtqfkh0YDMtnzcJEWy42O5wdErSHbfY
+\unrestrict PcMyBnJ0vM5FzsCBhkHVINTl1a8p22d6bMzfeIQVkGiutsacrX58WRv6sWhn8rd

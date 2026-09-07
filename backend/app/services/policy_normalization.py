@@ -283,6 +283,7 @@ def _assign_policy_from_external_record(
     policy.benefit_detail = benefit_detail
     policy.target_condition = semantic_mapping.target_condition
     policy.region = record.region or "전국"
+    policy.city = record.city
     representative_deadline = _representative_deadline_for_record(record)
     policy.start_date = representative_deadline.start_date
     policy.end_date = representative_deadline.deadline
@@ -347,6 +348,8 @@ def _assign_stay_discount_area_policy(
     policy.benefit_detail = benefit_detail
     policy.target_condition = semantic_mapping.target_condition
     policy.region = alias_area.sido
+    # alias 정책은 시도 단위 노출이다. Policy 행이 재사용되므로 명시적으로 지운다.
+    policy.city = None
     policy.start_date = representative_deadline.start_date
     policy.end_date = representative_deadline.deadline
     policy.official_url = _official_url_for_external_record(record)

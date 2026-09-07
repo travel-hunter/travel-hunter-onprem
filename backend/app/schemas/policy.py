@@ -16,6 +16,13 @@ class PolicyStructuredDetail(BaseModel):
     notes: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class PolicyPhoto(BaseModel):
+    imageUrl: str
+    thumbnailUrl: str | None = None
+    alt: str
+    attribution: str
+
+
 class Policy(BaseModel):
     id: str
     slug: str
@@ -37,6 +44,7 @@ class Policy(BaseModel):
     applyUrl: str | None = None
     sourceType: PolicySourceType = "internal"
     actionStatus: PolicyActionStatus | None = None
+    photo: PolicyPhoto | None = None
 
 
 class AppliedPolicyLinkedTrip(BaseModel):

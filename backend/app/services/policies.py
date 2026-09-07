@@ -27,6 +27,11 @@ from app.services.policy_periods import (
     representative_deadline_from_payload,
 )
 from app.services.policy_structured_detail import structured_detail_for_api
+from app.services.region_photos import (
+    EMPTY_REGION_PHOTO_INDEX,
+    RegionPhotoIndex,
+    build_region_photo_index,
+)
 from app.services.policy_semantic_mapping import map_external_source_semantics
 
 
@@ -67,7 +72,22 @@ def _requirements_for_projection(
     return requirement_items_for_policy(policy)
 
 
-def policy_to_api(policy: PolicyModel) -> dict[str, object]:
+def _attach_region_photo(
+    payload: dict[str, object],
+    photos: RegionPhotoIndex | None,
+    region: str | None,
+    city: str | None,
+) -> None:
+    resolved = (photos or EMPTY_REGION_PHOTO_INDEX).resolve(region, city)
+    if resolved is not None:
+        payload["photo"] = resolved.to_api()
+
+
+def policy_to_api(
+    policy: PolicyModel,
+    *,
+    photos: RegionPhotoIndex | None = None,
+) -> dict[str, object]:
     slug = policy.slug or str(policy.id)
     display = DISPLAY_OVERRIDES.get(slug, {})
     benefit_prefix = format_benefit_amount(policy.benefit_amount)
@@ -101,6 +121,7 @@ def policy_to_api(policy: PolicyModel) -> dict[str, object]:
         **policy_url_fields_for_policy(policy),
         "sourceType": source_type,
     }
+    _attach_region_photo(payload, photos, policy.region, policy.city)
     if (
         stay_discount_aliases.is_stay_discount_canonical_policy(policy)
         or stay_discount_aliases.is_stay_discount_area_policy(policy)
@@ -115,8 +136,10 @@ def policy_to_api(policy: PolicyModel) -> dict[str, object]:
 def _policy_to_stay_discount_alias_api(
     policy: PolicyModel,
     alias_area: stay_discount_aliases.StayDiscountAliasArea,
+    *,
+    photos: RegionPhotoIndex | None = None,
 ) -> dict[str, object]:
-    payload = policy_to_api(policy)
+    payload = policy_to_api(policy, photos=photos)
     payload.update(
         {
             "id": alias_area.slug,
@@ -128,6 +151,9 @@ def _policy_to_stay_discount_alias_api(
             "sourceType": "external",
         }
     )
+    # region을 alias sido로 덮어썼으므로 canonical 사진이 남지 않게 재계산한다.
+    payload.pop("photo", None)
+    _attach_region_photo(payload, photos, alias_area.sido, None)
     stay_discount_aliases.apply_alias_structured_detail(payload, alias_area)
     payload.pop("actionStatus", None)
     return payload
@@ -136,13 +162,18 @@ def _policy_to_stay_discount_alias_api(
 def _policy_detail_with_alias(
     policy: PolicyModel,
     alias_area: stay_discount_aliases.StayDiscountAliasArea,
+    *,
+    photos: RegionPhotoIndex | None = None,
 ) -> dict[str, object]:
-    payload = policy_to_api(policy)
+    payload = policy_to_api(policy, photos=photos)
     payload["id"] = alias_area.slug
     payload["slug"] = alias_area.slug
     payload["title"] = stay_discount_aliases.alias_title(policy.title, alias_area)
     payload["region"] = alias_area.sido
     payload["category"] = "숙박"
+    # region을 alias sido로 덮어썼으므로 canonical 사진이 남지 않게 재계산한다.
+    payload.pop("photo", None)
+    _attach_region_photo(payload, photos, alias_area.sido, None)
     stay_discount_aliases.apply_alias_structured_detail(payload, alias_area)
     payload.pop("actionStatus", None)
     return payload
@@ -165,6 +196,8 @@ def _external_policy_label(record: ExternalSourceRecord) -> str:
 
 def external_source_record_to_policy_api(
     record: ExternalSourceRecord,
+    *,
+    photos: RegionPhotoIndex | None = None,
 ) -> dict[str, object]:
     amount = record.benefit_value_text or record.benefit_text or "혜택 확인 필요"
     category = _external_policy_category(record)
@@ -233,6 +266,7 @@ def external_source_record_to_policy_api(
         ),
         "actionStatus": "infoOnly",
     }
+    _attach_region_photo(payload, photos, record.region, record.city)
     if record.source_category == stay_discount_aliases.SOURCE_CATEGORY:
         stay_discount_aliases.apply_detail_display_fields(payload)
     return payload
@@ -241,23 +275,28 @@ def external_source_record_to_policy_api(
 def list_policies(db: Session | None = None) -> list[dict[str, object]]:
     if db is None:
         raise RuntimeError("DB session is required.")
-    return [policy_to_api(policy) for policy in policy_repository.list_policies(db)]
+    photos = build_region_photo_index(db)
+    return [
+        policy_to_api(policy, photos=photos)
+        for policy in policy_repository.list_policies(db)
+    ]
 
 
 def get_policy(policy_slug: str, db: Session | None = None) -> dict[str, object] | None:
     if db is None:
         raise RuntimeError("DB session is required.")
 
+    photos = build_region_photo_index(db)
     policy = policy_repository.get_policy_by_slug_any_status(db, policy_slug)
     if policy is not None:
         if is_public_policy(policy):
-            return policy_to_api(policy)
+            return policy_to_api(policy, photos=photos)
         digital_alias_policy = digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(
             db,
             policy_slug,
         )
         if digital_alias_policy is not None and is_public_policy(digital_alias_policy):
-            return policy_to_api(digital_alias_policy)
+            return policy_to_api(digital_alias_policy, photos=photos)
         return None
 
     digital_alias_policy = digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(
@@ -267,7 +306,7 @@ def get_policy(policy_slug: str, db: Session | None = None) -> dict[str, object]
     if digital_alias_policy is not None:
         if not is_public_policy(digital_alias_policy):
             return None
-        return policy_to_api(digital_alias_policy)
+        return policy_to_api(digital_alias_policy, photos=photos)
 
     alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
     if alias_resolution is not None:
@@ -275,8 +314,10 @@ def get_policy(policy_slug: str, db: Session | None = None) -> dict[str, object]
         if not is_public_policy(policy):
             return None
         if alias_resolution.alias_area is None:
-            return policy_to_api(policy)
-        return _policy_detail_with_alias(policy, alias_resolution.alias_area)
+            return policy_to_api(policy, photos=photos)
+        return _policy_detail_with_alias(
+            policy, alias_resolution.alias_area, photos=photos
+        )
 
     external_record = external_source_repository.get_external_source_record_by_policy_slug(
         db,
@@ -284,7 +325,7 @@ def get_policy(policy_slug: str, db: Session | None = None) -> dict[str, object]
     )
     if external_record is None:
         return None
-    return external_source_record_to_policy_api(external_record)
+    return external_source_record_to_policy_api(external_record, photos=photos)
 
 
 def save_policy(
@@ -335,10 +376,11 @@ def list_saved_policies(
     if user is None:
         raise RuntimeError("User is required.")
 
+    photos = build_region_photo_index(db)
     seen_slugs: set[str] = set()
     saved_policies: list[dict[str, object]] = []
     for policy in policy_repository.list_saved_policies(db, user_id=user.id):
-        policy_payload = policy_to_api(policy)
+        policy_payload = policy_to_api(policy, photos=photos)
         slug = str(policy_payload["slug"])
         if slug in seen_slugs:
             continue
@@ -356,8 +398,9 @@ def list_applied_policies(
     if user is None:
         raise RuntimeError("User is required.")
 
+    photos = build_region_photo_index(db)
     return [
-        policy_to_api(policy)
+        policy_to_api(policy, photos=photos)
         for policy in policy_repository.list_applied_policies(db, user_id=user.id)
     ]
 
@@ -371,6 +414,7 @@ def list_applied_policy_links(
     if user is None:
         raise RuntimeError("User is required.")
 
+    photos = build_region_photo_index(db)
     grouped: dict[int, dict[str, object]] = {}
     for link in policy_repository.list_applied_policy_links(db, user_id=user.id):
         policy = link.policy
@@ -379,7 +423,7 @@ def list_applied_policy_links(
             continue
         if policy.id not in grouped:
             grouped[policy.id] = {
-                "policy": policy_to_api(policy),
+                "policy": policy_to_api(policy, photos=photos),
                 "linkedTrips": [],
             }
         linked_trips = grouped[policy.id]["linkedTrips"]

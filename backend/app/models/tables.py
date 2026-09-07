@@ -198,6 +198,7 @@ class Policy(Base):
     structured_detail: Mapped[dict[str, Any] | None] = mapped_column(postgres_json)
     target_condition: Mapped[str | None] = mapped_column(Text)
     region: Mapped[str] = mapped_column(String(50), nullable=False)
+    city: Mapped[str | None] = mapped_column(String(80))
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
     official_url: Mapped[str | None] = mapped_column(String(500))
@@ -317,6 +318,41 @@ class ExternalSourceRecord(Base):
     last_fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     last_verified_at: Mapped[datetime | None] = mapped_column(DateTime)
     freshness_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class RegionPhoto(Base):
+    __tablename__ = "region_photos"
+    __table_args__ = (
+        UniqueConstraint("provider", "sido", "city"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    # sido는 policies.region과 동일한 축약형(전남/경북)만 저장한다. 정식명 금지.
+    sido: Mapped[str] = mapped_column(String(50), nullable=False)
+    # ''는 시도 대표 사진 sentinel. NULL이면 UNIQUE가 중복 삽입을 못 막는다.
+    city: Mapped[str] = mapped_column(String(80), nullable=False, server_default="")
+    provider_content_id: Mapped[str | None] = mapped_column(String(60))
+    content_title: Mapped[str | None] = mapped_column(String(200))
+    hero_image_url: Mapped[str | None] = mapped_column(String(500))
+    thumb_image_url: Mapped[str | None] = mapped_column(String(500))
+    provider_image_url: Mapped[str | None] = mapped_column(String(500))
+    storage_kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="remote"
+    )
+    attribution_text: Mapped[str] = mapped_column(
+        String(120), nullable=False, server_default="사진: 한국관광공사"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="active"
+    )
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
