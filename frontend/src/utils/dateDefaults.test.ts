@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   addDaysToDateInput,
   getDefaultTripDateRange,
@@ -7,6 +7,25 @@ import {
 } from "./dateDefaults";
 
 describe("date defaults", () => {
+  it("does not rebuild an Intl formatter for repeated KST date calculations", () => {
+    const formatToPartsSpy = vi.spyOn(
+      Intl.DateTimeFormat.prototype,
+      "formatToParts",
+    );
+
+    try {
+      const now = new Date("2026-09-08T07:25:43.000Z");
+
+      for (let index = 0; index < 100; index += 1) {
+        expect(getKstDateInputValue(now)).toBe("2026-09-08");
+      }
+
+      expect(formatToPartsSpy).toHaveBeenCalledTimes(0);
+    } finally {
+      formatToPartsSpy.mockRestore();
+    }
+  });
+
   it("formats the current KST date for date inputs", () => {
     expect(getKstDateInputValue(new Date("2026-05-17T15:30:00.000Z"))).toBe("2026-05-18");
   });

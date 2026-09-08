@@ -66,12 +66,62 @@ import {
   resolveRaisedTimelineHeightLock,
   resolveTimelineHeightLock,
   resolveTimelineDropTarget,
+  PlaceEditorSheet,
   shouldForwardWindowWheelToAppScroll,
   shouldUseDayRowDragOverlay,
   shouldScheduleDaySwitch,
 } from "../../pages/itinerary/ItineraryDetailPage";
 
 describe("Travel Hunter app — trip detail & itinerary", () => {
+  it("keeps place search input responsive while deferring parent updates", async () => {
+    const onSearchChange = vi.fn();
+
+    try {
+      vi.useFakeTimers();
+      render(
+        <PlaceEditorSheet
+          batchRecovery={{ kind: "none" }}
+          dayNumber={1}
+          dayOptions={[]}
+          error=""
+          form={{ time: "", label: "", meta: "" }}
+          isLoadingSearch={false}
+          isSaving={false}
+          mode="add"
+          onChange={vi.fn()}
+          onClose={vi.fn()}
+          onDayChange={vi.fn()}
+          onDiscardDraft={vi.fn()}
+          onRemoveBasketItem={vi.fn()}
+          onRetryBasketDay={vi.fn()}
+          onSearchChange={onSearchChange}
+          onSelectSearchCandidate={vi.fn()}
+          onSelectedDayRef={vi.fn()}
+          onSubmit={vi.fn()}
+          placeBasket={[]}
+          preview={{ source: "empty", place: null }}
+          restoredDraftMessage=""
+          saveEligibility="empty"
+          searchCandidates={[]}
+          searchError=""
+          searchQuery=""
+        />,
+      );
+
+      const input = screen.getByLabelText("장소 검색");
+      fireEvent.change(input, { target: { value: "성산일출봉" } });
+
+      expect(input).toHaveValue("성산일출봉");
+      expect(onSearchChange).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(349);
+      expect(onSearchChange).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(onSearchChange).toHaveBeenCalledExactlyOnceWith("성산일출봉");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("forwards desktop window wheel only when the app container can scroll vertically", () => {
     const classList = { contains: vi.fn(() => false) };
     const appContainer = {
@@ -2386,9 +2436,11 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.type(screen.getByLabelText("장소 검색"), "등록되지 않은 장소");
 
       await waitFor(() =>
-        expect(searchTripPlacesSpy).toHaveBeenCalledWith("125", {
-          query: "등록되지 않은 장소",
-        }),
+        expect(searchTripPlacesSpy).toHaveBeenCalledWith(
+          "125",
+          { query: "등록되지 않은 장소" },
+          { signal: expect.any(AbortSignal) },
+        ),
       );
       expect(screen.queryByLabelText("장소명")).not.toBeInTheDocument();
     } finally {

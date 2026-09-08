@@ -1826,7 +1826,6 @@ export function ItineraryDetailPage() {
   });
   const placeEditorSessionRef = useRef(0);
   const placeSearchRequestRef = useRef(0);
-  const placeSearchDebounceTimerRef = useRef<number | null>(null);
   const placeSearchAbortControllerRef = useRef<AbortController | null>(null);
   const placeBasketIdRef = useRef(0);
   const placeDragAutoSwitchTimerRef = useRef<number | null>(null);
@@ -2938,12 +2937,13 @@ export function ItineraryDetailPage() {
   };
 
   const cancelPendingPlaceSearch = () => {
-    if (placeSearchDebounceTimerRef.current !== null) {
-      window.clearTimeout(placeSearchDebounceTimerRef.current);
-      placeSearchDebounceTimerRef.current = null;
-    }
     placeSearchAbortControllerRef.current?.abort();
     placeSearchAbortControllerRef.current = null;
+  };
+
+  const invalidatePlaceSearch = () => {
+    placeSearchRequestRef.current += 1;
+    cancelPendingPlaceSearch();
   };
 
   const openAddPlace = () => {
@@ -3080,9 +3080,8 @@ export function ItineraryDetailPage() {
         meta: trimmedQuery ? "" : (current.meta ?? ""),
       }));
     }
-    const requestId = placeSearchRequestRef.current + 1;
-    placeSearchRequestRef.current = requestId;
-    cancelPendingPlaceSearch();
+    invalidatePlaceSearch();
+    const requestId = placeSearchRequestRef.current;
     setIsLoadingPlaceSearch(false);
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {
@@ -3091,11 +3090,12 @@ export function ItineraryDetailPage() {
       return;
     }
     if (!trip) return;
-    const sessionId = placeEditorSessionRef.current;
-    placeSearchDebounceTimerRef.current = window.setTimeout(() => {
-      placeSearchDebounceTimerRef.current = null;
-      void loadPlaceSearchCandidates(trip.id, query, sessionId, requestId);
-    }, PLACE_SEARCH_DEBOUNCE_MS);
+    void loadPlaceSearchCandidates(
+      trip.id,
+      query,
+      placeEditorSessionRef.current,
+      requestId,
+    );
   };
 
   const selectPlaceSearchCandidate = (candidate: PlaceSearchCandidate) => {
@@ -4274,6 +4274,7 @@ export function ItineraryDetailPage() {
           }
           onSelectedDayRef={scrollSelectedDayIntoView}
           onDiscardDraft={discardPlaceDraft}
+          onSearchInput={invalidatePlaceSearch}
           onSearchChange={updatePlaceSearchQuery}
           onSelectSearchCandidate={selectPlaceSearchCandidate}
           onRemoveBasketItem={removePlaceBasketItem}
@@ -5421,7 +5422,7 @@ function useDragScroll(externalRef?: MutableRefObject<HTMLDivElement | null>) {
   return { ref, onPointerDown, onClickCapture };
 }
 
-function PlaceEditorSheet({
+export function PlaceEditorSheet({
   batchRecovery,
   dayNumber,
   dayOptions,
@@ -5437,6 +5438,7 @@ function PlaceEditorSheet({
   onDiscardDraft,
   onRemoveBasketItem,
   onRetryBasketDay,
+  onSearchInput,
   onSearchChange,
   onSelectSearchCandidate,
   onSubmit,
@@ -5463,6 +5465,7 @@ function PlaceEditorSheet({
   onDiscardDraft: () => void;
   onRemoveBasketItem: (basketId: string) => void;
   onRetryBasketDay: (dayNumber: number) => void;
+  onSearchInput?: () => void;
   onSearchChange: (query: string) => void;
   onSelectSearchCandidate: (candidate: PlaceSearchCandidate) => void;
   onSubmit: () => void;
@@ -5475,7 +5478,34 @@ function PlaceEditorSheet({
   restoredDraftMessage: string;
 }) {
   const dayDragScroll = useDragScroll();
+  const [inputSearchQuery, setInputSearchQuery] = useState(searchQuery);
+  const searchDebounceTimerRef = useRef<number | null>(null);
   const hasPlaceBasket = mode === "add" && placeBasket.length > 0;
+
+  useEffect(() => {
+    if (searchDebounceTimerRef.current === null)
+      setInputSearchQuery(searchQuery);
+  }, [searchQuery]);
+
+  useEffect(
+    () => () => {
+      if (searchDebounceTimerRef.current !== null)
+        window.clearTimeout(searchDebounceTimerRef.current);
+    },
+    [],
+  );
+
+  const updateInputSearchQuery = (query: string) => {
+    setInputSearchQuery(query);
+    onSearchInput?.();
+    if (searchDebounceTimerRef.current !== null)
+      window.clearTimeout(searchDebounceTimerRef.current);
+    searchDebounceTimerRef.current = window.setTimeout(() => {
+      searchDebounceTimerRef.current = null;
+      onSearchChange(query);
+    }, PLACE_SEARCH_DEBOUNCE_MS);
+  };
+
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
       <section
@@ -5519,8 +5549,8 @@ function PlaceEditorSheet({
                 <input
                   name="place-search"
                   placeholder="장소명이나 주소 검색"
-                  value={searchQuery}
-                  onChange={(event) => onSearchChange(event.target.value)}
+                  value={inputSearchQuery}
+                  onChange={(event) => updateInputSearchQuery(event.target.value)}
                 />
               </label>
               {isLoadingSearch && (
