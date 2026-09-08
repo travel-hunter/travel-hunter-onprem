@@ -174,6 +174,10 @@ export type TripPlaceSearchOptions = {
   query: string;
 };
 
+export type ApiRequestControl = {
+  signal?: AbortSignal;
+};
+
 export type TripPlaceRequest = {
   time?: string;
   label: string;
@@ -271,7 +275,11 @@ export type AppDataApi = {
   addPolicyToTrip: (tripId: string, policySlug: string) => Promise<TripPolicyResponse>;
   removePolicyFromTrip: (tripId: string, policySlug: string) => Promise<TripPolicyResponse>;
   listRecommendations: (tripId: string) => Promise<Recommendation[]>;
-  searchTripPlaces: (tripId: string, options: TripPlaceSearchOptions) => Promise<PlaceSearchCandidate[]>;
+  searchTripPlaces: (
+    tripId: string,
+    options: TripPlaceSearchOptions,
+    control?: ApiRequestControl,
+  ) => Promise<PlaceSearchCandidate[]>;
   getInviteState: (tripId: string) => Promise<InviteState>;
   confirmInviteSent: (tripId: string) => Promise<InviteState>;
   sendInviteEmail: (tripId: string, request: SendInviteEmailRequest) => Promise<InviteEmailResult>;

@@ -714,6 +714,7 @@ export function resolveRaisedTimelineHeightLock(
 
 /** dnd-kit 자동 스크롤이 발동하는 가장자리 폭. 컨테이너 높이 대비 비율이다. */
 export const PLACE_DRAG_AUTO_SCROLL_THRESHOLD = 0.2;
+const PLACE_SEARCH_DEBOUNCE_MS = 350;
 
 
 /**
@@ -1825,6 +1826,7 @@ export function ItineraryDetailPage() {
   });
   const placeEditorSessionRef = useRef(0);
   const placeSearchRequestRef = useRef(0);
+  const placeSearchAbortControllerRef = useRef<AbortController | null>(null);
   const placeBasketIdRef = useRef(0);
   const placeDragAutoSwitchTimerRef = useRef<number | null>(null);
   const dayTabsRef = useRef<HTMLDivElement | null>(null);
@@ -2934,11 +2936,22 @@ export function ItineraryDetailPage() {
     }));
   };
 
+  const cancelPendingPlaceSearch = () => {
+    placeSearchAbortControllerRef.current?.abort();
+    placeSearchAbortControllerRef.current = null;
+  };
+
+  const invalidatePlaceSearch = () => {
+    placeSearchRequestRef.current += 1;
+    cancelPendingPlaceSearch();
+  };
+
   const openAddPlace = () => {
     if (!canEditTrip) {
       showEditPermissionRequired();
       return;
     }
+    cancelPendingPlaceSearch();
     placeEditorSessionRef.current += 1;
     placeSearchRequestRef.current = 0;
     setPlaceSearchQuery("");
@@ -2965,6 +2978,7 @@ export function ItineraryDetailPage() {
             tripPlaceEditDraftKey(trip.id, place.id),
           )
         : null;
+    cancelPendingPlaceSearch();
     placeEditorSessionRef.current += 1;
     setPlaceSearchQuery("");
     setPlaceSearchError("");
@@ -3000,12 +3014,17 @@ export function ItineraryDetailPage() {
       }
       return;
     }
+    const controller = new AbortController();
+    placeSearchAbortControllerRef.current?.abort();
+    placeSearchAbortControllerRef.current = controller;
     setIsLoadingPlaceSearch(true);
     setPlaceSearchError("");
     try {
-      const candidates = await appDataApi.searchTripPlaces(nextTripId, {
-        query: trimmedQuery,
-      });
+      const candidates = await appDataApi.searchTripPlaces(
+        nextTripId,
+        { query: trimmedQuery },
+        { signal: controller.signal },
+      );
       if (
         placeEditorSessionRef.current !== sessionId ||
         placeSearchRequestRef.current !== requestId
@@ -3025,6 +3044,7 @@ export function ItineraryDetailPage() {
         setPlaceSaveEligibility("empty");
       }
     } catch {
+      if (controller.signal.aborted) return;
       if (
         placeEditorSessionRef.current !== sessionId ||
         placeSearchRequestRef.current !== requestId
@@ -3036,6 +3056,8 @@ export function ItineraryDetailPage() {
       );
       if (placeEditor?.mode === "add") setPlaceSaveEligibility("empty");
     } finally {
+      if (placeSearchAbortControllerRef.current === controller)
+        placeSearchAbortControllerRef.current = null;
       if (
         placeEditorSessionRef.current === sessionId &&
         placeSearchRequestRef.current === requestId
@@ -3058,15 +3080,22 @@ export function ItineraryDetailPage() {
         meta: trimmedQuery ? "" : (current.meta ?? ""),
       }));
     }
-    const requestId = placeSearchRequestRef.current + 1;
-    placeSearchRequestRef.current = requestId;
-    if (trip)
-      void loadPlaceSearchCandidates(
-        trip.id,
-        query,
-        placeEditorSessionRef.current,
-        requestId,
-      );
+    invalidatePlaceSearch();
+    const requestId = placeSearchRequestRef.current;
+    setIsLoadingPlaceSearch(false);
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      setPlaceSearchCandidates([]);
+      setPlaceSearchError("");
+      return;
+    }
+    if (!trip) return;
+    void loadPlaceSearchCandidates(
+      trip.id,
+      query,
+      placeEditorSessionRef.current,
+      requestId,
+    );
   };
 
   const selectPlaceSearchCandidate = (candidate: PlaceSearchCandidate) => {
@@ -3089,6 +3118,7 @@ export function ItineraryDetailPage() {
           "",
         ),
       });
+      cancelPendingPlaceSearch();
       placeSearchRequestRef.current += 1;
       setPlaceSearchQuery("");
       setPlaceSearchCandidates([]);
@@ -3674,6 +3704,7 @@ export function ItineraryDetailPage() {
     if (isSavingPlace) return;
     if (trip && placeEditor?.mode === "edit" && placeEditor.place.id)
       clearDraft(tripPlaceEditDraftKey(trip.id, placeEditor.place.id));
+    cancelPendingPlaceSearch();
     placeEditorSessionRef.current += 1;
     setPlaceDraftNotice("");
     setPlaceSearchCandidates([]);
@@ -4243,6 +4274,7 @@ export function ItineraryDetailPage() {
           }
           onSelectedDayRef={scrollSelectedDayIntoView}
           onDiscardDraft={discardPlaceDraft}
+          onSearchInput={invalidatePlaceSearch}
           onSearchChange={updatePlaceSearchQuery}
           onSelectSearchCandidate={selectPlaceSearchCandidate}
           onRemoveBasketItem={removePlaceBasketItem}
@@ -5390,7 +5422,7 @@ function useDragScroll(externalRef?: MutableRefObject<HTMLDivElement | null>) {
   return { ref, onPointerDown, onClickCapture };
 }
 
-function PlaceEditorSheet({
+export function PlaceEditorSheet({
   batchRecovery,
   dayNumber,
   dayOptions,
@@ -5406,6 +5438,7 @@ function PlaceEditorSheet({
   onDiscardDraft,
   onRemoveBasketItem,
   onRetryBasketDay,
+  onSearchInput,
   onSearchChange,
   onSelectSearchCandidate,
   onSubmit,
@@ -5432,6 +5465,7 @@ function PlaceEditorSheet({
   onDiscardDraft: () => void;
   onRemoveBasketItem: (basketId: string) => void;
   onRetryBasketDay: (dayNumber: number) => void;
+  onSearchInput?: () => void;
   onSearchChange: (query: string) => void;
   onSelectSearchCandidate: (candidate: PlaceSearchCandidate) => void;
   onSubmit: () => void;
@@ -5444,7 +5478,34 @@ function PlaceEditorSheet({
   restoredDraftMessage: string;
 }) {
   const dayDragScroll = useDragScroll();
+  const [inputSearchQuery, setInputSearchQuery] = useState(searchQuery);
+  const searchDebounceTimerRef = useRef<number | null>(null);
   const hasPlaceBasket = mode === "add" && placeBasket.length > 0;
+
+  useEffect(() => {
+    if (searchDebounceTimerRef.current === null)
+      setInputSearchQuery(searchQuery);
+  }, [searchQuery]);
+
+  useEffect(
+    () => () => {
+      if (searchDebounceTimerRef.current !== null)
+        window.clearTimeout(searchDebounceTimerRef.current);
+    },
+    [],
+  );
+
+  const updateInputSearchQuery = (query: string) => {
+    setInputSearchQuery(query);
+    onSearchInput?.();
+    if (searchDebounceTimerRef.current !== null)
+      window.clearTimeout(searchDebounceTimerRef.current);
+    searchDebounceTimerRef.current = window.setTimeout(() => {
+      searchDebounceTimerRef.current = null;
+      onSearchChange(query);
+    }, PLACE_SEARCH_DEBOUNCE_MS);
+  };
+
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
       <section
@@ -5488,8 +5549,8 @@ function PlaceEditorSheet({
                 <input
                   name="place-search"
                   placeholder="장소명이나 주소 검색"
-                  value={searchQuery}
-                  onChange={(event) => onSearchChange(event.target.value)}
+                  value={inputSearchQuery}
+                  onChange={(event) => updateInputSearchQuery(event.target.value)}
                 />
               </label>
               {isLoadingSearch && (

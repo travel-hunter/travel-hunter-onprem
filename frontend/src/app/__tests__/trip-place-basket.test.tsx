@@ -73,7 +73,11 @@ describe("Travel Hunter app trip place basket", () => {
 
       fireEvent.change(searchInput, { target: { value: "cafe" } });
       await waitFor(() =>
-        expect(searchSpy).toHaveBeenLastCalledWith("92", { query: "cafe" }),
+        expect(searchSpy).toHaveBeenLastCalledWith(
+          "92",
+          { query: "cafe" },
+          { signal: expect.any(AbortSignal) },
+        ),
       );
       await user.click(
         await within(dialog).findByRole("button", { name: /Basket cafe/ }),
@@ -82,7 +86,11 @@ describe("Travel Hunter app trip place basket", () => {
 
       fireEvent.change(searchInput, { target: { value: "museum" } });
       await waitFor(() =>
-        expect(searchSpy).toHaveBeenLastCalledWith("92", { query: "museum" }),
+        expect(searchSpy).toHaveBeenLastCalledWith(
+          "92",
+          { query: "museum" },
+          { signal: expect.any(AbortSignal) },
+        ),
       );
       await user.click(
         await within(dialog).findByRole("button", { name: /Basket museum/ }),

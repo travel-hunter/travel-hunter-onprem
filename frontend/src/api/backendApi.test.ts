@@ -117,6 +117,31 @@ describe("backendApi trip mutation methods", () => {
     );
   });
 
+  it("forwards an abort signal for trip place search", async () => {
+    const controller = new AbortController();
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await backendApi.searchTripPlaces(
+      "7",
+      { query: "성산일출봉" },
+      { signal: controller.signal },
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/trips/7/place-search?query=%EC%84%B1%EC%82%B0%EC%9D%BC%EC%B6%9C%EB%B4%89`,
+      expect.objectContaining({
+        credentials: "include",
+        signal: controller.signal,
+      }),
+    );
+  });
+
   it("patches trip settings through the contract endpoint", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(tripResponse), {

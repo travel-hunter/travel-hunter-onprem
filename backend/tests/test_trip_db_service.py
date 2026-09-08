@@ -131,8 +131,16 @@ def test_search_places_for_trip_maps_kakao_candidates(monkeypatch) -> None:
             ]
 
     user = make_user()
-    trip = make_trip()
-    monkeypatch.setattr(trip_service, "_resolve_required_trip", lambda db, trip_handle, current_user: trip)
+    def reject_graph_load(*_args, **_kwargs):
+        pytest.fail("place search must not load the complete trip graph")
+
+    monkeypatch.setattr(trip_service, "_resolve_required_trip", reject_graph_load)
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "has_trip_access",
+        lambda db, trip_id, user_id: True,
+        raising=False,
+    )
     monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: FakeSearchProvider())
 
     candidates = trip_service.search_places_for_trip(
