@@ -1,6 +1,7 @@
 import { apiClient, apiConfig } from "./client";
 import type { ProfileSkipResponse } from "./types";
 import {
+  ApiRequestControl,
   AppDataApi,
   AuthResponse,
   ChangePasswordRequest,
@@ -161,8 +162,15 @@ export const backendApi: AppDataApi = {
   addPolicyToTrip: (tripId: string, policySlug: string): Promise<TripPolicyResponse> => apiClient.post<TripPolicyResponse>(`/api/trips/${tripId}/policies/${policySlug}`),
   removePolicyFromTrip: (tripId: string, policySlug: string): Promise<TripPolicyResponse> => apiClient.delete<TripPolicyResponse>(`/api/trips/${tripId}/policies/${policySlug}`),
   listRecommendations: (tripId: string): Promise<Recommendation[]> => apiClient.get<Recommendation[]>(`/api/trips/${tripId}/recommendations`),
-  searchTripPlaces: (tripId: string, options: TripPlaceSearchOptions): Promise<PlaceSearchCandidate[]> =>
-    apiClient.get<PlaceSearchCandidate[]>(`/api/trips/${tripId}/place-search${queryString(options)}`),
+  searchTripPlaces: (
+    tripId: string,
+    options: TripPlaceSearchOptions,
+    control?: ApiRequestControl,
+  ): Promise<PlaceSearchCandidate[]> =>
+    apiClient.get<PlaceSearchCandidate[]>(
+      `/api/trips/${tripId}/place-search${queryString(options)}`,
+      { signal: control?.signal },
+    ),
   getInviteState: (tripId: string): Promise<InviteState> => apiClient.get<InviteState>(`/api/trips/${tripId}/invite`),
   confirmInviteSent: (tripId: string): Promise<InviteState> => apiClient.post<InviteState>(`/api/trips/${tripId}/invite`),
   sendInviteEmail: (tripId: string, request: SendInviteEmailRequest): Promise<InviteEmailResult> => apiClient.post<InviteEmailResult>(`/api/trips/${tripId}/invite/email`, request),
