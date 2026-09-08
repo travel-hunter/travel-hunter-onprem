@@ -714,6 +714,7 @@ export function resolveRaisedTimelineHeightLock(
 
 /** dnd-kit 자동 스크롤이 발동하는 가장자리 폭. 컨테이너 높이 대비 비율이다. */
 export const PLACE_DRAG_AUTO_SCROLL_THRESHOLD = 0.2;
+const PLACE_SEARCH_DEBOUNCE_MS = 350;
 
 
 /**
@@ -1825,6 +1826,8 @@ export function ItineraryDetailPage() {
   });
   const placeEditorSessionRef = useRef(0);
   const placeSearchRequestRef = useRef(0);
+  const placeSearchDebounceTimerRef = useRef<number | null>(null);
+  const placeSearchAbortControllerRef = useRef<AbortController | null>(null);
   const placeBasketIdRef = useRef(0);
   const placeDragAutoSwitchTimerRef = useRef<number | null>(null);
   const dayTabsRef = useRef<HTMLDivElement | null>(null);
@@ -2934,11 +2937,21 @@ export function ItineraryDetailPage() {
     }));
   };
 
+  const cancelPendingPlaceSearch = () => {
+    if (placeSearchDebounceTimerRef.current !== null) {
+      window.clearTimeout(placeSearchDebounceTimerRef.current);
+      placeSearchDebounceTimerRef.current = null;
+    }
+    placeSearchAbortControllerRef.current?.abort();
+    placeSearchAbortControllerRef.current = null;
+  };
+
   const openAddPlace = () => {
     if (!canEditTrip) {
       showEditPermissionRequired();
       return;
     }
+    cancelPendingPlaceSearch();
     placeEditorSessionRef.current += 1;
     placeSearchRequestRef.current = 0;
     setPlaceSearchQuery("");
@@ -2965,6 +2978,7 @@ export function ItineraryDetailPage() {
             tripPlaceEditDraftKey(trip.id, place.id),
           )
         : null;
+    cancelPendingPlaceSearch();
     placeEditorSessionRef.current += 1;
     setPlaceSearchQuery("");
     setPlaceSearchError("");
@@ -3000,12 +3014,17 @@ export function ItineraryDetailPage() {
       }
       return;
     }
+    const controller = new AbortController();
+    placeSearchAbortControllerRef.current?.abort();
+    placeSearchAbortControllerRef.current = controller;
     setIsLoadingPlaceSearch(true);
     setPlaceSearchError("");
     try {
-      const candidates = await appDataApi.searchTripPlaces(nextTripId, {
-        query: trimmedQuery,
-      });
+      const candidates = await appDataApi.searchTripPlaces(
+        nextTripId,
+        { query: trimmedQuery },
+        { signal: controller.signal },
+      );
       if (
         placeEditorSessionRef.current !== sessionId ||
         placeSearchRequestRef.current !== requestId
@@ -3025,6 +3044,7 @@ export function ItineraryDetailPage() {
         setPlaceSaveEligibility("empty");
       }
     } catch {
+      if (controller.signal.aborted) return;
       if (
         placeEditorSessionRef.current !== sessionId ||
         placeSearchRequestRef.current !== requestId
@@ -3036,6 +3056,8 @@ export function ItineraryDetailPage() {
       );
       if (placeEditor?.mode === "add") setPlaceSaveEligibility("empty");
     } finally {
+      if (placeSearchAbortControllerRef.current === controller)
+        placeSearchAbortControllerRef.current = null;
       if (
         placeEditorSessionRef.current === sessionId &&
         placeSearchRequestRef.current === requestId
@@ -3060,13 +3082,20 @@ export function ItineraryDetailPage() {
     }
     const requestId = placeSearchRequestRef.current + 1;
     placeSearchRequestRef.current = requestId;
-    if (trip)
-      void loadPlaceSearchCandidates(
-        trip.id,
-        query,
-        placeEditorSessionRef.current,
-        requestId,
-      );
+    cancelPendingPlaceSearch();
+    setIsLoadingPlaceSearch(false);
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      setPlaceSearchCandidates([]);
+      setPlaceSearchError("");
+      return;
+    }
+    if (!trip) return;
+    const sessionId = placeEditorSessionRef.current;
+    placeSearchDebounceTimerRef.current = window.setTimeout(() => {
+      placeSearchDebounceTimerRef.current = null;
+      void loadPlaceSearchCandidates(trip.id, query, sessionId, requestId);
+    }, PLACE_SEARCH_DEBOUNCE_MS);
   };
 
   const selectPlaceSearchCandidate = (candidate: PlaceSearchCandidate) => {
@@ -3089,6 +3118,7 @@ export function ItineraryDetailPage() {
           "",
         ),
       });
+      cancelPendingPlaceSearch();
       placeSearchRequestRef.current += 1;
       setPlaceSearchQuery("");
       setPlaceSearchCandidates([]);
@@ -3674,6 +3704,7 @@ export function ItineraryDetailPage() {
     if (isSavingPlace) return;
     if (trip && placeEditor?.mode === "edit" && placeEditor.place.id)
       clearDraft(tripPlaceEditDraftKey(trip.id, placeEditor.place.id));
+    cancelPendingPlaceSearch();
     placeEditorSessionRef.current += 1;
     setPlaceDraftNotice("");
     setPlaceSearchCandidates([]);

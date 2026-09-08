@@ -2397,6 +2397,98 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
+  it("debounces a rapid place search to one final request", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "126",
+      title: "장소 검색 디바운스 여행",
+      days: { 1: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockResolvedValue([]);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/126");
+      await screen.findByRole("button", { name: /장소 추가/ });
+      await userEvent.click(screen.getByRole("button", { name: /장소 추가/ }));
+
+      vi.useFakeTimers();
+      const searchInput = screen.getByLabelText("장소 검색");
+      fireEvent.change(searchInput, { target: { value: "성" } });
+      fireEvent.change(searchInput, { target: { value: "성산" } });
+      fireEvent.change(searchInput, { target: { value: "성산일" } });
+      fireEvent.change(searchInput, { target: { value: "성산일출" } });
+      fireEvent.change(searchInput, { target: { value: "성산일출봉" } });
+
+      expect(searchTripPlacesSpy).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(349);
+      expect(searchTripPlacesSpy).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(searchTripPlacesSpy).toHaveBeenCalledTimes(1);
+      expect(searchTripPlacesSpy).toHaveBeenLastCalledWith(
+        "126",
+        { query: "성산일출봉" },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    } finally {
+      vi.useRealTimers();
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+    }
+  });
+
+  it("aborts an in-flight place search when the query changes", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "127",
+      title: "장소 검색 취소 여행",
+      days: { 1: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    let firstSignal: AbortSignal | undefined;
+    const searchTripPlacesSpy = vi
+      .spyOn(appDataApi, "searchTripPlaces")
+      .mockImplementation((_tripId, _options, control) => {
+        firstSignal = control?.signal;
+        return new Promise((_, reject) => {
+          control?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        });
+      });
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/127");
+      await screen.findByRole("button", { name: /장소 추가/ });
+      await userEvent.click(screen.getByRole("button", { name: /장소 추가/ }));
+
+      vi.useFakeTimers();
+      const searchInput = screen.getByLabelText("장소 검색");
+      fireEvent.change(searchInput, { target: { value: "성산" } });
+      await vi.advanceTimersByTimeAsync(350);
+      expect(firstSignal?.aborted).toBe(false);
+
+      fireEvent.change(searchInput, { target: { value: "동문시장" } });
+      expect(firstSignal?.aborted).toBe(true);
+      expect(
+        screen.queryByText("장소 검색 결과를 불러오지 못했어요. 잠시 후 다시 시도해 주세요."),
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+      getTripSpy.mockRestore();
+      searchTripPlacesSpy.mockRestore();
+    }
+  });
+
   it("keeps selected place search candidates in an add-sheet place basket", async () => {
     const trip: Trip = {
       ...getPreviewTrip(),

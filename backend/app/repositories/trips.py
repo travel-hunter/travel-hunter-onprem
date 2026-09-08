@@ -52,6 +52,15 @@ def get_accessible_trip_by_id(db: Session, trip_id: int, user_id: int) -> Trip |
     return db.scalar(statement)
 
 
+def has_trip_access(db: Session, trip_id: int, user_id: int) -> bool:
+    statement = (
+        select(Trip.id)
+        .where(Trip.id == trip_id)
+        .where(_accessible_trip_filter(user_id))
+    )
+    return db.scalar(statement) is not None
+
+
 def get_owned_trip_by_id(db: Session, trip_id: int, user_id: int) -> Trip | None:
     statement = select(Trip).where(Trip.id == trip_id, Trip.owner_id == user_id)
     return db.scalar(statement)

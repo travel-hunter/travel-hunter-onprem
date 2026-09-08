@@ -1470,8 +1470,12 @@ def search_places_for_trip(
     trip_handle: str,
     query: str,
 ) -> list[dict[str, object]]:
-    trip = _resolve_required_trip(db, trip_handle, user)
-    del trip
+    if not NUMERIC_TRIP_ID_PATTERN.fullmatch(trip_handle) or not trip_repository.has_trip_access(
+        db,
+        int(trip_handle),
+        user.id,
+    ):
+        raise TripServiceError(404, "Trip not found")
     trimmed_query = query.strip()
     if not trimmed_query:
         return []
