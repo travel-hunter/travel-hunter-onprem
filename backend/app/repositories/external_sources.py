@@ -12,6 +12,7 @@ from app.data.stay_discount_campaign import (
     select_current_stay_discount_record,
 )
 from app.models import ExternalSourceRecord
+from app.models.policy_status import is_policy_deadline_current, policy_visibility_date
 from app.schemas.external_sources import ExternalBenefitSource
 
 
@@ -103,33 +104,48 @@ def list_external_source_records(
 
 def list_regional_benefit_recommendation_records(
     db: Session,
+    *,
+    today: date | None = None,
 ) -> list[ExternalSourceRecord]:
     statement = (
         select(ExternalSourceRecord)
         .where(ExternalSourceRecord.source_category.in_(RECOMMENDATION_SOURCE_CATEGORIES))
         .where(ExternalSourceRecord.status == "active")
         .where(ExternalSourceRecord.freshness_status == "fresh")
+        .where(_policy_deadline_condition(today))
         .order_by(ExternalSourceRecord.id)
     )
     records = _deduplicate_current_logical_records(list(db.scalars(statement).all()))
-    return [record for record in records if _is_publicly_eligible_source_record(record)]
+    return [
+        record
+        for record in records
+        if _is_publicly_eligible_source_record(record, today=today)
+    ]
 
 
 def list_policy_promotion_records(
     db: Session,
+    *,
+    today: date | None = None,
 ) -> list[ExternalSourceRecord]:
     statement = (
         select(ExternalSourceRecord)
         .where(ExternalSourceRecord.source_category.in_(POLICY_PROMOTION_SOURCE_CATEGORIES))
-        .where(_policy_public_condition())
+        .where(_policy_public_condition(today))
         .order_by(ExternalSourceRecord.id)
     )
     records = _deduplicate_current_logical_records(list(db.scalars(statement).all()))
-    return [record for record in records if _is_publicly_eligible_source_record(record)]
+    return [
+        record
+        for record in records
+        if _is_publicly_eligible_source_record(record, today=today)
+    ]
 
 
 def list_policy_deactivation_records(
     db: Session,
+    *,
+    today: date | None = None,
 ) -> list[ExternalSourceRecord]:
     statement = (
         select(ExternalSourceRecord)
@@ -137,7 +153,7 @@ def list_policy_deactivation_records(
         .where(
             or_(
                 ExternalSourceRecord.source_category.not_in(POLICY_PROMOTION_SOURCE_CATEGORIES),
-                not_(_policy_public_condition()),
+                not_(_policy_public_condition(today)),
             )
         )
         .order_by(ExternalSourceRecord.id)
@@ -147,7 +163,7 @@ def list_policy_deactivation_records(
         db.scalars(
             select(ExternalSourceRecord)
             .where(ExternalSourceRecord.source_category.in_(POLICY_PROMOTION_SOURCE_CATEGORIES))
-            .where(_policy_public_condition())
+            .where(_policy_public_condition(today))
         ).all()
     )
     selected_ids = {
@@ -170,7 +186,9 @@ def list_policy_deactivation_records(
         ).all()
     )
     records.extend(
-        record for record in digital_records if not _is_publicly_eligible_source_record(record)
+        record
+        for record in digital_records
+        if not _is_publicly_eligible_source_record(record, today=today)
     )
     return sorted({record.id: record for record in records}.values(), key=lambda record: record.id)
 
@@ -181,7 +199,13 @@ def _digital_tourism_record_city(record: ExternalSourceRecord) -> str:
     )
 
 
-def _is_publicly_eligible_source_record(record: ExternalSourceRecord) -> bool:
+def _is_publicly_eligible_source_record(
+    record: ExternalSourceRecord,
+    *,
+    today: date | None = None,
+) -> bool:
+    if not is_policy_deadline_current(record.end_date, today=today):
+        return False
     if record.source_category != dgtour_identity.SOURCE_CATEGORY:
         return True
     return (
@@ -230,22 +254,33 @@ def _datetime_for_snapshot_comparison(value: datetime | None) -> datetime:
     return value.replace(tzinfo=None) if value.tzinfo is not None else value
 
 
-def _policy_public_condition():
+def _policy_deadline_condition(today: date | None = None):
+    effective_today = today or policy_visibility_date()
     return or_(
-        and_(
-            ExternalSourceRecord.source_category == "local_half_trip",
-            ExternalSourceRecord.status.in_(LOCAL_HALF_TRIP_PUBLIC_STATUSES),
-            ExternalSourceRecord.freshness_status.in_(LOCAL_HALF_TRIP_PUBLIC_FRESHNESS_STATUSES),
-        ),
-        and_(
-            ExternalSourceRecord.source_category == dgtour_identity.SOURCE_CATEGORY,
-            ExternalSourceRecord.status.in_(DIGITAL_TOURISM_PUBLIC_STATUSES),
-            ExternalSourceRecord.freshness_status.in_(DIGITAL_TOURISM_PUBLIC_FRESHNESS_STATUSES),
-        ),
-        and_(
-            ExternalSourceRecord.source_category == "stay_discount",
-            ExternalSourceRecord.status == "active",
-            ExternalSourceRecord.freshness_status == "fresh",
+        ExternalSourceRecord.end_date.is_(None),
+        ExternalSourceRecord.end_date >= effective_today,
+    )
+
+
+def _policy_public_condition(today: date | None = None):
+    return and_(
+        _policy_deadline_condition(today),
+        or_(
+            and_(
+                ExternalSourceRecord.source_category == "local_half_trip",
+                ExternalSourceRecord.status.in_(LOCAL_HALF_TRIP_PUBLIC_STATUSES),
+                ExternalSourceRecord.freshness_status.in_(LOCAL_HALF_TRIP_PUBLIC_FRESHNESS_STATUSES),
+            ),
+            and_(
+                ExternalSourceRecord.source_category == dgtour_identity.SOURCE_CATEGORY,
+                ExternalSourceRecord.status.in_(DIGITAL_TOURISM_PUBLIC_STATUSES),
+                ExternalSourceRecord.freshness_status.in_(DIGITAL_TOURISM_PUBLIC_FRESHNESS_STATUSES),
+            ),
+            and_(
+                ExternalSourceRecord.source_category == "stay_discount",
+                ExternalSourceRecord.status == "active",
+                ExternalSourceRecord.freshness_status == "fresh",
+            ),
         ),
     )
 
@@ -253,6 +288,8 @@ def _policy_public_condition():
 def get_external_source_record_by_policy_slug(
     db: Session,
     policy_slug: str,
+    *,
+    today: date | None = None,
 ) -> ExternalSourceRecord | None:
     if not policy_slug.startswith(EXTERNAL_POLICY_SLUG_PREFIX):
         return None
@@ -273,9 +310,10 @@ def get_external_source_record_by_policy_slug(
         )
         .where(ExternalSourceRecord.status == "active")
         .where(ExternalSourceRecord.freshness_status == "fresh")
+        .where(_policy_deadline_condition(today))
     )
     record = db.scalar(statement)
-    if record is None or not _is_publicly_eligible_source_record(record):
+    if record is None or not _is_publicly_eligible_source_record(record, today=today):
         return None
     return record
 

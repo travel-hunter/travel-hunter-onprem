@@ -629,18 +629,21 @@ Account linking policy:
 ### GET /me/saved-policies
 
 저장한 정책 목록. 응답 형식은 `Policy[]` (아래 정책 섹션 참조).
+마감일이 지난 정책은 저장 관계를 DB에 보존하되 응답에서는 제외한다.
 
 ---
 
 ### GET /me/applied-policies
 
 일정에 담긴(신청 연결된) 정책 목록. 응답 형식은 `Policy[]`.
+마감일이 지난 정책은 일정 연결 관계를 DB에 보존하되 응답에서는 제외한다.
 
 ---
 
 ### GET /me/applied-policy-links
 
 내 일정에 담긴 정책을 정책 기준으로 묶어서 반환한다. 기존 `GET /me/applied-policies`는 카운트 및 단순 정책 목록 호환용으로 유지하고, 이 엔드포인트는 "정책 -> 연결된 일정들" 화면에 사용한다.
+마감일이 지난 정책과 해당 연결은 응답에서 제외한다.
 
 **Response 200** - `AppliedPolicyLink[]`
 
@@ -666,6 +669,8 @@ Account linking policy:
 
 정책 저장.
 
+마감일이 지난 정책은 존재하지 않는 public 정책과 동일하게 취급한다.
+
 **Response 200**
 ```json
 { "policyId": "uuid", "saved": true }
@@ -679,6 +684,8 @@ Account linking policy:
 ### DELETE /me/saved-policies/{policy_slug}
 
 정책 저장 해제.
+
+마감일이 지난 정책은 존재하지 않는 public 정책과 동일하게 취급하며, 기존 저장 관계는 자동 삭제하지 않는다.
 
 **Response 200**
 ```json
@@ -754,6 +761,8 @@ Account linking policy:
 ### GET /policies
 
 전체 정책 목록. 인증 불필요. DB `policies` 레코드만 `Policy` DTO로 반환한다. TravelMonth, 대한민국 반값여행, 디지털관광주민증 등 공식 외부 수집 레코드(`external_source_records`)는 수집/검증 원문 근거로 보존하고, `local_half_trip` 신청접수중/준비중 항목, 공식 참여지역 allowlist 52개를 통과한 `digital_tourism_resident_card` active/scheduled 항목, active/fresh `stay_discount` 항목만 collection normalization service가 `policies`로 승격한다. `regional_benefit`은 대한민국 반값여행과 같은 정책의 legacy 요약 source로 보고 public 정책 승격/추천/상세 fallback에서 제외하며, 기존 승격 정책은 `hidden`으로 내린다. `traffic_benefit`은 legacy/optional 수집 근거로 보존될 수 있지만 public 정책 승격 대상에서는 제외한다. `local_half_trip` 같은 지역별 외부 정책은 기존 호환 slug `travelmonth-{externalSourceRecordId}`를 사용한다. `stay_discount`는 공식 `https://ktostay.visitkorea.or.kr/`의 비수도권 인구감소지역 85개 지자체를 `raw_payload.eligibleAreas`에 저장하고, canonical `travelmonth-{externalSourceRecordId}` row는 원문 근거로 `hidden` 처리한다. public 목록/검색/지역 추천/저장/일정 연결에는 `stay-discount-{sidoSlug}-{citySlug}` slug를 가진 지역별 실제 `policies` row만 사용한다. 지역 정책 DTO는 제목을 `[고성] 2026 대한민국 숙박세일 페스타 숙박 할인`처럼 시/군 단위 접두어로 표시하고, `region`은 정책 목록 메타/필터가 반값여행 카드와 맞도록 광역자치단체(`강원`, `경남` 등)만 담는다. 숙박세일 상세 응답의 `requirements`는 `structuredDetail.applicationTarget` 설명만 안정된 순서로 투영하며, 첫 신청대상은 `경남 고성 등 숙박세일페스타 대상 지역 숙박 이용자`처럼 해당 지역 기준으로 저장한다. 2만/3만/5만/7만원 할인은 `structuredDetail.supportContent`, 쿠폰 발급·입실 기간은 `structuredDetail.periods`, 제출 서류 없음 안내는 `structuredDetail.requiredDocuments`, 선착순/예산 소진/공식 안내 최종 확인은 `structuredDetail.notes`에 남기며 `requirements`에 섞지 않는다. 저장/일정 연결 가능 상태이므로 `actionStatus`를 생략하거나 `null`로 둔다. 대한민국 반값여행 계열(`local_half_trip`)은 공식 페이지의 지역별 상태가 `신청접수중` 또는 `준비중`인 항목을 public 정책으로 노출하고, 제목은 `[합천] 대한민국 반값여행 지원`처럼 지자체명을 대괄호 접두어로 표시한다. 상세 `structuredDetail`은 숙박세일 페스타와 같은 5섹션 표시 계약을 사용하되, `applicationTarget`에는 신청대상/eligibility만 둔다. live 수집은 지자체 상세 페이지의 `참여대상`/`지원대상`/`신청대상`/`대상` 항목을 우선 읽어 강진처럼 관외 거주, 사전신청, 인접 지자체 제외 조건을 줄 단위로 표시하고, 상세 페이지에서 해당 항목을 확정하지 못할 때만 공통 신청대상 안내로 fallback한다. 원천에서 분리된 방문·결제·지역화폐 사용 같은 혜택 적용 조건은 `supportContent`의 `혜택 적용 조건` 항목으로 제공하고, 지자체별 증빙 필요 안내는 `requiredDocuments`, 예산 소진/공식 안내 확인은 `notes`로 분리한다. 2026-07-16 검증된 scoped 5개(`travelmonth-20`, `travelmonth-24`, `travelmonth-32`, `travelmonth-21`, `travelmonth-27`)는 detail URL evidence manifest를 우선해 5섹션으로 재분류하며, 신청대상에는 관외 거주/신청 승인/제외 지역 같은 eligibility만 두고 영수증·결제내역·인증사진·캡처·숙박이용확인서 등 증빙 문구는 `requiredDocuments` 또는 `notes`로 분리한다. detail URL에서 현재 신청 가능 상태를 확정하지 못한 `travelmonth-32`는 `hidden/needs_review`로 fail-closed되어 public 목록/상세/저장/일정 연결 대상에서 제외된다. 공식 디지털 관광주민증 seed 정책은 `docs/디지털관광주민증.xlsx`의 `지원내용`, `신청기간`, `확인 필요 사항`, `필요 서류` 값을 그대로 정책 본문으로 사용하고, VisitKorea 공식 참여지역 목록(`https://korean.visitkorea.or.kr/dgtourcard/`)에 있는 52개 지역만 `digital_tourism_resident_card` source category의 canonical `dgtour-{지역}` 정책으로 유지한다. 기존 `dgtour-{city}-{n}` seed slug와 과거 materialized `travelmonth-{externalSourceRecordId}` URL은 같은 지역 canonical 정책으로 호환 resolve한다. 제목은 `[지역명] 디지털관광주민증 혜택` 형식으로 표시하고, 같은 지자체 반값여행 정책과 제목/요약/공식 URL을 섞지 않는다. 디지털관광주민증 상세의 `structuredDetail`은 VisitKorea 지역 혜택 API의 `getRegnMbrbList.json` 전체 페이지를 수집해 지역별 제휴처 수/카테고리 요약과 대표 제휴처 혜택을 `supportContent`에 담고, 발급 여행자, VisitKorea/대한민국 구석구석 발급·제시 조건, 별도 제출 서류 없음, 공식 안내 최종 확인/혜택 변동 가능성을 함께 담는다. 전체 제휴처 원문 목록은 `external_source_records.raw_payload.partnerBenefits`에 보존하고 public DTO에는 화면 과밀을 막기 위해 요약과 카테고리별 대표 혜택만 투영한다. 대표 혜택 항목은 `structuredDetail.supportContent[*].url`로 VisitKorea 제휴처 상세 페이지를 연결할 수 있다. `officialUrl`은 2026-07-25 기준 VisitKorea 디지털관광주민증 메인 지도 DOM의 `fnRegnMain(mtpcDoCd, signguCd)`에서 확인한 52개 참여지역별 `regnMain.do` URL을 사용하며 `tour50.do`, 지자체 반값여행 페이지, 환급/최대 20만원 문구를 디지털관광주민증 정책에 섞지 않는다. `[강진]`처럼 지역 상세 페이지가 비었거나 공식 운영 지자체 목록에 없는 기존 dgtour 정책은 삭제하지 않고 `policies.status = "hidden"`으로 내려 public 목록/상세/저장 가능 대상에서 제외한다. `준비중` 항목은 원천 `freshness_status`가 `unknown`이어도 정책 목록/상세에 표시하며, 마감/unknown 상태 또는 stale 항목은 기존 연결 보호를 위해 `policies.status = "hidden"`으로 내려 사용자 목록에서 제외한다.
+
+모든 public 정책 경로는 `status = active`이면서 `end_date`가 없거나 현재 한국 표준시(KST) 날짜 이상인 정책만 노출한다. 마감일 당일 23:59:59 KST까지는 노출하고 다음 날 00:00 KST부터 목록·상세·추천·검색·저장·일정 연결·저장/연결 목록에서 제외한다. 만료된 정책 행과 기존 사용자 연결은 감사·운영 복구를 위해 삭제하지 않는다. 수집/정규화가 지연되거나 중단돼도 요청 시점 필터가 최종 가드로 동작하며, 이후 자동 수집은 같은 기준으로 만료 정책을 `hidden` 처리한다.
 
 **Response 200** → `Policy[]`
 ```json
@@ -1445,13 +1454,13 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 
 ### LinkedTripPolicy
 
-| ?? | ?? | ?? |
+| 필드 | 타입 | 설명 |
 |------|------|------|
-| slug | string | ?? ?? URL ??? |
-| title | string | ??? |
-| amount | string | ?? ?? ?? |
-| region | string | ?? ?? |
-| status | `"active" | "hidden"` | ?? ?? ?? ??? ?? ??. ?? ??? `active`? ????, ?? ?? ??? hidden?? ??? `hidden`?? ????. |
+| slug | string | 정책 상세 URL 식별자 |
+| title | string | 정책명 |
+| amount | string | 혜택 금액 표시 |
+| region | string | 적용 지역 |
+| status | `"active" \| "hidden"` | 정책 노출 상태. 사용자에게 제공 가능한 정책은 `active`이며, 연결 기록만 보존하고 공개하지 않는 정책은 `hidden`이다. |
 
 ### ItineraryPlace
 

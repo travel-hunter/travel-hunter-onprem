@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.models import ExternalSourceRecord
+from app.models.policy_status import policy_visibility_date
 from app.repositories import external_sources as external_source_repository
 from app.schemas.recommendations import RegionRecommendation
 from app.services.profile_preferences import ProfilePreferenceError, normalize_preferred_regions
@@ -38,11 +39,14 @@ def recommend_regions(
     preferred_regions: list[str] | None = None,
     limit: int = 3,
 ) -> list[RegionRecommendation]:
-    run_date = today or date.today()
+    run_date = today or policy_visibility_date()
     selected_regions = normalize_preferred_regions(preferred_regions)
     preferred_region = None if selected_regions else _normalize_region(region)
     selected_region_set = set(selected_regions or [])
-    records = external_source_repository.list_regional_benefit_recommendation_records(db)
+    records = external_source_repository.list_regional_benefit_recommendation_records(
+        db,
+        today=run_date,
+    )
     regional_stats: dict[str, _RegionStats] = {}
     nationwide_stats = _RegionStats(region=NATIONWIDE_REGION, nationwide=True)
 

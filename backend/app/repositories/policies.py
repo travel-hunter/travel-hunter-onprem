@@ -1,36 +1,51 @@
-from sqlalchemy import select
+from datetime import date
+
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.policy_status import POLICY_STATUS_ACTIVE
+from app.models.policy_status import POLICY_STATUS_ACTIVE, policy_visibility_date
 from app.models import Policy, Trip, TripMember, TripPolicy, UserSavedPolicy
 
 
-def _active_policy_clause():
-    return Policy.status == POLICY_STATUS_ACTIVE
+def _public_policy_clause(today: date | None = None):
+    effective_today = today or policy_visibility_date()
+    return and_(
+        Policy.status == POLICY_STATUS_ACTIVE,
+        or_(Policy.end_date.is_(None), Policy.end_date >= effective_today),
+    )
 
 
-def list_policies(db: Session) -> list[Policy]:
+def list_policies(db: Session, *, today: date | None = None) -> list[Policy]:
     statement = (
         select(Policy)
         .options(selectinload(Policy.documents))
-        .where(_active_policy_clause())
+        .where(_public_policy_clause(today))
         .order_by(Policy.id)
     )
     return list(db.scalars(statement).all())
 
 
-def list_active_policies_for_photo_backfill(db: Session) -> list[Policy]:
+def list_active_policies_for_photo_backfill(
+    db: Session,
+    *,
+    today: date | None = None,
+) -> list[Policy]:
     """Return the minimal, stable policy set used by the photo backfill job."""
 
-    statement = select(Policy).where(_active_policy_clause()).order_by(Policy.id)
+    statement = select(Policy).where(_public_policy_clause(today)).order_by(Policy.id)
     return list(db.scalars(statement).all())
 
 
-def get_policy_by_slug(db: Session, policy_slug: str) -> Policy | None:
+def get_policy_by_slug(
+    db: Session,
+    policy_slug: str,
+    *,
+    today: date | None = None,
+) -> Policy | None:
     statement = (
         select(Policy)
         .options(selectinload(Policy.documents))
-        .where(Policy.slug == policy_slug, _active_policy_clause())
+        .where(Policy.slug == policy_slug, _public_policy_clause(today))
     )
     return db.scalar(statement)
 
@@ -69,20 +84,30 @@ def add_saved_policy(
     return saved_policy
 
 
-def list_saved_policies(db: Session, *, user_id: int) -> list[Policy]:
+def list_saved_policies(
+    db: Session,
+    *,
+    user_id: int,
+    today: date | None = None,
+) -> list[Policy]:
     statement = (
         select(UserSavedPolicy)
         .join(UserSavedPolicy.policy)
         .options(selectinload(UserSavedPolicy.policy).selectinload(Policy.documents))
         .where(UserSavedPolicy.user_id == user_id)
-        .where(_active_policy_clause())
+        .where(_public_policy_clause(today))
         .order_by(UserSavedPolicy.saved_at.desc(), UserSavedPolicy.id.desc())
     )
     saved_rows = list(db.scalars(statement).all())
     return [row.policy for row in saved_rows]
 
 
-def list_applied_policies(db: Session, *, user_id: int) -> list[Policy]:
+def list_applied_policies(
+    db: Session,
+    *,
+    user_id: int,
+    today: date | None = None,
+) -> list[Policy]:
     statement = (
         select(Policy)
         .join(TripPolicy, TripPolicy.policy_id == Policy.id)
@@ -92,14 +117,19 @@ def list_applied_policies(db: Session, *, user_id: int) -> list[Policy]:
             (Trip.owner_id == user_id)
             | (Trip.members.any(TripMember.user_id == user_id))
         )
-        .where(_active_policy_clause())
+        .where(_public_policy_clause(today))
         .distinct()
         .order_by(Policy.id)
     )
     return list(db.scalars(statement).all())
 
 
-def list_applied_policy_links(db: Session, *, user_id: int) -> list[TripPolicy]:
+def list_applied_policy_links(
+    db: Session,
+    *,
+    user_id: int,
+    today: date | None = None,
+) -> list[TripPolicy]:
     statement = (
         select(TripPolicy)
         .join(Policy, Policy.id == TripPolicy.policy_id)
@@ -112,7 +142,7 @@ def list_applied_policy_links(db: Session, *, user_id: int) -> list[TripPolicy]:
             (Trip.owner_id == user_id)
             | (Trip.members.any(TripMember.user_id == user_id))
         )
-        .where(_active_policy_clause())
+        .where(_public_policy_clause(today))
         .order_by(Policy.id, Trip.start_date, Trip.id)
     )
     return list(db.scalars(statement).all())
