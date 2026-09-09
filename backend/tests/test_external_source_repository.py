@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 import app.models  # noqa: F401
 import pytest
@@ -179,6 +179,53 @@ def test_policy_promotion_records_include_scheduled_local_half_trip(
         "ended-half-trip",
         "scheduled-stay",
     ]
+
+
+def test_policy_source_lifecycle_treats_elapsed_deadline_as_non_public(
+    db: Session,
+) -> None:
+    rows = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                source_category="local_half_trip",
+                canonical_key="expired-half-trip",
+                external_id="expired-half-trip",
+                end_date=date(2026, 9, 8),
+            ),
+            make_source(
+                source_category="local_half_trip",
+                canonical_key="deadline-today-half-trip",
+                external_id="deadline-today-half-trip",
+                end_date=date(2026, 9, 9),
+            ),
+            make_source(
+                source_category="local_half_trip",
+                canonical_key="open-ended-half-trip",
+                external_id="open-ended-half-trip",
+                end_date=None,
+            ),
+        ],
+    )
+
+    promoted = list_policy_promotion_records(db, today=date(2026, 9, 9))
+    deactivated = list_policy_deactivation_records(db, today=date(2026, 9, 9))
+
+    assert [record.canonical_key for record in promoted] == [
+        "deadline-today-half-trip",
+        "open-ended-half-trip",
+    ]
+    assert "expired-half-trip" in [record.canonical_key for record in deactivated]
+    assert get_external_source_record_by_policy_slug(
+        db,
+        f"travelmonth-{rows[0].id}",
+        today=date(2026, 9, 9),
+    ) is None
+    assert get_external_source_record_by_policy_slug(
+        db,
+        f"travelmonth-{rows[1].id}",
+        today=date(2026, 9, 9),
+    ) is not None
 
 
 def test_policy_slug_fallback_allows_active_fresh_stay_discount(db: Session) -> None:

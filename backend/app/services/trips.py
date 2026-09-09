@@ -16,6 +16,7 @@ from app.data import seed
 
 DEFAULT_TRIP_REGION = "제주"
 from app.models import ExternalSourceRecord, Policy, Trip, TripDay, TripInvite, TripPlace, User
+from app.models.policy_status import is_policy_deadline_current
 from app.repositories import external_sources as external_source_repository
 from app.repositories import policies as policy_repository
 from app.repositories import trips as trip_repository
@@ -195,7 +196,11 @@ def _format_saving(value: int) -> str:
 def _policy_saving(trip: Trip) -> int:
     total = 0
     for link in trip.policies:
-        if link.policy is not None and link.policy.benefit_amount:
+        if (
+            link.policy is not None
+            and is_policy_deadline_current(link.policy.end_date)
+            and link.policy.benefit_amount
+        ):
             total += int(link.policy.benefit_amount)
     return total
 
@@ -216,7 +221,7 @@ def _linked_policies(
     linked: list[dict[str, str]] = []
     for link in sorted(trip.policies, key=lambda item: item.id or 0):
         policy = link.policy
-        if policy is None:
+        if policy is None or not is_policy_deadline_current(policy.end_date):
             continue
         slug = policy.slug or str(policy.id)
         alias_area = alias_overrides.get(slug)
@@ -737,7 +742,9 @@ def _resolve_policy_for_request_slug(
         policy_slug,
     )
     if digital_policy is not None:
-        return digital_policy, None
+        if is_public_policy(digital_policy):
+            return digital_policy, None
+        return None, None
     return None, None
 
 

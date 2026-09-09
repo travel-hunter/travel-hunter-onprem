@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.data.travel_areas import TravelArea, list_travel_areas, make_policy_region_area, resolve_municipality_sido
 from app.models import ExternalSourceRecord
+from app.models.policy_status import policy_visibility_date
 from app.repositories import external_sources as external_source_repository
 from app.repositories import policies as policy_repository
 from app.schemas.recommendations import (
@@ -86,7 +87,12 @@ def recommend_travel_areas(
             areas = [area for area in areas if area.sido == normalized_sido]
         areas = [area for area in areas if _matches_query(area, normalized_query or "")]
         if not areas:
-            policy_areas = _policy_region_areas_for_query(db, query=normalized_query or "", sido=normalized_sido)
+            policy_areas = _policy_region_areas_for_query(
+                db,
+                query=normalized_query or "",
+                sido=normalized_sido,
+                today=today,
+            )
             areas = [area for area, _count in policy_areas]
             policy_area_counts = {area.id: count for area, count in policy_areas}
         if not areas:
@@ -102,9 +108,12 @@ def recommend_travel_areas(
                 emptyReason="no_match",
             )
 
-    records = external_source_repository.list_regional_benefit_recommendation_records(db)
+    run_date = today or policy_visibility_date()
+    records = external_source_repository.list_regional_benefit_recommendation_records(
+        db,
+        today=run_date,
+    )
     recommendation_records = list(_iter_recommendation_records(records))
-    run_date = today or date.today()
     ranked = [
         _rank_policy_area(area, policy_area_counts[area.id])
         if area.id in policy_area_counts
@@ -140,12 +149,18 @@ def _rank_policy_area(area: TravelArea, policy_count: int) -> _RankedArea:
     return _RankedArea(area=area, recommendation=recommendation, stats=stats)
 
 
-def _policy_region_areas_for_query(db: Session, *, query: str, sido: str | None) -> list[tuple[TravelArea, int]]:
+def _policy_region_areas_for_query(
+    db: Session,
+    *,
+    query: str,
+    sido: str | None,
+    today: date | None,
+) -> list[tuple[TravelArea, int]]:
     folded_query = _fold(query)
     if not folded_query:
         return []
     counts: dict[tuple[str, str], int] = {}
-    for policy in policy_repository.list_policies(db):
+    for policy in policy_repository.list_policies(db, today=today):
         policy_sido = _normalize(getattr(policy, "region", None))
         city = _policy_city(policy)
         if not policy_sido or not city or policy_sido == NATIONWIDE_REGION:

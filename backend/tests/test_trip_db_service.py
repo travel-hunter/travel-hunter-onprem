@@ -165,7 +165,7 @@ def make_stay_policy() -> Policy:
         benefit_amount=70000,
         region="비수도권 인구감소지역",
         start_date=date(2026, 6, 11),
-        end_date=date(2026, 7, 31),
+        end_date=date(2026, 12, 31),
         source_category="stay_discount",
         policy_type="숙박",
         external_source_record_id=88,
@@ -190,7 +190,7 @@ def make_stay_area_policy(
         benefit_amount=70000,
         region=sido,
         start_date=date(2026, 6, 11),
-        end_date=date(2026, 7, 31),
+        end_date=date(2026, 12, 31),
         source_category="stay_discount",
         policy_type="숙박",
         external_source_record_id=source_record_id,
@@ -305,6 +305,30 @@ def test_trip_to_api_returns_numeric_string_id_and_contract_shape() -> None:
     assert place["sourceProvider"] is None
     assert place["externalPlaceId"] is None
     assert payload["currentUserRole"] == "owner"
+
+
+def test_trip_to_api_hides_expired_linked_policy_without_removing_link() -> None:
+    trip = make_trip()
+    expired_policy = Policy(
+        id=4,
+        slug="expired-linked-policy",
+        title="Expired linked policy",
+        benefit_amount=50000,
+        end_date=date(2026, 9, 8),
+        status="active",
+    )
+    expired_link = TripPolicy(id=2, trip_id=trip.id, policy_id=expired_policy.id)
+    expired_link.policy = expired_policy
+    trip.policies.append(expired_link)
+
+    payload = trip_service.trip_to_api(trip, make_user(1), recommended_policies=[])
+
+    assert payload["expectedSaving"] == "30만원"
+    assert [policy["slug"] for policy in payload["linkedPolicies"]] == [
+        "fixture-policy"
+    ]
+    assert trip.policies == [trip.policies[0], expired_link]
+    assert expired_link.policy is expired_policy
 
 
 def test_trip_to_api_includes_current_user_role() -> None:
@@ -709,6 +733,24 @@ def add_visibility_policy_rows(sqlite_db_session):
         region="전국",
         status="hidden",
     )
+    expired_policy = Policy(
+        id=613,
+        slug="expired-policy",
+        title="Expired policy",
+        benefit_detail="3만원 할인",
+        region="전국",
+        end_date=date(2026, 9, 8),
+        status="active",
+    )
+    deadline_today_policy = Policy(
+        id=614,
+        slug="deadline-today-policy",
+        title="Deadline today policy",
+        benefit_detail="4만원 할인",
+        region="전국",
+        end_date=date(2026, 9, 9),
+        status="active",
+    )
     trip = Trip(
         id=612,
         owner_id=user.id,
@@ -723,11 +765,15 @@ def add_visibility_policy_rows(sqlite_db_session):
             user,
             active_policy,
             hidden_policy,
+            expired_policy,
+            deadline_today_policy,
             trip,
             UserSavedPolicy(user_id=user.id, policy_id=active_policy.id),
             UserSavedPolicy(user_id=user.id, policy_id=hidden_policy.id),
+            UserSavedPolicy(user_id=user.id, policy_id=expired_policy.id),
             TripPolicy(trip_id=trip.id, policy_id=active_policy.id),
             TripPolicy(trip_id=trip.id, policy_id=hidden_policy.id),
+            TripPolicy(trip_id=trip.id, policy_id=expired_policy.id),
         ]
     )
     sqlite_db_session.commit()
@@ -737,15 +783,40 @@ def add_visibility_policy_rows(sqlite_db_session):
 def test_policy_repository_list_excludes_hidden_rows(sqlite_db_session) -> None:
     add_visibility_policy_rows(sqlite_db_session)
 
-    assert [policy.slug for policy in policy_repository.list_policies(sqlite_db_session)] == ["active-policy"]
-    assert policy_repository.get_policy_by_slug(sqlite_db_session, "hidden-policy") is None
+    assert [
+        policy.slug
+        for policy in policy_repository.list_policies(
+            sqlite_db_session,
+            today=date(2026, 9, 9),
+        )
+    ] == ["active-policy", "deadline-today-policy"]
+    assert policy_repository.get_policy_by_slug(
+        sqlite_db_session,
+        "hidden-policy",
+        today=date(2026, 9, 9),
+    ) is None
+    assert policy_repository.get_policy_by_slug(
+        sqlite_db_session,
+        "expired-policy",
+        today=date(2026, 9, 9),
+    ) is None
+    assert policy_repository.get_policy_by_slug(
+        sqlite_db_session,
+        "deadline-today-policy",
+        today=date(2026, 9, 9),
+    ).slug == "deadline-today-policy"
     assert policy_repository.get_policy_by_slug_any_status(sqlite_db_session, "hidden-policy").slug == "hidden-policy"
+    assert policy_repository.get_policy_by_slug_any_status(sqlite_db_session, "expired-policy").slug == "expired-policy"
 
 
 def test_policy_repository_saved_list_excludes_hidden_rows(sqlite_db_session) -> None:
     user = add_visibility_policy_rows(sqlite_db_session)
 
-    assert [policy.slug for policy in policy_repository.list_saved_policies(sqlite_db_session, user_id=user.id)] == [
+    assert [policy.slug for policy in policy_repository.list_saved_policies(
+        sqlite_db_session,
+        user_id=user.id,
+        today=date(2026, 9, 9),
+    )] == [
         "active-policy"
     ]
 
@@ -753,12 +824,20 @@ def test_policy_repository_saved_list_excludes_hidden_rows(sqlite_db_session) ->
 def test_policy_repository_applied_lists_exclude_hidden_rows(sqlite_db_session) -> None:
     user = add_visibility_policy_rows(sqlite_db_session)
 
-    assert [policy.slug for policy in policy_repository.list_applied_policies(sqlite_db_session, user_id=user.id)] == [
+    assert [policy.slug for policy in policy_repository.list_applied_policies(
+        sqlite_db_session,
+        user_id=user.id,
+        today=date(2026, 9, 9),
+    )] == [
         "active-policy"
     ]
     assert [
         link.policy.slug
-        for link in policy_repository.list_applied_policy_links(sqlite_db_session, user_id=user.id)
+        for link in policy_repository.list_applied_policy_links(
+            sqlite_db_session,
+            user_id=user.id,
+            today=date(2026, 9, 9),
+        )
     ] == ["active-policy"]
 
 
@@ -1276,6 +1355,61 @@ def test_add_policy_to_trip_rejects_hidden_stay_discount_alias(monkeypatch) -> N
 
     with pytest.raises(trip_service.TripServiceError) as error:
         trip_service.add_policy_to_trip(fake_db, user, "7", "stay-discount-gangwon-goseong")
+
+    assert error.value.status_code == 404
+    assert error.value.detail == "Policy not found"
+    assert added_links == []
+    assert fake_db.commits == 0
+
+
+def test_add_policy_to_trip_rejects_expired_digital_tourism_alias(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    expired_policy = Policy(
+        id=189,
+        slug="dgtour-example",
+        title="Expired tourism policy",
+        region="전국",
+        source_category="digital_tourism_resident_card",
+        end_date=date(2000, 1, 1),
+        status="active",
+    )
+    added_links: list[dict[str, int]] = []
+
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "get_accessible_trip_by_id",
+        lambda *_args, **_kwargs: trip,
+    )
+    monkeypatch.setattr(
+        trip_service.policy_repository,
+        "get_policy_by_slug",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        trip_service.digital_tourism_policy_aliases,
+        "resolve_digital_tourism_alias_slug",
+        lambda *_args, **_kwargs: expired_policy,
+    )
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "lock_trip_row",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "get_trip_policy",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "add_trip_policy",
+        lambda _db, **kwargs: added_links.append(kwargs),
+    )
+
+    with pytest.raises(trip_service.TripServiceError) as error:
+        trip_service.add_policy_to_trip(fake_db, user, "7", "dgtour-example-1")
 
     assert error.value.status_code == 404
     assert error.value.detail == "Policy not found"

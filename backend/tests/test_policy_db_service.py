@@ -414,7 +414,7 @@ def test_db_policy_service_uses_repository_boundary(monkeypatch) -> None:
     monkeypatch.setattr(
         policy_service.external_source_repository,
         "get_external_source_record_by_policy_slug",
-        lambda db, slug: None,
+        lambda db, slug, **_kwargs: None,
     )
 
     policies = policy_service.list_policies(fake_db)
@@ -502,7 +502,9 @@ def test_db_policy_detail_resolves_collected_external_benefit_slug(monkeypatch) 
     monkeypatch.setattr(
         policy_service.external_source_repository,
         "get_external_source_record_by_policy_slug",
-        lambda db, slug: external_record if db is fake_db and slug == "travelmonth-58" else None,
+        lambda db, slug, **_kwargs: external_record
+        if db is fake_db and slug == "travelmonth-58"
+        else None,
     )
 
     detail = policy_service.get_policy("travelmonth-58", fake_db)
@@ -525,7 +527,9 @@ def test_local_half_trip_raw_fallback_title_uses_bracketed_city_prefix(monkeypat
     monkeypatch.setattr(
         policy_service.external_source_repository,
         "get_external_source_record_by_policy_slug",
-        lambda db, slug: external_record if db is fake_db and slug == "travelmonth-58" else None,
+        lambda db, slug, **_kwargs: external_record
+        if db is fake_db and slug == "travelmonth-58"
+        else None,
     )
 
     detail = policy_service.get_policy("travelmonth-58", fake_db)
@@ -655,6 +659,71 @@ def test_db_save_policy_returns_none_for_unknown_policy(monkeypatch) -> None:
     monkeypatch.setattr(policy_service.policy_repository, "get_policy_by_slug", lambda *_args: None)
 
     assert policy_service.save_policy("missing-policy", fake_db, user) is None
+    assert fake_db.commits == 0
+
+
+def test_save_policy_rejects_expired_digital_tourism_alias(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    expired_policy = make_policy()
+    expired_policy.slug = "dgtour-example"
+    expired_policy.source_category = "digital_tourism_resident_card"
+    expired_policy.end_date = date(2000, 1, 1)
+    added_rows: list[dict[str, int]] = []
+
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        policy_service.digital_tourism_policy_aliases,
+        "resolve_digital_tourism_alias_slug",
+        lambda *_args, **_kwargs: expired_policy,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_saved_policy",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "add_saved_policy",
+        lambda _db, **kwargs: added_rows.append(kwargs),
+    )
+
+    assert policy_service.save_policy("dgtour-example-1", fake_db, user) is None
+    assert added_rows == []
+    assert fake_db.commits == 0
+
+
+def test_remove_saved_policy_rejects_expired_digital_tourism_alias(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    expired_policy = make_policy()
+    expired_policy.slug = "dgtour-example"
+    expired_policy.source_category = "digital_tourism_resident_card"
+    expired_policy.end_date = date(2000, 1, 1)
+    removed_rows: list[dict[str, int]] = []
+
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "get_policy_by_slug",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        policy_service.digital_tourism_policy_aliases,
+        "resolve_digital_tourism_alias_slug",
+        lambda *_args, **_kwargs: expired_policy,
+    )
+    monkeypatch.setattr(
+        policy_service.policy_repository,
+        "remove_saved_policy",
+        lambda _db, **kwargs: removed_rows.append(kwargs),
+    )
+
+    assert policy_service.remove_saved_policy("dgtour-example-1", fake_db, user) is None
+    assert removed_rows == []
     assert fake_db.commits == 0
 
 
@@ -988,7 +1057,11 @@ def test_stay_discount_list_and_detail_select_current_source_on_survivor_policy(
     )
 
     payload = policy_service.list_policies(fake_db)
-    detail = policy_service.get_policy("stay-discount-gangwon-goseong", fake_db)
+    detail = policy_service.get_policy(
+        "stay-discount-gangwon-goseong",
+        fake_db,
+        today=date(2026, 8, 1),
+    )
 
     assert [item["slug"] for item in payload] == ["stay-discount-gangwon-goseong"]
     assert detail is not None
@@ -1017,7 +1090,11 @@ def test_stay_discount_alias_detail_echoes_alias_slug(monkeypatch) -> None:
     monkeypatch.setattr(policy_service.policy_repository, "get_policy_by_slug_any_status", lambda *_args: None)
     monkeypatch.setattr(policy_service.external_source_repository, "get_external_source_record_by_policy_slug", lambda *_args: None)
 
-    detail = policy_service.get_policy("stay-discount-gyeongnam-goseong", fake_db)
+    detail = policy_service.get_policy(
+        "stay-discount-gyeongnam-goseong",
+        fake_db,
+        today=date(2026, 8, 1),
+    )
 
     assert detail is not None
     assert detail["slug"] == "stay-discount-gyeongnam-goseong"
@@ -1089,7 +1166,11 @@ def test_stay_discount_alias_requirements_follow_persisted_structured_conditions
         lambda *_args: None,
     )
 
-    detail = policy_service.get_policy("stay-discount-gangwon-goseong", fake_db)
+    detail = policy_service.get_policy(
+        "stay-discount-gangwon-goseong",
+        fake_db,
+        today=date(2026, 8, 1),
+    )
 
     assert detail is not None
     assert detail["requirements"] == [
@@ -1168,7 +1249,9 @@ def test_stay_discount_raw_fallback_detail_uses_structured_mapping_presentation(
     monkeypatch.setattr(
         policy_service.external_source_repository,
         "get_external_source_record_by_policy_slug",
-        lambda db, slug: record if db is fake_db and slug == "travelmonth-88" else None,
+        lambda db, slug, **_kwargs: record
+        if db is fake_db and slug == "travelmonth-88"
+        else None,
     )
 
     detail = policy_service.get_policy("travelmonth-88", fake_db)
@@ -1205,7 +1288,9 @@ def test_stay_discount_raw_fallback_with_invalid_mapping_is_semantically_empty(m
     monkeypatch.setattr(
         policy_service.external_source_repository,
         "get_external_source_record_by_policy_slug",
-        lambda db, slug: record if db is fake_db and slug == "travelmonth-88" else None,
+        lambda db, slug, **_kwargs: record
+        if db is fake_db and slug == "travelmonth-88"
+        else None,
     )
 
     detail = policy_service.get_policy("travelmonth-88", fake_db)
@@ -1239,7 +1324,12 @@ def test_stay_discount_alias_save_uses_area_policy_id_and_echoes_alias(monkeypat
 
     monkeypatch.setattr(policy_service.policy_repository, "add_saved_policy", add_saved_policy_stub)
 
-    payload = policy_service.save_policy("stay-discount-gyeongnam-goseong", fake_db, user)
+    payload = policy_service.save_policy(
+        "stay-discount-gyeongnam-goseong",
+        fake_db,
+        user,
+        today=date(2026, 8, 1),
+    )
 
     assert payload == {"policyId": "stay-discount-gyeongnam-goseong", "saved": True}
     assert added_rows == [{"user_id": 7, "policy_id": 123}]
@@ -1270,7 +1360,12 @@ def test_stay_discount_alias_save_deduplicates_area_saved_policy(monkeypatch) ->
         lambda _db, **kwargs: added_rows.append(kwargs),
     )
 
-    payload = policy_service.save_policy("stay-discount-gangwon-goseong", fake_db, user)
+    payload = policy_service.save_policy(
+        "stay-discount-gangwon-goseong",
+        fake_db,
+        user,
+        today=date(2026, 8, 1),
+    )
 
     assert payload == {"policyId": "stay-discount-gangwon-goseong", "saved": True}
     assert added_rows == []
@@ -1297,7 +1392,12 @@ def test_stay_discount_alias_remove_uses_area_policy_id_and_echoes_alias(monkeyp
 
     monkeypatch.setattr(policy_service.policy_repository, "remove_saved_policy", remove_saved_policy_stub)
 
-    payload = policy_service.remove_saved_policy("stay-discount-gangwon-samcheok", fake_db, user)
+    payload = policy_service.remove_saved_policy(
+        "stay-discount-gangwon-samcheok",
+        fake_db,
+        user,
+        today=date(2026, 8, 1),
+    )
 
     assert payload == {"policyId": "stay-discount-gangwon-samcheok", "saved": False}
     assert removed_rows == [{"user_id": 7, "policy_id": 124}]

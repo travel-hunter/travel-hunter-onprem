@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import date
 from typing import Any, Literal, cast
 from urllib.parse import urlparse
 
@@ -9,7 +10,7 @@ from app.models.policy_status import (
     POLICY_STATUS_HIDDEN,
     is_active_policy_status,
     is_hidden_policy_status,
-    is_public_policy_status,
+    is_public_policy_on_date,
     normalize_policy_status,
 )
 from app.services.policy_requirements import (
@@ -72,8 +73,12 @@ def is_hidden_policy(policy: Any) -> bool:
     return is_hidden_policy_status(getattr(policy, "status", None))
 
 
-def is_public_policy(policy: Any) -> bool:
-    return is_public_policy_status(getattr(policy, "status", None))
+def is_public_policy(policy: Any, *, today: date | None = None) -> bool:
+    return is_public_policy_on_date(
+        getattr(policy, "status", None),
+        getattr(policy, "end_date", None),
+        today=today,
+    )
 
 
 def format_benefit_amount(value: int | None) -> str | None:

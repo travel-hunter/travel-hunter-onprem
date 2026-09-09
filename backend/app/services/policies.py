@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from app.data.policy_display import DISPLAY_OVERRIDES, SUPPORTED_CATEGORIES
@@ -295,20 +297,28 @@ def list_policies(db: Session | None = None) -> list[dict[str, object]]:
     ]
 
 
-def get_policy(policy_slug: str, db: Session | None = None) -> dict[str, object] | None:
+def get_policy(
+    policy_slug: str,
+    db: Session | None = None,
+    *,
+    today: date | None = None,
+) -> dict[str, object] | None:
     if db is None:
         raise RuntimeError("DB session is required.")
 
     photos = build_region_photo_index(db)
     policy = policy_repository.get_policy_by_slug_any_status(db, policy_slug)
     if policy is not None:
-        if is_public_policy(policy):
+        if is_public_policy(policy, today=today):
             return policy_to_api(policy, photos=photos)
         digital_alias_policy = digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(
             db,
             policy_slug,
         )
-        if digital_alias_policy is not None and is_public_policy(digital_alias_policy):
+        if digital_alias_policy is not None and is_public_policy(
+            digital_alias_policy,
+            today=today,
+        ):
             return policy_to_api(digital_alias_policy, photos=photos)
         return None
 
@@ -317,14 +327,14 @@ def get_policy(policy_slug: str, db: Session | None = None) -> dict[str, object]
         policy_slug,
     )
     if digital_alias_policy is not None:
-        if not is_public_policy(digital_alias_policy):
+        if not is_public_policy(digital_alias_policy, today=today):
             return None
         return policy_to_api(digital_alias_policy, photos=photos)
 
     alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
     if alias_resolution is not None:
         policy = alias_resolution.canonical_policy
-        if not is_public_policy(policy):
+        if not is_public_policy(policy, today=today):
             return None
         if alias_resolution.alias_area is None:
             return policy_to_api(policy, photos=photos)
@@ -335,6 +345,7 @@ def get_policy(policy_slug: str, db: Session | None = None) -> dict[str, object]
     external_record = external_source_repository.get_external_source_record_by_policy_slug(
         db,
         policy_slug,
+        today=today,
     )
     if external_record is None:
         return None
@@ -345,6 +356,8 @@ def save_policy(
     policy_slug: str,
     db: Session | None = None,
     user: User | None = None,
+    *,
+    today: date | None = None,
 ) -> dict[str, object] | None:
     if db is None:
         raise RuntimeError("DB session is required.")
@@ -358,6 +371,8 @@ def save_policy(
     if policy is None:
         alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
         policy = alias_resolution.canonical_policy if alias_resolution is not None else None
+    if policy is not None and not is_public_policy(policy, today=today):
+        policy = None
     if policy is None:
         return None
 
@@ -457,6 +472,8 @@ def remove_saved_policy(
     policy_slug: str,
     db: Session | None = None,
     user: User | None = None,
+    *,
+    today: date | None = None,
 ) -> dict[str, object] | None:
     if db is None:
         raise RuntimeError("DB session is required.")
@@ -470,6 +487,8 @@ def remove_saved_policy(
     if policy is None:
         alias_resolution = stay_discount_aliases.resolve_stay_discount_alias_slug(db, policy_slug)
         policy = alias_resolution.canonical_policy if alias_resolution is not None else None
+    if policy is not None and not is_public_policy(policy, today=today):
+        policy = None
     if policy is None:
         return None
 

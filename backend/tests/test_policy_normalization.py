@@ -445,9 +445,13 @@ def test_promotion_uses_safe_representative_deadline_and_preserves_typed_periods
     from app.services.policy_normalization import promote_external_benefits_to_policies
     from app.services.policies import policy_to_api
 
-    promote_external_benefits_to_policies(db)
+    promote_external_benefits_to_policies(db, today=date(2026, 8, 1))
 
-    policy = get_policy_by_slug(db, f"travelmonth-{rows[0].id}")
+    policy = get_policy_by_slug(
+        db,
+        f"travelmonth-{rows[0].id}",
+        today=date(2026, 8, 1),
+    )
     assert policy is not None
     assert policy.end_date.isoformat() == "2026-08-31"
     api_policy = policy_to_api(policy)
@@ -666,8 +670,8 @@ def test_post_0028_single_snapshot_updates_existing_stay_canonical_as_hidden(
 
     from app.services.policy_normalization import promote_external_benefits_to_policies
 
-    promote_external_benefits_to_policies(db)
-    promote_external_benefits_to_policies(db)
+    promote_external_benefits_to_policies(db, today=date(2026, 7, 1))
+    promote_external_benefits_to_policies(db, today=date(2026, 7, 1))
 
     stay_policies = db.query(Policy).filter(Policy.source_category == "stay_discount").all()
     assert [(policy.id, policy.slug) for policy in stay_policies] == [
@@ -724,7 +728,7 @@ def test_stay_logical_campaign_with_zero_policy_matches_creates_one_policy(
 
     from app.services.policy_normalization import promote_external_benefits_to_policies
 
-    result = promote_external_benefits_to_policies(db)
+    result = promote_external_benefits_to_policies(db, today=date(2026, 8, 1))
 
     assert result.promoted_count == 1
     assert [
@@ -773,7 +777,7 @@ def test_stay_logical_campaign_with_one_policy_match_reuses_policy_23(
 
     from app.services.policy_normalization import promote_external_benefits_to_policies
 
-    promote_external_benefits_to_policies(db)
+    promote_external_benefits_to_policies(db, today=date(2026, 7, 1))
 
     assert [(policy.id, policy.slug) for policy in db.query(Policy)] == [
         (23, f"travelmonth-{legacy_record.id}")
@@ -864,7 +868,7 @@ def test_stay_logical_campaign_with_multiple_policy_matches_fails_before_mutatio
         PolicyNormalizationError,
         match="multiple active policies match stay logical campaign",
     ):
-        promote_external_benefits_to_policies(db)
+        promote_external_benefits_to_policies(db, today=date(2026, 7, 1))
     assert _policy_identity_state(db) == before
     db.rollback()
 
@@ -962,7 +966,7 @@ def test_stay_duplicate_is_prevalidated_before_earlier_local_policy_mutation(
         PolicyNormalizationError,
         match="multiple active policies match stay logical campaign",
     ):
-        promote_external_benefits_to_policies(db)
+        promote_external_benefits_to_policies(db, today=date(2026, 7, 1))
 
     assert not db.new
     assert _policy_identity_state(db) == before
@@ -1125,9 +1129,13 @@ def test_local_half_trip_structured_detail_uses_source_record_fields_without_dup
     from app.services.policy_normalization import promote_external_benefits_to_policies
     from app.services.policies import policy_to_api
 
-    promote_external_benefits_to_policies(db)
+    promote_external_benefits_to_policies(db, today=date(2026, 8, 1))
 
-    policy = get_policy_by_slug(db, f"travelmonth-{rows[0].id}")
+    policy = get_policy_by_slug(
+        db,
+        f"travelmonth-{rows[0].id}",
+        today=date(2026, 8, 1),
+    )
     assert policy is not None
     api_policy = policy_to_api(policy)
     structured_detail = api_policy["structuredDetail"]
@@ -1572,6 +1580,41 @@ def test_hides_promoted_local_half_trip_when_source_becomes_ended_or_unknown(
     assert [policy.verification_status for policy in policies] == ["fresh", "fresh"]
 
 
+def test_normalization_hides_policy_when_source_deadline_has_elapsed(
+    db: Session,
+) -> None:
+    rows = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                canonical_key="expired-half-trip",
+                external_id="expired-half-trip",
+                source_category="local_half_trip",
+                end_date=date(2000, 1, 1),
+            )
+        ],
+    )
+    policy = Policy(
+        slug=f"travelmonth-{rows[0].id}",
+        title="Expired half trip",
+        region="전국",
+        end_date=date(2000, 1, 1),
+        status="active",
+        source_category="local_half_trip",
+        external_source_record_id=rows[0].id,
+    )
+    db.add(policy)
+    db.flush()
+
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    result = promote_external_benefits_to_policies(db)
+
+    assert result.promoted_count == 0
+    assert policy.status == "hidden"
+    assert db.query(Policy).filter(Policy.id == policy.id).count() == 1
+
+
 def test_reactivates_hidden_policy_when_source_returns_active_fresh(db: Session) -> None:
     rows = upsert_external_source_records(
         db,
@@ -2002,6 +2045,40 @@ def test_promoted_policy_is_exposed_by_list_and_detail_then_hidden_when_source_s
     assert stale_list_response.status_code == 200
     assert slug not in {policy["slug"] for policy in stale_list_response.json()}
     assert stale_detail_response.status_code == 404
+
+
+def test_expired_policy_is_hidden_by_public_routes_without_deleting_the_row(
+    db: Session,
+) -> None:
+    policy = Policy(
+        slug="expired-route-policy",
+        title="Expired route policy",
+        organization="Policy owner",
+        policy_type="지역할인",
+        description="Preserved after expiration",
+        benefit_detail="Expired benefit",
+        target_condition="Expired condition",
+        region="전국",
+        status="active",
+        end_date=date(2000, 1, 1),
+    )
+    db.add(policy)
+    db.commit()
+    policy_id = policy.id
+
+    app.dependency_overrides[policy_routes.get_optional_db] = lambda: db
+    try:
+        list_response = client.get("/api/policies")
+        detail_response = client.get("/api/policies/expired-route-policy")
+    finally:
+        app.dependency_overrides.pop(policy_routes.get_optional_db, None)
+
+    assert list_response.status_code == 200
+    assert "expired-route-policy" not in {
+        item["slug"] for item in list_response.json()
+    }
+    assert detail_response.status_code == 404
+    assert db.get(Policy, policy_id) is policy
 
 
 def test_digital_tourism_seed_matching_is_municipality_scoped(db: Session) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 from app.models.policy_status import (
@@ -9,6 +10,7 @@ from app.models.policy_status import (
     is_hidden_policy_status,
     is_public_policy_status,
     normalize_policy_status,
+    policy_visibility_date,
 )
 from app.services.policy_semantics import (
     PolicySourceIdentity,
@@ -41,6 +43,12 @@ def test_policy_status_constants_and_predicates_preserve_legacy_active_default()
     assert is_hidden_policy_status("hidden") is True
 
 
+def test_policy_visibility_date_uses_kst_calendar_boundary() -> None:
+    instant = datetime(2026, 9, 8, 15, 0, tzinfo=timezone.utc)
+
+    assert policy_visibility_date(instant) == date(2026, 9, 9)
+
+
 def test_policy_object_status_helpers_do_not_require_model_imports() -> None:
     active_policy = SimpleNamespace(status="active")
     hidden_policy = SimpleNamespace(status="hidden")
@@ -52,6 +60,27 @@ def test_policy_object_status_helpers_do_not_require_model_imports() -> None:
     assert is_hidden_policy(active_policy) is False
     assert is_public_policy(hidden_policy) is False
     assert is_hidden_policy(hidden_policy) is True
+
+
+def test_public_policy_visibility_uses_status_and_canonical_end_date() -> None:
+    today = date(2026, 9, 9)
+
+    assert is_public_policy(
+        SimpleNamespace(status="active", end_date=date(2026, 9, 8)),
+        today=today,
+    ) is False
+    assert is_public_policy(
+        SimpleNamespace(status="active", end_date=today),
+        today=today,
+    ) is True
+    assert is_public_policy(
+        SimpleNamespace(status="active", end_date=None),
+        today=today,
+    ) is True
+    assert is_public_policy(
+        SimpleNamespace(status="hidden", end_date=date(2026, 9, 10)),
+        today=today,
+    ) is False
 
 
 def test_benefit_display_amount_prefers_detail_then_formatted_amount_then_empty() -> None:

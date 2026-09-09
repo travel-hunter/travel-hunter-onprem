@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
@@ -503,8 +504,12 @@ def _hide_stay_discount_policies_for_record(
     return bool(policies)
 
 
-def promote_external_benefits_to_policies(db: Session) -> PolicyPromotionResult:
-    records = external_source_repository.list_policy_promotion_records(db)
+def promote_external_benefits_to_policies(
+    db: Session,
+    *,
+    today: date | None = None,
+) -> PolicyPromotionResult:
+    records = external_source_repository.list_policy_promotion_records(db, today=today)
     resolved_stay_policies = {
         record: _get_stay_discount_canonical_policy(db, record)
         for record in records
@@ -533,7 +538,10 @@ def promote_external_benefits_to_policies(db: Session) -> PolicyPromotionResult:
         _assign_policy_from_external_record(policy, record)
         promoted_categories.add(record.source_category)
         promoted_count += 1
-    for record in external_source_repository.list_policy_deactivation_records(db):
+    for record in external_source_repository.list_policy_deactivation_records(
+        db,
+        today=today,
+    ):
         _hide_policy_for_external_record(db, record)
     if "local_half_trip" in promoted_categories:
         _hide_legacy_dgtour_seed_policies(db)
