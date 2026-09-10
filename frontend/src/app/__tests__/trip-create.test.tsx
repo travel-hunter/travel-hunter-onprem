@@ -53,12 +53,78 @@ describe("Travel Hunter app — trip creation", () => {
         "경남",
         "제주",
       ]) {
-        expect(
-          screen.getByRole("button", { name: region }),
-        ).toBeInTheDocument();
+        const sidoButton = screen.getByRole("button", { name: region });
+        expect(sidoButton).toBeInTheDocument();
+        /* 이모지는 aria-hidden 이라 접근 가능한 이름에 안 잡힌다. 좁은 화면에서
+           글자를 밀어내 세로로 떨어뜨린 장본인이므로 textContent 로 확인한다. */
+        expect(sidoButton.textContent).toBe(region);
       }
     } finally {
       travelAreasSpy.mockRestore();
+    }
+  });
+
+  it("keeps the whole-area default after travel-area recommendations arrive", async () => {
+    await login();
+    cleanup();
+    /* 카탈로그의 `whole:` id 는 추천 API 가 절대 돌려주지 않는다.
+       추천 목록에 없다고 기본 선택을 지워 버리면 "전체가 기본값"이 무너진다. */
+    const catalogSpy = vi
+      .spyOn(appDataApi, "getTravelAreaCatalog")
+      .mockResolvedValue({
+        sido: "제주",
+        sourceAsOf: "2026-09-10",
+        wholeArea: {
+          travelAreaId: "whole:%EC%A0%9C%EC%A3%BC",
+          travelAreaName: "제주 전체",
+          sido: "제주",
+          areaType: "whole",
+          includedCities: ["제주", "서귀포"],
+        },
+        recommendedAreas: [
+          {
+            travelAreaId: "jeju-east",
+            travelAreaName: "제주 동부",
+            sido: "제주",
+            areaType: "recommended",
+            includedCities: ["제주", "서귀포"],
+          },
+        ],
+        administrativeAreas: [],
+      });
+    const base = getJejuTravelAreaResponse();
+    const travelAreasSpy = vi
+      .spyOn(appDataApi, "listTravelAreaRecommendations")
+      .mockResolvedValue({
+        ...base,
+        // 두 건 이상이어야 "단일 후보 자동 적용" 우회로를 타지 않는다.
+        items: [
+          base.items[0],
+          { ...base.items[0], travelAreaId: "jeju-east", travelAreaName: "제주 동부" },
+        ],
+      });
+
+    try {
+      renderAppRoute("/trips/new");
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: /제주 전체/ }),
+        ).toHaveAttribute("aria-pressed", "true"),
+      );
+      expect(screen.getByRole("button", { name: "다음" })).toBeEnabled();
+      // 기본값은 사용자의 선택이 아니므로 URL 에 남지 않는다.
+      expect(window.location.search).not.toContain("travelAreaId");
+      // 선택이 지워졌다 다시 잡히는 왕복이면 호출 수가 계속 늘어난다.
+      const callsAfterSettle = travelAreasSpy.mock.calls.length;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(travelAreasSpy.mock.calls.length).toBe(callsAfterSettle);
+      expect(
+        screen.getByRole("button", { name: /제주 전체/ }),
+      ).toHaveAttribute("aria-pressed", "true");
+    } finally {
+      travelAreasSpy.mockRestore();
+      catalogSpy.mockRestore();
     }
   });
 

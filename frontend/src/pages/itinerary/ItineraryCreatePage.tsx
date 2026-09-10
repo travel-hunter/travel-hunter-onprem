@@ -86,6 +86,12 @@ function normalizeTravelAreaIdParam(value: string | null): string | null {
   return normalized || null;
 }
 
+/* 카탈로그(`GET /travel-areas`)에서만 나오는 id 다. 추천 API 는 구조상 이 계열을
+   절대 돌려주지 않으므로, 추천 목록에 없다고 해서 지워서는 안 된다. */
+function isCatalogTravelAreaId(travelAreaId: string): boolean {
+  return /^(?:whole|admin):/.test(travelAreaId);
+}
+
 function isBroadTravelAreaRegion(
   region: string | null | undefined,
 ): region is string {
@@ -386,6 +392,7 @@ export function ItineraryCreatePage() {
           }
         } else if (
           selectedTravelArea &&
+          !isCatalogTravelAreaId(selectedTravelArea.travelAreaId) &&
           !response.items.some(
             (area) => area.travelAreaId === selectedTravelArea.travelAreaId,
           )
@@ -574,7 +581,7 @@ export function ItineraryCreatePage() {
         {step === 1 && (
           <section className="prototype-create-step-panel">
             <h2>여행 지역 선택</h2>
-            {/* 편집 화면과 같은 선택기다. 시도 목록만 이 화면의 이모지·순서를 쓴다. */}
+            {/* 편집 화면과 같은 선택기다. 시도 목록만 이 화면의 순서를 쓴다. */}
             <TripRegionSelector
               error={travelAreaError || undefined}
               extraAreas={travelAreaRecommendations.map((area) => ({
@@ -588,6 +595,11 @@ export function ItineraryCreatePage() {
                 applyTravelArea(recommendationFromOption(option), {
                   syncUrl: true,
                 })
+              }
+              /* 기본값 선택은 URL 에 남기지 않는다. `whole:` id 는 추천 API 로
+                 되돌려 읽을 수 없어 새로고침하면 "세부 지역을 찾을 수 없습니다"가 된다. */
+              onRestore={(option) =>
+                applyTravelArea(recommendationFromOption(option))
               }
               onSidoChange={selectRegion}
               selectedSido={travelAreaChoiceSido}
