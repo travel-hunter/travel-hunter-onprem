@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { appDataApi, type TravelAreaCatalog, type TravelAreaOption } from "../../api";
 
 const SIDO_OPTIONS = [
@@ -158,65 +158,6 @@ function AreaGroup({
   );
 }
 
-/* 시·군·구가 많은 광역시도는 한 줄로 늘어놓으면 고르기 어렵다.
-   권역마다 접어 두고, 그 안에 몇 곳이 있는지 함께 보여준다. */
-function CollapsibleAreaGroup({
-  legend,
-  areas,
-  selectedAreaId,
-  disabled,
-  onSelect,
-}: {
-  legend: string;
-  areas: TravelAreaOption[];
-  selectedAreaId: string | null;
-  disabled?: boolean;
-  onSelect: (area: TravelAreaOption) => void;
-}) {
-  const holdsSelection = areas.some(
-    (area) => area.travelAreaId === selectedAreaId,
-  );
-  /* 고른 지역이 든 권역은 펼친 채로 연다. 접혀 있으면 무엇을 골랐는지 안 보인다. */
-  const [isOpen, setIsOpen] = useState(holdsSelection);
-  const wasHolding = useRef(holdsSelection);
-  if (holdsSelection && !wasHolding.current) {
-    wasHolding.current = true;
-    if (!isOpen) setIsOpen(true);
-  } else if (!holdsSelection) {
-    wasHolding.current = false;
-  }
-
-  if (areas.length === 0) return null;
-
-  return (
-    <div className="trip-region-selector__region">
-      <button
-        aria-expanded={isOpen}
-        className="trip-region-selector__region-toggle"
-        disabled={disabled}
-        onClick={() => setIsOpen((open) => !open)}
-        type="button"
-      >
-        <span>{legend}</span>
-        <em>{areas.length}</em>
-      </button>
-      {isOpen && (
-        <div className="trip-region-selector__area-list">
-          {areas.map((area) => (
-            <AreaOptionButton
-              key={area.travelAreaId}
-              area={area}
-              isSelected={area.travelAreaId === selectedAreaId}
-              disabled={disabled}
-              onSelect={onSelect}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function TripRegionSelector({
   selectedSido,
   value,
@@ -278,6 +219,19 @@ export function TripRegionSelector({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalog, restoreAreaId, restoreAreaName, selectedSido, value]);
 
+  /* 시도만 고르고 세부 지역을 안 건드려도 진행할 수 있어야 한다. 전체가 기본값이다.
+     복원 대상이 있으면 그쪽이 먼저다 — 저장된 지역을 전체로 덮으면 조용한 손상이다. */
+  useEffect(() => {
+    if (!catalog || catalog.sido !== selectedSido) return;
+    if (value && value.sido === selectedSido) return;
+    if (restoreAreaId || restoreAreaName) return;
+    if (!catalog.wholeArea) return;
+    /* 기본값은 사용자의 선택이 아니다. onChange 로 흘리면 "지역을 바꿨다"로 오해된다. */
+    (onRestore ?? onChange)(catalog.wholeArea);
+    // onChange 는 매 렌더 새로 만들어질 수 있어 의존성에서 뺀다. 위 복원 효과와 같은 이유다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog, restoreAreaId, restoreAreaName, selectedSido, value]);
+
   const retry = useCallback(() => {
     setRetryToken((token) => token + 1);
   }, []);
@@ -323,29 +277,21 @@ export function TripRegionSelector({
   const activeCatalog = catalog?.sido === selectedSido ? catalog : null;
   /* 카탈로그가 아직 없어도 동적 권역은 고를 수 있어야 한다. 정책 연계나 옛 도시 질의로
      들어온 경우 그 하나가 유일한 선택지일 수 있다. */
-  /* 백엔드가 권역을 붙여 보내면 그 순서대로 묶는다. 안 붙은 시도는 빈 배열이라
-     아래에서 예전처럼 평평하게 그린다. */
-  const administrativeGroups = (() => {
-    const source = withoutSuppressed(activeCatalog?.administrativeAreas ?? []);
-    const order: string[] = [];
-    const buckets = new Map<string, TravelAreaOption[]>();
-    for (const area of source) {
-      if (!area.group) return [] as [string, TravelAreaOption[]][];
-      if (!buckets.has(area.group)) {
-        buckets.set(area.group, []);
-        order.push(area.group);
-      }
-      buckets.get(area.group)!.push(area);
-    }
-    return order.map(
-      (name) => [name, buckets.get(name) ?? []] as [string, TravelAreaOption[]],
-    );
-  })();
-
   const recommendedAreas = [
     ...withoutSuppressed(activeCatalog?.recommendedAreas ?? []),
     ...shownExtras,
   ];
+  /* 목록에 그려지는 것들. 고른 값이 여기 없으면 화면에서 증발한 것이다. */
+  const listedIds = new Set(
+    [
+      ...(activeCatalog ? withoutSuppressed([activeCatalog.wholeArea]) : []),
+      ...recommendedAreas,
+    ].map((area) => area.travelAreaId),
+  );
+  const offListSelection =
+    currentValue && !listedIds.has(currentValue.travelAreaId)
+      ? [currentValue]
+      : [];
   const hasAnyArea =
     Boolean(activeCatalog) || recommendedAreas.length > 0;
 
@@ -398,30 +344,16 @@ export function TripRegionSelector({
             disabled={disabled}
             onSelect={onChange}
           />
-          {activeCatalog && administrativeGroups.length > 0 && (
-            <fieldset className="trip-region-selector__group">
-              <legend>시·군·구</legend>
-              {administrativeGroups.map(([groupName, groupAreas]) => (
-                <CollapsibleAreaGroup
-                  key={groupName}
-                  legend={groupName}
-                  areas={groupAreas}
-                  selectedAreaId={selectedAreaId}
-                  disabled={disabled}
-                  onSelect={onChange}
-                />
-              ))}
-            </fieldset>
-          )}
-          {activeCatalog && administrativeGroups.length === 0 && (
-            <AreaGroup
-              legend="시·군·구"
-              areas={withoutSuppressed(activeCatalog.administrativeAreas)}
-              selectedAreaId={selectedAreaId}
-              disabled={disabled}
-              onSelect={onChange}
-            />
-          )}
+          {/* 시·군·구는 목록에서 뺐다. 그런데 예전에 시·군·구로 저장된 일정을 열면
+              그 선택지가 어디에도 안 그려져 화면에서 사라진다. 그대로 저장하면
+              "전체" 로 갈아치워지므로, 목록 밖의 선택은 여기에 남겨 둔다. */}
+          <AreaGroup
+            legend="현재 선택"
+            areas={offListSelection}
+            selectedAreaId={selectedAreaId}
+            disabled={disabled}
+            onSelect={onChange}
+          />
         </div>
       ) : currentValue ? (
         <fieldset className="trip-region-selector__group">

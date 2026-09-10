@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { appDataApi, type TravelAreaCatalog, type TravelAreaOption } from "../../api";
 import { TripRegionSelector } from "./TripRegionSelector";
@@ -88,7 +89,7 @@ describe("TripRegionSelector", () => {
     expect(screen.getByRole("button", { name: "제주", pressed: true })).toHaveAttribute("aria-pressed", "true");
     expect(await screen.findByRole("group", { name: "전체" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "추천 여행권역" })).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "시·군·구" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "시·군·구" })).toBeNull();
     expect(screen.getByRole("button", { name: "제주 동부 제주시, 서귀포시" })).toHaveAttribute("aria-pressed", "true");
 
     await userEvent.click(screen.getByRole("button", { name: "제주 서부 제주시" }));
@@ -130,8 +131,9 @@ describe("TripRegionSelector", () => {
     expect(onSidoChange).not.toHaveBeenCalled();
   });
 
-  it("shows more than 20 complete administrative options and does not keep stale selection across sido changes", async () => {
-    vi.spyOn(appDataApi, "getTravelAreaCatalog").mockResolvedValue(gyeonggiCatalog());
+  it("행정 시·군·구는 그리지 않고, 다른 시도의 선택도 남기지 않는다", async () => {
+    const catalog = gyeonggiCatalog();
+    vi.spyOn(appDataApi, "getTravelAreaCatalog").mockResolvedValue(catalog);
     const onSidoChange = vi.fn();
     const onChange = vi.fn();
 
@@ -144,8 +146,10 @@ describe("TripRegionSelector", () => {
       />,
     );
 
-    // 행정지역은 이름만 낸다. 포함 도시를 되풀이하지 않는다.
-    expect(await screen.findByRole("button", { name: "경기 22" })).toBeInTheDocument();
+    expect(await screen.findByRole("group", { name: "전체" })).toBeInTheDocument();
+    // 22개 행정지역은 응답에 그대로 있지만 목록에는 안 나온다.
+    expect(screen.queryByRole("button", { name: "경기 22" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "시·군·구" })).toBeNull();
     expect(screen.getByRole("button", { name: "제주", pressed: false })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "경기", pressed: true })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("button", { name: "제주 동부 제주시, 서귀포시" })).not.toBeInTheDocument();
@@ -153,105 +157,13 @@ describe("TripRegionSelector", () => {
     await userEvent.click(screen.getByRole("button", { name: "부산" }));
 
     expect(onSidoChange).toHaveBeenCalledWith("부산");
-    expect(onChange).not.toHaveBeenCalled();
   });
 });
 
-describe("TripRegionSelector 권역 접기", () => {
-  const grouped: TravelAreaCatalog = {
-    sido: "경기",
-    sourceAsOf: "2026-09-05",
-    wholeArea: {
-      travelAreaId: "whole:gyeonggi",
-      travelAreaName: "경기 전체",
-      sido: "경기",
-      areaType: "whole",
-      includedCities: ["경기"],
-    },
-    recommendedAreas: [],
-    administrativeAreas: [
-      { travelAreaId: "a1", travelAreaName: "고양시", sido: "경기", areaType: "administrative", includedCities: ["고양"], group: "경기 북부" },
-      { travelAreaId: "a2", travelAreaName: "파주시", sido: "경기", areaType: "administrative", includedCities: ["파주"], group: "경기 북부" },
-      { travelAreaId: "a3", travelAreaName: "수원시", sido: "경기", areaType: "administrative", includedCities: ["수원"], group: "경기 남부" },
-    ],
-  };
-
-  it("권역마다 펼치기 버튼을 두고 처음에는 접어둔다", async () => {
-    const catalogSpy = vi
-      .spyOn(appDataApi, "getTravelAreaCatalog")
-      .mockResolvedValue(grouped);
-    try {
-      render(
-        <TripRegionSelector
-          selectedSido="경기"
-          value={null}
-          onSidoChange={vi.fn()}
-          onChange={vi.fn()}
-        />,
-      );
-      const toggle = await screen.findByRole("button", { name: /경기 북부/ });
-      expect(toggle).toHaveAttribute("aria-expanded", "false");
-      expect(screen.queryByRole("button", { name: /고양시/ })).toBeNull();
-
-      await userEvent.setup().click(toggle);
-      expect(toggle).toHaveAttribute("aria-expanded", "true");
-      expect(screen.getByRole("button", { name: /고양시/ })).toBeInTheDocument();
-      // 다른 권역은 그대로 접혀 있다.
-      expect(screen.queryByRole("button", { name: /수원시/ })).toBeNull();
-    } finally {
-      catalogSpy.mockRestore();
-    }
-  });
-
-  it("권역마다 몇 곳인지 보여준다", async () => {
-    const catalogSpy = vi
-      .spyOn(appDataApi, "getTravelAreaCatalog")
-      .mockResolvedValue(grouped);
-    try {
-      render(
-        <TripRegionSelector
-          selectedSido="경기"
-          value={null}
-          onSidoChange={vi.fn()}
-          onChange={vi.fn()}
-        />,
-      );
-      expect(
-        await screen.findByRole("button", { name: /경기 북부\s*2/ }),
-      ).toBeInTheDocument();
-    } finally {
-      catalogSpy.mockRestore();
-    }
-  });
-
-  it("고른 지역이 든 권역은 펼친 채로 연다", async () => {
-    const catalogSpy = vi
-      .spyOn(appDataApi, "getTravelAreaCatalog")
-      .mockResolvedValue(grouped);
-    try {
-      render(
-        <TripRegionSelector
-          selectedSido="경기"
-          value={grouped.administrativeAreas[2]}
-          onSidoChange={vi.fn()}
-          onChange={vi.fn()}
-        />,
-      );
-      // 수원시가 선택돼 있으므로 경기 남부가 열려 있어야 찾을 수 있다.
-      expect(
-        await screen.findByRole("button", { name: /수원시/ }),
-      ).toHaveAttribute("aria-pressed", "true");
-      expect(screen.queryByRole("button", { name: /고양시/ })).toBeNull();
-    } finally {
-      catalogSpy.mockRestore();
-    }
-  });
-});
-
-describe("TripRegionSelector 버튼 표기", () => {
-  const catalog: TravelAreaCatalog = {
+describe("TripRegionSelector 기본값과 목록 밖 선택", () => {
+  const jeju: TravelAreaCatalog = {
     sido: "제주",
-    sourceAsOf: "2026-09-05",
+    sourceAsOf: "2026-09-10",
     wholeArea: {
       travelAreaId: "whole:jeju",
       travelAreaName: "제주 전체",
@@ -271,24 +183,97 @@ describe("TripRegionSelector 버튼 표기", () => {
     ],
   };
 
-  it("행정지역에는 포함 도시를 되풀이하지 않는다", async () => {
+  /* 실제 화면은 선택을 부모가 들고 되먹인다. 그 왕복이 있어야
+     자동 선택과 복원이 화면에 반영되는지 볼 수 있다. */
+  function Controlled({
+    restoreAreaId,
+    onChange,
+    onRestore,
+  }: {
+    restoreAreaId?: string;
+    onChange?: (area: TravelAreaOption) => void;
+    onRestore?: (area: TravelAreaOption) => void;
+  }) {
+    const [value, setValue] = useState<TravelAreaOption | null>(null);
+    return (
+      <TripRegionSelector
+        selectedSido="제주"
+        value={value}
+        onSidoChange={vi.fn()}
+        onChange={(area) => {
+          setValue(area);
+          onChange?.(area);
+        }}
+        onRestore={(area) => {
+          setValue(area);
+          onRestore?.(area);
+        }}
+        restoreAreaId={restoreAreaId}
+      />
+    );
+  }
+
+  it("시도를 고르면 세부 지역을 건드리지 않아도 전체가 선택된다", async () => {
     const catalogSpy = vi
       .spyOn(appDataApi, "getTravelAreaCatalog")
-      .mockResolvedValue(catalog);
+      .mockResolvedValue(jeju);
+    const onChange = vi.fn();
+    const onRestore = vi.fn();
     try {
-      render(
-        <TripRegionSelector
-          selectedSido="제주"
-          value={null}
-          onSidoChange={vi.fn()}
-          onChange={vi.fn()}
-        />,
-      );
-      const admin = await screen.findByRole("button", { name: "제주시" });
-      // "제주시" 아래에 "제주" 가 또 붙으면 군더더기다.
-      expect(admin.textContent).toBe("제주시");
+      render(<Controlled onChange={onChange} onRestore={onRestore} />);
 
-      // 추천 권역과 전체는 어느 도시를 아우르는지가 정보다. 그대로 둔다.
+      expect(
+        await screen.findByRole("button", { name: /제주 전체/ }),
+      ).toHaveAttribute("aria-pressed", "true");
+      /* 기본값은 사용자가 고른 것이 아니다. onChange 로 흘리면 생성 화면은
+         URL 에 `whole:` id 를 쓰고(새로고침하면 못 읽는다), 편집 화면은
+         "지역을 바꿨다"로 보고 저장 때 원래 지역을 덮는다. */
+      expect(onRestore).toHaveBeenCalledWith(jeju.wholeArea);
+      expect(onChange).not.toHaveBeenCalled();
+      // 추천 권역은 대안으로 남는다.
+      expect(
+        screen.getByRole("button", { name: /제주 동부/ }),
+      ).toHaveAttribute("aria-pressed", "false");
+    } finally {
+      catalogSpy.mockRestore();
+    }
+  });
+
+  it("시·군·구로 저장된 일정을 열면 그 선택이 목록 밖에라도 남는다", async () => {
+    const catalogSpy = vi
+      .spyOn(appDataApi, "getTravelAreaCatalog")
+      .mockResolvedValue(jeju);
+    const onChange = vi.fn();
+    try {
+      render(<Controlled restoreAreaId="admin:jeju:jejusi" onChange={onChange} />);
+
+      const restored = await screen.findByRole("button", { name: "제주시" });
+      expect(restored).toHaveAttribute("aria-pressed", "true");
+      expect(
+        screen.getByRole("group", { name: "현재 선택" }),
+      ).toBeInTheDocument();
+      // 행정지역 이름 아래에 포함 도시를 또 붙이지 않는다.
+      expect(restored.textContent).toBe("제주시");
+      // 복원이 "전체" 로 덮이면 저장 때 지역이 조용히 바뀐다.
+      expect(
+        screen.getByRole("button", { name: /제주 전체/ }),
+      ).toHaveAttribute("aria-pressed", "false");
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      catalogSpy.mockRestore();
+    }
+  });
+
+  it("목록에 있는 선택은 현재 선택으로 겹쳐 그리지 않는다", async () => {
+    const catalogSpy = vi
+      .spyOn(appDataApi, "getTravelAreaCatalog")
+      .mockResolvedValue(jeju);
+    try {
+      render(<Controlled />);
+
+      await screen.findByRole("group", { name: "전체" });
+      expect(screen.queryByRole("group", { name: "현재 선택" })).toBeNull();
+      // 추천 권역은 어느 도시를 아우르는지가 정보라 그대로 둔다.
       const recommended = screen.getByRole("button", { name: /제주 동부/ });
       expect(recommended.textContent).toContain("제주");
       expect(recommended.textContent).toContain("서귀포");
