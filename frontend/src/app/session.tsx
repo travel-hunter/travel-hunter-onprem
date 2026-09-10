@@ -5,6 +5,8 @@ import {
   CompleteSocialSignupRequest,
   LoginRequest,
   setApiAccessToken,
+  refreshApiAccessToken,
+  setApiTokenRefresher,
   SignupCompleteRequest,
   SignupRequest,
   SignupVerificationResponse,
@@ -62,6 +64,14 @@ function readStoredAuth(): AuthResponse | null {
 function persistAuth(auth: AuthResponse) {
   setApiAccessToken(auth.accessToken);
   window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
+}
+
+/* 재발급은 client 한 곳으로 모은다. 거기서 동시 요청을 한 번으로 묶는다
+   — 리프레시 토큰이 회전하므로 두 번 부르면 두 번째가 세션을 끊는다. */
+async function refreshSessionOnce(): Promise<AuthResponse | null> {
+  const token = await refreshApiAccessToken();
+  if (!token) return null;
+  return readStoredAuth();
 }
 
 function clearAuth() {
@@ -135,24 +145,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       try {
         const stored = readStoredAuth();
         if (!stored) {
-          try {
-            await applyAuth(await appDataApi.refreshSession());
-          } catch {
-            if (!cancelled && !readStoredAuth()) clearAuth();
+          const refreshed = await refreshSessionOnce();
+          if (refreshed) {
+            await applyAuth(refreshed);
+          } else if (!cancelled && !readStoredAuth()) {
+            clearAuth();
           }
           return;
         }
 
         try {
           const user = await appDataApi.getCurrentUser();
-          await applyAuth({ accessToken: stored.accessToken, user });
+          /* 낡은 토큰이면 위 요청이 401 을 맞고 client 가 조용히 재발급했을 수 있다.
+             그때 `stored.accessToken` 을 다시 저장하면 방금 받은 새 토큰을 덮어쓴다. */
+          const currentToken = readStoredAuth()?.accessToken ?? stored.accessToken;
+          await applyAuth({ accessToken: currentToken, user });
         } catch {
           if (cancelled) return;
-          try {
-            await applyAuth(await appDataApi.refreshSession());
+          const refreshed = await refreshSessionOnce();
+          if (refreshed) {
+            await applyAuth(refreshed);
             return;
-          } catch {
-            // Fall through to clearing the stale local session.
           }
           if (cancelled) return;
           if (readStoredAuth()?.accessToken === stored.accessToken) {
@@ -167,9 +180,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    setApiTokenRefresher(async () => {
+      const auth = await appDataApi.refreshSession();
+      persistAuth(auth);
+      return auth.accessToken;
+    });
     void verifyStoredSession();
     return () => {
       cancelled = true;
+      setApiTokenRefresher(null);
     };
   }, []);
 
