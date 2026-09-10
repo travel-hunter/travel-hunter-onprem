@@ -1418,12 +1418,11 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(
         screen.queryByRole("link", { name: "친구 초대" }),
       ).not.toBeInTheDocument();
-      const inviteLinks = screen.getAllByRole("link", { name: "+ 친구 초대" });
-      expect(inviteLinks).toHaveLength(1);
-      expect(inviteLinks[0]).toHaveAttribute(
-        "href",
-        "/friend-invite?tripId=55",
-      );
+      /* 초대는 페이지 이동이 아니라 이 화면 위의 시트로 뜬다. */
+      expect(
+        screen.getAllByRole("button", { name: "+ 친구 초대" }),
+      ).toHaveLength(1);
+      expect(screen.queryByRole("dialog", { name: "친구 초대" })).toBeNull();
       expect(
         screen.getByRole("region", { name: "연결된 정책" }),
       ).toBeInTheDocument();
@@ -1458,9 +1457,78 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await waitFor(() =>
         expect(screen.getAllByText("편집자 참여 일정").length).toBeGreaterThan(0),
       );
-      expect(screen.getByRole("link", { name: "+ 친구 초대" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "+ 친구 초대" })).toBeInTheDocument();
     } finally {
       getTripSpy.mockRestore();
+    }
+  });
+
+  it("opens the friend invite sheet on the trip screen instead of leaving for a page", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "57",
+      currentUserRole: "editor",
+      title: "초대 시트 일정",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    /* 한 번도 초대한 적 없는 일정이다. 링크가 아직 없다. */
+    const emptyInvite = {
+      id: "9",
+      tripId: "57",
+      inviteToken: "",
+      inviteUrl: "",
+      expiresAt: "2026-12-30T00:00:00Z",
+      createdAt: "2026-09-10T00:00:00Z",
+      acceptedAt: null,
+      invited: false,
+      copied: false,
+      role: "editor" as const,
+      alreadyMember: false,
+    };
+    const getInviteSpy = vi
+      .spyOn(appDataApi, "getInviteState")
+      .mockResolvedValue(emptyInvite);
+    const confirmInviteSpy = vi
+      .spyOn(appDataApi, "confirmInviteSent")
+      .mockResolvedValue({
+        ...emptyInvite,
+        inviteToken: "sheet-token",
+        inviteUrl: "http://127.0.0.1:5173/invites/sheet-token/accept",
+        invited: true,
+      });
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/57");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(screen.getAllByText("초대 시트 일정").length).toBeGreaterThan(0),
+      );
+      await user.click(screen.getByRole("button", { name: "+ 친구 초대" }));
+
+      const sheet = await screen.findByRole("dialog", { name: "친구 초대" });
+      await waitFor(() => expect(getInviteSpy).toHaveBeenCalledWith("57"));
+      /* 링크를 보려고 여는 시트다. "편집 링크 만들기"를 한 번 더 누르게 하지 않는다. */
+      expect(
+        await within(sheet).findByText(
+          "http://127.0.0.1:5173/invites/sheet-token/accept",
+        ),
+      ).toBeInTheDocument();
+      expect(confirmInviteSpy).toHaveBeenCalledWith("57");
+      expect(confirmInviteSpy).toHaveBeenCalledTimes(1);
+      // 자동 준비는 사용자가 누른 게 아니므로 안내 토스트를 띄우지 않는다.
+      expect(within(sheet).queryByText("함께 편집 링크가 준비됐어요.")).toBeNull();
+      // 일정 화면을 떠나지 않는다.
+      expect(screen.getAllByText("초대 시트 일정").length).toBeGreaterThan(0);
+
+      await user.click(within(sheet).getByRole("button", { name: "닫기" }));
+      expect(screen.queryByRole("dialog", { name: "친구 초대" })).toBeNull();
+    } finally {
+      getTripSpy.mockRestore();
+      getInviteSpy.mockRestore();
+      confirmInviteSpy.mockRestore();
     }
   });
 
@@ -1481,7 +1549,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await waitFor(() =>
         expect(screen.getAllByText("뷰어 참여 일정").length).toBeGreaterThan(0),
       );
-      expect(screen.queryByRole("link", { name: "+ 친구 초대" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "+ 친구 초대" })).not.toBeInTheDocument();
     } finally {
       getTripSpy.mockRestore();
     }

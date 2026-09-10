@@ -92,6 +92,7 @@ import {
   readDraft,
   saveDraft,
 } from "../../utils/draftStorage";
+import { FriendInvitePanel } from "./FriendInvitePanel";
 import { DraftRestoreNotice } from "./_shared";
 
 const defaultPlaceTime = "09:00";
@@ -1889,6 +1890,7 @@ export function ItineraryDetailPage() {
   const stayLabel = formatStayLabel(dayNumbers.length || 3);
   const canManageTripStatus =
     trip?.currentUserRole === "owner" || trip?.currentUserRole === "editor";
+  const [isInviteSheetOpen, setIsInviteSheetOpen] = useState(false);
   const isTripViewer = Boolean(trip && !canManageTripStatus);
   const canEditTrip = Boolean(canManageTripStatus);
   const activeDraggingPlaceLabel = draggingPlaceLabel(
@@ -3813,12 +3815,13 @@ export function ItineraryDetailPage() {
             <span className="meta">{tripPeople.length}명 참여 중</span>
           </div>
           {canManageTripStatus && (
-            <Link
+            <button
               className="prototype-invite-pill"
-              to={`/friend-invite?tripId=${encodeURIComponent(trip.id)}`}
+              onClick={() => setIsInviteSheetOpen(true)}
+              type="button"
             >
               + 친구 초대
-            </Link>
+            </button>
           )}
         </div>
       </div>
@@ -4296,6 +4299,39 @@ export function ItineraryDetailPage() {
           onClose={() => setPlaceDetail(null)}
           place={placeDetail.place}
         />
+      )}
+      {/* 껍데기는 장소 편집 시트와 같은 것을 쓴다. 새 클래스를 만들면 같은 시트가 셋이 된다. */}
+      {isInviteSheetOpen && trip && (
+        <div
+          className="sheet-backdrop"
+          role="presentation"
+          onMouseDown={() => setIsInviteSheetOpen(false)}
+        >
+          <section
+            aria-labelledby="trip-invite-sheet-title"
+            aria-modal="true"
+            className="trip-select-sheet"
+            role="dialog"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="sheet-head">
+              <div>
+                <h2 id="trip-invite-sheet-title">친구 초대</h2>
+                <p className="meta">
+                  초대 링크를 보내면 친구가 이 일정에 참여해요.
+                </p>
+              </div>
+              <button
+                className="btn sm ghost"
+                onClick={() => setIsInviteSheetOpen(false)}
+                type="button"
+              >
+                닫기
+              </button>
+            </div>
+            <FriendInvitePanel autoPrepareLink requestedTripId={trip.id} />
+          </section>
+        </div>
       )}
       <ConfirmDialog
         open={Boolean(deleteCandidatePlace)}
