@@ -53,9 +53,11 @@ describe("Travel Hunter app — trip creation", () => {
         "경남",
         "제주",
       ]) {
-        expect(
-          screen.getByRole("button", { name: region }),
-        ).toBeInTheDocument();
+        const sidoButton = screen.getByRole("button", { name: region });
+        expect(sidoButton).toBeInTheDocument();
+        /* 이모지는 aria-hidden 이라 접근 가능한 이름에 안 잡힌다. 좁은 화면에서
+           글자를 밀어내 세로로 떨어뜨린 장본인이므로 textContent 로 확인한다. */
+        expect(sidoButton.textContent).toBe(region);
       }
     } finally {
       travelAreasSpy.mockRestore();

@@ -574,7 +574,7 @@ export function ItineraryCreatePage() {
         {step === 1 && (
           <section className="prototype-create-step-panel">
             <h2>여행 지역 선택</h2>
-            {/* 편집 화면과 같은 선택기다. 시도 목록만 이 화면의 이모지·순서를 쓴다. */}
+            {/* 편집 화면과 같은 선택기다. 시도 목록만 이 화면의 순서를 쓴다. */}
             <TripRegionSelector
               error={travelAreaError || undefined}
               extraAreas={travelAreaRecommendations.map((area) => ({

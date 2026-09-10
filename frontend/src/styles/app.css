@@ -12225,6 +12225,8 @@ a.prototype-stat-card:active {
 .trip-region-selector__sido {
   padding: 0 10px;
   font-weight: 700;
+  /* 칸이 좁아지면 한글은 음절 사이에서 끊긴다. "서 / 울" 로 떨어지느니 넘치게 둔다. */
+  word-break: keep-all;
 }
 
 .trip-region-selector__sido.is-selected,

@@ -35,8 +35,8 @@ type TripRegionSelectorProps = {
   /* 복원은 사용자의 선택이 아니다. onChange 로 흘리면 "지역을 바꿨다"로 오해돼
      손대지 않은 일정의 지역이 저장 때 갈아치워진다. 그래서 통로를 나눈다. */
   onRestore?: (area: TravelAreaOption) => void;
-  /* 생성 화면은 이모지가 붙은 자기 순서의 시도 목록을 쓴다. 없으면 기본 17개다. */
-  sidoOptions?: readonly { value: string; label: string; emoji?: string }[];
+  /* 생성 화면은 자기 순서의 시도 목록을 쓴다. 없으면 기본 17개다. */
+  sidoOptions?: readonly { value: string; label: string }[];
   /* 카탈로그에 없는 동적 권역(정책 연계 `policy-region:`, 옛 도시 질의 결과)을 함께 보여준다. */
   extraAreas?: readonly TravelAreaOption[];
 };
@@ -282,7 +282,7 @@ export function TripRegionSelector({
     setRetryToken((token) => token + 1);
   }, []);
 
-  const sidoList: readonly { value: string; label: string; emoji?: string }[] =
+  const sidoList: readonly { value: string; label: string }[] =
     sidoOptions ?? SIDO_OPTIONS.map((sido) => ({ value: sido, label: sido }));
   /* 카탈로그와 동적 권역에는 같은 곳이 ID 만 다르게 들어올 수 있다.
      예: 카탈로그의 `whole:부산` 과 추천 API 의 `busan-all` 은 둘 다 "부산 전체"다.
@@ -361,7 +361,6 @@ export function TripRegionSelector({
             disabled={disabled}
             onClick={() => onSidoChange(sido.value)}
           >
-            {sido.emoji && <span aria-hidden="true">{sido.emoji}</span>}
             <strong>{sido.label}</strong>
           </button>
         ))}
