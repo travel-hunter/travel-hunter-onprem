@@ -5086,56 +5086,9 @@
 .prototype-policy-list-screen .prototype-policy-toolbar {
   display: grid;
   gap: 12px;
-  padding: 28px var(--app-page-gutter) 14px;
+  /* 제목 줄이 없어 위쪽 여백을 줄인다 - 검색줄이 화면 꼭대기에 너무 붙지 않을 만큼만 남긴다 */
+  padding: 14px var(--app-page-gutter) 14px;
   background: transparent;
-}
-
-.prototype-policy-list-screen .prototype-policy-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.prototype-policy-list-screen .prototype-policy-header h1 {
-  margin: 0;
-  color: #171728;
-  font-size: 26px;
-  font-weight: 950;
-  letter-spacing: -0.055em;
-  line-height: 1.15;
-}
-
-.prototype-policy-list-screen .prototype-policy-header p {
-  margin: 8px 0 0;
-  color: #707487;
-  font-size: 13px;
-  font-weight: 750;
-  letter-spacing: -0.018em;
-}
-
-.prototype-policy-list-screen .prototype-head-pill {
-  flex: 0 0 auto;
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  padding: 0 13px;
-  border: 1px solid #ffc6c3;
-  border-radius: 999px;
-  background: #fffdfa;
-  color: #ff5e5b;
-  box-shadow: 0 6px 14px rgba(255, 94, 91, 0.08);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: -0.02em;
-  white-space: nowrap;
-}
-
-.prototype-policy-list-screen .prototype-head-pill.active {
-  background: #ff5e5b;
-  color: #fff;
 }
 
 .prototype-policy-list-screen .prototype-policy-search-row {
@@ -5170,6 +5123,36 @@
   font-weight: 750;
 }
 
+.prototype-policy-list-screen .prototype-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 필터가 걸렸을 때만 필터 버튼 옆에 붙는다 */
+.prototype-policy-list-screen .prototype-filter-reset-chip {
+  flex: 0 0 auto;
+  min-width: 34px;
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 18px;
+  padding: 0;
+  background: #f1f1f5;
+  color: #5b6478;
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.prototype-policy-list-screen .prototype-filter-reset-chip:hover {
+  background: #ffe9e8;
+  color: #ff5e5b;
+}
+
 .prototype-policy-list-screen .prototype-filter-icon-button {
   min-width: 78px;
   min-height: 46px;
@@ -5187,41 +5170,6 @@
   font-size: 12px;
   font-weight: 950;
   letter-spacing: -0.02em;
-}
-
-.prototype-policy-list-screen .prototype-active-filter-summary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  min-height: 58px;
-  border: 1px solid #ffe0dc;
-  border-radius: 20px;
-  padding: 10px 10px 10px 14px;
-  background: #fff8f5;
-  color: #ff4f4b;
-  font-size: 13px;
-  font-weight: 950;
-  letter-spacing: -0.025em;
-}
-
-.prototype-policy-list-screen .prototype-active-filter-summary span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.prototype-policy-list-screen .prototype-active-filter-summary button {
-  min-height: 30px;
-  border: 1px solid #ffb8b6;
-  border-radius: 999px;
-  padding: 0 10px;
-  background: #fff;
-  color: #ff5e5b;
-  font-size: 11px;
-  font-weight: 950;
-  cursor: pointer;
 }
 
 .prototype-policy-list-screen .prototype-policy-result-row {
