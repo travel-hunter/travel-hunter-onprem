@@ -29,6 +29,19 @@ import {
 } from "../../test/fixtures";
 import { getLink, login, renderAppRoute } from "../../test/renderAppRoute";
 
+/* 지도 화면엔 지도 밑 목록이 없다(시안 그대로). 카드는 시트 손잡이 → 타일을 거쳐야 보인다.
+   타일 이름은 "경남 1건 · …" 꼴 - 지도의 "경남 정책 1건" 버튼과 구분하려고 지역 뒤에 숫자를 건다. */
+async function openSheetTile(user: ReturnType<typeof userEvent.setup>, tile: RegExp) {
+  const grab = await waitFor(() => {
+    const button = document.querySelector(".thmap-grab");
+    expect(button).toBeTruthy();
+    return button as HTMLButtonElement;
+  });
+  await user.click(grab);
+  const sheet = document.querySelector(".thmap-sheet") as HTMLElement;
+  await user.click(within(sheet).getByRole("button", { name: tile }));
+}
+
 describe("Travel Hunter app — policies & trip picker", () => {
   it("explains that only one stay discount policy fits a trip", () => {
     // 숙박세일은 지역마다 정책 행이 따로 있어 백엔드가 409로 막는다.
@@ -90,17 +103,19 @@ describe("Travel Hunter app — policies & trip picker", () => {
       renderAppRoute("/policies");
       const user = userEvent.setup();
 
+      // 지도 화면 - 카드는 없고 건수 줄과 지도만 있다
       await waitFor(() =>
-        expect(document.body).toHaveTextContent(examplePolicyTitle),
+        expect(document.body).toHaveTextContent("전체 3개 중 3개 표시"),
       );
-      expect(document.body).toHaveTextContent("강릉 숙박 할인권");
-      expect(document.body).toHaveTextContent("부산 카드 캐시백");
+      expect(document.querySelector(".thmap-host")).toBeTruthy();
+      expect(screen.queryByText("강릉 숙박 할인권")).not.toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: /^필터/ }));
+      await user.click(screen.getByRole("button", { name: "필터 열기" }));
       let filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       await user.click(within(filterDialog).getByRole("button", { name: "부산" }));
       await user.click(within(filterDialog).getByRole("button", { name: "지역할인" }));
-      expect(document.body).toHaveTextContent("강릉 숙박 할인권");
+      // 초안은 적용 전이라 건수가 그대로다
+      expect(document.body).toHaveTextContent("전체 3개 중 3개 표시");
       await user.click(within(filterDialog).getByRole("button", { name: "필터 적용하기" }));
 
       await waitFor(() =>
@@ -108,12 +123,17 @@ describe("Travel Hunter app — policies & trip picker", () => {
       );
       expect(screen.queryByText("강릉 숙박 할인권")).not.toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "초기화" }));
+      // 카테고리 필터가 걸리면 목록 화면. 화면 위 초기화 버튼은 걷어냈으니 시트에서 푼다
+      expect(document.querySelector(".thmap-host")).toBeNull();
+      await user.click(screen.getByRole("button", { name: "필터 열기" }));
+      filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
+      await user.click(within(filterDialog).getByRole("button", { name: "초기화" }));
+      await user.click(within(filterDialog).getByRole("button", { name: "필터 적용하기" }));
       await waitFor(() =>
-        expect(document.body).toHaveTextContent(examplePolicyTitle),
+        expect(document.body).toHaveTextContent("전체 3개 중 3개 표시"),
       );
-      expect(document.body).toHaveTextContent("강릉 숙박 할인권");
-      expect(getLink(examplePolicyPath)).toBeInTheDocument();
+      expect(document.querySelector(".thmap-host")).toBeTruthy();
+      expect(screen.queryByText("부산 카드 캐시백")).not.toBeInTheDocument();
     } finally {
       listPoliciesSpy.mockRestore();
     }
@@ -147,6 +167,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await login();
       cleanup();
       renderAppRoute("/policies");
+      await openSheetTile(userEvent.setup(), /^경남\s*\d/);
 
       expect(await screen.findByText("[밀양] 디지털관광주민증 혜택")).toBeInTheDocument();
       expect(document.body).toHaveTextContent("상시 발급");
@@ -187,6 +208,8 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await login();
       cleanup();
       renderAppRoute("/policies");
+      // 전국 정책은 어느 지역 타일을 열어도 같이 들어 있다
+      await openSheetTile(userEvent.setup(), /^강원\s*\d/);
 
       expect(await screen.findByText("마감일만 확인된 목록 정책")).toBeInTheDocument();
       expect(document.body).toHaveTextContent("전국 · 2026.12.31 마감");
@@ -235,28 +258,27 @@ describe("Travel Hunter app — policies & trip picker", () => {
       const user = userEvent.setup();
 
       await waitFor(() =>
-        expect(document.body).toHaveTextContent(examplePolicyTitle),
+        expect(document.body).toHaveTextContent("전체 3개 중 3개 표시"),
       );
-      expect(document.body).toHaveTextContent("부산 카드 캐시백");
-      expect(screen.getByRole("button", { name: /^필터/ })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "필터 열기" })).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: /^필터/ }));
+      await user.click(screen.getByRole("button", { name: "필터 열기" }));
       let filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       await user.click(within(filterDialog).getByRole("button", { name: "부산" }));
       await user.click(within(filterDialog).getByRole("button", { name: "지역할인" }));
-      expect(document.body).toHaveTextContent("강릉 숙박 할인권");
+      expect(document.body).toHaveTextContent("전체 3개 중 3개 표시");
 
       await user.click(within(filterDialog).getByRole("button", { name: "필터 닫기" }));
       await waitFor(() =>
         expect(screen.queryByRole("dialog", { name: "정책 필터" })).not.toBeInTheDocument(),
       );
 
-      expect(document.body).toHaveTextContent(examplePolicyTitle);
-      expect(document.body).toHaveTextContent("부산 카드 캐시백");
-      expect(document.body).toHaveTextContent("강릉 숙박 할인권");
-      expect(screen.getByRole("button", { name: /^필터/ })).toBeInTheDocument();
+      // 초안을 버렸으니 지도 화면 그대로, 건수도 그대로
+      expect(document.body).toHaveTextContent("전체 3개 중 3개 표시");
+      expect(document.querySelector(".thmap-host")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "필터 열기" })).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: /^필터/ }));
+      await user.click(screen.getByRole("button", { name: "필터 열기" }));
       filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       expect(within(filterDialog).getByRole("button", { name: "부산" })).not.toHaveClass("active");
       expect(within(filterDialog).getByRole("button", { name: "지역할인" })).not.toHaveClass("active");
@@ -347,9 +369,9 @@ describe("Travel Hunter app — policies & trip picker", () => {
       const user = userEvent.setup();
 
       await waitFor(() =>
-        expect(document.body).toHaveTextContent("전국 여행 할인"),
+        expect(document.body).toHaveTextContent("전체 12개 중 12개 표시"),
       );
-      await user.click(screen.getByRole("button", { name: /^필터/ }));
+      await user.click(screen.getByRole("button", { name: "필터 열기" }));
       const filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       const regionFilter = within(filterDialog).getByRole("group", { name: "지역 필터" });
 
@@ -363,13 +385,116 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await user.click(
         within(filterDialog).getByRole("button", { name: "광주" }),
       );
-      expect(document.body).toHaveTextContent("전국 여행 할인");
+      expect(document.body).toHaveTextContent("전체 12개 중 12개 표시");
       await user.click(within(filterDialog).getByRole("button", { name: "필터 적용하기" }));
 
+      // 지역 필터도 다른 필터와 같이 목록 화면으로 간다 - 지도는 필터를 안 비춘다
       await waitFor(() =>
         expect(document.body).toHaveTextContent("광주 지역 혜택"),
       );
-      expect(screen.queryByText("전국 여행 할인")).not.toBeInTheDocument();
+      // 전국 정책은 지도 선택 결과에만 더한다. 목록 지역 필터는 선택한 지역과 정확히 일치해야 한다.
+      expect(document.body).toHaveTextContent("전체 12개 중 1개 표시");
+      expect(document.querySelector('a[href="/policies/nationwide"]')).toBeNull();
+    } finally {
+      policyListSpy.mockRestore();
+    }
+  });
+
+  it("selects the map region from the URL and writes the clicked region back to the filter", async () => {
+    // 지도는 새 상태가 아니라 filters.region 의 UI 다. URL → 지도, 지도 → URL 이 한 바퀴 돌아야 한다.
+    const mapPolicies: Policy[] = [
+      { ...examplePolicyDetail, id: "map-jeonnam", slug: "map-jeonnam", title: "전남 해안 혜택", region: "전남" },
+      { ...examplePolicyDetail, id: "map-gwangju", slug: "map-gwangju", title: "광주 도심 혜택", region: "광주" },
+    ];
+    const policyListSpy = vi
+      .spyOn(appDataApi, "listPolicies")
+      .mockResolvedValue(mapPolicies);
+    const mapRegion = (name: string) =>
+      document.querySelector(`.thmap-rg[data-region="${name}"]`) as SVGGElement | null;
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+      const user = userEvent.setup();
+
+      await waitFor(() => expect(mapRegion("전남")).toBeTruthy());
+      // 지도 화면엔 카드가 없다 - 선택은 안내 줄과 알약으로 보인다
+      expect(document.querySelectorAll(".policy-list-card")).toHaveLength(0);
+
+      // 지역을 눌러도 필터는 그대로다 - URL 도 건수도 안 바뀐다
+      await user.click(mapRegion("전남") as SVGGElement);
+      await waitFor(() => expect(mapRegion("전남")?.classList.contains("thmap-on")).toBe(true));
+      expect(document.body).toHaveTextContent("전남 선택됨 · 표시를 누르면 목록으로");
+      expect(screen.getByRole("button", { name: "전남 정책 1건 보기" })).toBeInTheDocument();
+      expect(window.location.search).toBe("");
+      expect(document.body).toHaveTextContent("전체 2개 중 2개 표시");
+      expect(screen.queryByRole("button", { name: "필터 초기화" })).not.toBeInTheDocument();
+
+      await user.click(mapRegion("광주") as SVGGElement);
+      await waitFor(() => expect(mapRegion("광주")?.classList.contains("thmap-on")).toBe(true));
+      expect(mapRegion("전남")?.classList.contains("thmap-on")).toBe(false);
+      await waitFor(() => expect(screen.getByRole("button", { name: "광주 정책 1건 보기" })).toBeInTheDocument());
+      expect(screen.queryByRole("button", { name: "전남 정책 1건 보기" })).not.toBeInTheDocument();
+      expect(window.location.search).toBe("");
+
+      // 지도 아래 안내 줄과, 솟은 지역 머리 위 알약. 알약을 누르면 지도가 내려가고 지역 목록이 된다
+      expect(document.body).toHaveTextContent("광주 선택됨 · 표시를 누르면 목록으로");
+      await user.click(screen.getByRole("button", { name: "광주 정책 1건 보기" }));
+      await waitFor(() => expect(document.querySelector(".thmap-host")).toBeNull());
+      expect(screen.getByRole("heading", { level: 2, name: "광주" })).toBeInTheDocument();
+      expect(document.body).toHaveTextContent("정책 1건 · 시·군 0곳");
+      expect(document.body).toHaveTextContent("광주 도심 혜택");
+      expect(screen.queryByText("전남 해안 혜택")).not.toBeInTheDocument();
+      // 목록 화면에서는 시트가 없다 - 목록 위에 겹치면 안 된다
+      expect(document.querySelector(".thmap-sheet")).toBeNull();
+      await user.click(screen.getByRole("button", { name: "지도로" }));
+      await waitFor(() => expect(document.querySelector(".thmap-host")).toBeTruthy());
+      expect(mapRegion("광주")?.classList.contains("thmap-on")).toBe(true);
+      // 지도 화면으로 돌아오면 시트가 손잡이만 내민 채 대기한다
+      const grab = screen.getAllByRole("button").find((button) => button.classList.contains("thmap-grab"));
+      expect(grab?.textContent?.replace(/\s+/g, "")).toBe("정책2건·시도2곳");
+      expect(grab).toHaveAttribute("aria-expanded", "false");
+
+      // 지도 밖 빈 곳을 누르면 선택이 풀린다
+      await user.click(document.querySelector(".thmap-wrap") as HTMLElement);
+      await waitFor(() => expect(mapRegion("광주")?.classList.contains("thmap-on")).toBe(false));
+      expect(document.body).toHaveTextContent("지역을 누르면 그곳 정책을 모아 봅니다");
+      expect(document.body).toHaveTextContent("전체 2개 중 2개 표시");
+    } finally {
+      policyListSpy.mockRestore();
+    }
+  });
+
+  it("caps the map marker at three lines and folds the rest into one line", async () => {
+    // 한 지역에 정책 종류가 넷이면 지도 위 표시가 네 줄이 된다 - 지도를 가리면 안 된다
+    const fourKinds: Policy[] = [
+      { ...examplePolicyDetail, id: "k1", slug: "k1", title: "[영광] 디지털관광주민증 혜택", region: "전남" },
+      { ...examplePolicyDetail, id: "k2", slug: "k2", title: "[완도] 디지털관광주민증 혜택", region: "전남" },
+      { ...examplePolicyDetail, id: "k3", slug: "k3", title: "[해남] 디지털관광주민증 혜택", region: "전남" },
+      { ...examplePolicyDetail, id: "k4", slug: "k4", title: "[강진] 대한민국 반값여행 지원", region: "전남" },
+      { ...examplePolicyDetail, id: "k5", slug: "k5", title: "[고흥] 대한민국 반값여행 지원", region: "전남" },
+      { ...examplePolicyDetail, id: "k6", slug: "k6", title: "[담양] 숙박세일 페스타 할인", region: "전남" },
+      { ...examplePolicyDetail, id: "k7", slug: "k7", title: "[보성] 남도 기차 여행 할인", region: "전남" },
+    ];
+    const policyListSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(fourKinds);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+      const user = userEvent.setup();
+      await waitFor(() => expect(document.querySelector('.thmap-rg[data-region="전남"]')).toBeTruthy());
+      await user.click(document.querySelector('.thmap-rg[data-region="전남"]') as unknown as Element);
+
+      await waitFor(() => expect(document.querySelector(".thmap-pill")).toBeTruthy());
+      // 큰 둘만 이름을 적고 나머지 둘은 한 줄로 묶는다
+      expect(document.querySelectorAll(".thmap-pill-row")).toHaveLength(2);
+      expect(screen.getByText("디지털관광주민증 혜택")).toBeInTheDocument();
+      expect(screen.getByText("대한민국 반값여행 지원")).toBeInTheDocument();
+      const more = document.querySelector(".thmap-pill-more") as HTMLElement;
+      expect(more.textContent?.replace(/\s+/g, "")).toBe("외2종2건");
+      expect(screen.queryByText("남도 기차 여행 할인")).not.toBeInTheDocument();
     } finally {
       policyListSpy.mockRestore();
     }
@@ -409,13 +534,15 @@ describe("Travel Hunter app — policies & trip picker", () => {
       renderAppRoute("/policies");
       const user = userEvent.setup();
 
+      // 제목 줄(정책 탐색 + ♡ 관심)은 걷어냈다 - 화면엔 안 보이고 낭독기용 h1 만 남는다
       await waitFor(() =>
-        expect(document.body).toHaveTextContent("♡ 관심"),
+        expect(screen.getByRole("heading", { level: 1, name: "정책 탐색" })).toBeInTheDocument(),
       );
-      expect(screen.getByRole("button", { name: /^필터/ })).toBeInTheDocument();
+      expect(document.body).not.toHaveTextContent("♡ 관심");
+      expect(screen.getByRole("button", { name: "필터 열기" })).toBeInTheDocument();
       expect(screen.queryByText("정책 탐색 바로가기")).not.toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: /^필터/ }));
+      await user.click(screen.getByRole("button", { name: "필터 열기" }));
       const filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       const categoryFilter = within(filterDialog).getByRole("group", { name: "카테고리 필터" });
       expect(within(categoryFilter).getByRole("button", { name: "전체" })).toBeInTheDocument();
@@ -513,15 +640,17 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await waitFor(() =>
         expect(document.body).toHaveTextContent("전체 3개 중 3개 표시"),
       );
-      const firstPolicyLink = document.querySelector(
-        ".policy-list-card:first-child a",
+      // 검색어가 들어가면 지도 화면이 목록 화면으로 바뀐다 - 셋 다 "할인"이라 다 남는다
+      const searchInput = screen.getByPlaceholderText("정책명, 지역, 혜택 검색");
+      await user.type(searchInput, "할인");
+      await waitFor(() =>
+        expect(document.querySelector(".policy-list-card:first-child a")?.textContent).toContain("강릉 KTX 할인"),
       );
-      expect(firstPolicyLink?.textContent).toContain("강릉 KTX 할인");
+      expect(document.body).toHaveTextContent("전체 3개 중 3개 표시");
+      expect(document.querySelector(".thmap-host")).toBeNull();
 
-      await user.type(
-        screen.getByPlaceholderText("정책명, 지역, 혜택 검색"),
-        "부산",
-      );
+      await user.clear(searchInput);
+      await user.type(searchInput, "부산");
 
       await waitFor(() =>
         expect(document.body).toHaveTextContent("전체 3개 중 1개 표시"),
@@ -583,9 +712,9 @@ describe("Travel Hunter app — policies & trip picker", () => {
       const user = userEvent.setup();
 
       await waitFor(() =>
-        expect(document.body).toHaveTextContent("남도 기차둘레길"),
+        expect(document.body).toHaveTextContent("전체 2개 중 2개 표시"),
       );
-      await user.click(screen.getByRole("button", { name: /^필터/ }));
+      await user.click(screen.getByRole("button", { name: "필터 열기" }));
       let filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       await user.click(within(filterDialog).getByRole("button", { name: "교통" }));
       await user.click(within(filterDialog).getByRole("button", { name: "필터 적용하기" }));
@@ -596,7 +725,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
         screen.queryByText("K리그 지역 원정 경기 관람 및 체류여행 패키지 할인"),
       ).not.toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: /^필터/ }));
+      await user.click(screen.getByRole("button", { name: "필터 열기" }));
       filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       await user.click(within(filterDialog).getByRole("button", { name: "여행상품" }));
       await user.click(within(filterDialog).getByRole("button", { name: "필터 적용하기" }));
@@ -664,9 +793,10 @@ describe("Travel Hunter app — policies & trip picker", () => {
           "제주시티투어버스 1일 탑승권 33% 할인",
         ),
       );
-      expect(document.body).toHaveTextContent("여행상품 · 기간 전체 · 금액 전체");
+      // 필터 요약 칸을 걷어냈다 - 걸린 필터 개수는 필터 버튼이 단다
+      expect(screen.getByText("필터 1")).toBeInTheDocument();
       const user = userEvent.setup();
-      await user.click(screen.getByRole("button", { name: /^필터/ }));
+      await user.click(screen.getByRole("button", { name: "필터 열기" }));
       const filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       expect(within(filterDialog).getByRole("button", { name: "여행상품" })).toHaveClass(
         "active",
@@ -708,6 +838,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await login();
       cleanup();
       renderAppRoute("/policies");
+      await openSheetTile(userEvent.setup(), /^부산\s*\d/);
 
       await waitFor(() =>
         expect(getLink("/policies/travelmonth-58")).toBeInTheDocument(),

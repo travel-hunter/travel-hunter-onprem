@@ -107,17 +107,14 @@ describe("Travel Hunter app — my page", () => {
       expect(document.body).toHaveTextContent("관심 정책으로 저장했어요."),
     );
     await user.click(screen.getByRole("button", { name: "뒤로" }));
-    const savedFilterButton = await waitFor(() => {
-      const button = document.querySelector(".prototype-head-pill");
-      expect(button).toBeTruthy();
-      return button as HTMLButtonElement;
-    });
-    await user.click(savedFilterButton);
+    // 관심 정책만 보기는 필터 시트로 모았다 - 상단 ♡ 관심 알약은 제목 줄과 함께 걷어냈다
+    await user.click(await screen.findByRole("button", { name: "필터 열기" }));
+    const filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
+    await user.click(within(filterDialog).getByRole("button", { name: "관심 정책만" }));
+    await user.click(within(filterDialog).getByRole("button", { name: "필터 적용하기" }));
 
     await waitFor(() => {
-      expect(document.querySelector(".prototype-head-pill")).toHaveTextContent(
-        /\([1-9]\d*\)/,
-      );
+      expect(document.body).toHaveTextContent("전체 1개 중 1개 표시");
       expect(getLink(examplePolicyPath)).toBeInTheDocument();
     });
     await user.click(
