@@ -140,6 +140,13 @@ describe("Travel Hunter app — policy region photos", () => {
     vi.spyOn(appDataApi, "listPolicies").mockResolvedValue([
       makePolicy({ photo }),
       makePolicy({ id: "p2", slug: "p2", title: "[완도] 디지털관광주민증 혜택", photo: { ...photo, alt: "완도 타워" } }),
+      makePolicy({
+        id: "gangwon-photo",
+        slug: "gangwon-photo",
+        title: "강원 관광 혜택",
+        region: "강원",
+        photo: { ...photo, alt: "강원 관광지", attribution: "사진: 강원관광재단" },
+      }),
     ]);
     vi.spyOn(appDataApi, "listSavedPolicies").mockResolvedValue([]);
 
@@ -158,6 +165,7 @@ describe("Travel Hunter app — policy region photos", () => {
     expect(document.querySelectorAll(".thmap-grp")).toHaveLength(2);
     expect(screen.getByRole("img", { name: "두륜산 케이블카" })).toBeInTheDocument();
     expect(screen.getAllByText("사진: 한국관광공사")).toHaveLength(1);
+    expect(screen.queryByText("사진: 강원관광재단")).not.toBeInTheDocument();
   });
 
   it("falls back to the emoji tile when the thumbnail image fails to load", () => {

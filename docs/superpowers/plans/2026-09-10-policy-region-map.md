@@ -538,3 +538,11 @@ z-index 71 (시트 70 위).
 **결과** 원격에 같은 이름 브랜치가 없어 rebase 해도 안전했다. origin/develop(`1710652`) 위로 충돌 없이 옮겼다.
 옮긴 상태에서 `git diff --check` 깨끗, `tsc` 통과, `test:mojibake` 통과, `build` 성공,
 `vitest run` **388/388** (develop 에서 넘어온 테스트 7개 포함). push·PR 은 코덱스에 인계한다.
+
+
+### PR 리뷰 후속 검증 (2026-09-11)
+
+- 손잡이 드래그 뒤 브라우저가 보내는 click 이 결과를 다시 뒤집지 않도록 막고, click 이 생기지 않은 경우 다음 실제 click 은 정상 처리되도록 회귀 테스트를 추가했다.
+- 닫힌 시트는 내부 제어·타일을 렌더하지 않아 탭 이동 대상과 초기 지역 사진 요청을 만들지 않는다. 열린 상태에서만 aria-controls 가 실제 시트 본문을 가리킨다.
+- 일반 목록의 지역 필터는 선택 지역만 보이고, 전국 정책 포함은 지도에서 선택한 지역의 결과에만 적용한다. 지도 목록 사진 출처도 그 결과 집합으로 분리했다.
+- 최종 검증: npx vitest run 33 files / 390 tests PASS, npm run typecheck, npm run build, npm run test:mojibake, git diff --check PASS. 프로덕션 번들 531.79KB 경고는 비차단이며 기존 경고와 같은 성격이다.

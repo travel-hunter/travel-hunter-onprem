@@ -702,8 +702,7 @@ export function PolicyListPage() {
     if (!policies) return [];
     const filteredPolicies = policies.filter((policy) => {
       if (showSavedOnly && !savedSlugs.has(policy.slug)) return false;
-      /* 전국 정책은 어느 지역을 골라도 나온다 - 지역 필터가 전국 사업을 숨기면 안 된다 */
-      const matchesRegion = selectedRegion === allFilter || policy.region === selectedRegion || policy.region === nationwideRegion;
+      const matchesRegion = selectedRegion === allFilter || policy.region === selectedRegion;
       const matchesCategory = selectedCategory === allFilter || policy.category === selectedCategory;
       return matchesRegion && matchesCategory && matchesPeriod(policy, selectedPeriod) && matchesAmount(policy, selectedAmount) && matchesPolicySearch(policy, searchTerm);
     });
@@ -788,6 +787,15 @@ export function PolicyListPage() {
     if (!mapRegion || !policies) return [];
     return policies.filter((policy) => policy.region === mapRegion || policy.region === nationwideRegion);
   }, [policies, mapRegion]);
+  const mapPhotoAttributions = useMemo(
+    () => Array.from(new Set(
+      mapRegionPolicies.flatMap((policy) => {
+        const photo = getPolicyPhoto(policy);
+        return photo?.attribution ? [photo.attribution] : [];
+      }),
+    )),
+    [mapRegionPolicies],
+  );
   const selectedRegionGroups = useMemo(
     () => (mapRegion ? groupByProgram(mapRegionPolicies) : []),
     [mapRegion, mapRegionPolicies],
@@ -913,8 +921,8 @@ export function PolicyListPage() {
               </div>
             </div>
           ))}
-          {/* 사진이 보이는 곳엔 출처가 따라간다 - 평면 목록과 같은 줄 */}
-          {photoAttributions.map((attribution) => (
+          {/* 지도에서 고른 지역 목록에는 그 목록에 실제로 보이는 사진 출처만 붙인다. */}
+          {mapPhotoAttributions.map((attribution) => (
             <p className="policy-list-photo-credit" key={attribution}>{attribution}</p>
           ))}
         </div>

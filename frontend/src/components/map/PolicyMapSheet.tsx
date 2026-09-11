@@ -36,6 +36,7 @@ export function PolicyMapSheet({
   const sheetRef = useRef<HTMLElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const grabRef = useRef<HTMLButtonElement | null>(null);
+  const suppressGrabClickRef = useRef(false);
 
   const rows = useMemo<PolicyGroup[]>(
     () => (groupBy === "region" ? groupByRegion(policies, REGION_NAMES) : groupByProgram(policies)),
@@ -126,6 +127,13 @@ export function PolicyMapSheet({
       const dy = event.clientY - startY; startY = null;
       sheet.classList.remove("thmap-drag"); sheet.style.transform = "";
       if (!moved) return; /* 그냥 클릭이면 click 이 처리 */
+      /* pointerup 뒤에 합성되는 click 이 드래그 결과를 다시 뒤집지 못하게 한 번만 막는다. */
+      suppressGrabClickRef.current = event.type === "pointerup";
+      if (suppressGrabClickRef.current) {
+        window.setTimeout(() => {
+          suppressGrabClickRef.current = false;
+        }, 0);
+      }
       /* 열려 있었으면 절반을 넘겨 내려왔을 때만 닫는다. 아니면 그대로 열린 채 되돌아간다. */
       if (open) setOpen(!(pull > sheet.clientHeight / 2));
       else setOpen(dy < 0);
@@ -167,67 +175,77 @@ export function PolicyMapSheet({
           type="button"
           ref={grabRef}
           aria-expanded={open}
-          aria-controls="thmap-sheet-body"
-          onClick={() => setOpen((value) => !value)}
+          aria-controls={open ? "thmap-sheet-body" : undefined}
+          onClick={() => {
+            if (suppressGrabClickRef.current) {
+              suppressGrabClickRef.current = false;
+              return;
+            }
+            setOpen((value) => !value);
+          }}
         >
           <i aria-hidden="true" />
           <span>{grabLabel}</span>
         </button>
-        <div className="thmap-sheet-head">
-          <h2>정책 모아보기</h2>
-          <div className="thmap-seg" role="group" aria-label="묶는 기준">
-            <button type="button" aria-pressed={groupBy === "region"} onClick={() => switchGroup("region")}>지역별</button>
-            <button type="button" aria-pressed={groupBy === "program"} onClick={() => switchGroup("program")}>정책별</button>
-          </div>
+        {open && (
+          <>
+            <div className="thmap-sheet-head">
+        <h2>정책 모아보기</h2>
+        <div className="thmap-seg" role="group" aria-label="묶는 기준">
+        <button type="button" aria-pressed={groupBy === "region"} onClick={() => switchGroup("region")}>지역별</button>
+        <button type="button" aria-pressed={groupBy === "program"} onClick={() => switchGroup("program")}>정책별</button>
+        </div>
         </div>
         <div className="thmap-sheet-body" id="thmap-sheet-body" ref={bodyRef}>
-          {detail ? (
-            <div className="thmap-detail">
-              <div className="thmap-det-top">
-                <button className="thmap-det-back" type="button" aria-label="카테고리로" onClick={closeTile}>‹</button>
-                <span className="thmap-det-ttl">
-                  <strong>{detail.label}</strong>
-                  <em>정책 {detail.items.length}건 · {detail.subLabel}</em>
-                </span>
-              </div>
-              {detail.items.length === 0 && (
-                <p className="thmap-det-empty">{detail.label}에는 아직 등록된 정책이 없어요</p>
-              )}
-              {detail.items.map((policy) => (
-                <PolicyListCard key={policy.id} policy={policy} isSaved={savedSlugs.has(policy.slug)} onToggleSave={onToggleSave} />
-              ))}
-              {attributions.map((attribution) => (
-                <p className="policy-list-photo-credit" key={attribution}>{attribution}</p>
-              ))}
-            </div>
-          ) : (
-            <div className="thmap-tiles">
-              {rows.map((row, index) => {
-                /* 홀수 개면 마지막 하나를 가로로 눕혀 빈칸을 남기지 않는다 */
-                const wide = rows.length % 2 === 1 && index === rows.length - 1;
-                const visual = groupBy === "program" ? getPolicyVisual(row.items[0]) : null;
-                /* 지역 카드는 그 지역 관광명소를 배경으로 깐다. 아이콘 자리에 지역 이름 두 글자를
-                   넣던 것도 같이 뺀다 - 바로 밑 <strong> 과 같은 글자라 이름이 두 번 보였다. */
-                const photo = visual ? null : REGION_PHOTOS[row.label];
-                return (
-                  <button
-                    className={
-                      (wide ? "thmap-tile thmap-wide" : "thmap-tile") + (photo ? " thmap-photo" : "")
-                    }
-                    key={row.key}
-                    type="button"
-                    style={photo ? { backgroundImage: `url(${photo})` } : undefined}
-                    onClick={() => openTile(row.key)}
-                  >
-                    {visual && <span className="thmap-ic" style={{ background: visual.from }} aria-hidden="true">{visual.emoji}</span>}
-                    <strong>{row.label}</strong>
-                    <span className="thmap-foot"><b>{row.items.length}</b><span>건 · {row.subLabel}</span></span>
-                  </button>
-                );
-              })}
-            </div>
+        {detail ? (
+        <div className="thmap-detail">
+          <div className="thmap-det-top">
+            <button className="thmap-det-back" type="button" aria-label="카테고리로" onClick={closeTile}>‹</button>
+            <span className="thmap-det-ttl">
+              <strong>{detail.label}</strong>
+              <em>정책 {detail.items.length}건 · {detail.subLabel}</em>
+            </span>
+          </div>
+          {detail.items.length === 0 && (
+            <p className="thmap-det-empty">{detail.label}에는 아직 등록된 정책이 없어요</p>
           )}
+          {detail.items.map((policy) => (
+            <PolicyListCard key={policy.id} policy={policy} isSaved={savedSlugs.has(policy.slug)} onToggleSave={onToggleSave} />
+          ))}
+          {attributions.map((attribution) => (
+            <p className="policy-list-photo-credit" key={attribution}>{attribution}</p>
+          ))}
         </div>
+        ) : (
+        <div className="thmap-tiles">
+          {rows.map((row, index) => {
+            /* 홀수 개면 마지막 하나를 가로로 눕혀 빈칸을 남기지 않는다 */
+            const wide = rows.length % 2 === 1 && index === rows.length - 1;
+            const visual = groupBy === "program" ? getPolicyVisual(row.items[0]) : null;
+            /* 지역 카드는 그 지역 관광명소를 배경으로 깐다. 아이콘 자리에 지역 이름 두 글자를
+               넣던 것도 같이 뺀다 - 바로 밑 <strong> 과 같은 글자라 이름이 두 번 보였다. */
+            const photo = visual ? null : REGION_PHOTOS[row.label];
+            return (
+              <button
+                className={
+                  (wide ? "thmap-tile thmap-wide" : "thmap-tile") + (photo ? " thmap-photo" : "")
+                }
+                key={row.key}
+                type="button"
+                style={photo ? { backgroundImage: `url(${photo})` } : undefined}
+                onClick={() => openTile(row.key)}
+              >
+                {visual && <span className="thmap-ic" style={{ background: visual.from }} aria-hidden="true">{visual.emoji}</span>}
+                <strong>{row.label}</strong>
+                <span className="thmap-foot"><b>{row.items.length}</b><span>건 · {row.subLabel}</span></span>
+              </button>
+            );
+          })}
+        </div>
+        )}
+        </div>
+          </>
+        )}
       </section>
       {/* 떠 있는 뒤로가기. 시트 안에 두면 시트의 transform 때문에 fixed 가 화면이 아니라 시트에
           붙으므로 밖에 둔다. 휴대폰 뒤로가기처럼 한 단계씩 - 상세면 목록으로, 목록이면 닫는다. */}

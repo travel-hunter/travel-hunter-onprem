@@ -30,14 +30,19 @@ describe("PolicyMapSheet", () => {
     mount();
     const grab = screen.getByRole("button", { name: named("정책 3건 · 시도 2곳") });
     expect(grab).toHaveAttribute("aria-expanded", "false");
+    expect(grab).not.toHaveAttribute("aria-controls");
     expect(document.querySelector(".thmap-sheet")?.classList.contains("thmap-open")).toBe(false);
+    expect(document.querySelectorAll(".thmap-tile")).toHaveLength(0);
     fireEvent.click(grab);
     expect(grab).toHaveAttribute("aria-expanded", "true");
+    expect(grab).toHaveAttribute("aria-controls", "thmap-sheet-body");
+    expect(document.querySelectorAll(".thmap-tile")).toHaveLength(17);
     expect(document.querySelector(".thmap-sheet")?.classList.contains("thmap-open")).toBe(true);
   });
 
   it("groups by region by default and by program on the segment", () => {
     mount();
+    fireEvent.click(screen.getByRole("button", { name: named("정책 3건 · 시도 2곳") }));
     const tiles = () => document.querySelectorAll(".thmap-tile");
     // 17개 시도를 다 낸다 - 정책 0건 지역도 사진 카드로 보여야 지도와 짝이 맞는다
     expect(tiles()).toHaveLength(17);
@@ -53,6 +58,7 @@ describe("PolicyMapSheet", () => {
 
   it("opens a tile into its cards and comes back", () => {
     mount();
+    fireEvent.click(screen.getByRole("button", { name: named("정책 3건 · 시도 2곳") }));
     fireEvent.click(screen.getByRole("button", { name: /^전남/ }));
     expect(screen.getByText("[영광] 디지털관광주민증 혜택")).toBeInTheDocument();
     expect(screen.getByText("[완도] 디지털관광주민증 혜택")).toBeInTheDocument();
@@ -67,6 +73,7 @@ describe("PolicyMapSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: named("정책 3건 · 시도 2곳") }));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(document.querySelector(".thmap-sheet")?.classList.contains("thmap-open")).toBe(false);
+    expect(document.querySelector(".thmap-sheet-body")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: named("정책 3건 · 시도 2곳") }));
     fireEvent.click(document.querySelector(".thmap-dim") as HTMLElement);
     expect(document.querySelector(".thmap-sheet")?.classList.contains("thmap-open")).toBe(false);
@@ -112,6 +119,64 @@ describe("PolicyMapSheet", () => {
       expect(sheet.style.transform).toBe("");
     } finally {
       tall.mockRestore();
+    }
+  });
+
+  it("keeps the result of a handle drag instead of toggling it again on click", () => {
+    const tall = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(400);
+    try {
+      mount();
+      const sheet = document.querySelector(".thmap-sheet") as HTMLElement;
+      const grab = screen.getByRole("button", { name: named("정책 3건 · 시도 2곳") });
+
+      const dispatchPointer = (type: string, clientY: number) => {
+        const event = new Event(type, { bubbles: true });
+        Object.defineProperties(event, {
+          clientY: { value: clientY },
+          pointerId: { value: 1 },
+        });
+        fireEvent(grab, event);
+      };
+
+      dispatchPointer("pointerdown", 300);
+      dispatchPointer("pointermove", 100);
+      expect(sheet.style.transform).toBe("translateX(-50%) translateY(180px)");
+      dispatchPointer("pointerup", 100);
+      fireEvent.click(grab);
+
+      expect(sheet).toHaveClass("thmap-open");
+    } finally {
+      tall.mockRestore();
+    }
+  });
+
+  it("does not swallow the next click when a drag produces no synthetic click", () => {
+    vi.useFakeTimers();
+    const tall = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(400);
+    try {
+      mount();
+      const sheet = document.querySelector(".thmap-sheet") as HTMLElement;
+      const grab = screen.getByRole("button", { name: named("정책 3건 · 시도 2곳") });
+      const dispatchPointer = (type: string, clientY: number) => {
+        const event = new Event(type, { bubbles: true });
+        Object.defineProperties(event, {
+          clientY: { value: clientY },
+          pointerId: { value: 1 },
+        });
+        fireEvent(grab, event);
+      };
+
+      dispatchPointer("pointerdown", 300);
+      dispatchPointer("pointermove", 100);
+      dispatchPointer("pointerup", 100);
+      expect(sheet).toHaveClass("thmap-open");
+
+      vi.runAllTimers();
+      fireEvent.click(grab);
+      expect(sheet).not.toHaveClass("thmap-open");
+    } finally {
+      tall.mockRestore();
+      vi.useRealTimers();
     }
   });
 

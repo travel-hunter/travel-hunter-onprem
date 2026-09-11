@@ -392,9 +392,9 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await waitFor(() =>
         expect(document.body).toHaveTextContent("광주 지역 혜택"),
       );
-      // 전국 정책은 어느 지역을 골라도 나온다 - 지역 필터가 전국 사업을 숨기면 안 된다.
-      // 종류가 둘이라 그룹 헤더에도 같은 글자가 있으니 카드 링크로 센다
-      expect(getLink("/policies/nationwide")).toBeInTheDocument();
+      // 전국 정책은 지도 선택 결과에만 더한다. 목록 지역 필터는 선택한 지역과 정확히 일치해야 한다.
+      expect(document.body).toHaveTextContent("전체 12개 중 1개 표시");
+      expect(document.querySelector('a[href="/policies/nationwide"]')).toBeNull();
     } finally {
       policyListSpy.mockRestore();
     }
