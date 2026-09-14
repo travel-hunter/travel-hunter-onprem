@@ -196,7 +196,7 @@ def build_eligible_island_summary(db: Session | None, *, catalog_key: str = repo
     if db is None or not hasattr(db, "scalars"):
         return EMPTY_ELIGIBLE_ISLAND_SUMMARY
     try:
-        catalog = repository.lock_catalog_row(db, catalog_key=catalog_key)
+        catalog = repository.get_catalog(db, catalog_key=catalog_key)
         rows = repository.list_approved_entries(db, catalog_key=catalog_key)
         approved = db.get(EligibleIslandCatalogSnapshot, catalog.approved_snapshot_id) if catalog.approved_snapshot_id else None
     except Exception:
@@ -210,7 +210,7 @@ def build_eligible_island_summary(db: Session | None, *, catalog_key: str = repo
 
 
 def get_snapshot_diff(db: Session, *, catalog_key: str, snapshot_id: int) -> SnapshotDiff:
-    catalog = repository.lock_catalog_row(db, catalog_key=catalog_key)
+    catalog = repository.get_catalog(db, catalog_key=catalog_key)
     snapshot = db.scalar(
         select(EligibleIslandCatalogSnapshot).where(
             EligibleIslandCatalogSnapshot.id == snapshot_id, EligibleIslandCatalogSnapshot.catalog_id == catalog.id

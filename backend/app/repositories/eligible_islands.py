@@ -56,6 +56,15 @@ def ensure_builtin_catalogs(db: Session) -> None:
     db.flush()
 
 
+def get_catalog(db: Session, *, catalog_key: str) -> EligibleIslandCatalog:
+    """Plain read — use for public/list paths. Only stage/approve/reject take the row lock."""
+    ensure_builtin_catalogs(db)
+    catalog = db.scalar(select(EligibleIslandCatalog).where(EligibleIslandCatalog.key == catalog_key))
+    if catalog is None:
+        raise EligibleIslandCatalogError("catalog_not_found")
+    return catalog
+
+
 def lock_catalog_row(db: Session, *, catalog_key: str) -> EligibleIslandCatalog:
     ensure_builtin_catalogs(db)
     catalog = db.scalar(

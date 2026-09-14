@@ -419,8 +419,7 @@ def collect_eligible_island_catalog(
 ) -> AdminEligibleIslandCollectResponse:
     session = _require_db(db)
     try:
-        catalog = eligible_island_repository.lock_catalog_row(session, catalog_key=catalog_key)
-        notice_url = catalog.notice_list_url
+        notice_url = eligible_island_repository.get_catalog(session, catalog_key=catalog_key).notice_list_url
         session.commit()
         result = eligible_island_notice.collect_eligible_island_catalog(
             session, catalog_key=catalog_key, notice_url=notice_url, fetched_at=datetime.now(UTC)
@@ -449,7 +448,7 @@ def list_eligible_island_snapshots(
 ) -> AdminEligibleIslandSnapshotListResponse:
     session = _require_db(db)
     try:
-        catalog = eligible_island_repository.lock_catalog_row(session, catalog_key=catalog_key)
+        catalog = eligible_island_repository.get_catalog(session, catalog_key=catalog_key)
     except EligibleIslandCatalogError as error:
         _raise_eligible_island_error(error)
     rows, total = eligible_island_repository.list_snapshots(session, catalog_id=catalog.id, limit=limit, offset=offset)
@@ -478,7 +477,7 @@ def get_eligible_island_snapshot(
     session = _require_db(db)
     numeric_id = _snapshot_id_or_404(snapshot_id)
     try:
-        catalog = eligible_island_repository.lock_catalog_row(session, catalog_key=catalog_key)
+        catalog = eligible_island_repository.get_catalog(session, catalog_key=catalog_key)
         diff = eligible_island_catalog.get_snapshot_diff(session, catalog_key=catalog_key, snapshot_id=numeric_id)
     except EligibleIslandCatalogError as error:
         _raise_eligible_island_error(error)
@@ -538,7 +537,6 @@ def reject_eligible_island_snapshot(
     except EligibleIslandCatalogError as error:
         session.rollback()
         _raise_eligible_island_error(error)
-    catalog = eligible_island_repository.lock_catalog_row(session, catalog_key=catalog_key)
-    approved_id = catalog.approved_snapshot_id
+    approved_id = eligible_island_repository.get_catalog(session, catalog_key=catalog_key).approved_snapshot_id
     session.commit()
     return _snapshot_item(snapshot, approved_snapshot_id=approved_id)
