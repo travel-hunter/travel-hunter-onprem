@@ -348,7 +348,8 @@ def collect_eligible_island_catalog(
     if staged.snapshot is None:
         # identical | suspicious_shrink (empty cannot happen: parser rejects zero rows)
         return EligibleIslandCollectionResult(outcome=staged.outcome, entry_count=len(entries))
-    return EligibleIslandCollectionResult(outcome="created", snapshot_id=staged.snapshot.id, entry_count=staged.snapshot.entry_count)
+    # created, or unchanged when the list matches the latest pending snapshot despite new file bytes
+    return EligibleIslandCollectionResult(outcome=staged.outcome, snapshot_id=staged.snapshot.id, entry_count=staged.snapshot.entry_count)
 
 
 def _cause_text(exc: BaseException) -> str:

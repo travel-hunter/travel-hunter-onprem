@@ -319,6 +319,26 @@ def test_collect_new_fingerprint_supersedes_older_pending(db: Session) -> None:
     assert db.get(EligibleIslandCatalogSnapshot, second.snapshot_id).review_status == "pending"
 
 
+def test_collect_same_rows_with_different_file_bytes_does_not_churn_pending(db: Session) -> None:
+    rows = [["가거도", "전남 신안군"], ["홍도", "전남 신안군"]]
+    first_pages = _pages(rows)
+    second_pages = _pages(rows)
+    # Same islands, different workbook bytes (an extra title row) — what an unstable export looks like.
+    second_pages["https://www.visitisland.kr/files/list.xlsx"] = FakeResponse(
+        content=make_xlsx_bytes(headers=["섬명", "시군구"], rows=rows, leading_rows=1)
+    )
+    first = collect_eligible_island_catalog(
+        db, catalog_key=CATALOG_KEY_ISLAND_VISIT_2026, notice_url=NOTICE_URL, fetched_at=FETCHED_AT, http_get=make_http_get(first_pages)
+    )
+    second = collect_eligible_island_catalog(
+        db, catalog_key=CATALOG_KEY_ISLAND_VISIT_2026, notice_url=NOTICE_URL, fetched_at=FETCHED_AT, http_get=make_http_get(second_pages)
+    )
+    assert first.outcome == "created"
+    assert (second.outcome, second.snapshot_id, second.entry_count) == ("unchanged", first.snapshot_id, 2)
+    assert db.get(EligibleIslandCatalogSnapshot, first.snapshot_id).review_status == "pending"
+    assert len(db.scalars(select(EligibleIslandCatalogSnapshot.id)).all()) == 1
+
+
 def test_collect_failures_write_no_snapshot(db: Session) -> None:
     failed = collect_eligible_island_catalog(
         db, catalog_key=CATALOG_KEY_ISLAND_VISIT_2026, notice_url=NOTICE_URL, fetched_at=FETCHED_AT, http_get=make_http_get({})

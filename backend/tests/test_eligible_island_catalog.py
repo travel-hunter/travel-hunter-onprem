@@ -146,6 +146,22 @@ def test_same_name_different_jurisdiction_kept_through_approval(db: Session, adm
 # --- approval / rejection -------------------------------------------------------------
 
 
+def test_same_content_as_latest_pending_reuses_it_even_with_new_fingerprint(db: Session) -> None:
+    # Google Sheets xlsx exports are not byte-stable: same islands, different bytes every run.
+    first = stage_fixture_snapshot(db, make_entries([("가거도", "전남 신안군"), ("홍도", "전남 신안군")]), fingerprint="1" * 64)
+    again = stage_fixture_snapshot(db, make_entries([("홍도", "전남 신안군"), ("가거도", "전남 신안군")]), fingerprint="2" * 64)
+    assert (again.outcome, again.snapshot.id) == ("unchanged", first.snapshot.id)
+    assert db.get(EligibleIslandCatalogSnapshot, first.snapshot.id).review_status == "pending"
+    assert len(db.scalars(select(EligibleIslandCatalogSnapshot.id)).all()) == 1
+
+
+def test_display_name_change_versus_latest_pending_is_a_new_snapshot(db: Session) -> None:
+    first = stage_fixture_snapshot(db, [ParsedIsland("가거도", "가거도", "전남 신안군")], fingerprint="1" * 64)
+    renamed = stage_fixture_snapshot(db, [ParsedIsland("가거도(소흑산도)", "가거도", "전남 신안군")], fingerprint="2" * 64)
+    assert renamed.outcome == "created"
+    assert db.get(EligibleIslandCatalogSnapshot, first.snapshot.id).review_status == "superseded"
+
+
 def test_pending_snapshot_is_invisible_until_approved(db: Session, admin: User) -> None:
     approve_fixture_snapshot(db, make_entries([("가거도", "전남 신안군")]), admin)
     stage_fixture_snapshot(db, make_entries([("가거도", "전남 신안군"), ("홍도", "전남 신안군")]))
