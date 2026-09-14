@@ -489,7 +489,7 @@ v1 표준 섹션은 아래 다섯 개다.
    `applyUrl`이 있으면 신청 CTA가 되고, 없으면 `officialUrl`이 안내 CTA가 된다. 외부 수집 승격에서는 현재 `apply_url`을 별도로 채우지 않고 `official_url` 중심으로 연결한다.
 
 7. **`island_visit` 대상 섬 목록은 정책 카드가 아니라 별도 승인 카탈로그다.** (2026-09-14, `0040_eligible_island_catalog`)
-   - 출처는 코드 소유 `eligible_island_catalogs.notice_list_url` 한 곳(`island_visit_2026`)뿐이다. 관리자 API는 임의 URL을 받지 않으며, 공지 페이지와 **같은 호스트**의 `.xlsx` 첨부만 내려받는다. 첨부 파일 자체는 저장하지 않고 URL·파일명·SHA-256만 남긴다.
+   - 출처는 코드 소유 `eligible_island_catalogs.notice_list_url` 한 곳(`island_visit_2026`)뿐이다. 관리자 API는 임의 URL을 받지 않는다. 공지 페이지와 **같은 호스트**의 `.xlsx` 첨부가 있으면 그것만 내려받고, 없으면 페이지의 링크 중 코드에 고정된 허용 목록(단축 URL `buly.kr` → 공개 Google 스프레드시트 `docs.google.com/spreadsheets/d/<id>`)만 따라가 시트를 `export?format=xlsx`로 받는다(2026-09-14 실제 사이트는 첨부 없이 이 방식으로만 대상 섬 목록을 공개). 그 밖의 호스트는 절대 요청하지 않는다. 첨부 파일 자체는 저장하지 않고 URL·파일명·SHA-256만 남긴다.
    - 첨부 집합 지문(정렬된 `url|sha256`의 SHA-256)이 기존 스냅샷과 같으면 파싱도 DB 쓰기도 하지 않는다(`unchanged`). 파일 하나만 바뀌어도 새 후보가 된다.
    - 안전장치: 알려진 헤더(섬명/도서명 + 시군구/관할 등)가 없거나 ZIP이 아닌 파일·HTML·빈 결과는 `parser_changed`, 다운로드 실패는 `download_failed`로 기록되고 승인본은 그대로다. 파싱 결과가 승인본과 같으면 `identical`, 승인본보다 30% 넘게 줄면 `suspicious_shrink`로 후보를 만들지 않는다. 이름 정규화는 NFC + 공백 축약만 한다.
    - 승인은 `/admin/policy-review` 의 `대상 섬 목록 갱신` 섹션에서 **스냅샷 단위**로만 한다(섬 단위 승인 없음). 승인 시 카탈로그 행을 잠근 한 트랜잭션에서 `eligible_islands`를 통째로 교체하고, 이전 `pending` 후보는 `superseded`가 된다. 반려는 사유가 필수다.
