@@ -1,6 +1,10 @@
 from app.models.tables import (
     AdminAuditLog,
     AuthRefreshToken,
+    EligibleIsland,
+    EligibleIslandCatalog,
+    EligibleIslandCatalogSnapshot,
+    EligibleIslandSnapshotEntry,
     ExternalSourceRecord,
     NotificationDelivery,
     PasswordResetToken,
@@ -27,6 +31,10 @@ from app.models.tables import (
 __all__ = [
     "AdminAuditLog",
     "AuthRefreshToken",
+    "EligibleIsland",
+    "EligibleIslandCatalog",
+    "EligibleIslandCatalogSnapshot",
+    "EligibleIslandSnapshotEntry",
     "ExternalSourceRecord",
     "NotificationDelivery",
     "PasswordResetToken",

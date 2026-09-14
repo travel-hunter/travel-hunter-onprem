@@ -389,6 +389,118 @@ class PolicyCollectionSource(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
 
+class EligibleIslandCatalog(Base):
+    __tablename__ = "eligible_island_catalogs"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    key: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    notice_list_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    # ponytail: no FK — snapshots<->catalog would be circular; snapshots are never deleted (status only).
+    approved_snapshot_id: Mapped[int | None] = mapped_column(BigInteger().with_variant(Integer, "sqlite"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class EligibleIslandCatalogSnapshot(Base):
+    __tablename__ = "eligible_island_catalog_snapshots"
+    __table_args__ = (
+        CheckConstraint(
+            "review_status IN ('pending', 'approved', 'rejected', 'superseded')",
+            name="ck_eligible_island_catalog_snapshots_review_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    catalog_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("eligible_island_catalogs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    notice_url: Mapped[str | None] = mapped_column(String(500))
+    notice_title: Mapped[str | None] = mapped_column(String(300))
+    attachment_url: Mapped[str | None] = mapped_column(String(500))
+    attachment_filename: Mapped[str | None] = mapped_column(String(255))
+    attachment_fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
+    attachment_documents: Mapped[list[dict[str, Any]]] = mapped_column(postgres_json, nullable=False, default=list)
+    parser_version: Mapped[str] = mapped_column(String(40), nullable=False, server_default="v1")
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    entry_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
+    added_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
+    removed_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
+    changed_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
+    review_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending", default="pending")
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    review_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class EligibleIslandSnapshotEntry(Base):
+    __tablename__ = "eligible_island_snapshot_entries"
+    __table_args__ = (
+        UniqueConstraint(
+            "snapshot_id", "normalized_name", "jurisdiction_name",
+            name="uq_eligible_island_snapshot_entries_snapshot_name_jurisdiction",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    snapshot_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("eligible_island_catalog_snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    jurisdiction_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    raw_region_text: Mapped[str | None] = mapped_column(String(300))
+    row_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
+class EligibleIsland(Base):
+    __tablename__ = "eligible_islands"
+    __table_args__ = (
+        UniqueConstraint(
+            "catalog_id", "normalized_name", "jurisdiction_name",
+            name="uq_eligible_islands_catalog_name_jurisdiction",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    catalog_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("eligible_island_catalogs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    snapshot_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("eligible_island_catalog_snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    jurisdiction_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
 class RegionPhoto(Base):
     __tablename__ = "region_photos"
     __table_args__ = (
