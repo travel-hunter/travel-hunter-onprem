@@ -15,9 +15,9 @@
 
 **Files:** Modify `backend/app/models/tables.py`, `backend/tests/test_db_schema.py`; Create `backend/alembic/versions/0041_policy_auto_publish.py`.
 
-- [ ] Step 1: `test_db_schema.py`에 두 컬럼 존재 단언 추가 → RED.
-- [ ] Step 2: 모델 컬럼 추가, 0041(`down_revision = "0040_eligible_island_catalog"`, 컬럼 2개 add/drop) 작성 → GREEN, `alembic upgrade 0040:head --sql` 확인.
-- [ ] Step 3: 커밋 `feat: add review reason and parsed count columns`.
+- [x] Step 1: `test_db_schema.py`에 두 컬럼 존재 단언 추가 → RED.
+- [x] Step 2: 모델 컬럼 추가, 0041(`down_revision = "0040_eligible_island_catalog"`, 컬럼 2개 add/drop) 작성 → GREEN, `alembic upgrade 0040:head --sql` 확인.
+- [x] Step 3: 커밋 `feat: add review reason and parsed count columns`.
 
 ### Task 2: 게이트 서비스와 수집 배선
 
@@ -25,9 +25,9 @@
 
 **Interfaces:** `auto_publish_gate(db, *, candidate, record, source, source_result) -> str` (반환값은 `auto` 또는 보류 사유), `approve_candidate(..., admin: User | None)`, `record_collection_source_run(..., parsed_count)`.
 
-- [ ] Step 1: 스펙 테스트 기준 1~7을 sqlite 픽스처(`autoflush=False`)로 작성 → RED.
-- [ ] Step 2: 게이트 구현. `_queue_review_candidates`가 `source_results`를 받아 카테고리별 `SourceCollectionResult`와 소스 행을 조회해 게이트를 호출한다. 자동 승인 감사 로그는 `policy_review.auto_approve`, `admin_user_id`는 마지막 기준선 승인자.
-- [ ] Step 3: 전체 pytest → GREEN. 커밋 `feat: auto-publish reviewed-baseline policy updates`.
+- [x] Step 1: 스펙 테스트 기준 1~7을 sqlite 픽스처(`autoflush=False`)로 작성 → RED.
+- [x] Step 2: 게이트 구현. `_queue_review_candidates`가 `source_results`를 받아 카테고리별 `SourceCollectionResult`와 소스 행을 조회해 게이트를 호출한다. 자동 승인 감사 로그는 `policy_review.auto_approve`, `admin_user_id`는 마지막 기준선 승인자.
+- [x] Step 3: 전체 pytest → GREEN. 커밋 `feat: auto-publish reviewed-baseline policy updates`.
 
 ### Task 3: 관리자 API·화면·문서
 

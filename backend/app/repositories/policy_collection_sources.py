@@ -96,12 +96,23 @@ def update_collection_source_enabled(db: Session, *, source: PolicyCollectionSou
     return source
 
 
-def record_collection_source_run(db: Session, *, source: PolicyCollectionSource, outcome: str, collected_at: datetime, error: str | None = None) -> PolicyCollectionSource:
+def record_collection_source_run(
+    db: Session,
+    *,
+    source: PolicyCollectionSource,
+    outcome: str,
+    collected_at: datetime,
+    error: str | None = None,
+    parsed_count: int | None = None,
+) -> PolicyCollectionSource:
     source.last_outcome = outcome
     source.last_collected_at = collected_at
     source.last_error = error
     if outcome == "success":
         source.last_successful_at = collected_at
+        if parsed_count is not None:
+            # Baseline for the auto-publish shrink guard: only successful runs count.
+            source.last_parsed_count = parsed_count
     db.add(source)
     db.flush()
     return source

@@ -106,7 +106,7 @@ def collect_external_benefits_from_html_sources(
                     error=str(exc),
                 )
             )
-    _queue_review_candidates(db, all_rows)
+    _queue_review_candidates(db, all_rows, source_results=source_results)
     _record_source_results(db, source_results, collected_at=fetched_at)
     db.commit()
     return _build_result(source_results, len(all_rows))
@@ -155,7 +155,7 @@ def collect_external_benefits_from_live_sources(
         for source in source_results
     ):
         enrich_existing_local_half_trip_detail_fields(db, timeout=timeout)
-    _queue_review_candidates(db, all_rows)
+    _queue_review_candidates(db, all_rows, source_results=source_results)
     _record_source_results(db, source_results, collected_at=fetched_at)
     db.commit()
     return _build_result(source_results, len(all_rows))
@@ -183,6 +183,7 @@ def _record_source_results(
                 outcome=result.outcome,
                 collected_at=collected_at,
                 error=result.error,
+                parsed_count=result.parsed_count,
             )
 
 
@@ -192,10 +193,35 @@ def _enabled_source_categories(db: Session) -> set[str]:
     return policy_collection_sources.enabled_collection_source_categories(db)
 
 
-def _queue_review_candidates(db: Session, rows: list[object]) -> None:
+def _queue_review_candidates(
+    db: Session,
+    rows: list[object],
+    *,
+    source_results: list[SourceCollectionResult] | None = None,
+) -> None:
+    results_by_category = {result.source_category: result for result in source_results or []}
+    sources_by_category: dict[str, object] = {}
     for row in rows:
-        if isinstance(row, ExternalSourceRecord) and row.id is not None:
-            policy_candidate_review.classify_candidate(db, record=row)
+        if not (isinstance(row, ExternalSourceRecord) and row.id is not None):
+            continue
+        candidate = policy_candidate_review.classify_candidate(db, record=row)
+        # Only freshly created candidates go through the gate; re-seen evidence keeps its verdict.
+        if candidate.review_status != "pending" or candidate.review_reason is not None:
+            continue
+        category = row.source_category or ""
+        if category not in sources_by_category:
+            sources_by_category[category] = (
+                policy_collection_sources.get_collection_source_by_key(db, key=category)
+                if hasattr(db, "scalars")
+                else None
+            )
+        policy_candidate_review.auto_publish_gate(
+            db,
+            candidate=candidate,
+            record=row,
+            source=sources_by_category[category],
+            source_result=results_by_category.get(category),
+        )
 
 def fetch_digital_tourism_partner_benefits(
     *,
