@@ -503,6 +503,14 @@ v1 표준 섹션은 아래 다섯 개다.
    - 자동 승인도 `admin_audit_logs`에 `policy_review.auto_approve`로 남는다. `admin_user_id`는 그 소스의 기준선을 마지막으로 승인한 관리자(자동화를 켠 책임자), `after_json.actor = "system"`.
    - 수집 성공 회차만 `policy_collection_sources.last_parsed_count`를 갱신하므로 파서 실패 회차가 기준선을 0으로 끌어내리지 않는다.
 
+9. **섬 여행비 지원은 신청 절차 안내와 일정(팀) 단위 진행 관리까지 제공한다.** (2026-09-14, 스펙 `docs/superpowers/specs/2026-09-14-island-application-guide-design.md`)
+   - **수집:** `island_visit_parser`가 공식 페이지의 모든 회차(1차·2차)를 파싱해 `raw_payload.procedure`에 저장한다: 회차별 신청 시작·마감, 여행 기간, 신청·서류 제출 구글 폼(HTML 주석 밖의 `forms.gle`/`docs.google.com/forms`만, 버튼·알림 문구의 "N차"로 회차 배정), 서류 제출 기한(여행 후 14일), 최소 1박, 최소 결제 10만원, 필요 서류 5종, 사진 요건, 지원 제외 기준, 문의처. 서류 제출 기한이나 회차 날짜를 못 찾으면 `parser_changed`.
+   - **검토:** `evidence_fingerprint`는 procedure가 있는 레코드에만 procedure를 포함한다(다른 정책 지문은 그대로). 절차가 바뀐 후보는 자동 발행 모드여도 `procedure_changed`로 보류된다.
+   - **승인·표시:** island_visit mapper가 지원내용·회차별 기간·신청 조건·필요 서류·비고를 채우고, 절차를 `policies.structured_detail["applicationGuide"]`에 저장한다. 정책 API는 이를 `applicationGuide` DTO로 내려주며 회차 상태(`past`/`current`/`upcoming`)·서류 마감일·열린 신청 폼은 조회일(KST) 기준 계산이다. `applyUrl`은 신청이 열린 회차가 있을 때만 그 신청 폼. 정책 상세 화면은 "신청 절차" 섹션(지난 회차 접힘, 현재 회차 D-day·5단계, 다음 회차 예정)을 보여 준다.
+   - **진행 관리:** 일정에 연결된 섬 정책마다 `trip_policies.application_*`(0042)에 팀 진행 상태와 서류 준비 체크를 저장한다. `PATCH /api/trips/{id}/policies/{slug}/application`은 편집자만, 한 단계씩 앞뒤로만 이동. 일정 상세 응답의 `linkedPolicies[].application`은 일정으로 계산한 점검(여행 기간 안, 1박 이상, 승인된 대상 섬 포함, 신청 마감, 서류 마감 = 종료일+14일)을 함께 준다. 일정 상세 화면의 "신청 진행" 패널과 신청 정책 목록의 "신청 진행 · 상태" 배지가 이를 쓴다.
+   - **마감 이후:** 카드 마감(`end_date`, 신청 마감)은 공개 목록·카드·추천·상세에 그대로 적용된다. 일정 쪽(연결 정책, 신청 정책 목록, 진행 갱신 API)만 서류 제출 기한이 남은 회차가 있는 동안 계속 보이고 갱신된다(`island_application.active_guide`).
+   - **개인정보:** 증빙 파일·주민번호·계좌번호는 받지도 저장하지도 않는다. 제출은 공식 구글 폼으로만 안내한다. 마감 알림은 앱 안 D-day 표시이며 푸시·이메일 알림은 없다.
+
 ## 빠른 추적 순서
 
 정책 상세 화면의 어떤 문구가 어디서 왔는지 추적할 때는 아래 순서로 보면 된다.

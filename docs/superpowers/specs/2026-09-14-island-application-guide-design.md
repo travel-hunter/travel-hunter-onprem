@@ -42,7 +42,7 @@
   - 폼 링크는 **HTML 주석 밖**에 있고 호스트가 `forms.gle` 또는 `docs.google.com/forms`일 때만 채택(페이지에 주석 처리된 옛 버튼이 남아 있음).
   - 필수 항목(현재 회차 신청 마감·여행 기간·서류 제출 기한) 중 하나라도 못 찾으면 `IslandVisitParserChangedError` → 기존대로 `parser_changed`.
 - (2026-09-14 개정) `structuredDetail` 항목은 평평한 키(`title/label/description/amount/value/url/startDate/endDate/type`)만 허용해 회차(신청 시작·마감, 여행 시작·종료, 폼 2개, 조회일 기준 상태)를 담을 수 없다. 그래서 새 섹션을 만들지 않고, 이미 있는 선례(`applicationPeriod`/`usagePeriod`처럼 `policies.structured_detail`에 저장되지만 공개 5섹션에서는 빠지는 검토 키)를 따른다: mapper가 파싱한 절차를 `structured_detail["applicationGuide"]`에 넣고, 승인 시 정책 행에 함께 저장된다. 공개 API는 이를 별도 DTO `applicationGuide`로 투영하며 회차 상태·서류 마감일·열린 신청 폼은 **조회일 기준으로 계산**한다. 공개 `structuredDetail` 5섹션 계약은 그대로다.
-- `island_visit` 전용 mapper를 `policy_semantic_mapping._MAPPERS`에 추가해 `supportContent`(10만원, 조건), `periods`(신청 마감·여행 기간·서류 제출 기한), `applicationTarget`(1팀 1인, 대상 섬 1박 2일 이상, 등록 숙박업소, 결제 10만원 이상), `requiredDocuments`, `notes`(제외 기준·사진 요건·문의처), `applicationSteps`를 채운다. `policies.apply_url`은 그대로 비워 두고, API 투영 시 **신청이 열린 회차가 있을 때만** 그 회차 신청 폼을 `applyUrl`로 내려 기존 "신청하러 가기" CTA가 동작하게 한다(마감이 지나면 자동으로 사라짐).
+- `island_visit` 전용 mapper를 `policy_semantic_mapping._MAPPERS`에 추가해 `supportContent`(10만원, 조건), `periods`(신청 마감·여행 기간·서류 제출 기한), `applicationTarget`(1팀 1인, 대상 섬 1박 2일 이상, 등록 숙박업소, 결제 10만원 이상), `requiredDocuments`, `notes`(제외 기준·사진 요건·문의처)를 채우고, 파싱한 절차는 `structured_detail["applicationGuide"]`에 함께 둔다(위 개정 참고). `policies.apply_url`은 그대로 비워 두고, API 투영 시 **신청이 열린 회차가 있을 때만** 그 회차 신청 폼을 `applyUrl`로 내려 기존 "신청하러 가기" CTA가 동작하게 한다(마감이 지나면 자동으로 사라짐).
 - `evidence_fingerprint`에 `procedure` 해시를 포함해 폼 링크·기간·서류가 바뀌면 새 검토 후보가 생기게 하고, 자동 발행 게이트에 `procedure_changed` 보류 사유를 추가한다.
 
 ### 진행 상태 (일정 단위, 마이그레이션 `0042_trip_policy_application`)
@@ -100,7 +100,7 @@ island_visit 정책의 `end_date`(카드 마감)는 신청 마감(2차 2026-09-2
 
 1. 2026-09-14에 저장한 공식 페이지 픽스처에서 2차 신청 마감·여행 기간·서류 기한 14일·서류 5종·제외 기준·폼 2개(주석 속 옛 링크 제외)를 파싱한다.
 2. 필수 항목이 빠진 페이지는 `parser_changed`.
-3. island_visit 정책 상세에 `applicationSteps` 5개와 `applyUrl`이 나오고, 다른 정책은 빈 배열·기존 CTA 그대로.
+3. island_visit 정책 상세에 `applicationGuide`(회차별 상태·서류 마감일·열린 신청 폼)와, 신청이 열린 동안에만 `applyUrl`이 나오고, 다른 정책은 `applicationGuide`가 없고 기존 CTA 그대로.
 4. 폼 링크만 바뀐 수집은 새 후보 + `procedure_changed` 보류.
 5. 진행 상태 전이 규칙, 편집자 권한, 알 수 없는 서류 키 422, 비섬 정책 404.
 6. 조건 점검: 기간 밖 일정 ⚠, 당일치기 ⚠, 대상 섬 없는 일정 ⚠, 서류 마감 = 종료일+14.

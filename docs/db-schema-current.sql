@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict wtvr2N0HxVTEKdE2jty36tZU03e9emcgRePKamvDiMA9tHcjcEDsJEALqwD2vVY
+\restrict u9vh52NFMlhXUqWIE006EOsvFqGhpGU23DDV7Lyg7sckDU2O9EFZLhdsMqRT7xv
 
 -- Dumped from database version 16.14
 -- Dumped by pg_dump version 16.14
@@ -935,7 +935,12 @@ CREATE TABLE public.trip_policies (
     id bigint NOT NULL,
     trip_id bigint NOT NULL,
     policy_id bigint NOT NULL,
-    added_at timestamp without time zone DEFAULT now() NOT NULL
+    added_at timestamp without time zone DEFAULT now() NOT NULL,
+    application_status character varying(24),
+    application_checklist jsonb,
+    application_updated_at timestamp without time zone,
+    application_updated_by_user_id bigint,
+    CONSTRAINT ck_trip_policies_application_status CHECK (((application_status IS NULL) OR ((application_status)::text = ANY ((ARRAY['not_started'::character varying, 'applied'::character varying, 'selected'::character varying, 'not_selected'::character varying, 'traveled'::character varying, 'documents_submitted'::character varying, 'paid'::character varying])::text[]))))
 );
 
 
@@ -2047,6 +2052,14 @@ ALTER TABLE ONLY public.policies
 
 
 --
+-- Name: trip_policies fk_trip_policies_application_updated_by_user_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trip_policies
+    ADD CONSTRAINT fk_trip_policies_application_updated_by_user_id FOREIGN KEY (application_updated_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: notification_deliveries notification_deliveries_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2226,4 +2239,4 @@ ALTER TABLE ONLY public.user_saved_policies
 -- PostgreSQL database dump complete
 --
 
-\unrestrict wtvr2N0HxVTEKdE2jty36tZU03e9emcgRePKamvDiMA9tHcjcEDsJEALqwD2vVY
+\unrestrict u9vh52NFMlhXUqWIE006EOsvFqGhpGU23DDV7Lyg7sckDU2O9EFZLhdsMqRT7xv

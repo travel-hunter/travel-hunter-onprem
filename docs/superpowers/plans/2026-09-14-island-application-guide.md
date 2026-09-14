@@ -63,7 +63,7 @@
 
 ### Task 6: 격리 검증과 문서
 
-- [ ] 5174 재빌드 → 0042 왕복 → `db-schema-current.sql` 재생성 → island_visit 수집·승인 → 대상 섬이 들어간 10월 일정에 정책 연결 → 상태 전이·체크리스트·조건 점검·D-day 확인 → `policy-collection-to-screen-flow.md`에 절차 수집·검토·진행 관리 흐름 추가 → 커밋 `docs: document the island support application guide`.
+- [x] 5174 재빌드 → 0042 왕복 → `db-schema-current.sql` 재생성 → island_visit 수집·승인 → 대상 섬이 들어간 10월 일정에 정책 연결 → 상태 전이·체크리스트·조건 점검·D-day 확인 → `policy-collection-to-screen-flow.md`에 절차 수집·검토·진행 관리 흐름 추가 → 커밋 `docs: document the island support application guide`.
 
 ## 확정 사항 (2026-09-14)
 
