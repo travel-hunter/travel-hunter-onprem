@@ -22,7 +22,7 @@
 
 - [ ] Step 1: 5174 백엔드 컨테이너에서 공식 페이지를 받아 픽스처로 저장(공개 페이지, 원문 그대로).
 - [ ] Step 2: 실패 테스트 — 픽스처에서 `procedure.rounds`(2차: 신청 마감 2026-09-21T18:00, 여행 2026-10-01~2026-11-04, 신청·서류 폼 URL), `documentDeadlineDaysAfterTrip=14`, `minNights=1`, `minPaymentKrw=100000`, 서류 5종, 제외 기준, 연락처를 기대. 주석 속 옛 폼 링크는 채택되지 않음. 필수 항목을 지운 HTML은 `IslandVisitParserChangedError`.
-- [ ] Step 3: 구현. HTML 주석 제거 후 섹션별 추출, 폼 링크는 `forms.gle`/`docs.google.com/forms` 호스트만. 대표 회차 = 신청 마감이 오늘 이후인 가장 이른 회차, 없으면 여행 종료가 오늘 이후인 회차.
+- [ ] Step 3: 구현. HTML 주석 제거 후 섹션별 추출, 폼 링크는 `forms.gle`/`docs.google.com/forms` 호스트만. 1차·2차 **모든 회차를 저장**하고, 회차 상태(`past`/`current`/`upcoming`)는 저장하지 않고 조회 시 `round_status(round, today)`로 계산한다.
 - [ ] Step 4: 전체 pytest → 커밋 `feat: parse the island travel support procedure`.
 
 ### Task 2: `applicationSteps` 섹션과 island_visit mapper
@@ -37,7 +37,7 @@
 
 **Files:** Modify `frontend/src/pages/PolicyPages.tsx`, `frontend/src/app/__tests__/policy-detail.test.tsx`, `frontend/src/styles/app.css`.
 
-- [ ] Step 1: 실패 테스트 — applicationSteps가 있으면 스텝 5개·기간·마감 D-day, `신청 폼 열기`/`서류 제출 폼 열기` 링크와 선정자 경고. 없으면 섹션 없음(기존 정책 회귀).
+- [ ] Step 1: 실패 테스트 — applicationSteps가 있으면 회차 목록(지난 회차 접힘 "종료", 현재 회차 펼침 + 신청 마감 D-n, 다음 회차 "예정"), 현재 회차 스텝 5개·기간, `신청 폼 열기`/`서류 제출 폼 열기` 링크와 선정자 경고, 마감 3일 이내 강조·지나면 "마감". 없으면 섹션 없음(기존 정책 회귀).
 - [ ] Step 2: 구현(기존 `section-block`/`SurfaceCard` 재사용, 새 컴포넌트 최소화).
 - [ ] Step 3: typecheck/build/mojibake → 5174 재빌드 후 island_visit 후보 수집·승인해 실제 화면 확인 → 커밋 `feat: show the island support application steps`.
 
@@ -63,8 +63,8 @@
 
 - [ ] 5174 재빌드 → 0042 왕복 → `db-schema-current.sql` 재생성 → island_visit 수집·승인 → 대상 섬이 들어간 10월 일정에 정책 연결 → 상태 전이·체크리스트·조건 점검·D-day 확인 → `policy-collection-to-screen-flow.md`에 절차 수집·검토·진행 관리 흐름 추가 → 커밋 `docs: document the island support application guide`.
 
-## 사용자 확인 필요
+## 확정 사항 (2026-09-14)
 
-1. 진행 상태를 **일정(팀) 단위**로 둘지(추천), 사용자 개인 단위로 둘지.
-2. 페이지에 남아 있는 **1차 정보**를 과거 회차로 보여 줄지, 현재·다음 회차만 보여 줄지(추천: 현재·다음만).
-3. 마감 알림(신청 마감·서류 D-3 등)을 다음 단계로 둘지 — 알림 런타임 복구가 필요해 별도 작업 규모.
+1. 진행 상태는 **일정(팀) 단위**.
+2. 정책 상세는 **지난·현재·다음 회차 모두** 표시(상태는 조회 시 계산).
+3. 마감 알림은 **앱 안 D-day 표기**(정책 상세 신청 마감, 일정 진행 패널 신청·서류 제출 마감, 3일 이내 강조). 푸시·이메일은 알림 런타임 복구가 필요한 별도 작업.
