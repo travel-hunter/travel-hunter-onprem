@@ -177,6 +177,15 @@ def test_current_schema_decision_columns_are_registered() -> None:
     assert "trips_policies" not in Base.metadata.tables
 
 
+def test_policy_auto_publish_columns_are_registered() -> None:
+    candidates = Base.metadata.tables["policy_review_candidates"]
+    sources = Base.metadata.tables["policy_collection_sources"]
+    assert "review_reason" in candidates.c
+    assert candidates.c["review_reason"].nullable is True
+    assert "last_parsed_count" in sources.c
+    assert sources.c["last_parsed_count"].nullable is True
+
+
 def test_policies_external_source_record_id_is_not_unique() -> None:
     policies = Base.metadata.tables["policies"]
 

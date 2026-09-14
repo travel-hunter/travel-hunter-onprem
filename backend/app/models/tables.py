@@ -353,6 +353,8 @@ class PolicyReviewCandidate(Base):
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
     review_note: Mapped[str | None] = mapped_column(Text)
+    # Why the candidate is waiting for a human ('auto' when the gate published it).
+    review_reason: Mapped[str | None] = mapped_column(String(40))
     published_policy_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("policies.id", ondelete="SET NULL"), index=True
     )
@@ -380,6 +382,7 @@ class PolicyCollectionSource(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     publication_mode: Mapped[str] = mapped_column(String(40), nullable=False, server_default="review")
     expected_min_records: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_parsed_count: Mapped[int | None] = mapped_column(Integer)
     last_outcome: Mapped[str | None] = mapped_column(String(40))
     last_collected_at: Mapped[datetime | None] = mapped_column(DateTime)
     last_successful_at: Mapped[datetime | None] = mapped_column(DateTime)
