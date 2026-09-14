@@ -244,7 +244,7 @@ def _matches_approved_island(place_name: str, approved_names: set[str]) -> bool:
 
 **Interfaces:** Consumes Task 4 catalog APIs and Task 5 policy fields.
 
-- [ ] **Step 1: Write a failing separate-review UI test.**
+- [x] **Step 1: Write a failing separate-review UI test.**
 
 ~~~tsx
 it("shows catalog changes separately from policy review candidates", async () => {
@@ -255,13 +255,13 @@ it("shows catalog changes separately from policy review candidates", async () =>
 });
 ~~~
 
-- [ ] **Step 2: Run `cd frontend && npx vitest run src/pages/admin/AdminPages.test.tsx`; confirm failure.**
+- [x] **Step 2: Run `cd frontend && npx vitest run src/pages/admin/AdminPages.test.tsx`; confirm failure.**
 
-- [ ] **Step 3: Keep `검토 대기 정책` unchanged and add `대상 섬 목록 갱신`.** Show counts, source links, warnings, and details. Approval requires browser confirmation that includes add/remove counts. Rejection requires a note. Do not add per-island approval.
+- [x] **Step 3: Keep `검토 대기 정책` unchanged and add `대상 섬 목록 갱신`.** Show counts, source links, warnings, and details. Approval requires browser confirmation that includes add/remove counts. Rejection requires a note. Do not add per-island approval.
 
-- [ ] **Step 4: Document official-only source access, SHA no-change behavior, parser/empty/shrink safeguards, approval requirement, and first-run procedure: DB backup, collection, official total/region-file comparison, approval. Generate schema references from migration output.**
+- [x] **Step 4: Document official-only source access, SHA no-change behavior, parser/empty/shrink safeguards, approval requirement, and first-run procedure: DB backup, collection, official total/region-file comparison, approval. Generate schema references from migration output.**
 
-- [ ] **Step 5: Run final verification.**
+- [x] **Step 5: Run final verification.**
 
 ~~~bash
 cd backend
@@ -280,9 +280,9 @@ git diff --check
 
 Expected: all changed targeted/full suites pass; migration SQL contains only catalog schema; changed Korean files contain no U+FFFD.
 
-- [ ] **Step 6: Smoke test in an isolated Compose project and DB.** Collect fixture or official attachment, verify a pending snapshot, verify public policy unchanged, approve, verify exact `가거도` recommends the policy, verify `가거도 선착장` does not. Update `CHECKLIST.md` only after all gates pass.
+- [x] **Step 6: Smoke test in an isolated Compose project and DB.** Collect fixture or official attachment, verify a pending snapshot, verify public policy unchanged, approve, verify exact `가거도` recommends the policy, verify `가거도 선착장` does not. Update `CHECKLIST.md` only after all gates pass.
 
-- [ ] **Step 7: Commit merge-ready work.**
+- [x] **Step 7: Commit merge-ready work.**
 
 ~~~bash
 git add frontend/src/pages/admin/AdminPages.tsx frontend/src/pages/admin/AdminPages.test.tsx frontend/src/styles/app.css docs/policy-collection-to-screen-flow.md docs/db-schema-current.md docs/db-schema-current.sql CHECKLIST.md

@@ -416,4 +416,31 @@ describe("admin pages", () => {
     await waitFor(() => expect(updateSpy).toHaveBeenCalledWith("island_visit", true));
     expect(sourcesSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("shows catalog changes separately from policy review candidates", async () => {
+    installStoredUser({ ...getPreviewUser(), role: "admin" });
+    vi.spyOn(appDataApi as any, "listAdminCollectionSources").mockResolvedValue({ items: [] });
+    vi.spyOn(appDataApi as any, "listAdminPolicyReviewCandidates").mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    const snapshot = {
+      id: "3", reviewStatus: "pending", isCurrentApproved: false, entryCount: 42, addedCount: 3, removedCount: 1, changedCount: 0,
+      sourceNoticeUrl: "https://www.visitisland.kr/notice/12", sourceNoticeTitle: "2026 대상 섬 목록 안내",
+      attachmentFiles: [{ url: "https://www.visitisland.kr/files/south.xlsx", filename: "south.xlsx", sha256: "a".repeat(64) }],
+      attachmentFingerprint: "b".repeat(64), parserVersion: "xlsx-v1", fetchedAt: "2026-09-14T09:00:00", reviewedAt: null, reviewNote: null, createdAt: "2026-09-14T09:00:00",
+    };
+    vi.spyOn(appDataApi as any, "listAdminEligibleIslandSnapshots").mockResolvedValue({ items: [snapshot], total: 1, limit: 20, offset: 0, approvedSnapshotId: null, approvedEntryCount: 0 });
+    const approveSpy = vi.spyOn(appDataApi as any, "approveAdminEligibleIslandSnapshot").mockResolvedValue({ ...snapshot, reviewStatus: "approved", isCurrentApproved: true });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderAppRoute("/admin/policy-review");
+
+    expect(await screen.findByRole("heading", { name: "대상 섬 목록 갱신" })).toBeVisible();
+    expect(screen.getByText("추가 3 · 삭제 1 · 변경 0")).toBeVisible();
+    expect(screen.getByRole("link", { name: "south.xlsx" })).toHaveAttribute("href", "https://www.visitisland.kr/files/south.xlsx");
+    expect(document.body).not.toHaveTextContent("승인하고 공개");
+    await userEvent.click(screen.getByRole("button", { name: "카탈로그 승인" }));
+    await waitFor(() => expect(approveSpy).toHaveBeenCalledWith("3"));
+    expect(confirmSpy.mock.calls[0][0]).toContain("추가 3");
+    expect(confirmSpy.mock.calls[0][0]).toContain("삭제 1");
+    confirmSpy.mockRestore();
+  });
 });

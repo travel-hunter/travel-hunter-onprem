@@ -44,6 +44,10 @@ import {
   AdminAuditLogListResponse,
   AdminCollectionSource,
   AdminCollectionSourceListResponse,
+  AdminEligibleIslandCollectResponse,
+  AdminEligibleIslandSnapshot,
+  AdminEligibleIslandSnapshotDetail,
+  AdminEligibleIslandSnapshotListResponse,
   AdminPolicyReviewCandidate,
   AdminPolicyReviewCandidateListResponse,
   AdminExternalSourceSummaryResponse,
@@ -67,6 +71,9 @@ import {
   Trip,
   User,
 } from "./types";
+
+// Code-owned catalog key: the admin UI reviews exactly one program in this version.
+const ELIGIBLE_ISLAND_CATALOG_PATH = "/api/admin/eligible-island-catalogs/island_visit_2026";
 
 const makeDefaultLogin = (request: LoginRequest | undefined): LoginRequest => {
   if (!request || !request.email || !request.password) {
@@ -208,4 +215,14 @@ export const backendApi: AppDataApi = {
     apiClient.get<AdminCollectionSourceListResponse>("/api/admin/policy-collection-sources"),
   updateAdminCollectionSource: (sourceKey, enabled): Promise<AdminCollectionSource> =>
     apiClient.patch<AdminCollectionSource>(`/api/admin/policy-collection-sources/${sourceKey}`, { enabled }),
+  listAdminEligibleIslandSnapshots: (options): Promise<AdminEligibleIslandSnapshotListResponse> =>
+    apiClient.get<AdminEligibleIslandSnapshotListResponse>(`${ELIGIBLE_ISLAND_CATALOG_PATH}/snapshots${queryString(options ?? {})}`),
+  getAdminEligibleIslandSnapshot: (snapshotId): Promise<AdminEligibleIslandSnapshotDetail> =>
+    apiClient.get<AdminEligibleIslandSnapshotDetail>(`${ELIGIBLE_ISLAND_CATALOG_PATH}/snapshots/${snapshotId}`),
+  collectAdminEligibleIslandCatalog: (): Promise<AdminEligibleIslandCollectResponse> =>
+    apiClient.post<AdminEligibleIslandCollectResponse>(`${ELIGIBLE_ISLAND_CATALOG_PATH}/collect`),
+  approveAdminEligibleIslandSnapshot: (snapshotId): Promise<AdminEligibleIslandSnapshot> =>
+    apiClient.post<AdminEligibleIslandSnapshot>(`${ELIGIBLE_ISLAND_CATALOG_PATH}/snapshots/${snapshotId}/approve`),
+  rejectAdminEligibleIslandSnapshot: (snapshotId, note): Promise<AdminEligibleIslandSnapshot> =>
+    apiClient.post<AdminEligibleIslandSnapshot>(`${ELIGIBLE_ISLAND_CATALOG_PATH}/snapshots/${snapshotId}/reject`, { note }),
 };

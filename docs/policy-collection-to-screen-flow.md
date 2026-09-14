@@ -488,6 +488,14 @@ v1 표준 섹션은 아래 다섯 개다.
 6. **공식 신청 링크와 공식 안내 링크는 다르다.**
    `applyUrl`이 있으면 신청 CTA가 되고, 없으면 `officialUrl`이 안내 CTA가 된다. 외부 수집 승격에서는 현재 `apply_url`을 별도로 채우지 않고 `official_url` 중심으로 연결한다.
 
+7. **`island_visit` 대상 섬 목록은 정책 카드가 아니라 별도 승인 카탈로그다.** (2026-09-14, `0040_eligible_island_catalog`)
+   - 출처는 코드 소유 `eligible_island_catalogs.notice_list_url` 한 곳(`island_visit_2026`)뿐이다. 관리자 API는 임의 URL을 받지 않으며, 공지 페이지와 **같은 호스트**의 `.xlsx` 첨부만 내려받는다. 첨부 파일 자체는 저장하지 않고 URL·파일명·SHA-256만 남긴다.
+   - 첨부 집합 지문(정렬된 `url|sha256`의 SHA-256)이 기존 스냅샷과 같으면 파싱도 DB 쓰기도 하지 않는다(`unchanged`). 파일 하나만 바뀌어도 새 후보가 된다.
+   - 안전장치: 알려진 헤더(섬명/도서명 + 시군구/관할 등)가 없거나 ZIP이 아닌 파일·HTML·빈 결과는 `parser_changed`, 다운로드 실패는 `download_failed`로 기록되고 승인본은 그대로다. 파싱 결과가 승인본과 같으면 `identical`, 승인본보다 30% 넘게 줄면 `suspicious_shrink`로 후보를 만들지 않는다. 이름 정규화는 NFC + 공백 축약만 한다.
+   - 승인은 `/admin/policy-review` 의 `대상 섬 목록 갱신` 섹션에서 **스냅샷 단위**로만 한다(섬 단위 승인 없음). 승인 시 카탈로그 행을 잠근 한 트랜잭션에서 `eligible_islands`를 통째로 교체하고, 이전 `pending` 후보는 `superseded`가 된다. 반려는 사유가 필수다.
+   - 승인 전 후보는 어디에도 노출되지 않는다. 정책 상세의 `eligibleIslandCount`/`eligibleIslandsOfficialUrl`과 일정 추천의 섬 정책 포함 여부는 `eligible_islands`만 읽는다. 추천은 `TripPlace.place_name`이 승인된 `normalized_name`과 **완전 일치**할 때만 섬 정책을 넣는다(`거문도 선착장`은 `거문도`와 다르다).
+   - 첫 운영 절차: ① DB 백업 ② `공지 다시 확인`으로 수집 ③ 후보의 총수·지역 파일 수를 공식 공지와 대조 ④ `변경 상세`로 추가/삭제 확인 ⑤ 승인. 실패 결과(`download_failed`/`parser_changed`)는 수집 결과 메시지로만 보이고 스택 트레이스는 노출되지 않는다.
+
 ## 빠른 추적 순서
 
 정책 상세 화면의 어떤 문구가 어디서 왔는지 추적할 때는 아래 순서로 보면 된다.
