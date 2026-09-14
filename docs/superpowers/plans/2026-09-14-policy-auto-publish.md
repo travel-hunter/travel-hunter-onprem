@@ -35,8 +35,8 @@
 
 - [x] Step 1: 라우트 테스트(모드 변경 409 `baseline_required`, `reviewReason` 노출) + 프론트 테스트(모드 토글, 사유 배지) → RED.
 - [x] Step 2: `AdminCollectionSourceUpdateRequest`에 `publicationMode`/`expectedMinRecords` 선택 필드, 소스 DTO에 `expectedMinRecords`/`lastParsedCount`/`autoApprovedLast24h`, 후보 DTO에 `reviewReason`. 화면 토글·배지. 문서 3종 갱신.
-- [ ] Step 3: 전체 검증(pytest, vitest, typecheck, build, mojibake, `git diff --check`) → 커밋 `feat: manage auto-publish mode from the admin review page`.
+- [x] Step 3: 전체 검증(pytest, vitest, typecheck, build, mojibake, `git diff --check`) → 커밋 `feat: manage auto-publish mode from the admin review page`.
 
 ### Task 4: 격리 스택 검증
 
-- [ ] 5174 스택 재빌드 → 0041 왕복 → `docs/db-schema-current.sql` 재생성 → 한 소스를 `auto`로 켜고 수집 실행 → 갱신 후보만 자동 승인되고 새 정책은 `pending`인지, 감사 로그가 남는지 확인 → 모드 원복.
+- [x] 5174 스택 재빌드 → 0041 왕복 → `docs/db-schema-current.sql` 재생성 → 한 소스를 `auto`로 켜고 수집 실행 → 갱신 후보만 자동 승인되고 새 정책은 `pending`인지, 감사 로그가 남는지 확인 → 모드 원복.
