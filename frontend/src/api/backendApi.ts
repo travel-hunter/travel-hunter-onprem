@@ -219,8 +219,8 @@ export const backendApi: AppDataApi = {
     apiClient.post<AdminPolicyReviewCandidate>(`/api/admin/policy-review-candidates/${candidateId}/reject`, { note }),
   listAdminCollectionSources: (): Promise<AdminCollectionSourceListResponse> =>
     apiClient.get<AdminCollectionSourceListResponse>("/api/admin/policy-collection-sources"),
-  updateAdminCollectionSource: (sourceKey, enabled): Promise<AdminCollectionSource> =>
-    apiClient.patch<AdminCollectionSource>(`/api/admin/policy-collection-sources/${sourceKey}`, { enabled }),
+  updateAdminCollectionSource: (sourceKey, patch): Promise<AdminCollectionSource> =>
+    apiClient.patch<AdminCollectionSource>(`/api/admin/policy-collection-sources/${sourceKey}`, patch),
   listAdminEligibleIslandSnapshots: (options): Promise<AdminEligibleIslandSnapshotListResponse> =>
     apiClient.get<AdminEligibleIslandSnapshotListResponse>(`${ELIGIBLE_ISLAND_CATALOG_PATH}/snapshots${queryString(options ?? {})}`),
   getAdminEligibleIslandSnapshot: (snapshotId): Promise<AdminEligibleIslandSnapshotDetail> =>

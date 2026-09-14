@@ -253,6 +253,22 @@ def human_baseline_admin_id(db: Session, *, source_category: str) -> int | None:
     )
 
 
+def count_auto_approved_since(db: Session, *, source_category: str, since) -> int:
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(PolicyReviewCandidate)
+            .join(ExternalSourceRecord, PolicyReviewCandidate.external_source_record_id == ExternalSourceRecord.id)
+            .where(
+                ExternalSourceRecord.source_category == source_category,
+                PolicyReviewCandidate.review_reason == REVIEW_REASON_AUTO,
+                PolicyReviewCandidate.reviewed_at >= since,
+            )
+        )
+        or 0
+    )
+
+
 def _published_policy_for_record(db: Session, record: ExternalSourceRecord) -> Policy | None:
     policy_id = db.scalar(
         select(PolicyReviewCandidate.published_policy_id)

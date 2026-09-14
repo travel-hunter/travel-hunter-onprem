@@ -90,7 +90,24 @@ def get_collection_source_by_key(db: Session, *, key: str) -> PolicyCollectionSo
 
 
 def update_collection_source_enabled(db: Session, *, source: PolicyCollectionSource, enabled: bool) -> PolicyCollectionSource:
-    source.enabled = enabled
+    return update_collection_source(db, source=source, enabled=enabled)
+
+
+def update_collection_source(
+    db: Session,
+    *,
+    source: PolicyCollectionSource,
+    enabled: bool | None = None,
+    publication_mode: str | None = None,
+    expected_min_records: int | None = None,
+) -> PolicyCollectionSource:
+    """Only the operator-tunable fields; adapter, URL and category stay code-owned."""
+    if enabled is not None:
+        source.enabled = enabled
+    if publication_mode is not None:
+        source.publication_mode = publication_mode
+    if expected_min_records is not None:
+        source.expected_min_records = expected_min_records
     db.add(source)
     db.flush()
     return source

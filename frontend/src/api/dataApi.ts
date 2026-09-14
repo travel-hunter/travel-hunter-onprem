@@ -2,6 +2,7 @@ import {
   AdminAuditLogListResponse,
   AdminCollectionSource,
   AdminCollectionSourceListResponse,
+  AdminCollectionSourceUpdate,
   AdminEligibleIslandCollectResponse,
   AdminEligibleIslandSnapshot,
   AdminEligibleIslandSnapshotDetail,
@@ -314,7 +315,7 @@ export type AppDataApi = {
   approveAdminPolicyReviewCandidate: (candidateId: string, note?: string) => Promise<AdminPolicyReviewCandidate>;
   rejectAdminPolicyReviewCandidate: (candidateId: string, note: string) => Promise<AdminPolicyReviewCandidate>;
   listAdminCollectionSources: () => Promise<AdminCollectionSourceListResponse>;
-  updateAdminCollectionSource: (sourceKey: string, enabled: boolean) => Promise<AdminCollectionSource>;
+  updateAdminCollectionSource: (sourceKey: string, patch: AdminCollectionSourceUpdate) => Promise<AdminCollectionSource>;
   listAdminEligibleIslandSnapshots: (options?: { limit?: number; offset?: number }) => Promise<AdminEligibleIslandSnapshotListResponse>;
   getAdminEligibleIslandSnapshot: (snapshotId: string) => Promise<AdminEligibleIslandSnapshotDetail>;
   collectAdminEligibleIslandCatalog: () => Promise<AdminEligibleIslandCollectResponse>;

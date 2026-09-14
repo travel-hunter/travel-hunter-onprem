@@ -413,8 +413,35 @@ describe("admin pages", () => {
     await waitFor(() => expect(document.body).toHaveTextContent("Island Visit support"));
     expect(document.body).toHaveTextContent("Island travel support");
     await userEvent.click(screen.getByRole("button", { name: "\uC218\uC9D1 \uD65C\uC131\uD654" }));
-    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith("island_visit", true));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith("island_visit", { enabled: true }));
     expect(sourcesSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("toggles auto-publish per source and labels why candidates wait", async () => {
+    installStoredUser({ ...getPreviewUser(), role: "admin" });
+    const source = { key: "local_half_trip", displayName: "Korea Half-Price Travel", officialUrl: "https://official.example/half", sourceCategory: "local_half_trip", enabled: true, publicationMode: "review", expectedMinRecords: 11, lastParsedCount: 22, autoApprovedLast24h: 0, lastOutcome: "success", lastCollectedAt: "2026-09-14T09:00:00", lastError: null };
+    vi.spyOn(appDataApi as any, "listAdminCollectionSources").mockResolvedValue({ items: [source] });
+    vi.spyOn(appDataApi as any, "listAdminPolicyReviewCandidates").mockResolvedValue({
+      items: [{ ...makeCandidate(1), title: "Renamed support", changeKind: "material_change", reviewReason: "identity_changed" }],
+      total: 1, limit: 50, offset: 0,
+    });
+    vi.spyOn(appDataApi as any, "listAdminEligibleIslandSnapshots").mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0, approvedSnapshotId: null, approvedEntryCount: 0 });
+    const updateSpy = vi.spyOn(appDataApi as any, "updateAdminCollectionSource").mockReset().mockResolvedValue({ ...source, publicationMode: "auto_after_reviewed_baseline", autoApprovedLast24h: 3 });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReset().mockReturnValue(true);
+
+    renderAppRoute("/admin/policy-review");
+
+    await waitFor(() => expect(document.body).toHaveTextContent("Renamed support"));
+    expect(document.body).toHaveTextContent("\uC81C\uBAA9\u00B7\uC9C0\uC5ED \uBCC0\uACBD");
+    expect(document.body).toHaveTextContent("\uC804\uAC74 \uAC80\uD1A0");
+    expect(document.body).toHaveTextContent("\uAE30\uC900 \uAC74\uC218 11 (\uCD5C\uADFC 22\uAC74)");
+    await userEvent.click(screen.getByRole("button", { name: "\uC790\uB3D9 \uBC1C\uD589 \uCF1C\uAE30" }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith("local_half_trip", { publicationMode: "auto_after_reviewed_baseline" }));
+    expect(confirmSpy.mock.calls[0][0]).toContain("\uC790\uB3D9 \uBC1C\uD589");
+    await waitFor(() => expect(document.body).toHaveTextContent("\uC790\uB3D9 \uBC1C\uD589 \uC911"));
+    expect(document.body).toHaveTextContent("\uCD5C\uADFC 24\uC2DC\uAC04 \uC790\uB3D9 \uBC1C\uD589 3\uAC74");
+    expect(screen.getByRole("button", { name: "\uAC80\uD1A0\uB85C \uB418\uB3CC\uB9AC\uAE30" })).toBeVisible();
+    confirmSpy.mockRestore();
   });
 
   function makeCandidate(id: number) {

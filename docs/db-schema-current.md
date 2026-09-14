@@ -198,6 +198,11 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 - `policy_collection_sources`: 코드 소유 수집 소스 카탈로그. `key` UNIQUE, `adapter_key`, `official_url`, `source_category`, `display_name`, `enabled`, `publication_mode`(`review` | `auto_after_reviewed_baseline`, CHECK), `expected_min_records`, 최근 실행 상태(`last_outcome`/`last_collected_at`/`last_successful_at`/`last_error`). 행은 마이그레이션이 아니라 저장소(`ensure_builtin_collection_sources`)가 만든다.
 - `policy_review_candidates`: 수집 근거 1건을 공개 정책으로 승격하기 전 검토 후보. `external_source_record_id` FK(CASCADE), `review_status`(`pending`/`approved`/`rejected`/`superseded`, CHECK), `change_kind`(`new`/`material_change`, CHECK), `evidence_fingerprint`, `reviewed_by_user_id`/`reviewed_at`/`review_note`, `published_policy_id`. `(external_source_record_id, evidence_fingerprint)`? unique? ???. ?? source record? ?? fingerprint? ?? ???? ? pending candidate? ????.
 
+자동 발행 게이트 컬럼 (2026-09-14, `0041_policy_auto_publish`):
+
+- `policy_review_candidates.review_reason` String(40) nullable: 후보가 사람을 기다리는 이유(`source_mode_review`/`first_baseline`/`new_policy`/`identity_changed`/`source_anomaly`/`would_publish_hidden`/`low_confidence`/`stay_discount_manual`), 게이트가 직접 발행했으면 `auto`(이때 `reviewed_by_user_id`는 NULL, `review_note`는 `auto`).
+- `policy_collection_sources.last_parsed_count` Integer nullable: 마지막 **성공** 수집의 파싱 건수. 자동 발행의 30% 급감 가드 기준선. `publication_mode`/`expected_min_records`는 이 마이그레이션부터 실제로 읽힌다.
+
 대상 섬 승인 카탈로그 (2026-09-14, `0040_eligible_island_catalog`; 마이그레이션은 행을 넣지 않고 `island_visit_2026` 카탈로그 행은 저장소가 만든다):
 
 - `eligible_island_catalogs`: 프로그램 1건(`key`=`island_visit_2026` UNIQUE, `display_name`, `notice_list_url`, `enabled`)과 현재 승인 스냅샷 참조 `approved_snapshot_id`(FK 없음 — 스냅샷↔카탈로그 순환 참조를 피하며 스냅샷은 삭제되지 않고 상태만 바뀐다). 승인 처리는 이 행을 `FOR UPDATE`로 잠가 직렬화한다.

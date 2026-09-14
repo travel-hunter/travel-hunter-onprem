@@ -33,8 +33,8 @@
 
 **Files:** Modify `backend/app/schemas/admin.py`, `backend/app/api/routes/admin.py`, `backend/tests/test_admin_routes.py`, `frontend/src/api/types.ts`, `frontend/src/api/backendApi.ts`, `frontend/src/api/dataApi.ts`, `frontend/src/pages/admin/AdminPages.tsx`, `frontend/src/pages/admin/AdminPages.test.tsx`, `docs/mvp-api-contract.md`, `docs/db-schema-current.md`, `docs/policy-collection-to-screen-flow.md`.
 
-- [ ] Step 1: 라우트 테스트(모드 변경 409 `baseline_required`, `reviewReason` 노출) + 프론트 테스트(모드 토글, 사유 배지) → RED.
-- [ ] Step 2: `AdminCollectionSourceUpdateRequest`에 `publicationMode`/`expectedMinRecords` 선택 필드, 소스 DTO에 `expectedMinRecords`/`lastParsedCount`/`autoApprovedLast24h`, 후보 DTO에 `reviewReason`. 화면 토글·배지. 문서 3종 갱신.
+- [x] Step 1: 라우트 테스트(모드 변경 409 `baseline_required`, `reviewReason` 노출) + 프론트 테스트(모드 토글, 사유 배지) → RED.
+- [x] Step 2: `AdminCollectionSourceUpdateRequest`에 `publicationMode`/`expectedMinRecords` 선택 필드, 소스 DTO에 `expectedMinRecords`/`lastParsedCount`/`autoApprovedLast24h`, 후보 DTO에 `reviewReason`. 화면 토글·배지. 문서 3종 갱신.
 - [ ] Step 3: 전체 검증(pytest, vitest, typecheck, build, mojibake, `git diff --check`) → 커밋 `feat: manage auto-publish mode from the admin review page`.
 
 ### Task 4: 격리 스택 검증

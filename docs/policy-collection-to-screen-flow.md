@@ -496,6 +496,13 @@ v1 표준 섹션은 아래 다섯 개다.
    - 승인 전 후보는 어디에도 노출되지 않는다. 정책 상세의 `eligibleIslandCount`/`eligibleIslandsOfficialUrl`과 일정 추천의 섬 정책 포함 여부는 `eligible_islands`만 읽는다. 추천은 `TripPlace.place_name`이 승인된 `normalized_name`과 **완전 일치**할 때만 섬 정책을 넣는다(`거문도 선착장`은 `거문도`와 다르다).
    - 첫 운영 절차: ① DB 백업 ② `공지 다시 확인`으로 수집 ③ 후보의 총수·지역 파일 수를 공식 공지와 대조 ④ `변경 상세`로 추가/삭제 확인 ⑤ 승인. 실패 결과(`download_failed`/`parser_changed`)는 수집 결과 메시지로만 보이고 스택 트레이스는 노출되지 않는다.
 
+8. **수집 후보는 소스별 모드에 따라 자동 발행될 수 있다.** (2026-09-14, `0041_policy_auto_publish`, 스펙 `docs/superpowers/specs/2026-09-14-policy-auto-publish-design.md`)
+   - 기본은 모든 소스 `review`(전건 검토). 관리자가 `/admin/policy-review` 소스 카드에서 `자동 발행 켜기`를 누르면 `auto_after_reviewed_baseline`이 되는데, 그 소스에서 **사람이 승인한 후보가 1건 이상**(기준선) 있어야 켜진다(`409 baseline_required`).
+   - 자동 발행 조건(전부 충족): 이미 발행된 정책의 갱신(`material_change`) · 제목/지역/시군구 불변 · 회차가 정상(파서 성공, `expected_min_records` 이상, 직전 성공 대비 30% 초과 급감 없음) · `ended`/`stale`이 아님 · `confidence ≥ 70`, `field_completeness ≥ 60`, 혜택 문구 있음. 하나라도 어긋나면 `pending`에 남고 `review_reason`(화면 배지)이 이유를 말해 준다. 새 정책은 항상 사람이 본다.
+   - `stay_discount`는 모드와 무관하게 수동(alias 정책 수십 건을 갱신하는 경로). 대상 섬 카탈로그는 이 규칙 밖.
+   - 자동 승인도 `admin_audit_logs`에 `policy_review.auto_approve`로 남는다. `admin_user_id`는 그 소스의 기준선을 마지막으로 승인한 관리자(자동화를 켠 책임자), `after_json.actor = "system"`.
+   - 수집 성공 회차만 `policy_collection_sources.last_parsed_count`를 갱신하므로 파서 실패 회차가 기준선을 0으로 끌어내리지 않는다.
+
 ## 빠른 추적 순서
 
 정책 상세 화면의 어떤 문구가 어디서 왔는지 추적할 때는 아래 순서로 보면 된다.

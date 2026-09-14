@@ -418,6 +418,7 @@ export type AdminPolicyReviewCandidate = {
   startDate: string | null;
   endDate: string | null;
   createdAt: string;
+  reviewReason?: string | null;
 };
 
 export type AdminPolicyReviewCandidateListResponse = { items: AdminPolicyReviewCandidate[]; total: number; limit: number; offset: number };
@@ -430,13 +431,22 @@ export type AdminCollectionSource = {
   officialUrl: string;
   sourceCategory: string;
   enabled: boolean;
-  publicationMode: string;
+  publicationMode: "review" | "auto_after_reviewed_baseline";
+  expectedMinRecords?: number;
+  lastParsedCount?: number | null;
+  autoApprovedLast24h?: number;
   lastOutcome: string | null;
   lastCollectedAt: string | null;
   lastError: string | null;
 };
 
 export type AdminCollectionSourceListResponse = { items: AdminCollectionSource[] };
+
+export type AdminCollectionSourceUpdate = {
+  enabled?: boolean;
+  publicationMode?: "review" | "auto_after_reviewed_baseline";
+  expectedMinRecords?: number;
+};
 
 // Eligible island catalog review — separate from policy review candidates.
 export type AdminEligibleIslandAttachment = { url: string; filename: string; sha256: string };

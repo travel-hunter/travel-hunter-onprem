@@ -1773,13 +1773,16 @@ Admin policy list items additionally expose `sourceCategory` and `sourceLabel` f
 All endpoints below require bearer authentication and the admin role. Collection source URLs and parser adapters are code-owned; this API only enables or disables approved sources.
 
 - `GET /api/admin/policy-collection-sources` returns configured sources, their enabled state, and most recent collection health.
-- `PATCH /api/admin/policy-collection-sources/{sourceKey}` accepts `{ "enabled": boolean }`. It cannot create an arbitrary URL or parser.
-- `GET /api/admin/policy-review-candidates?limit=&offset=` returns pending source evidence only, windowed with `limit` (1-100) and `offset` (0+). These records are not public policy cards.
+- `PATCH /api/admin/policy-collection-sources/{sourceKey}` accepts any of `{ "enabled": boolean, "publicationMode": "review" | "auto_after_reviewed_baseline", "expectedMinRecords": number ≥ 0 }`; omitted fields are untouched. It cannot create an arbitrary URL or parser. Switching to `auto_after_reviewed_baseline` requires at least one candidate of that source approved by a human, otherwise `409 baseline_required`.
+- Source items also carry `expectedMinRecords`, `lastParsedCount` (last successful run), and `autoApprovedLast24h`.
+- `GET /api/admin/policy-review-candidates?limit=&offset=` returns pending source evidence only, windowed with `limit` (1-100) and `offset` (0+). These records are not public policy cards. Each item has `reviewReason: string | null` — why the auto-publish gate left it for a human: `source_mode_review` | `first_baseline` | `new_policy` | `identity_changed` | `source_anomaly` | `would_publish_hidden` | `low_confidence` | `stay_discount_manual` (`auto` on candidates the gate published itself).
 - `POST /api/admin/policy-review-candidates/approve-batch` accepts `{ "approveAll": boolean, "candidateIds": string[], "note": string | null }`. `approveAll: true` approves the current pending set; otherwise `candidateIds` selects up to 100 pending candidates. The operation is atomic: a missing, already-decided, or concurrently rejected candidate returns `409` and approves none.
 - `POST /api/admin/policy-review-candidates/{candidateId}/approve` accepts optional `{ "note": string | null }` and publishes only that candidate's source record through the existing policy normalization mapping.
 - `POST /api/admin/policy-review-candidates/{candidateId}/reject` requires `{ "note": string }`; a later material evidence change creates a fresh pending candidate.
 
 Approve/reject writes an admin audit log. Source raw payload remains admin-only and is not returned by these DTOs.
+
+Auto-publish (spec `docs/superpowers/specs/2026-09-14-policy-auto-publish-design.md`): when a source is in `auto_after_reviewed_baseline` mode, a freshly collected candidate is published without a human only if it is a `material_change` of an already published policy with unchanged title/region/city, the run was normal (parser success, ≥ `expectedMinRecords`, no >30% shrink vs `lastParsedCount`), the record would not publish hidden, and confidence/completeness pass. Such approvals write `policy_review.auto_approve` audit logs attributed to the admin who approved the source's baseline (`afterJson.actor = "system"`). `stay_discount` is never auto-published.
 
 ## Admin eligible island catalog review
 
