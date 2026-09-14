@@ -1,0 +1,974 @@
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <title>2026 섬 방문의 해</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+    <meta name="viewport" content="user-scalable=yes, initial-scale=1.0, maximum-scale=3.0, minimum-scale=1.0, width=device-width, height=device-height, target-densitydpi=medium-dpi">
+    <meta name="description" content="2026섬방문의해, 섬방문의해, 섬방문, 섬과 여행을 사랑하는 모든 분들을 위해!"/>
+    <meta name="keyword" content="2026섬방문의해, 섬방문의해, 섬방문, 섬, 섬방문해, 섬 사랑, 섬 여행" />
+    <meta name="format-detection" content="telephone=no, address=no, email=no">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content ="/resources/images/og_img.png"/>
+    <meta property="og:title" content="2026섬방문의해" />
+    <meta property="og:description" content="2026섬방문의해, 섬방문의해, 섬방문, 섬과 여행을 사랑하는 모든 분들을 위해!" />
+    <meta property="og:url" content="http://www.visitisland.kr/"/>
+    <meta property="og:site_name" content="2026섬방문의해">
+    <meta name="naver-site-verification" content="f8e7c47b2cafdcf59c4e6f3d5d7eaa8238517ba7" />
+    <meta name="google-site-verification" content="6Oj-kWCl9xz1YSycbJY9bzyG1kHyuBKyxTh4qOUNgaQ" />
+
+    <!--파비콘-->
+    <meta name="msapplication-TileImage" content=/resources/images/favicon.ico">
+    <link rel="apple-touch-icon" sizes="32x32" href="/resources/images/favicon.ico">
+    <link rel="apple-touch-icon" sizes="48x48" href="/resources/images/favicon.ico">
+    <link rel="apple-touch-icon" sizes="64x64" href="/resources/images/favicon.ico">
+    <link rel="shortcut icon" sizes="32x32"  href="/resources/images/favicon.ico">
+    <link rel="shortcut icon" sizes="48x48" href="/resources/images/favicon.ico">
+    <link rel="shortcut icon" sizes="64x64" href="/resources/images/favicon.ico">
+
+    <script src="/resources/js/jquery-3.7.0.min.js"></script>
+    <script src="/resources/js/jquery-ui-1.13.2/jquery-ui.js"></script>
+    <script src="/resources/js/common.js"></script>
+    <script src="/resources/js/validationUtil.js"></script>
+
+    <!--스타일-->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Nanum+Gothic&family=Noto+Sans+Gothic&display=swap" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="/resources/css/base.css">
+    <link rel="stylesheet" type="text/css" href="/resources/css/common.css">
+    <link rel="stylesheet" type="text/css" href="/resources/css/style.css">
+    <link rel="stylesheet" type="text/css" href="/resources/css/style_768.css">
+    <link rel="stylesheet" type="text/css" href="/resources/css/modal.css">
+    <link rel="stylesheet" type="text/css" href="/resources/css/swiper.css">
+    <link rel="stylesheet" type="text/css" href="/resources/css/ani.css">
+
+    <script>
+        //모바일 네비게이션 오픈
+        function toggleNav(){
+            let body = $("body");
+            if(body.attr("class").indexOf("slide-open") === -1){
+                body.attr("class","slide-open")
+            }else{
+                body.attr("class","")
+            }
+        }
+        $(function () {
+            $(".langBtn").click(function(){
+                if($(".lang").css("display") == "none"){
+                    $(".lang").css("display","block");
+
+                }else{
+                    $(".lang").css("display","none");
+                }
+            });
+        });
+
+        // $(window).on('scroll',function(){
+        //     if($(window).scrollTop()){
+        //         $('header').addClass('active');
+        //     }else{
+        //         $('header').removeClass('active');
+        //     }
+        // });
+    </script>
+    <script type="text/javascript" src="//wcs.naver.net/wcslog.js"></script>
+    <script type="text/javascript">
+        if (!wcs_add) var wcs_add={};
+        wcs_add["wa"] = "s_21d03771b85c";
+        if (!_nasa) var _nasa={};
+        if(window.wcs){
+            wcs.inflow();
+            wcs_do();
+        }
+    </script>
+</head>
+<body>
+<header>
+    <div>
+        <h1 onclick="location.href='/main'"></h1>
+        <ul>
+            <li><a href="/about">섬 방문의 해 소개</a></li>
+
+            <li><a href="/promotion2">프로모션</a></li>
+            <li><a href="/calendar">주요 일정</a></li>
+            <!--
+            <li><a href="/festival">대국민 캠페인</a></li>
+            -->
+            <li><a href="/special">이벤트</a></li>
+            <li><a href="/brd/notice">공지사항</a></li>
+            <li><a href="/gallery">자료실</a></li>
+        </ul>
+        <div>
+            <!--
+            <p class="langBtn">▼ KR</p>
+            <ul class="lang" style="display: none;">
+                <li><a href="/main">KOR</a></li>
+                <li><a href="/main">ENG</a></li>
+            </ul>
+            -->
+            <button class="btn-menu b-header__navBtn  kf-fadeInLeft10" title="메뉴 열기/닫기" onclick="toggleNav()">
+                <span class="shape"></span>
+                <span class="shape shape2"></span>
+                <span class="shape"></span>
+            </button>
+        </div>
+    </div>
+</header>
+<nav class="b-mNav">
+    <button class="btn-menu b-header__navBtn" title="메뉴 열기/닫기" onclick="toggleNav()">
+        <span class="shape"></span>
+        <span class="shape shape2"></span>
+        <span class="shape"></span>
+    </button>
+    <div class="b-mNav__cover"></div>
+    <ul class="b-mNav__list">
+        <li><a href="/main" class="c-fontEn">HOME</a></li>
+        <li><a href="/about" class="c-fontEn">섬 방문의 해 소개</a></li>
+
+        <li><a href="/promotion2" class="c-fontEn">프로모션</a></li>
+        <li><a href="/calendar">주요 일정</a></li>
+        <!--
+                <li><a href="/festival" class="c-fontEn">대국민 캠페인</a></li>
+                -->
+        <li><a href="/special" class="c-fontEn">이벤트</a></li>
+        <li><a href="/brd/notice">공지사항</a></li>
+        <li><a href="/gallery">자료실</a></li>
+        <!--
+        <li>
+            <ul class="m_lang">
+                <li><a href="/main">KOR</a></li>
+                <li><a href="/main">ENG</a></li>
+            </ul>
+        </li>
+        -->
+    </ul>
+</nav>
+<section class="sc_visual">
+    <p class="font_title">프로모션</p>
+</section>
+<section class="page_about">
+    <div class="brd_tab">
+        <ul>
+            <li><a href="#" onclick="javascript:alert('종료된 프로모션 입니다. ');">프로모션 1차</a></li>
+            <li class="active"><a href="/promotion2">프로모션 2차</a></li>
+            <!--
+            <li><a href="javascript:alert('Coming Soon!');">방문 인증</a></li>
+            -->
+        </ul>
+    </div>
+    <h2>
+        <span class="mc_cont_title_c">promotion</span>
+        <span class="font_title">프로모션 정보</span>
+    </h2>
+    <hr class="contents_line">
+    <div class="cont_promotion2">
+        <p class="cont_promotion_visual">
+            <img src="/resources/images/page/promotion_top2.png" class="pc_ver">
+            <img src="/resources/images/page/promotion_top2_m.png" class="m_ver">
+        </p>
+        <p class="cont_promotion_tit">
+            <span class="font_title">운영 프로세스 및 지원 체계</span>
+            체계적인 지급 기준 및 숙박 업소 연계 운영을 통한 관광 활성화
+        </p>
+        <div class="cont_promotion_infoBox_process">
+            <p class="title font_title">운영 프로세스</p>
+            <ul class="step">
+                <li>
+                    <span>
+                        사전 온라인<br/> 신청 및 검토
+                    </span>
+                </li>
+                <li>
+                    <span>
+                        서류 검토 및<br/> 적격 여부 확인
+                    </span>
+                </li>
+                <li>
+                    <span>
+                        지급 기준<br/> 충족 여부 확인
+                    </span>
+                </li>
+                <li>
+                    <span>
+                        섬 여행비<br/> 지급 승인
+                    </span>
+                </li>
+                <li>
+                    <span>
+                        계좌이체 및<br/> 지급 완료
+                    </span>
+                </li>
+            </ul>
+        </div>
+        <div class="cont_promotion_infoBox_container">
+            <div class="cont_promotion_infoBox">
+                <div class="cont_promotion_infoBox_overview">
+                    <p class="title font_title">신청 개요 및 방법</p>
+                    <table>
+                        <tr>
+                            <th>지원 대상</th>
+                            <td>
+                                성인 누구나<br/>
+                                <span class="pc_ver type2">
+                                    ※ 1팀(가족, 친구, 모임 등) 별 대표자 1인만 1회 신청 가능<br/>
+                                    &nbsp;&nbsp;&nbsp;(1인 여행자 신청 가능)<br/>
+                                    &nbsp;&nbsp;&nbsp;예: 2쌍의 모임 여행 시 1팀으로 간주되어 대표자 1인 1회 신청
+                                </span>
+                                <span class="m_ver type2">
+                                    ※ 1팀(가족, 친구, 모임 등) 별 대표자 1인만 1회 신청 가능(1인 여행자 신청 가능)<br/>
+                                    예: 2쌍의 모임 여행 시 1팀으로 간주되어 대표자 1인 1회 신청
+                                </span>
+                                <span class="type2">※ 중복 신청 불가</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>지원 조건</th>
+                            <td>
+                                육지와 연결되지 않아 배를 타고 들어가는 섬에서<br/>1박 2일 이상 체류<br/>
+                                <span class="type2">※ 하기 리스트에 있는 섬 외에는 지원 대상에서 제외됩니다.</span><br/>
+                                <a href="https://buly.kr/8piNoSv" target="_blank">https://buly.kr/8piNoSv</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>숙박 형태</th>
+                            <td>
+                                섬 내 등록 숙박업소 (호텔, 리조트, 펜션, 민박 등)<br/>
+                                <span class="type2">※ 캠핑 가능</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>선정 방법</th>
+                            <td><span class="fc_red">추첨으로 진행</span>되며 선정이 되신 분들에게는<br/>
+                                문자로 개별 연락 드립니다.</td>
+                        </tr>
+                        <tr>
+                            <th>지원 내용</br>및 금액</th>
+                            <td>
+                                여행비 10만원 (숙박비, 왕복 배편 승선권, 식비 등)<br/>
+                                <span class="type2">※ 결제 금액 10만원 이상 이용자 대상 지급</span><br/>
+                                <span class="type2">※ 1팀당 대표 1인에게 10만원 지급</span><br/>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>지급 방식</th>
+                            <td>
+                                선정 여부 개별 문자 통보 / 사후 정산 방식 (계좌이체)<br/>
+                                <span class="type2">※ 서류 제출 구글폼 내 만족도조사 참여완료 후 지급</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>지급 시기</th>
+                            <td>
+                                <span class="fc_bk">여행 후 2주 이내 서류 제출 필요</span> / 서류 검토 완료 후 추후 지급 예정<br/>
+                                <span class="type2">※ 모든 서류 제출 완료 후 영업일 기준 10일 이내 지급 예정</span><br/>
+                                <span class="type2">※ 서류 불충족 시 개별 연락을 드리며, 지급 시기가 늦어질 수 있습니다.</span>
+                            </td>
+                        </tr>
+                    </table>
+                    <div>
+                        <p class="title font_title">신청 및 인정기준</p>
+                        <ul>
+                            <li class="pc_ver">
+                                <span>•</span>
+                                2차 신청 기간 내 구글 폼 신청 완료 후 구글 폼 내 서류 제출
+                            </li>
+                            <li class="m_ver">
+                                <span>•</span>
+                                2차 신청 기간 내 구글 폼 신청 완료 후 구글 폼 내<br>&nbsp;&nbsp;&nbsp;서류 제출
+                            </li>
+                            <li class="pc_ver">
+                                <span>•</span>
+                                육지와 연결되지 않아 배를 타고 들어가는 섬 방문 대상 기준으로 필수 증빙 자료 제출
+                            </li>
+                            <li class="m_ver">
+                                <span>•</span>
+                                육지와 연결되지 않아 배를 타고 들어가는 섬 방문<br>&nbsp;&nbsp;&nbsp;대상 기준으로 필수 증빙 자료 제출
+                            </li>
+                            <li class="pc_ver ment">
+                                ※ 선정 문자 수신자 및 10월 1일 ~ 11월 4일 여행자에 한해서 서류 제출 가능합니다.
+                            </li>
+                            <li class="m_ver ment">
+                                ※ 선정 문자 수신자 및 10월 1일 ~ 11월 4일 여행자에 한해서 서류 제출 가능합니다.
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="cont_promotion_infoBox">
+                <div class="cont_promotion_infoBox_standard">
+                    <div>
+                        <p class="title font_title">필수 제출 증빙 자료</p>
+                        <ul>
+                            <li>
+                                <span>•</span>
+                                신분증
+                            </li>
+                            <li>
+                                <span>•</span>
+                                통장사본
+                            </li>
+                            <li>
+                                <span>•</span>
+                                왕복 배편 승선권 혹은 영수증
+                            </li>
+                            <li class="pc_ver">
+                                <span>•</span>
+                                실 결제 영수증 (카드, 현금 영수증 또는 송금 계좌 이체 내역 등)
+                            </li>
+                            <li class="m_ver">
+                                <span>•</span>
+                                실 결제 영수증<br/>
+                                &nbsp;&nbsp;&nbsp;(카드, 현금 영수증 또는 송금 계좌 이체 내역 등)
+                            </li>
+                            <li>
+                                <span>•</span>
+                                OTA 이용 시, 예약 및 결제 내역
+                            </li>
+                            <li style="color: #eb5468;">
+                                ※ 이름, 주민등록번호, 날짜, 금액이 명확히 나온 사진만 인정됩니다.
+                            </li>
+                        </ul>
+                    </div>
+                    <hr class="cont_promotion_info_line">
+                    <div>
+                        <p class="titleType2 font_title">지원 제외 기준</p>
+                        <ul>
+                            <li>
+                                <span>•</span>
+                                중복 신청 [팀(가족, 친구, 모임)별 대표자 1인 신청 가능]
+                            </li>
+                            <li>
+                                <span>•</span>
+                                중복 영수증
+                            </li>
+                            <li>
+                                <span>•</span>
+                                허위 증빙
+                            </li>
+                            <li>
+                                <span>•</span>
+                                간이영수증, 계좌이체 내역만 제출
+                            </li>
+                            <li>
+                                <span>•</span>
+                                타 숙박 할인사업 및 지원 사업과 중복 지원
+                            </li>
+                            <li>
+                                <span>•</span>
+                                육지와 연결된 섬을 여행한 경우
+                            </li>
+                            <li>
+                                <span>•</span>
+                                왕복 배편 승선권, 영수증 미증빙
+                            </li>
+                            <li>
+                                <span>•</span>
+                                비인가 업소 영수증
+                            </li>
+                            <li>
+                                <span>•</span>
+                                법인 카드 사용 불가
+                            </li>
+                            <!--
+                            <li class="ment">
+                                ※ 1차 선정자는 2차 선정에서 제외됩니다.
+                            </li>
+                            -->
+                        </ul>
+                    </div>
+                    <hr class="cont_promotion_info_line">
+                    <div>
+                        <p class="title font_title">문의사항</p>
+                        <ul>
+                            <li>
+                                <span>•</span>
+                                이메일 : info@visitisland.kr
+                            </li>
+                            <li>
+                                <span>•</span>
+                                전화 : 070-4337-5058 / 070-4814-4922
+                            </li>
+
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!--
+        <p class="cont_promotion_tit">
+            <span class="font_title">인센티브 프로모션 1차</span>
+        </p>
+        -->
+        <div class="cont_promotion_infoBox_container" style="display: none;">
+            <div class="pc_ver cont_promotion_infoBox cont_promotion_infoBox_type2">
+                <div class="cont_promotion_infoBox_tlb">
+                    <p class="title font_title">
+                        인센티브 프로모션 1차
+                        <span>(1차 7~8월)</span>
+                    </p>
+                    <div class="cont_promotion_infoBox_type2_tbl">
+                        <table>
+                            <tr>
+                                <th>신청 기간</th>
+                                <td>
+                                    <span class="type1">2026. 06. 17(수) 오전 10시 ~ 2026. 06. 30(화) 까지</span><br/>
+
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>신청 대상</th>
+                                <td>
+                                    성인 누구나<br/>
+                                    <span class="type2">※ 단, 1팀 1인 신청 가능 (중복 신청 불가)</span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>신청 방법</th>
+                                <td>
+                                    1차 신청 구글 폼 양식에 맞춰 작성 후 제출하기<br/>
+                                    <span class="type2">※ 추첨으로 진행되며 선정이 되신 분들에게는 문자로 개별 연락 드립니다.</span>
+                                </td>
+                            </tr>
+
+                        </table>
+
+                        <table>
+
+                            <tr>
+                                <th>지원 내용</th>
+                                <td>
+                                    여행비 10만원 (숙박비, 왕복 배편 승선권, 식비 등)<br/>
+                                    <span class="type2">※ 결제 금액 10만원 이상 이용자 대상 지급</span><br/>
+                                </td>
+                            </tr>
+                            <!--
+                            <tr>
+                                <th>제출 증빙 서류</th>
+                                <td>
+                                    <span class="type3_ind">·</span> <span class="type5">신분증</span><br/>
+                                    <span class="type3">·</span> <span class="type5">통장사본</span><br/>
+                                    <span class="type3">·</span> <span class="type5">왕복 배편 승선권 영수증</span><br/>
+                                    <span class="type3">·</span>
+                                    <span class="type5 pc_ver_ib">실 결제 영수증<br/>(카드, 현금 영수증 또는 송금 계좌 이체 내역 등)</span>
+                                    <span class="type5 m_ver_ib">실 결제 영수증<br/>(카드, 현금 영수증 또는<br/>송금 계좌 이체 내역 등)</span>
+                                    <br/>
+                                    <span class="type3">·</span>
+                                    <span class="type5 pc_ver_ib">OTA 이용 시, 예약 내역 + 숙박확인서</span>
+                                    <span class="type5 m_ver_ib">OTA 이용 시,<br/>예약 내역 + 숙박확인서</span>
+                                </td>
+                            </tr>
+                            -->
+                            <tr>
+                                <th>문의사항</th>
+                                <td>
+                                    info@visitisland.kr<br/>
+                                    <span>070-4337-5058</span>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="m_ver cont_promotion_infoBox cont_promotion_infoBox_type2">
+                <div class="cont_promotion_infoBox_tlb">
+                    <p class="title font_title">
+                        인센티브 프로모션 1차
+                        <span>(1차 7~8월)</span>
+                    </p>
+                    <table>
+                        <tr>
+                            <th>신청 기간</th>
+                            <td>
+                                <span class="type1">2026. 06. 17(수) 오전 10시 ~ 2026. 06. 30(화) 까지</span><br/>
+
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>신청 대상</th>
+                            <td>
+                                성인 누구나<br/>
+                                <span class="type2">※ 단, 1팀 1인 신청 가능 (중복 신청 불가)</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>신청 방법</th>
+                            <td>
+                                1차 신청 구글 폼 양식에 맞춰 작성 후 제출하기
+                                <span class="type2">※ 추첨으로 진행되며 선정이 되신 분들에게는 문자로 개별 연락 드립니다.</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>지원 내용</th>
+                            <td>
+                                여행비 (숙박비, 왕복 배편 승선권, 식비 등)<br/>
+                                <span class="type2">※ 결제 금액 10만원 이상 이용자 대상 지급</span>
+                            </td>
+                        </tr>
+                        <!--
+                        <tr>
+                            <th>제출 증빙 서류</th>
+                            <td>
+                                <span class="type3_ind">·</span> <span class="type5">신분증</span><br/>
+                                <span class="type3">·</span> <span class="type5">통장사본</span><br/>
+                                <span class="type3">·</span> <span class="type5">왕복 배편 승선권 영수증</span><br/>
+                                <span class="type3">·</span>
+                                <span class="type5 pc_ver_ib">실 결제 영수증 (카드, 현금 영수증 또는<br/>송금 계좌 이체 내역 등)</span>
+                                <span class="type5 m_ver_ib">실 결제 영수증<br/>(카드, 현금 영수증 또는<br/>송금 계좌 이체 내역 등)</span>
+                                <br/>
+                                <span class="type3">·</span>
+                                <span class="type5 pc_ver_ib">OTA 이용 시, 예약 내역 + 숙박확인서</span>
+                                <span class="type5 m_ver_ib">OTA 이용 시,<br/>예약 내역 + 숙박확인서</span>
+                            </td>
+                        </tr>
+                        -->
+                        <tr>
+                            <th>문의사항</th>
+                            <td>
+                                info@visitisland.kr<br/>
+                                <span>070-4337-5058</span>
+                            </td>
+                        </tr>
+                    </table>
+
+                </div>
+            </div>
+            <!--
+            <div class="cont_promotion_infoBox">
+                <div class="cont_promotion_infoBox_local">
+                    <div>
+                        <p class="title font_title">기간</p>
+                        <ul>
+                            <li>
+                                <span class="type1">•</span>
+                                <span class="type2">1기 :</span>
+                                7~8월 (전국 섬 동일 적용)
+                            </li>
+                            <li>
+                                <span class="type1">•</span>
+                                <span class="type2">2기 :</span>
+                                10월 (전국 섬 동일 적용)
+                            </li>
+                        </ul>
+                    </div>
+                    <div>
+                        <p class="title font_title">지역 분배</p>
+                        <ul>
+                            <li>
+                                <span class="type1">•</span>
+                                <span class="type2">전남 :</span>
+                                50%
+                            </li>
+                            <li>
+                                <span class="type1">•</span>
+                                <span class="type2">경남 및 경북 :</span>
+                                20%
+                            </li>
+                            <li>
+                                <span class="type1">•</span>
+                                <span class="type2">인천 및 경기 :</span>
+                                15%
+                            </li>
+                            <li>
+                                <span class="type1">•</span>
+                                <span class="type2">전북, 제주도, 충남 :</span>
+                                15% (각 5%씩)
+                            </li>
+                        </ul>
+                        <p class="m_ver processMap"><img src="/resources/images/icons/map.png"></p>
+                    </div>
+                </div>
+            </div>
+            -->
+        </div>
+
+        <p class="cont_promotion_tit">
+            <span class="font_title">지원 프로세스</span>
+        </p>
+        <div class="pc_ver_flex cont_promotion_process">
+            <div>
+                <p class="title font_title">01 신청하기</p>
+                <div>
+                    <p class="img"><img src="/resources/images/icons/process_img01.png"></p>
+                    <div class="processLing_container">
+                        <hr class="processLing">
+                    </div>
+                    <div class="info">
+                        <ul>
+                            <li>
+                                <span>1. 공식 홈페이지 접속하기</span>
+                                (www.visitisland.kr)
+                            </li>
+                            <li>
+                                <span>2. 하단 2차 섬 여뱅비 지원 혜택 구글 폼 제출하기</span>
+                                <span class="type2">※ 9월 21일 오후 6시까지 신청 폼 제출 기한</span>
+                            </li>
+
+                        </ul>
+                        <p>
+                            ※ 선정되신 분들 중 10월 1일 ~ 11월 4일 증<br/>여행 완료한 후 섬 여행비 지원금 지급
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <p class="title font_title">02 섬 여행하기</p>
+                <div>
+                    <p class="img"><img src="/resources/images/icons/process_img02.png"></p>
+                    <div class="processLing_container">
+                        <hr class="processLing">
+                    </div>
+                    <div class="info">
+                        <ul>
+                            <li>
+                                <span>1. 10월 1일 ~ 11월 4일 중 섬 여행하기</span>
+                                <span class="type2">※ 선정된 육지와 연결되지 않아<span class="type2" style="display: block; margin-left: 15px;">배를 타고 들어가는 섬만 가능</span></span>
+                                <span class="type2">※ 섬 리스트 확인하러 가기 :</span>
+                                <a href="https://buly.kr/8piNoSv" target="_blank">https://buly.kr/8piNoSv</a>
+                            </li>
+                            <li>
+                                <span>2. 제출에 필요한 영수증 모으기</span>
+                                · 신분증, 통장사본<br/>
+                                · 왕복 배편 승선권 혹은 영수증<br/>
+                                · 실 결제 영수증<br/>
+                                &nbsp;&nbsp;(카드, 현금 영수증 또는 송금 계좌 이체 내역 등)<br/>
+                                · OTA 이용 시, 예약 및 결제 내역<br/>
+
+                            </li>
+                        </ul>
+
+                    </div>
+                </div>
+            </div>
+            <div>
+                <p class="title font_title">03 증빙서류 제출하기</p>
+                <div>
+                    <p class="img"><img src="/resources/images/icons/process_img03.png"></p>
+                    <div class="processLing_container">
+                        <hr class="processLing">
+                    </div>
+                    <div class="info">
+                        <ul>
+                            <li>
+                                <span>1. 공식 홈페이지 접속하기</span>
+                                (www.visitisland.kr)
+                            </li>
+                            <li>
+                                <span>2. 2차 섬 여행비 지원 혜택 서류 제출 구글폼으로<span style="display: block; margin-left: 20px;">증빙 서류 제출하고 만족도 조사 참여하기</span></span>
+                            </li>
+                        </ul>
+                        <p>※ 2주 이내 제출</p>
+                    </div>
+
+                </div>
+            </div>
+            <!--
+            <div>
+                <p class="title font_title">04 지원금 수령하기</p>
+                <div>
+                    <p class="img"><img src="/resources/images/icons/process_img04.png"></p>
+                    <div class="processLing_container">
+                        <hr class="processLing">
+                    </div>
+                    <div class="info">
+                        <ul class="tbl">
+                            <li>지원금 수령하기</li>
+                            <li>
+                                <div>
+                                    <ul>
+                                        <li>구분</li>
+                                        <li>지급일정</li>
+                                    </ul>
+                                    <ul>
+                                        <li>7월 여행자</li>
+                                        <li>8월 31일 (월)</li>
+                                    </ul>
+                                    <ul>
+                                        <li>8월 여행자</li>
+                                        <li>9월 30일 (수)</li>
+                                    </ul>
+                                    <ul>
+                                        <li>10월 여행자</li>
+                                        <li>11월 30일 (월)</li>
+                                    </ul>
+                                </div>
+                            </li>
+                        </ul>
+                        <p>※ 서류 검토 완료 후, 지급 예정</p>
+                    </div>
+
+                </div>
+            </div>
+            -->
+        </div>
+        <div class="m_ver_flex swiper process_slide">
+            <div class="swiper-wrapper">
+                <div class="swiper-slide">
+                    <div class="cont_promotion_process">
+                        <p class="title font_title">01 신청하기</p>
+                        <div>
+                            <p class="img"><img src="/resources/images/icons/process_img01.png"></p>
+                            <div class="processLing_container">
+                                <hr class="processLing">
+                            </div>
+                            <div class="info">
+                                <ul>
+                                    <li>
+                                        <span>1. 공식 홈페이지 접속하기</span>
+                                        (www.visitisland.kr)
+                                    </li>
+                                    <li>
+                                        <span>2. 하단 2차 섬 여뱅비 지원 혜택 구글 폼 제출하기</span>
+                                        <span class="type2">※ 9월 21일 오후 6시까지 신청 폼 제출 기한</span>
+                                    </li>
+                                </ul>
+                                <p>
+                                    ※ 선정되신 분들 중 10월 1일 ~ 11월 4일 증<br/>여행 완료한 후 섬 여행비 지원금 지급
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="swiper-slide">
+                    <div class="cont_promotion_process">
+                        <p class="title font_title">02 섬 여행하기</p>
+                        <div>
+                            <p class="img"><img src="/resources/images/icons/process_img02.png"></p>
+                            <div class="processLing_container">
+                                <hr class="processLing">
+                            </div>
+                            <div class="info">
+                                <ul>
+                                    <li>
+                                        <span>1. 10월 1일 ~ 11월 4일 중 섬 여행하기</span>
+                                        <span class="type2">※ 선정된 육지와 연결되지 않아<span class="type2" style="display: block; margin-left: 12px;">배를 타고 들어가는 섬만 가능</span></span>
+                                        <span class="type2">※ 섬 리스트 확인하러 가기 :</span>
+                                        <a href="https://buly.kr/8piNoSv" target="_blank">https://buly.kr/8piNoSv</a>
+                                    </li>
+                                    <li>
+                                        <span>2. 제출에 필요한 영수증 모으기</span>
+                                        · 신분증, 통장사본<br/>
+                                        · 왕복 배편 승선권 혹은 영수증<br/>
+                                        · 실 결제 영수증<br/>
+                                        &nbsp;&nbsp;(카드, 현금 영수증 또는 송금 계좌<br/>
+                                        &nbsp;&nbsp;이체 내역 등)<br/>
+                                        · OTA 이용 시, 예약 및 결제 내역
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="swiper-slide">
+                    <div class="cont_promotion_process">
+                        <p class="title font_title">03 증빙서류 제출하기</p>
+                        <div>
+                            <p class="img"><img src="/resources/images/icons/process_img03.png"></p>
+                            <div class="processLing_container">
+                                <hr class="processLing">
+                            </div>
+                            <div class="info">
+                                <ul>
+                                    <li>
+                                        <span>1. 공식 홈페이지 접속하기</span>
+                                        (www.visitisland.kr)
+                                    </li>
+                                    <li>
+                                        <span>2. 2차 섬 여행비 지원 혜택 서류 제출 구글폼으로 증빙 서류 제출하고 만족도 조사 참여하기</span>
+                                    </li>
+                                </ul>
+                                <p>※ 2주 이내 제출</p>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="cont_promotion_info_reply_box">
+            <p class="font_title">유의사항</p>
+            <ul>
+                <li>※ 2차 프로모션 기간 내 신청 완료 되신 분들만 서류 제출하기가 가능하며 <span>추첨을 통해 선정</span>되니 양해 부탁드립니다.</li>
+                <li>※ <span>추첨으로 진행되며</span> 선정이 되신 분들에게는 문자로 개별 연락 드립니다.</li>
+                <li>※ 홈페이지 외 정보는 섬 방문의 해 추진위원회 정보가 아닙니다.</li>
+                <li>※ 홈페이지 내 정보와 충족되지 않으시면 <span>지원 및 선정 불가</span>합니다.</li>
+                <li>
+                    ※ 하기 21개 섬은 <span>'전남광주 섬 반값 여행'</span>을 통해서도 신청 후, 지원받을 수 있습니다.<br/>
+                    전남광주통합특별시 여수시(하화도, 사도, 거문도, 개도, 금오도, 손죽도, 초도, 안도, 연도, 여자도), 목포시(달리도, 외달도), 신안군(흑산도, 죽도, 반월·박지도), 영광군(송이도), 강진군(가우도), 진도군(관매도), 보성군(장도), 고흥군(뚝섬, 연흥도)
+                </li>
+            </ul>
+        </div>
+        <!--
+        <ul class="cont_promotion_info_reply">
+            <li>※ 1차 프로모션 기간 내 신청 완료 되신 분들만 서류 제출하기가 가능하며 추첨을 통해 선정되니 양해 부탁드립니다.</li>
+            <li>※ 추첨으로 진행되며 선정이 되신 분들에게는 문자로 개별 연락 드립니다.</li>
+        </ul>
+        -->
+        <!--
+        <div class="cont_promotion_info_ment">
+            추후 신청폼이 개설될 예정입니다.<br/>
+            많은 관심과 참여 부탁드립니다.
+        </div>
+        -->
+        <!--
+        <div class="cont_promotion_info_btn">
+            <ul>
+
+                <li><button type="button" class="type1" onclick="window.open('https://forms.gle/HWrxX3iwEUrciZey6')">2차 섬 여행비 지원 혜택 신청하기</button></li>
+
+                <li><button type="button" class="type1" onclick="javascript:alert('1차 프로모션이 마감되었습니다.\n추첨을 통해 선정 되신 분들께 7월 2일 문자 발송 완료하였습니다.\n많은 관심 감사합니다.');">1차 섬 여행비 지원 혜택 신청하기</button></li>
+                <li><button type="button" class="type2" onclick="javascript:alert('1차 프로모션에 선정 되신 분들께는 7월 2일 개별 문자 발송 완료 되었습니다.\n\n*필수 제출 증빙 자료를 홈페이지를 통해 확인해 주시고 위 링크에 제출해 주세요.\n\n*서류 제출 기한 : 여행종료일로부터 14일 이내입니다.\n예) 7월 10일에 대상 섬에서 여행을 마친 경우 → 7월 24일까지 서류 제출');">1차 섬 여행비 지원 혜택 서류 제출하기</button></li>
+
+            </ul>
+        </div>
+        -->
+        <div class="cont_promotion_info_btn">
+            <ul>
+                <li><button type="button" class="type3" onclick="window.open('https://forms.gle/HWrxX3iwEUrciZey6')">2차 섬 여행비 지원 혜택 신청하기</button></li>
+                <!--
+                <li><button type="button" class="type3" onclick="javascript:alert('2026. 09. 08(화) 오전 10시 ~ 2026. 09. 21(월)까지 2차 프로모션 신청이 가능합니다.');">2차 섬 여행비 지원 혜택 신청하기</button></li>
+                -->
+                <li><button type="button" class="type4" onclick="javascript:alert('2차 프로모션 선정 안내 후 진행 될 에정입니다.\n\n*개별 안내 예정');">2차 섬 여행비 지원 혜택 서류 제출하기</button></li>
+
+            </ul>
+        </div>
+    </div>
+</section>
+
+
+<footer>
+    <div class="footer_info">
+        <div>
+            <p class="footer_info_logo"><img src="/resources/images/logo.svg"></p>
+
+        </div>
+        <div class="m_ver footer_sns">
+            <ul>
+                <li><a href="https://www.youtube.com/@kiditv5329" target="_blank"><img src="/resources/images/icons/sns02.png"></a></li>
+                <li><a href="https://www.facebook.com/profile.php?id=100057197090065&locale=ko_KR#" target="_blank"><img src="/resources/images/icons/sns03.png"></a></li>
+                <li><a href="https://www.instagram.com/what_island__/" target="_blank"><img src="/resources/images/icons/sns04.png"></a></li>
+            </ul>
+        </div>
+        <div class="pc_ver">
+            <p class="footer_info_tit">주최/주관</p>
+            <ul>
+                <li><img src="/resources/images/icons/logo_host02.png"></li>
+                <li><img src="/resources/images/icons/logo_host01.png"></li>
+            </ul>
+        </div>
+        <div class="pc_ver">
+            <p class="footer_info_tit">문의</p>
+            <ul>
+                <li>메일 : info@visitisland.kr</li>
+                <li>전화 : 070-4337-5058 / 070-4814-4922<br/>운영시간 : 09:00 ~ 18:00(휴게시간 12:00 ~ 13:00)<br/></li>
+            </ul>
+        </div>
+        <div class="pc_ver">
+            <p class="footer_info_tit">정책</p>
+            <ul>
+                <li><a href="/personal">개인정보처리방침</a></li>
+                <li><a href="/policy">저작권 정책</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="m_ver footer_copyInfo">
+        <div>
+            <p class="footer_info_tit">주최/주관</p>
+            <ul class="logoHost">
+                <li>
+                    <img src="/resources/images/icons/logo_host02.png">
+                    &nbsp;&nbsp;
+                    <img src="/resources/images/icons/logo_host01.png">
+                </li>
+            </ul>
+        </div>
+        <div>
+            <p class="footer_info_tit">문의</p>
+            <ul>
+                <li>메일 : info@visitisland.kr</li>
+                <li>전화 : 070-4337-5058 / 070-4814-4922<br/>운영시간 : 09:00 ~ 18:00<br/>(휴게시간 12:00 ~ 13:00)</li>
+            </ul>
+        </div>
+        <div>
+            <p class="footer_info_tit">정책</p>
+            <ul>
+                <li><a href="/personal">개인정보처리방침</a></li>
+                <li><a href="/policy">저작권 정책</a></li>
+            </ul>
+        </div>
+    </div>
+    <div class="pc_ver footer_sns">
+        <ul>
+            <li><a href="https://www.youtube.com/@kiditv5329" target="_blank"><img src="/resources/images/icons/sns02.png"></a></li>
+            <li><a href="https://www.facebook.com/profile.php?id=100057197090065&locale=ko_KR#" target="_blank"><img src="/resources/images/icons/sns03.png"></a></li>
+            <li><a href="https://www.instagram.com/what_island__/" target="_blank"><img src="/resources/images/icons/sns04.png"></a></li>
+        </ul>
+    </div>
+    <div class="ft_partner">
+        <!--
+        <p class="footer_info_tit">참여기관</p>
+        -->
+        <ul class="pc_ver_flex">
+            <li><img src="/resources/images/partner/logo06.png"></li>
+            <li><img src="/resources/images/partner/logo01.png"></li>
+            <li><img src="/resources/images/partner/logo07.png"></li>
+            <li><img src="/resources/images/partner/logo04.png"></li>
+
+            <li><img src="/resources/images/partner/logo09.png"></li>
+            <li><img src="/resources/images/partner/logo05.png"></li>
+            <li><img src="/resources/images/partner/logo03.png"></li>
+            <li><img src="/resources/images/partner/logo08.png"></li>
+        </ul>
+        <ul class="m_ver_flex">
+            <li><img src="/resources/images/partner/logo06.png"></li>
+            <li><img src="/resources/images/partner/logo01.png"></li>
+            <li><img src="/resources/images/partner/logo07.png"></li>
+            <li><img src="/resources/images/partner/logo04.png"></li>
+        </ul>
+        <ul class="m_ver_flex">
+
+            <li><img src="/resources/images/partner/logo09.png"></li>
+            <li><img src="/resources/images/partner/logo05.png"></li>
+            <li><img src="/resources/images/partner/logo03.png"></li>
+            <li><img src="/resources/images/partner/logo08.png"></li>
+        </ul>
+    </div>
+</footer>
+<script src="/resources/js/main.js"></script>
+<script src="/resources/js/header.js"></script>
+<script src="/resources/js/main.js"></script>
+<script src="/resources/js/header.js"></script>
+<script>
+    function movePage() {
+        alert("※ 1차 프로모션 신청한 분들에 한해서만 서류 제출이 가능합니다.");
+        window.open("https://forms.gle/adnDYssMNVjtA2Cx7");
+    }
+</script>
+<!-- Swiper JS -->
+<script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+<!-- Initialize Swiper -->
+<script>
+    var swiper = new Swiper(".process_slide", {
+        autoplay: {
+            delay: 0, //add
+            disableOnInteraction: false,
+        },
+        speed: 6000,
+        navigation: {
+            nextEl: ".swiper-button-next",
+            prevEl: ".swiper-button-prev",
+        },
+        loop: true,
+        slidesPerView: 1,
+    });
+</script>
+</body>
+</html>

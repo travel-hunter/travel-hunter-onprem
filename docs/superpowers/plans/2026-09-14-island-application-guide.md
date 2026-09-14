@@ -11,7 +11,7 @@
 - 증빙 파일·주민번호·계좌번호를 받거나 저장하지 않는다.
 - 공식 절차 데이터는 수집 + 관리자 승인으로만 공개된다. 폼 링크를 코드에 고정하지 않는다.
 - DTO camelCase / DB snake_case. `docs/mvp-api-contract.md`, `docs/db-schema-current.md(.sql)`, `.agent/evals/api-contract-golden.json`, `frontend/src/api/types.ts`를 형태 변경과 함께 갱신한다.
-- 기존 `island_visit` 카드 제목·혜택 문구와 다른 정책의 상세·CTA는 바뀌지 않는다.
+- 다른 정책의 상세·CTA는 바뀌지 않는다. `island_visit` 카드 제목은 그대로 두되, 실제 페이지에서 라벨 조각("및 금액")으로 잘못 수집되던 혜택 문구·신청 기간·대상 섬 목록 링크는 Task 1에서 바로잡는다(2026-09-14 발견: 복제 DB의 공개 카드가 "및 금액"으로 게시돼 있었음).
 - `CHECKLIST.md`는 머지 직전에만 갱신한다.
 
 ---
@@ -20,10 +20,10 @@
 
 **Files:** Modify `backend/app/services/island_visit_parser.py`, `backend/tests/test_island_visit_parser.py`; Create `backend/tests/fixtures/island_visit_promotion2_2026-09-14.html`.
 
-- [ ] Step 1: 5174 백엔드 컨테이너에서 공식 페이지를 받아 픽스처로 저장(공개 페이지, 원문 그대로).
-- [ ] Step 2: 실패 테스트 — 픽스처에서 `procedure.rounds`(2차: 신청 마감 2026-09-21T18:00, 여행 2026-10-01~2026-11-04, 신청·서류 폼 URL), `documentDeadlineDaysAfterTrip=14`, `minNights=1`, `minPaymentKrw=100000`, 서류 5종, 제외 기준, 연락처를 기대. 주석 속 옛 폼 링크는 채택되지 않음. 필수 항목을 지운 HTML은 `IslandVisitParserChangedError`.
-- [ ] Step 3: 구현. HTML 주석 제거 후 섹션별 추출, 폼 링크는 `forms.gle`/`docs.google.com/forms` 호스트만. 1차·2차 **모든 회차를 저장**하고, 회차 상태(`past`/`current`/`upcoming`)는 저장하지 않고 조회 시 `round_status(round, today)`로 계산한다.
-- [ ] Step 4: 전체 pytest → 커밋 `feat: parse the island travel support procedure`.
+- [x] Step 1: 5174 백엔드 컨테이너에서 공식 페이지를 받아 픽스처로 저장(공개 페이지, 원문 그대로).
+- [x] Step 2: 실패 테스트 — 픽스처에서 `procedure.rounds`(2차: 신청 마감 2026-09-21T18:00, 여행 2026-10-01~2026-11-04, 신청·서류 폼 URL), `documentDeadlineDaysAfterTrip=14`, `minNights=1`, `minPaymentKrw=100000`, 서류 5종, 제외 기준, 연락처를 기대. 주석 속 옛 폼 링크는 채택되지 않음. 필수 항목을 지운 HTML은 `IslandVisitParserChangedError`.
+- [x] Step 3: 구현. HTML 주석 제거 후 섹션별 추출, 폼 링크는 `forms.gle`/`docs.google.com/forms` 호스트만. 1차·2차 **모든 회차를 저장**하고, 회차 상태(`past`/`current`/`upcoming`)는 저장하지 않고 조회 시 `round_status(round, today)`로 계산한다.
+- [x] Step 4: 전체 pytest → 커밋 `feat: parse the island travel support procedure`.
 
 ### Task 2: `applicationSteps` 섹션과 island_visit mapper
 
