@@ -666,7 +666,14 @@ class TripMember(Base):
 
 class TripPolicy(Base):
     __tablename__ = "trip_policies"
-    __table_args__ = (UniqueConstraint("trip_id", "policy_id"),)
+    __table_args__ = (
+        UniqueConstraint("trip_id", "policy_id"),
+        CheckConstraint(
+            "application_status IS NULL OR application_status IN "
+            "('not_started', 'applied', 'selected', 'not_selected', 'traveled', 'documents_submitted', 'paid')",
+            name="ck_trip_policies_application_status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     trip_id: Mapped[int] = mapped_column(
@@ -677,6 +684,13 @@ class TripPolicy(Base):
     )
     added_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
+    )
+    # Team-level application progress (island support). Checklist stores only which documents are ready — never files.
+    application_status: Mapped[str | None] = mapped_column(String(24))
+    application_checklist: Mapped[dict[str, Any] | None] = mapped_column(postgres_json)
+    application_updated_at: Mapped[datetime | None] = mapped_column(DateTime)
+    application_updated_by_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )
 
     trip: Mapped[Trip] = relationship(back_populates="policies")

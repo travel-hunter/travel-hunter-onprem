@@ -30,12 +30,47 @@ class ItineraryPlace(BaseModel):
     externalPlaceId: str | None = None
 
 
+ApplicationStatus = Literal[
+    "not_started", "applied", "selected", "not_selected", "traveled", "documents_submitted", "paid"
+]
+
+
+class TripPolicyApplicationDocument(BaseModel):
+    key: str
+    label: str
+    checked: bool
+
+
+class TripPolicyApplicationChecks(BaseModel):
+    inTravelWindow: bool | None = None
+    meetsMinNights: bool
+    eligibleIslandMatched: bool | None = None
+    applyDeadline: str | None = None
+    documentsDueDate: str | None = None
+
+
+class TripPolicyApplication(BaseModel):
+    status: ApplicationStatus
+    roundKey: str | None = None
+    checklist: list[TripPolicyApplicationDocument]
+    checks: TripPolicyApplicationChecks
+    updatedAt: str | None = None
+    updatedBy: str | None = None
+
+
+class UpdateTripPolicyApplicationRequest(BaseModel):
+    status: ApplicationStatus | None = None
+    checklist: dict[str, bool] | None = Field(default=None, max_length=20)
+
+
 class LinkedTripPolicy(BaseModel):
     slug: str
     title: str
     amount: str
     region: str
     status: Literal["active", "hidden"] = "active"
+    deadline: str | None = None
+    application: TripPolicyApplication | None = None
 
 
 class CreateTripRequest(BaseModel):

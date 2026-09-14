@@ -68,6 +68,10 @@
 - `applyDeadline`: 대표 회차 신청 마감, `documentsDueDate`: `end_date + 14일`
 - `status`, `checklist`, `requiredDocuments`(키·라벨)
 
+### 카드 마감 이후 일정 쪽 표시 (2026-09-14 추가)
+
+island_visit 정책의 `end_date`(카드 마감)는 신청 마감(2차 2026-09-21)이다. 기존 공개 조건(`end_date >= 오늘`)을 그대로 쓰면 9/22부터 일정의 연결 정책·신청한 정책 목록·진행 상태 갱신 API에서 사라져, 정작 여행(10/1~11/4)과 서류 제출 기간에 안내가 끊긴다. 그래서 **공개 목록·카드·추천·정책 상세는 기존 마감 기준을 유지**(마감 후 신규 신청 유도 금지)하고, **일정 쪽 표면(연결 정책, 신청한 정책 목록, `PATCH .../application`)만** 신청 절차에 서류 제출 기한이 남은 회차가 있는 동안 계속 노출·갱신 가능하게 한다. 판단은 `island_application.active_guide`(현재 회차가 있으면 활성) 하나로 한다.
+
 ## API
 
 - `GET /api/policies/{slug}` 등 Policy DTO: `applicationGuide: { rounds: [{key, label, status: past|current|upcoming, applyStart, applyUntil, travelStart, travelEnd, documentsDueBy, applicationFormUrl, documentFormUrl}], currentRoundKey, applyFormUrl, documentDeadlineDaysAfterTrip, minNights, minPaymentKrw, requiredDocuments, photoRequirement, exclusions, contacts } | null` 추가(island_visit만 채워짐). 폼 링크는 투영 시에도 Google Forms 호스트만 통과.

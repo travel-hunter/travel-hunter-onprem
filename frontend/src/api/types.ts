@@ -113,12 +113,37 @@ export type Policy = {
   applicationGuide?: ApplicationGuide | null;
 };
 
+export type TripPolicyApplicationStatus =
+  | "not_started"
+  | "applied"
+  | "selected"
+  | "not_selected"
+  | "traveled"
+  | "documents_submitted"
+  | "paid";
+
+export type TripPolicyApplication = {
+  status: TripPolicyApplicationStatus;
+  roundKey: string | null;
+  checklist: { key: string; label: string; checked: boolean }[];
+  checks: {
+    inTravelWindow: boolean | null;
+    meetsMinNights: boolean;
+    eligibleIslandMatched: boolean | null;
+    applyDeadline: string | null;
+    documentsDueDate: string | null;
+  };
+  updatedAt: string | null;
+  updatedBy: string | null;
+};
+
 export type AppliedPolicyLinkedTrip = {
   id: string;
   title: string;
   region: string;
   startDate: string | null;
   endDate: string | null;
+  applicationStatus?: TripPolicyApplicationStatus | null;
 };
 
 export type AppliedPolicyLink = {
@@ -152,6 +177,8 @@ export type LinkedTripPolicy = {
   status?: "active" | "hidden";
   category?: PolicyCategory;
   tag?: string;
+  deadline?: string | null;
+  application?: TripPolicyApplication | null;
 };
 
 export type AdminUserListItem = {

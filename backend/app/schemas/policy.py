@@ -89,6 +89,7 @@ class AppliedPolicyLinkedTrip(BaseModel):
     region: str
     startDate: str | None = None
     endDate: str | None = None
+    applicationStatus: str | None = None
 
 
 class AppliedPolicyLink(BaseModel):

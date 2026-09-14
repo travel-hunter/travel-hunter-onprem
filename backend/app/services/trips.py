@@ -32,6 +32,9 @@ from app.schemas.trip import (
     UpdateTripStatusRequest,
 )
 from app.repositories.eligible_islands import normalize_island_name
+from app.models import policy_status as policy_status_module
+from app.schemas.trip import UpdateTripPolicyApplicationRequest
+from app.services import island_application
 from app.services import email as email_service
 from app.services import itinerary_recommendations
 from app.services.eligible_island_catalog import (
@@ -219,15 +222,41 @@ def _trip_policy_amount(policy: Policy) -> str:
     return detail_amount or _format_saving(policy.benefit_amount or 0)
 
 
+def _people_by_id(trip: Trip) -> dict[int, str]:
+    people: dict[int, str] = {}
+    if trip.owner is not None and trip.owner.id is not None:
+        people[int(trip.owner.id)] = trip.owner.nickname
+    for membership in trip.members:
+        if membership.user is not None and membership.user.id is not None:
+            people[int(membership.user.id)] = membership.user.nickname
+    return people
+
+
+def _approved_island_names(db: Session, trip: Trip) -> frozenset[str] | None:
+    if not any(
+        link.policy is not None and link.policy.source_category == island_application.ISLAND_SOURCE_CATEGORY
+        for link in trip.policies
+    ):
+        return None
+    return build_eligible_island_summary(db).normalized_names
+
+
 def _linked_policies(
     trip: Trip,
     alias_overrides: dict[str, stay_discount_aliases.StayDiscountAliasArea] | None = None,
-) -> list[dict[str, str]]:
+    approved_island_names: frozenset[str] | None = None,
+) -> list[dict[str, object]]:
     alias_overrides = alias_overrides or {}
-    linked: list[dict[str, str]] = []
+    linked: list[dict[str, object]] = []
+    on = island_application.today()
+    people_by_id = _people_by_id(trip)
     for link in sorted(trip.policies, key=lambda item: item.id or 0):
         policy = link.policy
-        if policy is None or not is_policy_deadline_current(policy.end_date):
+        if policy is None:
+            continue
+        guide = island_application.active_guide(policy, on=on)
+        # Island support stays on the trip past its card deadline while travelers still have steps to do.
+        if not is_policy_deadline_current(policy.end_date) and guide is None:
             continue
         slug = policy.slug or str(policy.id)
         alias_area = alias_overrides.get(slug)
@@ -238,15 +267,19 @@ def _linked_policies(
             region = alias_area.sido
             title = stay_discount_aliases.alias_title(policy.title, alias_area)
         amount = _trip_policy_amount(policy)
-        linked.append(
-            {
-                "slug": slug,
-                "title": title,
-                "amount": amount,
-                "region": region,
-                "status": policy_status(policy),
-            }
-        )
+        item: dict[str, object] = {
+            "slug": slug,
+            "title": title,
+            "amount": amount,
+            "region": region,
+            "status": policy_status(policy),
+            "deadline": policy.end_date.isoformat() if policy.end_date else None,
+        }
+        if guide is not None:
+            item["application"] = island_application.application_view(
+                trip, link, guide, approved_island_names=approved_island_names, people_by_id=people_by_id
+            )
+        linked.append(item)
     return linked
 
 
@@ -805,6 +838,7 @@ def trip_to_api(
     user: User | None = None,
     recommended_policies: list[dict[str, object]] | None = None,
     linked_policy_alias_overrides: dict[str, stay_discount_aliases.StayDiscountAliasArea] | None = None,
+    approved_island_names: frozenset[str] | None = None,
 ) -> dict[str, object]:
     people: list[str] = []
     seen_people: set[str] = set()
@@ -859,7 +893,7 @@ def trip_to_api(
         "people": people,
         "participantCount": trip.participant_count or max(1, len(people)),
         "expectedSaving": _format_saving(_policy_saving(trip)),
-        "linkedPolicies": _linked_policies(trip, linked_policy_alias_overrides),
+        "linkedPolicies": _linked_policies(trip, linked_policy_alias_overrides, approved_island_names),
         "recommendedPolicies": _recommended_policies(trip, recommended_policies),
         "days": days,
         "currentUserRole": _trip_role_for_user(trip, user),
@@ -893,7 +927,12 @@ def _refresh_trip_payload(db: Session, trip_id: int, user: User) -> dict[str, ob
     trip = trip_repository.get_accessible_trip_by_id(db, trip_id, user.id)
     if trip is None:
         raise TripServiceError(404, "Trip not found")
-    return trip_to_api(trip, user, _list_recommended_policy_candidates(db))
+    return trip_to_api(
+        trip,
+        user,
+        _list_recommended_policy_candidates(db),
+        approved_island_names=_approved_island_names(db, trip),
+    )
 
 
 def _bump_trip_revision_or_conflict(db: Session, trip: Trip, expected_revision: int) -> None:
@@ -1028,7 +1067,12 @@ def get_trip(trip_handle: str, db: Session, user: User) -> dict[str, object] | N
     trip = _resolve_trip(db, trip_handle, user)
     if trip is None:
         return None
-    return trip_to_api(trip, user, _list_recommended_policy_candidates(db))
+    return trip_to_api(
+        trip,
+        user,
+        _list_recommended_policy_candidates(db),
+        approved_island_names=_approved_island_names(db, trip),
+    )
 
 
 def delete_trip(trip_handle: str, db: Session, user: User) -> dict[str, object] | None:
@@ -1168,6 +1212,60 @@ def remove_policy_from_trip(
         db.commit()
 
     return {"tripId": str(trip.id), "policyId": policy_slug, "added": False}
+
+
+def update_trip_policy_application(
+    db: Session,
+    user: User,
+    trip_handle: str,
+    policy_slug: str,
+    payload: UpdateTripPolicyApplicationRequest,
+) -> dict[str, object]:
+    trip = _resolve_required_trip(db, trip_handle, user)
+    _require_trip_editor(trip, user)
+    # Looked up regardless of the card deadline: progress continues through travel and document submission.
+    policy = policy_repository.get_policy_by_slug_any_status(db, policy_slug)
+    guide = (
+        island_application.active_guide(policy, on=island_application.today())
+        if policy is not None and policy.status == "active"
+        else None
+    )
+    if policy is None or guide is None:
+        raise TripServiceError(404, "Application guide not found")
+
+    trip_repository.lock_trip_row(db, trip_id=trip.id)
+    link = trip_repository.get_trip_policy(db, trip_id=trip.id, policy_id=policy.id)
+    if link is None:
+        raise TripServiceError(404, "Policy is not linked to this trip")
+
+    if payload.status is not None and not island_application.can_transition(
+        link.application_status or "not_started", payload.status
+    ):
+        raise TripServiceError(409, "Invalid application status transition")
+    if payload.checklist is not None and any(key not in guide["requiredDocuments"] for key in payload.checklist):
+        raise TripServiceError(422, "Unknown application document")
+
+    if payload.status is not None:
+        link.application_status = payload.status
+    if payload.checklist is not None:
+        checked = dict(link.application_checklist or {})
+        for key, value in payload.checklist.items():
+            if value:
+                checked[key] = True
+            else:
+                checked.pop(key, None)
+        link.application_checklist = checked
+    link.application_updated_at = security.utc_now_naive()
+    link.application_updated_by_user_id = user.id
+    db.commit()
+
+    return island_application.application_view(
+        trip,
+        link,
+        guide,
+        approved_island_names=_approved_island_names(db, trip),
+        people_by_id=_people_by_id(trip),
+    )
 
 
 def update_trip_status(

@@ -142,7 +142,13 @@ def list_applied_policy_links(
             (Trip.owner_id == user_id)
             | (Trip.members.any(TripMember.user_id == user_id))
         )
-        .where(_public_policy_clause(today))
+        # Island support can outlive its card deadline on trips (travel and document steps); the service decides.
+        .where(
+            or_(
+                _public_policy_clause(today),
+                and_(Policy.status == POLICY_STATUS_ACTIVE, Policy.source_category == "island_visit"),
+            )
+        )
         .order_by(Policy.id, Trip.start_date, Trip.id)
     )
     return list(db.scalars(statement).all())

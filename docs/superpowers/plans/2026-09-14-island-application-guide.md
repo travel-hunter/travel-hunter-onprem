@@ -49,9 +49,9 @@
 
 **Interfaces:** `application_view(trip, trip_policy, policy, approved_islands) -> dict`, `update_application(db, *, trip_id, policy_slug, user, status, checklist)`.
 
-- [ ] Step 1: 실패 테스트 — 전이 규칙(허용/409), 편집자만(뷰어 403), 비섬 정책 404, 알 수 없는 서류 키 422, 조건 점검 4종(기간 밖·당일치기·대상 섬 없음·서류 마감=종료일+14), `linkedPolicies[].deadline` 추가, applied-policy-links에 `applicationStatus`.
-- [ ] Step 2: 0042(컬럼 4개, CHECK, FK) + 모델 → 서비스(일정 행 잠금) → 라우트 `PATCH /api/trips/{id}/policies/{slug}/application`.
-- [ ] Step 3: 계약·스키마 문서 → 전체 pytest, `alembic upgrade 0041:head --sql` → 커밋 `feat: track island support application progress per trip`.
+- [x] Step 1: 실패 테스트 — 전이 규칙(허용/409), 편집자만(뷰어 403), 비섬 정책 404, 알 수 없는 서류 키 422, 조건 점검 4종(기간 밖·당일치기·대상 섬 없음·서류 마감=종료일+14), `linkedPolicies[].deadline` 추가, applied-policy-links에 `applicationStatus`.
+- [x] Step 2: 0042(컬럼 4개, CHECK, FK) + 모델 → 서비스(일정 행 잠금) → 라우트 `PATCH /api/trips/{id}/policies/{slug}/application`.
+- [x] Step 3: 계약·스키마 문서 → 전체 pytest, `alembic upgrade 0041:head --sql` → 커밋 `feat: track island support application progress per trip`.
 
 ### Task 5: 일정 상세 `신청 진행` 패널과 목록 배지
 

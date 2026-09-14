@@ -642,7 +642,7 @@ Account linking policy:
 ### GET /me/applied-policy-links
 
 내 일정에 담긴 정책을 정책 기준으로 묶어서 반환한다. 기존 `GET /me/applied-policies`는 카운트 및 단순 정책 목록 호환용으로 유지하고, 이 엔드포인트는 "정책 -> 연결된 일정들" 화면에 사용한다.
-마감일이 지난 정책과 해당 연결은 응답에서 제외한다.
+마감일이 지난 정책과 해당 연결은 응답에서 제외한다. 예외: `island_visit`(섬 여행비 지원)은 카드 마감(신청 마감)이 지나도 신청 절차에 서류 제출 기한이 남은 회차가 있으면 계속 포함한다(여행·서류 제출 단계 진행용).
 
 **Response 200** - `AppliedPolicyLink[]`
 
@@ -656,12 +656,15 @@ Account linking policy:
         "title": "부산 주말 여행",
         "region": "부산",
         "startDate": "2026-06-12",
-        "endDate": "2026-06-13"
+        "endDate": "2026-06-13",
+        "applicationStatus": null
       }
     ]
   }
 ]
 ```
+
+`applicationStatus`: 해당 일정(팀)의 신청 진행 상태(`not_started` | `applied` | `selected` | `not_selected` | `traveled` | `documents_submitted` | `paid`) 또는 기록이 없으면 `null`.
 
 ---
 ### POST /me/saved-policies/{policy_slug}
@@ -1037,6 +1040,29 @@ Changing the travel area does not move, delete, or reorder places, days, or link
 **Errors**
 - 403: viewer는 해제 불가
 - 404: 일정 또는 정책 없음
+
+---
+
+### PATCH /trips/{trip_id}/policies/{policy_slug}/application
+
+일정(팀) 단위 섬 여행비 지원 신청 진행 상태와 서류 체크리스트를 갱신한다. owner/editor만 가능. 증빙 파일·번호는 받지 않으며 체크리스트는 준비 여부만 저장한다.
+
+**Request**
+```json
+{ "status": "applied", "checklist": { "신분증": true, "통장사본": false } }
+```
+- `status`(선택): `not_started` | `applied` | `selected` | `not_selected` | `traveled` | `documents_submitted` | `paid`. 한 단계 앞으로 또는 한 단계 뒤로만 이동 가능(`applied → selected|not_selected`, `selected → traveled → documents_submitted → paid`). `not_selected`에서 앞으로는 이동 불가.
+- `checklist`(선택): 필요 서류 라벨 → 준비 여부. `true`는 체크, `false`는 해제. 키는 승인된 신청 절차의 `requiredDocuments` 라벨이어야 한다.
+
+**Response 200** - `TripPolicyApplication` (아래 타입 참조)
+
+**Errors**
+- 403: viewer는 갱신 불가
+- 404: `Application guide not found`(섬 정책이 아니거나 모든 회차의 서류 제출 기한이 지남) 또는 `Policy is not linked to this trip`
+- 409: `Invalid application status transition`
+- 422: `Unknown application document` 또는 요청 형식 오류
+
+카드 마감(신청 마감)이 지나도 서류 제출 기한이 남은 회차가 있으면 갱신 가능하다.
 
 ---
 
@@ -1482,6 +1508,23 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | amount | string | 혜택 금액 표시 |
 | region | string | 적용 지역 |
 | status | `"active" \| "hidden"` | 정책 노출 상태. 사용자에게 제공 가능한 정책은 `active`이며, 연결 기록만 보존하고 공개하지 않는 정책은 `hidden`이다. |
+| deadline | string \| null | 정책 카드 마감일(ISO 날짜). 없으면 `null` |
+| application | TripPolicyApplication \| null | `island_visit` 정책에만 존재. 일정(팀) 단위 신청 진행. 카드 마감이 지나도 서류 제출 기한이 남은 회차가 있으면 연결 정책에 계속 표시된다 |
+
+### TripPolicyApplication
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| status | string | `not_started` \| `applied` \| `selected` \| `not_selected` \| `traveled` \| `documents_submitted` \| `paid` |
+| roundKey | string \| null | 조회일 기준 현재 회차 키 |
+| checklist | `{key, label, checked}[]` | 승인된 필요 서류 목록과 준비 여부 |
+| checks.inTravelWindow | boolean \| null | 일정 기간이 현재 회차 여행 기간 안인지. 회차 여행 기간이 없으면 `null` |
+| checks.meetsMinNights | boolean | 일정 박수가 최소 박수 이상인지 |
+| checks.eligibleIslandMatched | boolean \| null | 일정 장소 중 승인된 대상 섬과 정확 일치하는 곳이 있는지. 카탈로그를 읽지 않은 응답이면 `null` |
+| checks.applyDeadline | string \| null | 현재 회차 신청 마감(`YYYY-MM-DDTHH:MM`) |
+| checks.documentsDueDate | string \| null | 서류 제출 마감 = 일정 종료일 + 제출 기한 일수 |
+| updatedAt | string \| null | 마지막 갱신 시각(UTC ISO, `Z`) |
+| updatedBy | string \| null | 마지막 갱신자 닉네임 |
 
 ### ItineraryPlace
 

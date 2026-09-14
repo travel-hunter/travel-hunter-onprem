@@ -41,6 +41,7 @@ from app.services.eligible_island_catalog import (
     build_eligible_island_summary,
 )
 from app.models.policy_status import policy_visibility_date
+from app.services import island_application
 from app.services.island_application_guide import application_guide_for_api
 
 
@@ -474,11 +475,14 @@ def list_applied_policy_links(
 
     photos = build_region_photo_index(db)
     islands = build_eligible_island_summary(db)
+    on = island_application.today()
     grouped: dict[int, dict[str, object]] = {}
-    for link in policy_repository.list_applied_policy_links(db, user_id=user.id):
+    for link in policy_repository.list_applied_policy_links(db, user_id=user.id, today=on):
         policy = link.policy
         trip = link.trip
         if policy is None or trip is None:
+            continue
+        if not is_public_policy(policy, today=on) and island_application.active_guide(policy, on=on) is None:
             continue
         if policy.id not in grouped:
             grouped[policy.id] = {
@@ -494,6 +498,7 @@ def list_applied_policy_links(
                 "region": trip.region or "",
                 "startDate": trip.start_date.isoformat() if trip.start_date else None,
                 "endDate": trip.end_date.isoformat() if trip.end_date else None,
+                "applicationStatus": link.application_status,
             }
         )
     return list(grouped.values())
