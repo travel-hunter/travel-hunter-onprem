@@ -41,6 +41,7 @@ from app.repositories.eligible_islands import EligibleIslandCatalogError
 from app.services import admin as admin_service
 from app.services import eligible_island_catalog, eligible_island_notice
 from app.services import policy_candidate_review
+from app.services.policy_normalization import PolicyNormalizationError
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -258,7 +259,7 @@ def approve_policy_review_candidates_batch(
             note=payload.note,
         )
         session.commit()
-    except ValueError as error:
+    except (ValueError, PolicyNormalizationError) as error:
         session.rollback()
         raise HTTPException(status_code=409, detail=str(error)) from error
     except Exception:
@@ -293,7 +294,8 @@ def approve_policy_review_candidate(
         approved = policy_candidate_review.approve_candidate(
             session, candidate=candidate, record=record, admin=current_admin, note=payload.note
         )
-    except ValueError as error:
+    except (ValueError, PolicyNormalizationError) as error:
+        session.rollback()
         raise HTTPException(status_code=409, detail=str(error)) from error
     session.commit()
     return _candidate_item(approved, record)

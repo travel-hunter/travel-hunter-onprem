@@ -1,6 +1,6 @@
 ﻿import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
-import { appDataApi, type AdminAuditLogListItem, type AdminCollectionSource, type AdminEligibleIslandSnapshot, type AdminEligibleIslandSnapshotDetail, type AdminExternalSourceSummaryResponse, type AdminPolicyDetail, type AdminPolicyListItem, type AdminPolicyReviewCandidate, type AdminPolicyStatus, type AdminUserDetail, type AdminUserListItem, type ExternalCollectionOpsHealth, type ExternalCollectionRunResponse } from "../../api";
+import { ApiError, appDataApi, type AdminAuditLogListItem, type AdminCollectionSource, type AdminEligibleIslandSnapshot, type AdminEligibleIslandSnapshotDetail, type AdminExternalSourceSummaryResponse, type AdminPolicyDetail, type AdminPolicyListItem, type AdminPolicyReviewCandidate, type AdminPolicyStatus, type AdminUserDetail, type AdminUserListItem, type ExternalCollectionOpsHealth, type ExternalCollectionRunResponse } from "../../api";
 
 function adminNavClass({ isActive }: { isActive: boolean }) {
   return isActive ? "admin-nav-link active" : "admin-nav-link";
@@ -664,8 +664,9 @@ export function AdminPolicyReviewPage() {
         mode === "all" ? { candidateIds: [], approveAll: true } : { candidateIds: selectedIds, approveAll: false },
       );
       await load();
-    } catch {
-      setError("일괄 승인에 실패했습니다. 이 요청의 후보는 하나도 공개되지 않았습니다. 새로고침 후 다시 시도하세요.");
+    } catch (cause) {
+      const reason = cause instanceof ApiError && cause.status === 409 ? ` 사유: ${cause.message}` : "";
+      setError(`일괄 승인에 실패했습니다. 이 요청의 후보는 하나도 공개되지 않았습니다.${reason} 문제 후보를 반려하거나 선택에서 빼고 다시 시도하세요.`);
     } finally {
       setWorkingId(null);
     }

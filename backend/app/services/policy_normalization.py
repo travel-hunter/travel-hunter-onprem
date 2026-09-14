@@ -513,6 +513,9 @@ def promote_external_benefit_record(
     """Promote one explicitly reviewed source record without touching any other cards."""
     if record.source_category == STAY_DISCOUNT_SOURCE_CATEGORY:
         _promote_stay_discount_record(db, record)
+        # The app session runs with autoflush=False: a canonical row added just above is
+        # invisible to the lookup below until it is flushed.
+        db.flush()
         policy = _get_stay_discount_canonical_policy(db, record)
         if policy is None:
             raise PolicyNormalizationError("stay discount policy was not created")
