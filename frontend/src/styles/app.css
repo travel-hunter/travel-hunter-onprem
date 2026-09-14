@@ -12360,3 +12360,42 @@ a.prototype-stat-card:active {
   cursor: not-allowed;
   opacity: 0.62;
 }
+
+/* Island support application guide (policy detail) */
+.application-guide-round {
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  padding-block: 12px;
+}
+.application-guide-round-head,
+.application-guide-round > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.application-guide-round > summary {
+  cursor: pointer;
+  color: #64748b;
+}
+.application-guide-steps {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding-left: 1.25rem;
+}
+.application-guide-steps span {
+  display: block;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+.application-guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.application-guide-actions .warning-text {
+  flex-basis: 100%;
+  margin: 0;
+}

@@ -1,7 +1,7 @@
 import { ChevronLeft, Heart, Search, Share2, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { appDataApi, type LinkedTripPolicy, type Policy, type PolicyCategory, type Trip } from "../api";
+import { appDataApi, type ApplicationGuide, type ApplicationGuideRound, type LinkedTripPolicy, type Policy, type PolicyCategory, type Trip } from "../api";
 import { useAsyncResource } from "../api/useAsyncResource";
 import { useSession } from "../app/session";
 import { PolicyListCard } from "../components/cards";
@@ -587,6 +587,101 @@ function getPolicyRequirementSections(policy: Policy): PolicyRequirementSection[
 
 function getPolicyPeriodLabel(policy: Policy) {
   return formatPolicyPeriodSummary(policy);
+}
+
+function guideDate(value: string | null): string | null {
+  return value ? value.slice(0, 10) : null;
+}
+
+function guideMoment(value: string | null): string {
+  if (!value) return "";
+  return value.endsWith("T23:59") || value.endsWith("T00:00") ? value.slice(0, 10) : value.replace("T", " ");
+}
+
+function ApplicationRoundSteps({ guide, round }: { guide: ApplicationGuide; round: ApplicationGuideRound }) {
+  const applyDays = daysUntilPolicyDeadline(guideDate(round.applyUntil));
+  const applyOpen = round.status === "current" && Boolean(round.applicationFormUrl) && applyDays !== null && applyDays >= 0;
+  const nights = guide.minNights;
+  return (
+    <>
+      <ol className="application-guide-steps" aria-label={`${round.label} 진행 순서`}>
+        <li>
+          <strong>신청</strong>
+          <span>{round.applyStart ? `${guideMoment(round.applyStart)} ~ ` : "~ "}{guideMoment(round.applyUntil)} 공식 구글 폼 제출</span>
+        </li>
+        <li>
+          <strong>선정 발표</strong>
+          <span>추첨 후 선정된 분께 개별 문자 안내</span>
+        </li>
+        <li>
+          <strong>섬 여행</strong>
+          <span>{round.travelStart} ~ {round.travelEnd}{nights ? ` · 대상 섬에서 ${nights}박 ${nights + 1}일 이상` : ""}</span>
+        </li>
+        <li>
+          <strong>서류 제출</strong>
+          <span>여행 종료 후 {guide.documentDeadlineDaysAfterTrip}일 이내{round.documentsDueBy ? ` (${round.documentsDueBy}까지)` : ""}</span>
+        </li>
+        <li>
+          <strong>지원금 수령</strong>
+          <span>서류 검토 후 계좌이체</span>
+        </li>
+      </ol>
+      {(applyOpen || round.documentFormUrl) && (
+        <div className="application-guide-actions">
+          {applyOpen && round.applicationFormUrl && (
+            <a className="btn primary" href={round.applicationFormUrl} rel="noreferrer" target="_blank">신청 폼 열기</a>
+          )}
+          {round.documentFormUrl && (
+            <>
+              <a className="btn secondary" href={round.documentFormUrl} rel="noreferrer" target="_blank">서류 제출 폼 열기</a>
+              <p className="warning-text">선정 문자를 받은 분만 제출할 수 있어요</p>
+            </>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Island support procedure by round: past rounds collapsed, the current one open with its deadline, upcoming announced. */
+function ApplicationGuideSection({ guide }: { guide: ApplicationGuide }) {
+  return (
+    <section className="section-block application-guide" aria-label="신청 절차" role="region">
+      <h3>🧭 신청 절차</h3>
+      {guide.rounds.map((round) => {
+        if (round.status === "past") {
+          return (
+            <details className="application-guide-round past" key={round.key}>
+              <summary>{`${round.label} · 종료`}</summary>
+              <ApplicationRoundSteps guide={guide} round={round} />
+            </details>
+          );
+        }
+        if (round.status === "upcoming") {
+          return (
+            <div className="application-guide-round upcoming" key={round.key}>
+              <div className="application-guide-round-head">
+                <strong>{`${round.label} · 예정`}</strong>
+              </div>
+              {round.applyStart && <p>{`신청 시작 ${guideMoment(round.applyStart)}`}</p>}
+              <ApplicationRoundSteps guide={guide} round={round} />
+            </div>
+          );
+        }
+        const applyDays = daysUntilPolicyDeadline(guideDate(round.applyUntil));
+        const tone = applyDays === null ? "default" : applyDays < 0 ? "gray" : applyDays <= 3 ? "warning" : "default";
+        return (
+          <div className="application-guide-round current" key={round.key}>
+            <div className="application-guide-round-head">
+              <strong>{`${round.label} · 진행 중`}</strong>
+              {round.applyUntil && <Tag tone={tone}>{`신청 마감 ${dday(guideDate(round.applyUntil))}`}</Tag>}
+            </div>
+            <ApplicationRoundSteps guide={guide} round={round} />
+          </div>
+        );
+      })}
+    </section>
+  );
 }
 
 function getDeadlineTagLabel(policy: Policy) {
@@ -1327,6 +1422,10 @@ export function PolicyDetailPage() {
               대상 섬 공식 안내
             </a>
           </section>
+        )}
+
+        {policy.applicationGuide && policy.applicationGuide.rounds.length > 0 && (
+          <ApplicationGuideSection guide={policy.applicationGuide} />
         )}
 
         {requirementSections.length > 0 && (

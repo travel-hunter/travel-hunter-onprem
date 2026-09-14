@@ -39,9 +39,9 @@
 
 **Files:** Modify `frontend/src/pages/PolicyPages.tsx`, `frontend/src/app/__tests__/policy-detail.test.tsx`, `frontend/src/styles/app.css`.
 
-- [ ] Step 1: 실패 테스트 — `applicationGuide`가 있으면 회차 목록(지난 회차 접힘 "종료", 현재 회차 펼침 + 신청 마감 D-n, 다음 회차 "예정"), 현재 회차 스텝 5개·기간, `신청 폼 열기`/`서류 제출 폼 열기` 링크와 선정자 경고, 마감 3일 이내 강조·지나면 "마감". 없으면 섹션 없음(기존 정책 회귀).
-- [ ] Step 2: 구현(기존 `section-block`/`SurfaceCard` 재사용, 새 컴포넌트 최소화).
-- [ ] Step 3: typecheck/build/mojibake → 5174 재빌드 후 island_visit 후보 수집·승인해 실제 화면 확인 → 커밋 `feat: show the island support application steps`.
+- [x] Step 1: 실패 테스트 — `applicationGuide`가 있으면 회차 목록(지난 회차 접힘 "종료", 현재 회차 펼침 + 신청 마감 D-n, 다음 회차 "예정"), 현재 회차 스텝 5개·기간, `신청 폼 열기`/`서류 제출 폼 열기` 링크와 선정자 경고, 마감 3일 이내 강조·지나면 "마감". 없으면 섹션 없음(기존 정책 회귀).
+- [x] Step 2: 구현(기존 `section-block`/`SurfaceCard` 재사용, 새 컴포넌트 최소화).
+- [x] Step 3: typecheck/build/mojibake → 5174 재빌드 후 island_visit 후보 수집·승인해 실제 화면 확인 → 커밋 `feat: show the island support application steps`.
 
 ### Task 4: 일정 단위 진행 상태 API
 
