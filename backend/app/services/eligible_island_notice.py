@@ -287,26 +287,22 @@ def collect_eligible_island_catalog(
         db.rollback()
         return EligibleIslandCollectionResult(outcome=str(exc), error=_cause_text(exc))
 
-    snapshot = repository.create_snapshot(
+    from app.services.eligible_island_catalog import stage_snapshot  # local: catalog service imports this module
+
+    staged = stage_snapshot(
         db,
         catalog_key=catalog_key,
+        entries=entries,
         notice_url=notice_url,
         notice_title=title,
-        attachment_url=documents[0].url,
-        attachment_filename=documents[0].filename,
-        attachment_fingerprint=fingerprint,
-        attachment_documents=[document.to_json() for document in documents],
-        parser_version=PARSER_VERSION,
+        documents=documents,
         fetched_at=fetched_at,
     )
-    for item in entries:
-        repository.add_snapshot_entry(
-            db, snapshot=snapshot, name=item.display_name, jurisdiction=item.jurisdiction_name, raw_region_text=item.raw_region_text
-        )
-    db.flush()
-    repository.supersede_pending_snapshots(db, catalog_id=catalog.id, keep_snapshot_id=snapshot.id)
     db.commit()
-    return EligibleIslandCollectionResult(outcome="created", snapshot_id=snapshot.id, entry_count=snapshot.entry_count)
+    if staged.snapshot is None:
+        # identical | suspicious_shrink (empty cannot happen: parser rejects zero rows)
+        return EligibleIslandCollectionResult(outcome=staged.outcome, entry_count=len(entries))
+    return EligibleIslandCollectionResult(outcome="created", snapshot_id=staged.snapshot.id, entry_count=staged.snapshot.entry_count)
 
 
 def _cause_text(exc: BaseException) -> str:

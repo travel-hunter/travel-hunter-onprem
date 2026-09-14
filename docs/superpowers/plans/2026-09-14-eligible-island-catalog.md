@@ -131,7 +131,7 @@ def source_fingerprint(documents: list[SourceDocument]) -> str:
 
 **Interfaces:** Produces `stage_snapshot`, `approve_snapshot`, `reject_snapshot`, and `get_snapshot_diff`.
 
-- [ ] **Step 1: Write failing diff and large-shrink tests.**
+- [x] **Step 1: Write failing diff and large-shrink tests.**
 
 ~~~python
 def test_stage_snapshot_records_added_and_removed_counts(db):
@@ -146,11 +146,11 @@ def test_large_shrink_preserves_approved_catalog(db):
     assert approved_names(db) == set(make_names(100))
 ~~~
 
-- [ ] **Step 2: Run `cd backend && python -m pytest tests/test_eligible_island_catalog.py -q`; confirm failure.**
+- [x] **Step 2: Run `cd backend && python -m pytest tests/test_eligible_island_catalog.py -q`; confirm failure.**
 
-- [ ] **Step 3: Implement staging.** Diff keys are exactly `(normalized_name, jurisdiction_name)`. A nonempty, nonidentical, non-suspicious result becomes one pending snapshot. Mark older pending snapshots superseded. A removal ratio above 30% creates no candidate and preserves the approved list.
+- [x] **Step 3: Implement staging.** Diff keys are exactly `(normalized_name, jurisdiction_name)`. A nonempty, nonidentical, non-suspicious result becomes one pending snapshot. Mark older pending snapshots superseded. A removal ratio above 30% creates no candidate and preserves the approved list.
 
-- [ ] **Step 4: Implement approval with one locked transaction.**
+- [x] **Step 4: Implement approval with one locked transaction.**
 
 ~~~python
 def approve_snapshot(db: Session, *, catalog_key: str, snapshot_id: int, admin: User):
@@ -166,9 +166,9 @@ def approve_snapshot(db: Session, *, catalog_key: str, snapshot_id: int, admin: 
 
 Reject non-pending and superseded IDs. Do not mutate `policies`, `trip_policies`, or `PolicyReviewCandidate`.
 
-- [ ] **Step 5: Add lifecycle tests for rejection preservation, unapproved invisibility, atomic replacement, concurrent/stale approval rejection, and cross-jurisdiction duplicate retention.**
+- [x] **Step 5: Add lifecycle tests for rejection preservation, unapproved invisibility, atomic replacement, concurrent/stale approval rejection, and cross-jurisdiction duplicate retention.**
 
-- [ ] **Step 6: Run `cd backend && python -m pytest tests/test_eligible_island_catalog.py tests/test_eligible_island_repository.py -q`; expected PASS. Commit `feat: approve eligible island catalog updates`.**
+- [x] **Step 6: Run `cd backend && python -m pytest tests/test_eligible_island_catalog.py tests/test_eligible_island_repository.py -q`; expected PASS. Commit `feat: approve eligible island catalog updates`.**
 
 ### Task 4: 별도 관리자 검토 API
 
