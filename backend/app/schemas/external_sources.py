@@ -13,6 +13,7 @@ SourceCategory = Literal[
     "local_half_trip",
     "digital_tourism_resident_card",
     "stay_discount",
+    "island_visit",
 ]
 SourceStatus = Literal["active", "ended", "scheduled", "unknown"]
 BenefitValueType = Literal["amount", "percent", "free", "upgrade", "mixed", "unknown"]

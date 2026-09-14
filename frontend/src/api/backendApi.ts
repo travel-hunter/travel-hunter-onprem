@@ -42,6 +42,10 @@ import {
 } from "./dataApi";
 import {
   AdminAuditLogListResponse,
+  AdminCollectionSource,
+  AdminCollectionSourceListResponse,
+  AdminPolicyReviewCandidate,
+  AdminPolicyReviewCandidateListResponse,
   AdminExternalSourceSummaryResponse,
   AdminPolicyDetail,
   AdminPolicyListResponse,
@@ -192,4 +196,16 @@ export const backendApi: AppDataApi = {
   updateAdminPolicy: (policyId: string, policy): Promise<AdminPolicyDetail> => apiClient.patch<AdminPolicyDetail>(`/api/admin/policies/${policyId}`, policy),
   listAdminAuditLogs: (options): Promise<AdminAuditLogListResponse> =>
     apiClient.get<AdminAuditLogListResponse>(`/api/admin/audit-logs${queryString(options ?? {})}`),
+  listAdminPolicyReviewCandidates: (options): Promise<AdminPolicyReviewCandidateListResponse> =>
+    apiClient.get<AdminPolicyReviewCandidateListResponse>("/api/admin/policy-review-candidates" + queryString(options ?? {})),
+  approveAdminPolicyReviewCandidates: (payload) =>
+    apiClient.post("/api/admin/policy-review-candidates/approve-batch", payload),
+  approveAdminPolicyReviewCandidate: (candidateId, note): Promise<AdminPolicyReviewCandidate> =>
+    apiClient.post<AdminPolicyReviewCandidate>(`/api/admin/policy-review-candidates/${candidateId}/approve`, { note }),
+  rejectAdminPolicyReviewCandidate: (candidateId, note): Promise<AdminPolicyReviewCandidate> =>
+    apiClient.post<AdminPolicyReviewCandidate>(`/api/admin/policy-review-candidates/${candidateId}/reject`, { note }),
+  listAdminCollectionSources: (): Promise<AdminCollectionSourceListResponse> =>
+    apiClient.get<AdminCollectionSourceListResponse>("/api/admin/policy-collection-sources"),
+  updateAdminCollectionSource: (sourceKey, enabled): Promise<AdminCollectionSource> =>
+    apiClient.patch<AdminCollectionSource>(`/api/admin/policy-collection-sources/${sourceKey}`, { enabled }),
 };

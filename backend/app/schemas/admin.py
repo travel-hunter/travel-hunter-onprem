@@ -167,3 +167,66 @@ class AdminExternalSourceSummaryResponse(BaseModel):
     freshRecords: int
     promotedPolicyCount: int
     latestFetchedAt: str | None = None
+
+
+class AdminPolicyReviewCandidateItem(BaseModel):
+    id: str
+    externalSourceRecordId: str
+    reviewStatus: Literal["pending", "approved", "rejected", "superseded"]
+    changeKind: Literal["new", "material_change"]
+    title: str
+    sourceCategory: str
+    officialUrl: str
+    benefitText: str
+    region: str | None = None
+    city: str | None = None
+    status: str
+    startDate: date | None = None
+    endDate: date | None = None
+    createdAt: str
+
+
+class AdminPolicyReviewCandidateListResponse(BaseModel):
+    items: list[AdminPolicyReviewCandidateItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminPolicyReviewBatchApproveRequest(BaseModel):
+    candidateIds: list[str] = Field(default_factory=list, max_length=100)
+    approveAll: bool = False
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class AdminPolicyReviewBatchApproveResponse(BaseModel):
+    approvedCount: int
+    approvedCandidateIds: list[str]
+
+
+class AdminPolicyReviewDecisionRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class AdminPolicyReviewRejectRequest(BaseModel):
+    note: str = Field(min_length=1, max_length=2000)
+
+
+class AdminCollectionSourceItem(BaseModel):
+    key: str
+    displayName: str
+    officialUrl: str
+    sourceCategory: str
+    enabled: bool
+    publicationMode: str
+    lastOutcome: str | None = None
+    lastCollectedAt: str | None = None
+    lastError: str | None = None
+
+
+class AdminCollectionSourceListResponse(BaseModel):
+    items: list[AdminCollectionSourceItem]
+
+
+class AdminCollectionSourceUpdateRequest(BaseModel):
+    enabled: bool

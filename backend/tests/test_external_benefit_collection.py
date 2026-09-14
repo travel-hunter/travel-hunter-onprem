@@ -33,10 +33,6 @@ def test_collect_external_benefits_from_html_sources_upserts_successful_sources(
         "app.services.external_benefit_collection.external_source_repository.upsert_external_source_records",
         fake_upsert,
     )
-    monkeypatch.setattr(
-        "app.services.external_benefit_collection.policy_normalization.promote_external_benefits_to_policies",
-        lambda db_arg: None,
-    )
 
     db = FakeDb()
     result = collect_external_benefits_from_html_sources(
@@ -77,10 +73,6 @@ def test_collect_external_benefits_from_html_sources_reports_partial_success(
     monkeypatch.setattr(
         "app.services.external_benefit_collection.external_source_repository.upsert_external_source_records",
         fake_upsert,
-    )
-    monkeypatch.setattr(
-        "app.services.external_benefit_collection.policy_normalization.promote_external_benefits_to_policies",
-        lambda db_arg: None,
     )
 
     result = collect_external_benefits_from_html_sources(
@@ -186,11 +178,6 @@ def test_collect_external_benefits_from_live_sources_treats_traffic_as_optional_
         "upsert_external_source_records",
         lambda db_arg, sources: list(sources),
     )
-    monkeypatch.setattr(
-        external_benefit_collection.policy_normalization,
-        "promote_external_benefits_to_policies",
-        lambda db_arg: None,
-    )
 
     def fake_get(url, *, timeout, follow_redirects, headers):
         if url.endswith("traffic-legacy"):
@@ -247,11 +234,6 @@ def test_collect_external_benefits_from_live_sources_reports_partial_success_for
         external_benefit_collection.external_source_repository,
         "upsert_external_source_records",
         lambda db_arg, sources: list(sources),
-    )
-    monkeypatch.setattr(
-        external_benefit_collection.policy_normalization,
-        "promote_external_benefits_to_policies",
-        lambda db_arg: None,
     )
 
     def fake_get(url, *, timeout, follow_redirects, headers):
@@ -329,11 +311,6 @@ def test_collect_live_sources_enriches_digital_tourism_from_partner_api(
         external_benefit_collection.external_source_repository,
         "upsert_external_source_records",
         fake_upsert,
-    )
-    monkeypatch.setattr(
-        external_benefit_collection.policy_normalization,
-        "promote_external_benefits_to_policies",
-        lambda db_arg: None,
     )
 
     result = external_benefit_collection.collect_external_benefits_from_live_sources(
@@ -483,3 +460,51 @@ def test_enrich_existing_local_half_trip_detail_fields_updates_public_existing_r
         "※ 단, 완도군, 해남군, 영암군, 장흥군 거주자는 지원 대상 제외"
     )
     assert record.field_completeness == 95
+
+
+def test_live_collection_does_not_fetch_disabled_island_source(monkeypatch) -> None:
+    from app.services import external_benefit_collection
+    from app.services.external_benefit_collection import SourceDefinition
+
+    monkeypatch.setattr(
+        external_benefit_collection,
+        "_source_registry",
+        lambda: (SourceDefinition("island_visit", "https://official.example/island", lambda *_: []),),
+    )
+    monkeypatch.setattr(external_benefit_collection, "_enabled_source_categories", lambda db: set())
+    monkeypatch.setattr(
+        external_benefit_collection,
+        "fetch_external_source_html",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not fetch disabled source")),
+    )
+
+    result = external_benefit_collection.collect_external_benefits_from_live_sources(
+        FakeDb(), fetched_at=datetime(2026, 9, 13, tzinfo=UTC), today=date(2026, 9, 13)
+    )
+
+    assert result.sources == []
+    assert result.outcome == "success"
+
+
+def test_live_collection_reports_island_parser_change(monkeypatch) -> None:
+    from app.services import external_benefit_collection
+    from app.services.external_benefit_collection import SourceDefinition
+    from app.services.island_visit_parser import IslandVisitParserChangedError
+
+    def changed_parser(*_args):
+        raise IslandVisitParserChangedError("label missing")
+
+    monkeypatch.setattr(
+        external_benefit_collection,
+        "_source_registry",
+        lambda: (SourceDefinition("island_visit", "https://official.example/island", changed_parser, required=False),),
+    )
+    monkeypatch.setattr(external_benefit_collection, "_enabled_source_categories", lambda db: {"island_visit"})
+    monkeypatch.setattr(external_benefit_collection, "fetch_external_source_html", lambda *_args, **_kwargs: "changed html")
+
+    result = external_benefit_collection.collect_external_benefits_from_live_sources(
+        FakeDb(), fetched_at=datetime(2026, 9, 13, tzinfo=UTC), today=date(2026, 9, 13)
+    )
+
+    assert result.outcome == "error"
+    assert result.sources[0].outcome == "parser_changed"

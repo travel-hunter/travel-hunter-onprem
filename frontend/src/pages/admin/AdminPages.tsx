@@ -1,6 +1,6 @@
 ﻿import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
-import { appDataApi, type AdminAuditLogListItem, type AdminExternalSourceSummaryResponse, type AdminPolicyDetail, type AdminPolicyListItem, type AdminPolicyStatus, type AdminUserDetail, type AdminUserListItem, type ExternalCollectionOpsHealth, type ExternalCollectionRunResponse } from "../../api";
+import { appDataApi, type AdminAuditLogListItem, type AdminCollectionSource, type AdminExternalSourceSummaryResponse, type AdminPolicyDetail, type AdminPolicyListItem, type AdminPolicyReviewCandidate, type AdminPolicyStatus, type AdminUserDetail, type AdminUserListItem, type ExternalCollectionOpsHealth, type ExternalCollectionRunResponse } from "../../api";
 
 function adminNavClass({ isActive }: { isActive: boolean }) {
   return isActive ? "admin-nav-link active" : "admin-nav-link";
@@ -38,6 +38,7 @@ export function AdminLayout() {
         <nav>
           <NavLink className={adminNavClass} to="/admin/users">회원 관리</NavLink>
           <NavLink className={adminNavClass} to="/admin/policies">정책 관리</NavLink>
+          <NavLink className={adminNavClass} to="/admin/policy-review">수집 검토</NavLink>
           <NavLink className={adminNavClass} to="/admin/audit-logs">변경 이력</NavLink>
           <NavLink className="admin-nav-link" to="/home">서비스로 이동</NavLink>
         </nav>
@@ -610,6 +611,91 @@ export function AdminAuditLogsPage() {
           다음
         </button>
       </div>
+    </section>
+  );
+}
+
+
+export function AdminPolicyReviewPage() {
+  const [candidates, setCandidates] = useState<AdminPolicyReviewCandidate[]>([]);
+  const [sources, setSources] = useState<AdminCollectionSource[]>([]);
+  const [error, setError] = useState("");
+  const [workingId, setWorkingId] = useState<string | null>(null);
+
+  const load = async () => {
+    setError("");
+    try {
+      const [candidateResponse, sourceResponse] = await Promise.all([
+        appDataApi.listAdminPolicyReviewCandidates(),
+        appDataApi.listAdminCollectionSources(),
+      ]);
+      setCandidates(candidateResponse.items);
+      setSources(sourceResponse.items);
+    } catch {
+      setError("수집 검토 정보를 불러오지 못했습니다.");
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const decide = async (candidate: AdminPolicyReviewCandidate, decision: "approve" | "reject") => {
+    const note = decision === "reject" ? window.prompt("반려 사유를 입력하세요.") : undefined;
+    if (decision === "reject" && !note?.trim()) return;
+    setWorkingId(candidate.id);
+    setError("");
+    try {
+      if (decision === "approve") {
+        await appDataApi.approveAdminPolicyReviewCandidate(candidate.id);
+      } else {
+        await appDataApi.rejectAdminPolicyReviewCandidate(candidate.id, note?.trim() ?? "");
+      }
+      await load();
+    } catch {
+      setError("검토 처리에 실패했습니다. 새로고침 후 다시 시도하세요.");
+    } finally {
+      setWorkingId(null);
+    }
+  };
+
+  const toggleSource = async (source: AdminCollectionSource) => {
+    setWorkingId(source.key);
+    setError("");
+    try {
+      const updated = await appDataApi.updateAdminCollectionSource(source.key, !source.enabled);
+      setSources((current) => current.map((item) => item.key === updated.key ? updated : item));
+    } catch {
+      setError("수집 소스 설정을 바꿀지 못했습니다.");
+    } finally {
+      setWorkingId(null);
+    }
+  };
+
+  return (
+    <section className="admin-page">
+      <div className="admin-page-head"><div><p>Collection review</p><h1>수집 검토</h1></div><button className="btn secondary" type="button" onClick={load}>새로고침</button></div>
+      <p className="admin-muted">수집된 정보는 승인 전까지 서비스 정책 카드에 노출되지 않습니다.</p>
+      {error && <p className="form-error">{error}</p>}
+      <section className="admin-table-card" style={{ padding: 20, marginBottom: 20 }}>
+        <div className="admin-section-head"><div><p>Official sources</p><h2>수집 소스</h2></div></div>
+        <div className="admin-source-list">{sources.map((source) => (
+          <article className="admin-source-card" key={source.key}>
+            <div><span className="admin-source-label">{source.enabled ? "사용 중" : "비활성"}</span><strong>{source.displayName}</strong></div>
+            <p>{source.sourceCategory} · {formatAdminDateTime(source.lastCollectedAt)}</p>
+            <button className="btn secondary" type="button" disabled={workingId === source.key} onClick={() => toggleSource(source)}>{source.enabled ? "수집 중지" : "수집 활성화"}</button>
+          </article>
+        ))}</div>
+      </section>
+      <section className="admin-table-card" style={{ padding: 20 }}>
+        <div className="admin-section-head"><div><p>Pending</p><h2>검토 대기 정책</h2></div></div>
+        <div className="admin-source-list">{candidates.map((candidate) => (
+          <article className="admin-source-card" key={candidate.id}>
+            <div><span className="admin-source-label">{candidate.changeKind === "new" ? "신규" : "변경"}</span><strong>{candidate.title}</strong></div>
+            <p>{candidate.region ?? "전국"} · {candidate.benefitText}</p>
+            <p><a href={candidate.officialUrl} target="_blank" rel="noreferrer">공식 원문 보기</a></p>
+            <div className="admin-section-actions"><button className="btn secondary" type="button" disabled={workingId === candidate.id} onClick={() => decide(candidate, "reject")}>반려</button><button className="btn primary" type="button" disabled={workingId === candidate.id} onClick={() => decide(candidate, "approve")}>승인하고 공개</button></div>
+          </article>
+        ))}{candidates.length === 0 && <p className="admin-empty">검토 대기 정책이 없습니다.</p>}</div>
+      </section>
     </section>
   );
 }

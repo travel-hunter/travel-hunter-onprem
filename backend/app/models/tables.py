@@ -298,7 +298,7 @@ class ExternalSourceRecord(Base):
     is_nationwide: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
-    status_text: Mapped[str | None] = mapped_column(String(50))
+    status_text: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date, index=True)
@@ -324,6 +324,69 @@ class ExternalSourceRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class PolicyReviewCandidate(Base):
+    __tablename__ = "policy_review_candidates"
+    __table_args__ = (
+        UniqueConstraint("external_source_record_id", "evidence_fingerprint"),
+        CheckConstraint(
+            "review_status IN ('pending', 'approved', 'rejected', 'superseded')",
+            name="ck_policy_review_candidates_review_status",
+        ),
+        CheckConstraint(
+            "change_kind IN ('new', 'material_change')",
+            name="ck_policy_review_candidates_change_kind",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    external_source_record_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("external_source_records.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    review_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
+    change_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    evidence_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    review_note: Mapped[str | None] = mapped_column(Text)
+    published_policy_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("policies.id", ondelete="SET NULL"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class PolicyCollectionSource(Base):
+    __tablename__ = "policy_collection_sources"
+    __table_args__ = (
+        CheckConstraint(
+            "publication_mode IN ('review', 'auto_after_reviewed_baseline')",
+            name="ck_policy_collection_sources_publication_mode",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    key: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True)
+    adapter_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    official_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_category: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    publication_mode: Mapped[str] = mapped_column(String(40), nullable=False, server_default="review")
+    expected_min_records: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_outcome: Mapped[str | None] = mapped_column(String(40))
+    last_collected_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_successful_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
 
 class RegionPhoto(Base):

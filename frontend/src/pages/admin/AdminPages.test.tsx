@@ -401,4 +401,19 @@ describe("admin pages", () => {
     await waitFor(() => expect(summarySpy.mock.calls.length).toBeGreaterThanOrEqual(2));
     expect(document.body).toHaveTextContent("수집 결과 success");
   });
+
+  it("renders review candidates separately from official source controls", async () => {
+    installStoredUser({ ...getPreviewUser(), role: "admin" });
+    const sourcesSpy = vi.spyOn(appDataApi as any, "listAdminCollectionSources").mockResolvedValue({ items: [{ key: "island_visit", displayName: "Island Visit support", officialUrl: "https://www.visitisland.kr/promotion2", sourceCategory: "island_visit", enabled: false, publicationMode: "review", lastOutcome: null, lastCollectedAt: null, lastError: null }] });
+    vi.spyOn(appDataApi as any, "listAdminPolicyReviewCandidates").mockResolvedValue({ items: [{ id: "candidate-1", externalSourceRecordId: "record-1", reviewStatus: "pending", changeKind: "new", title: "Island travel support", sourceCategory: "island_visit", officialUrl: "https://www.visitisland.kr/promotion2", benefitText: "travel support", region: null, city: null, status: "scheduled", startDate: "2026-10-01", endDate: "2026-10-31", createdAt: "2026-09-13T00:00:00" }] });
+    const updateSpy = vi.spyOn(appDataApi as any, "updateAdminCollectionSource").mockResolvedValue({ key: "island_visit", displayName: "Island Visit support", officialUrl: "https://www.visitisland.kr/promotion2", sourceCategory: "island_visit", enabled: true, publicationMode: "review", lastOutcome: null, lastCollectedAt: null, lastError: null });
+
+    renderAppRoute("/admin/policy-review");
+
+    await waitFor(() => expect(document.body).toHaveTextContent("Island Visit support"));
+    expect(document.body).toHaveTextContent("Island travel support");
+    await userEvent.click(screen.getByRole("button", { name: "\uC218\uC9D1 \uD65C\uC131\uD654" }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith("island_visit", true));
+    expect(sourcesSpy).toHaveBeenCalledTimes(1);
+  });
 });

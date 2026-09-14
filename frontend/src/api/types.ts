@@ -399,3 +399,39 @@ export type ProfileOptions = {
   travelStyles: readonly string[];
   budgets: readonly string[];
 };
+
+
+export type AdminPolicyReviewCandidate = {
+  id: string;
+  externalSourceRecordId: string;
+  reviewStatus: "pending" | "approved" | "rejected" | "superseded";
+  changeKind: "new" | "material_change";
+  title: string;
+  sourceCategory: string;
+  officialUrl: string;
+  benefitText: string;
+  region: string | null;
+  city: string | null;
+  status: string;
+  startDate: string | null;
+  endDate: string | null;
+  createdAt: string;
+};
+
+export type AdminPolicyReviewCandidateListResponse = { items: AdminPolicyReviewCandidate[]; total: number; limit: number; offset: number };
+
+export type AdminPolicyReviewBatchApproveResponse = { approvedCount: number; approvedCandidateIds: string[] };
+
+export type AdminCollectionSource = {
+  key: string;
+  displayName: string;
+  officialUrl: string;
+  sourceCategory: string;
+  enabled: boolean;
+  publicationMode: string;
+  lastOutcome: string | null;
+  lastCollectedAt: string | null;
+  lastError: string | null;
+};
+
+export type AdminCollectionSourceListResponse = { items: AdminCollectionSource[] };

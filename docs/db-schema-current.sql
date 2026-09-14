@@ -115,7 +115,7 @@ CREATE TABLE public.external_source_records (
     region character varying(50),
     city character varying(80),
     is_nationwide boolean DEFAULT false NOT NULL,
-    status_text character varying(50),
+    status_text text,
     status character varying(30) NOT NULL,
     start_date date,
     end_date date,

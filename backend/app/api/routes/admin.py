@@ -7,6 +7,15 @@ from app.api.dependencies import get_current_user, require_admin_user
 from app.db.session import get_optional_db
 from app.models import User
 from app.schemas.admin import (
+    AdminCollectionSourceItem,
+    AdminCollectionSourceListResponse,
+    AdminCollectionSourceUpdateRequest,
+    AdminPolicyReviewCandidateItem,
+    AdminPolicyReviewCandidateListResponse,
+    AdminPolicyReviewBatchApproveRequest,
+    AdminPolicyReviewBatchApproveResponse,
+    AdminPolicyReviewDecisionRequest,
+    AdminPolicyReviewRejectRequest,
     AdminAuditLogListResponse,
     AdminExternalSourceSummaryResponse,
     AdminPolicyCreateRequest,
@@ -17,7 +26,9 @@ from app.schemas.admin import (
     AdminUserListResponse,
     AdminUserUpdateRequest,
 )
+from app.repositories import policy_collection_sources
 from app.services import admin as admin_service
+from app.services import policy_candidate_review
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -178,3 +189,160 @@ def list_audit_logs(
             offset=offset,
         )
     )
+
+
+def _candidate_item(candidate, record) -> AdminPolicyReviewCandidateItem:
+    return AdminPolicyReviewCandidateItem(
+        id=str(candidate.id),
+        externalSourceRecordId=str(record.id),
+        reviewStatus=candidate.review_status,
+        changeKind=candidate.change_kind,
+        title=record.title,
+        sourceCategory=record.source_category,
+        officialUrl=record.detail_url or record.source_url,
+        benefitText=record.benefit_text,
+        region=record.region,
+        city=record.city,
+        status=record.status,
+        startDate=record.start_date,
+        endDate=record.end_date,
+        createdAt=candidate.created_at.isoformat(),
+    )
+
+
+@router.get("/policy-review-candidates", response_model=AdminPolicyReviewCandidateListResponse)
+def list_policy_review_candidates(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session | None = Depends(get_optional_db),
+    _current_admin: User = Depends(require_admin_user),
+) -> AdminPolicyReviewCandidateListResponse:
+    session = _require_db(db)
+    rows = policy_candidate_review.list_pending_candidates(session, limit=limit, offset=offset)
+    return AdminPolicyReviewCandidateListResponse(
+        items=[_candidate_item(candidate, record) for candidate, record in rows],
+        total=policy_candidate_review.count_pending_candidates(session),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post(
+    "/policy-review-candidates/approve-batch",
+    response_model=AdminPolicyReviewBatchApproveResponse,
+)
+def approve_policy_review_candidates_batch(
+    payload: AdminPolicyReviewBatchApproveRequest,
+    db: Session | None = Depends(get_optional_db),
+    current_admin: User = Depends(require_admin_user),
+) -> AdminPolicyReviewBatchApproveResponse:
+    session = _require_db(db)
+    try:
+        approved = policy_candidate_review.approve_pending_candidates(
+            session,
+            candidate_ids=payload.candidateIds,
+            approve_all=payload.approveAll,
+            admin=current_admin,
+            note=payload.note,
+        )
+        session.commit()
+    except ValueError as error:
+        session.rollback()
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except Exception:
+        session.rollback()
+        raise
+    return AdminPolicyReviewBatchApproveResponse(
+        approvedCount=len(approved),
+        approvedCandidateIds=[str(candidate.id) for candidate in approved],
+    )
+
+def _candidate_or_404(db: Session, candidate_id: str):
+    try:
+        numeric_id = int(candidate_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Policy review candidate not found") from None
+    resolved = policy_candidate_review.get_candidate_with_record(db, candidate_id=numeric_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail="Policy review candidate not found")
+    return resolved
+
+
+@router.post("/policy-review-candidates/{candidate_id}/approve", response_model=AdminPolicyReviewCandidateItem)
+def approve_policy_review_candidate(
+    candidate_id: str,
+    payload: AdminPolicyReviewDecisionRequest,
+    db: Session | None = Depends(get_optional_db),
+    current_admin: User = Depends(require_admin_user),
+) -> AdminPolicyReviewCandidateItem:
+    session = _require_db(db)
+    candidate, record = _candidate_or_404(session, candidate_id)
+    try:
+        approved = policy_candidate_review.approve_candidate(
+            session, candidate=candidate, record=record, admin=current_admin, note=payload.note
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    session.commit()
+    return _candidate_item(approved, record)
+
+
+@router.post("/policy-review-candidates/{candidate_id}/reject", response_model=AdminPolicyReviewCandidateItem)
+def reject_policy_review_candidate(
+    candidate_id: str,
+    payload: AdminPolicyReviewRejectRequest,
+    db: Session | None = Depends(get_optional_db),
+    current_admin: User = Depends(require_admin_user),
+) -> AdminPolicyReviewCandidateItem:
+    session = _require_db(db)
+    candidate, record = _candidate_or_404(session, candidate_id)
+    try:
+        rejected = policy_candidate_review.reject_candidate(
+            session, candidate=candidate, admin=current_admin, note=payload.note
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    session.commit()
+    return _candidate_item(rejected, record)
+
+
+def _collection_source_item(source) -> AdminCollectionSourceItem:
+    return AdminCollectionSourceItem(
+        key=source.key,
+        displayName=source.display_name,
+        officialUrl=source.official_url,
+        sourceCategory=source.source_category,
+        enabled=source.enabled,
+        publicationMode=source.publication_mode,
+        lastOutcome=source.last_outcome,
+        lastCollectedAt=source.last_collected_at.isoformat() if source.last_collected_at else None,
+        lastError=source.last_error,
+    )
+
+
+@router.get("/policy-collection-sources", response_model=AdminCollectionSourceListResponse)
+def list_policy_collection_sources(
+    db: Session | None = Depends(get_optional_db),
+    _current_admin: User = Depends(require_admin_user),
+) -> AdminCollectionSourceListResponse:
+    return AdminCollectionSourceListResponse(
+        items=[_collection_source_item(source) for source in policy_collection_sources.list_collection_sources(_require_db(db))]
+    )
+
+
+@router.patch("/policy-collection-sources/{source_key}", response_model=AdminCollectionSourceItem)
+def update_policy_collection_source(
+    source_key: str,
+    payload: AdminCollectionSourceUpdateRequest,
+    db: Session | None = Depends(get_optional_db),
+    _current_admin: User = Depends(require_admin_user),
+) -> AdminCollectionSourceItem:
+    session = _require_db(db)
+    source = policy_collection_sources.get_collection_source_by_key(session, key=source_key)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Policy collection source not found")
+    updated = policy_collection_sources.update_collection_source_enabled(
+        session, source=source, enabled=payload.enabled
+    )
+    session.commit()
+    return _collection_source_item(updated)

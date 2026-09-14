@@ -77,8 +77,7 @@ DB 연결 상태 포함 서버 헬스 확인. 인증 불필요.
 
 ### POST /ops/external-collection/run
 
-공식 외부 혜택 수집을 관리자 수동 실행으로 1회 수행한다. configured source를 처리한다. `digital_tourism_resident_card`는 VisitKorea 디지털 관광주민증 공식 참여지역 allowlist 52개를 먼저 materialize해 `external_source_records`에 upsert하고, 지역별 `getRegnMbrbList.json` 전체 페이지 결과를 같은 지자체 source의 `raw_payload.partnerBenefits`와 상세 `structuredDetail.supportContent` 보강으로만 병합한다. 그 뒤 public 대상인 `local_half_trip` 신청접수중/준비중 레코드, allowlist 통과 `digital_tourism_resident_card` active/scheduled 레코드, active/fresh `stay_discount` 레코드를 `policies`로 승격한다. `regional_benefit`은 `vacation-benefit.do` 요약/legacy source evidence로 보존하되 대한민국 반값여행(`local_half_trip`)과 동일 정책으로 판단해 public 정책/추천/상세 fallback에서는 제외한다. `traffic_benefit`은 제거/404 가능성이 있는 optional legacy source로 취급한다. 관리자 Bearer 인증이 필요하다.
-
+POST /api/ops/external-collection runs each enabled, code-reviewed source once. Collection stores evidence in `external_source_records` and creates review candidates only. A policy card is created or updated only when an administrator explicitly approves one candidate; collection never silently overwrites public-card text. Admin bearer authentication is required.
 **Response 200**
 ```json
 {
@@ -1746,3 +1745,16 @@ Admin policy list items additionally expose `sourceCategory` and `sourceLabel` f
   owner-approved policy. Public policy/list/detail/recommendation DTOs and the
   external-source admin summary never expose `raw_list_text`, `raw_detail_text`,
   or `raw_payload`.
+
+
+## Admin policy collection review
+
+All endpoints below require bearer authentication and the admin role. Collection source URLs and parser adapters are code-owned; this API only enables or disables approved sources.
+
+- `GET /api/admin/policy-collection-sources` returns configured sources, their enabled state, and most recent collection health.
+- `PATCH /api/admin/policy-collection-sources/{sourceKey}` accepts `{ "enabled": boolean }`. It cannot create an arbitrary URL or parser.
+- `GET /api/admin/policy-review-candidates` returns pending source evidence only. These records are not public policy cards.
+- `POST /api/admin/policy-review-candidates/{candidateId}/approve` accepts optional `{ "note": string | null }` and publishes only that candidate's source record through the existing policy normalization mapping.
+- `POST /api/admin/policy-review-candidates/{candidateId}/reject` requires `{ "note": string }`; a later material evidence change creates a fresh pending candidate.
+
+Approve/reject writes an admin audit log. Source raw payload remains admin-only and is not returned by these DTOs.
