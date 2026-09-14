@@ -137,6 +137,11 @@ export type TripPolicyApplication = {
   updatedBy: string | null;
 };
 
+export type TripPolicyApplicationUpdate = {
+  status?: TripPolicyApplicationStatus;
+  checklist?: Record<string, boolean>;
+};
+
 export type AppliedPolicyLinkedTrip = {
   id: string;
   title: string;

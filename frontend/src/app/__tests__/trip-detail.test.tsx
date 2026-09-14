@@ -1834,6 +1834,157 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
+  function islandLinkedTrip(
+    overrides: Partial<Trip> = {},
+    application: Partial<NonNullable<LinkedTripPolicy["application"]>> = {},
+  ): Trip {
+    return {
+      ...getPreviewTrip(),
+      id: "201",
+      status: "draft",
+      currentUserRole: "owner",
+      title: "가거도 섬 여행",
+      linkedPolicies: [
+        {
+          slug: "travelmonth-81",
+          title: "2026 섬 여행비 지원",
+          amount: "최대 10만원",
+          region: "전국",
+          deadline: "2026-09-21",
+          application: {
+            status: "applied",
+            roundKey: "2",
+            checklist: [
+              { key: "신분증", label: "신분증", checked: false },
+              { key: "통장사본", label: "통장사본", checked: true },
+            ],
+            checks: {
+              inTravelWindow: true,
+              meetsMinNights: false,
+              eligibleIslandMatched: false,
+              applyDeadline: "2026-09-21T18:00",
+              documentsDueDate: "2026-10-18",
+            },
+            updatedAt: "2026-09-19T00:00:00Z",
+            updatedBy: "Minseo",
+            ...application,
+          },
+        },
+      ],
+      days: { 1: [] },
+      ...overrides,
+    };
+  }
+
+  it("guides island support progress from the linked policy card for trip editors", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T09:00:00+09:00"));
+    const trip = islandLinkedTrip();
+    const base = trip.linkedPolicies[0].application!;
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const updateSpy = vi
+      .spyOn(appDataApi, "updateTripPolicyApplication")
+      .mockResolvedValueOnce({ ...base, status: "selected", updatedBy: "Test User" })
+      .mockResolvedValueOnce({
+        ...base,
+        status: "selected",
+        updatedBy: "Test User",
+        checklist: [
+          { key: "신분증", label: "신분증", checked: true },
+          { key: "통장사본", label: "통장사본", checked: true },
+        ],
+      });
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/201");
+
+      const panel = await screen.findByRole("region", { name: "2026 섬 여행비 지원 신청 진행" });
+      expect(within(panel).getByText("현재 단계 · 신청함")).toBeInTheDocument();
+      expect(within(panel).getByText("✓ 일정이 이번 회차 여행 기간 안이에요")).toBeInTheDocument();
+      expect(within(panel).getByText("⚠ 당일치기 일정은 지원 대상이 아니에요 (1박 이상)")).toBeInTheDocument();
+      expect(
+        within(panel).getByText("⚠ 일정에 대상 섬이 없어요 (장소 이름이 대상 섬 이름과 같아야 해요)"),
+      ).toBeInTheDocument();
+      expect(within(panel).getByText("서류 제출 D-3")).toHaveClass("tag", "warning");
+      expect(within(panel).queryByText(/신청 마감/)).toBeNull(); // already applied
+      expect(within(panel).getByText("마지막 변경 · Minseo")).toBeInTheDocument();
+      // the progress panel is not a policy card: the linked card count stays one
+      expect(document.querySelectorAll(".benefit-banner")).toHaveLength(1);
+
+      const user = userEvent.setup();
+      await user.click(within(panel).getByRole("button", { name: "선정됨" }));
+      await waitFor(() =>
+        expect(updateSpy).toHaveBeenCalledWith("201", "travelmonth-81", { status: "selected" }),
+      );
+      expect(await within(panel).findByText("현재 단계 · 선정됨")).toBeInTheDocument();
+      expect(within(panel).getByRole("button", { name: "여행 완료로 표시" })).toBeInTheDocument();
+      expect(within(panel).getByRole("button", { name: "이전 단계로" })).toBeInTheDocument();
+
+      await user.click(within(panel).getByRole("checkbox", { name: "신분증" }));
+      await waitFor(() =>
+        expect(updateSpy).toHaveBeenLastCalledWith("201", "travelmonth-81", { checklist: { 신분증: true } }),
+      );
+      await waitFor(() => expect(within(panel).getByRole("checkbox", { name: "신분증" })).toBeChecked());
+    } finally {
+      getTripSpy.mockRestore();
+      updateSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows island support progress read-only to trip viewers", async () => {
+    const getTripSpy = vi
+      .spyOn(appDataApi, "getTrip")
+      .mockResolvedValue(islandLinkedTrip({ currentUserRole: "viewer" }));
+    const updateSpy = vi.spyOn(appDataApi, "updateTripPolicyApplication");
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/201");
+
+      const panel = await screen.findByRole("region", { name: "2026 섬 여행비 지원 신청 진행" });
+      expect(within(panel).queryByRole("button", { name: "선정됨" })).toBeNull();
+      expect(within(panel).queryByRole("button", { name: "이전 단계로" })).toBeNull();
+      expect(within(panel).getByRole("checkbox", { name: "통장사본" })).toBeDisabled();
+      expect(within(panel).getByRole("checkbox", { name: "통장사본" })).toBeChecked();
+      expect(within(panel).getByText("보기 권한이라 진행 상태를 바꿀 수 없어요")).toBeInTheDocument();
+      expect(updateSpy).not.toHaveBeenCalled();
+    } finally {
+      getTripSpy.mockRestore();
+      updateSpy.mockRestore();
+    }
+  });
+
+  it("reloads the trip when someone else changed the island progress first", async () => {
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(islandLinkedTrip());
+    const updateSpy = vi
+      .spyOn(appDataApi, "updateTripPolicyApplication")
+      .mockRejectedValue(
+        new ApiError("Invalid application status transition", { status: 409, statusText: "Conflict" }),
+      );
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/201");
+
+      const panel = await screen.findByRole("region", { name: "2026 섬 여행비 지원 신청 진행" });
+      const callsBefore = getTripSpy.mock.calls.length;
+      await userEvent.setup().click(within(panel).getByRole("button", { name: "선정됨" }));
+
+      expect(
+        await screen.findByText("다른 사람이 먼저 진행 상태를 바꿨어요. 최신 상태를 다시 불러왔어요."),
+      ).toBeInTheDocument();
+      await waitFor(() => expect(getTripSpy.mock.calls.length).toBeGreaterThan(callsBefore));
+    } finally {
+      getTripSpy.mockRestore();
+      updateSpy.mockRestore();
+    }
+  });
+
   it("removes a linked policy from a confirmed owner trip detail card", async () => {
     const trip: Trip = {
       ...getPreviewTrip(),

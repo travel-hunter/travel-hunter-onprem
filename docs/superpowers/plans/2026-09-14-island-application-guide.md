@@ -57,9 +57,9 @@
 
 **Files:** Modify `frontend/src/api/types.ts`, `frontend/src/api/dataApi.ts`, `frontend/src/api/backendApi.ts`, `frontend/src/pages/itinerary/ItineraryDetailPage.tsx`, `frontend/src/pages/AppliedPolicyLinksPage.tsx`, 관련 테스트.
 
-- [ ] Step 1: 실패 테스트 — 섬 정책 카드에 스텝퍼·다음 행동 버튼(`신청 완료로 표시` 등)·조건 점검 ✓/⚠·서류 체크리스트 토글 저장·`서류 제출 D-n`, 뷰어는 읽기 전용, 409 시 새로고침 안내. 목록 페이지 상태 배지.
-- [ ] Step 2: 구현(`AppDataApi.updateTripPolicyApplication` 추가).
-- [ ] Step 3: vitest/typecheck/build/mojibake → 커밋 `feat: guide island support progress from the trip page`.
+- [x] Step 1: 실패 테스트 — 섬 정책 카드에 스텝퍼·다음 행동 버튼(`신청 완료로 표시` 등)·조건 점검 ✓/⚠·서류 체크리스트 토글 저장·`서류 제출 D-n`, 뷰어는 읽기 전용, 409 시 새로고침 안내. 목록 페이지 상태 배지.
+- [x] Step 2: 구현(`AppDataApi.updateTripPolicyApplication` 추가).
+- [x] Step 3: vitest/typecheck/build/mojibake → 커밋 `feat: guide island support progress from the trip page`.
 
 ### Task 6: 격리 검증과 문서
 

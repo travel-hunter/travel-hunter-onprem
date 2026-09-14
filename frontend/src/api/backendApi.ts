@@ -46,6 +46,8 @@ import {
   AdminCollectionSource,
   AdminCollectionSourceListResponse,
   AdminEligibleIslandCollectResponse,
+  TripPolicyApplication,
+  TripPolicyApplicationUpdate,
   AdminEligibleIslandSnapshot,
   AdminEligibleIslandSnapshotDetail,
   AdminEligibleIslandSnapshotListResponse,
@@ -178,6 +180,8 @@ export const backendApi: AppDataApi = {
     }),
   addPolicyToTrip: (tripId: string, policySlug: string): Promise<TripPolicyResponse> => apiClient.post<TripPolicyResponse>(`/api/trips/${tripId}/policies/${policySlug}`),
   removePolicyFromTrip: (tripId: string, policySlug: string): Promise<TripPolicyResponse> => apiClient.delete<TripPolicyResponse>(`/api/trips/${tripId}/policies/${policySlug}`),
+  updateTripPolicyApplication: (tripId: string, policySlug: string, patch: TripPolicyApplicationUpdate): Promise<TripPolicyApplication> =>
+    apiClient.patch<TripPolicyApplication>(`/api/trips/${tripId}/policies/${policySlug}/application`, patch),
   listRecommendations: (tripId: string): Promise<Recommendation[]> => apiClient.get<Recommendation[]>(`/api/trips/${tripId}/recommendations`),
   searchTripPlaces: (
     tripId: string,

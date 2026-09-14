@@ -3,6 +3,8 @@ import {
   AdminCollectionSource,
   AdminCollectionSourceListResponse,
   AdminCollectionSourceUpdate,
+  TripPolicyApplication,
+  TripPolicyApplicationUpdate,
   AdminEligibleIslandCollectResponse,
   AdminEligibleIslandSnapshot,
   AdminEligibleIslandSnapshotDetail,
@@ -289,6 +291,11 @@ export type AppDataApi = {
   deleteTripPlaces: (tripId: string, request: TripPlacesDeleteRequest) => Promise<Trip>;
   addPolicyToTrip: (tripId: string, policySlug: string) => Promise<TripPolicyResponse>;
   removePolicyFromTrip: (tripId: string, policySlug: string) => Promise<TripPolicyResponse>;
+  updateTripPolicyApplication: (
+    tripId: string,
+    policySlug: string,
+    patch: TripPolicyApplicationUpdate,
+  ) => Promise<TripPolicyApplication>;
   listRecommendations: (tripId: string) => Promise<Recommendation[]>;
   searchTripPlaces: (
     tripId: string,

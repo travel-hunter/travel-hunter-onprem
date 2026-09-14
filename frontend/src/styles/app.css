@@ -12399,3 +12399,70 @@ a.prototype-stat-card:active {
   flex-basis: 100%;
   margin: 0;
 }
+
+/* Island support progress panel (trip detail) */
+.trip-policy-application {
+  display: grid;
+  gap: 10px;
+  margin: -4px 0 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+.trip-policy-application-head,
+.trip-policy-application-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.trip-policy-application-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+.trip-policy-application-steps li.done {
+  color: #0f766e;
+}
+.trip-policy-application-steps li.current {
+  color: #0f172a;
+  font-weight: 700;
+}
+.trip-policy-application-checks {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+}
+.trip-policy-application-checks li.warn {
+  color: #b45309;
+}
+.trip-policy-application-checklist {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.trip-policy-application-checklist label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.trip-policy-application-meta {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+.prototype-applied-trip-status {
+  color: #0f766e;
+  font-weight: 600;
+}

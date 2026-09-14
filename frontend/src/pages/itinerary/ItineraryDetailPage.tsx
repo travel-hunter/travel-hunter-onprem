@@ -32,6 +32,7 @@ import {
   Map as MapIcon,
   X,
 } from "lucide-react";
+import { TripPolicyApplicationPanel } from "../../components/tripPolicyApplication";
 import {
   Fragment,
   useCallback,
@@ -3778,6 +3779,25 @@ export function ItineraryDetailPage() {
     }
   };
 
+  const saveLinkedPolicyApplication = async (
+    policy: LinkedTripPolicy,
+    patch: Parameters<typeof appDataApi.updateTripPolicyApplication>[2],
+  ) => {
+    if (!trip) return;
+    const tripId = trip.id;
+    const application = await appDataApi.updateTripPolicyApplication(tripId, policy.slug, patch);
+    setTrip((current) =>
+      current && current.id === tripId
+        ? {
+            ...current,
+            linkedPolicies: current.linkedPolicies.map((item) =>
+              item.slug === policy.slug ? { ...item, application } : item,
+            ),
+          }
+        : current,
+    );
+  };
+
   const updatePlaceForm = (nextForm: TripPlaceRequest) => {
     setPlaceForm(nextForm);
     if (!trip || !placeEditor) return;
@@ -3992,13 +4012,13 @@ export function ItineraryDetailPage() {
           linkedPolicies.map((policy) => {
             const isHiddenPolicy = policy.status === "hidden";
             return (
+              <Fragment key={policy.slug}>
               <div
                 className={
                   isHiddenPolicy
                     ? "benefit-banner linked-policy-card hidden-policy"
                     : "benefit-banner linked-policy-card"
                 }
-                key={policy.slug}
               >
                 {isHiddenPolicy ? (
                   <div
@@ -4039,6 +4059,18 @@ export function ItineraryDetailPage() {
                   </button>
                 )}
               </div>
+              {policy.application && !isHiddenPolicy && (
+                <TripPolicyApplicationPanel
+                  application={policy.application}
+                  canEdit={canEditTrip}
+                  onConflict={() => {
+                    if (trip) void refreshTripQuietly(trip.id);
+                  }}
+                  onSave={(patch) => saveLinkedPolicyApplication(policy, patch)}
+                  policyTitle={policy.title}
+                />
+              )}
+              </Fragment>
             );
           })
         ) : (

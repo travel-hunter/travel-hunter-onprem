@@ -4,6 +4,7 @@ import { appDataApi, type AppliedPolicyLink, type AppliedPolicyLinkedTrip } from
 import { useAsyncResource } from "../api/useAsyncResource";
 import { EmptyState, ErrorState, IconButton, LinkButton, LoadingState } from "../components/ui";
 import { getPolicyMoodIcon, getPolicyMoodTone } from "../data/displayConfig";
+import { APPLICATION_STATUS_LABEL } from "../components/tripPolicyApplication";
 
 function formatTripDates(trip: AppliedPolicyLinkedTrip) {
   if (!trip.startDate || !trip.endDate) return "일정 날짜 미정";
@@ -40,6 +41,11 @@ function AppliedPolicyCard({ item }: { item: AppliedPolicyLink }) {
             <span>
               <b>{trip.title}</b>
               <small>{formatTripDates(trip)}</small>
+              {trip.applicationStatus && (
+                <small className="prototype-applied-trip-status">
+                  {`신청 진행 · ${APPLICATION_STATUS_LABEL[trip.applicationStatus]}`}
+                </small>
+              )}
             </span>
             <em>{trip.region || "지역 미정"}</em>
           </Link>
