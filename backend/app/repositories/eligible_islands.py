@@ -78,6 +78,33 @@ def list_approved_entries(db: Session, *, catalog_key: str) -> list[EligibleIsla
     )
 
 
+def find_snapshot_by_fingerprint(
+    db: Session, *, catalog_id: int, fingerprint: str
+) -> EligibleIslandCatalogSnapshot | None:
+    return db.scalar(
+        select(EligibleIslandCatalogSnapshot)
+        .where(
+            EligibleIslandCatalogSnapshot.catalog_id == catalog_id,
+            EligibleIslandCatalogSnapshot.attachment_fingerprint == fingerprint,
+        )
+        .order_by(EligibleIslandCatalogSnapshot.id.desc())
+    )
+
+
+def supersede_pending_snapshots(db: Session, *, catalog_id: int, keep_snapshot_id: int) -> int:
+    pending = db.scalars(
+        select(EligibleIslandCatalogSnapshot).where(
+            EligibleIslandCatalogSnapshot.catalog_id == catalog_id,
+            EligibleIslandCatalogSnapshot.review_status == "pending",
+            EligibleIslandCatalogSnapshot.id != keep_snapshot_id,
+        )
+    ).all()
+    for snapshot in pending:
+        snapshot.review_status = "superseded"
+    db.flush()
+    return len(pending)
+
+
 def create_snapshot(db: Session, *, catalog_key: str, **fields: object) -> EligibleIslandCatalogSnapshot:
     catalog = lock_catalog_row(db, catalog_key=catalog_key)
     snapshot = EligibleIslandCatalogSnapshot(catalog_id=catalog.id, **fields)

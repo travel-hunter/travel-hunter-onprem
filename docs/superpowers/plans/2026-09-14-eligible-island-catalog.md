@@ -76,7 +76,7 @@ def lock_catalog_row(db: Session, *, catalog_key: str) -> EligibleIslandCatalog:
 
 - [x] **Step 4: Rerun focused tests and `cd backend && alembic upgrade head --sql`.** Expected: PASS; SQL creates only the four catalog tables.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ~~~bash
 git add backend/requirements.txt backend/app/models backend/app/repositories/eligible_islands.py backend/alembic/versions/0040_eligible_island_catalog.py backend/tests/test_eligible_island_repository.py backend/tests/test_db_schema.py
@@ -91,7 +91,7 @@ git commit -m "feat: add eligible island catalog schema"
 
 **Interfaces:** Produces `ParsedIsland`, `SourceDocument`, `parse_eligible_island_xlsx(payload, *, filename)`, and `fetch_eligible_island_notice_snapshot`. Raises `EligibleIslandNoticeError` with `download_failed` or `parser_changed`.
 
-- [ ] **Step 1: Write failing in-memory Excel tests.**
+- [x] **Step 1: Write failing in-memory Excel tests.**
 
 ~~~python
 def test_parse_xlsx_requires_island_and_jurisdiction_columns():
@@ -104,9 +104,9 @@ def test_parse_xlsx_rejects_missing_jurisdiction_column():
         parse_eligible_island_xlsx(payload, filename="eligible.xlsx")
 ~~~
 
-- [ ] **Step 2: Run `cd backend && python -m pytest tests/test_eligible_island_notice.py -q`; confirm module-missing failure.**
+- [x] **Step 2: Run `cd backend && python -m pytest tests/test_eligible_island_notice.py -q`; confirm module-missing failure.**
 
-- [ ] **Step 3: Implement strict parsing.** Accept only same-host `.xlsx` attachment URLs and ZIP workbook bytes. Allow only explicit known aliases for island name and jurisdiction headers. Normalize with NFC plus whitespace collapse. Reject HTML, invalid or encrypted workbooks, unknown headers, blank names, and zero entries.
+- [x] **Step 3: Implement strict parsing.** Accept only same-host `.xlsx` attachment URLs and ZIP workbook bytes. Allow only explicit known aliases for island name and jurisdiction headers. Normalize with NFC plus whitespace collapse. Reject HTML, invalid or encrypted workbooks, unknown headers, blank names, and zero entries.
 
 ~~~python
 def normalize_island_name(value: str) -> str:
@@ -117,11 +117,11 @@ def source_fingerprint(documents: list[SourceDocument]) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 ~~~
 
-- [ ] **Step 4: Add tests for same fingerprint skip, download failure preservation, empty parse, and same-name same-jurisdiction dedupe.** Same aggregate fingerprint must not parse a workbook or write a snapshot.
+- [x] **Step 4: Add tests for same fingerprint skip, download failure preservation, empty parse, and same-name same-jurisdiction dedupe.** Same aggregate fingerprint must not parse a workbook or write a snapshot.
 
-- [ ] **Step 5: Add `collect_eligible_island_catalog(db, *, fetched_at)` beside policy collection.** Existing `collect_external_benefits_from_live_sources` keeps producing one `island_visit` policy candidate with unchanged text and raw payload.
+- [x] **Step 5: Add `collect_eligible_island_catalog(db, *, fetched_at)` beside policy collection.** Existing `collect_external_benefits_from_live_sources` keeps producing one `island_visit` policy candidate with unchanged text and raw payload.
 
-- [ ] **Step 6: Run `cd backend && python -m pytest tests/test_eligible_island_notice.py tests/test_external_benefit_collection.py -q`; expected PASS. Commit `feat: detect official eligible island notice changes`.**
+- [x] **Step 6: Run `cd backend && python -m pytest tests/test_eligible_island_notice.py tests/test_external_benefit_collection.py -q`; expected PASS. Commit `feat: detect official eligible island notice changes`.**
 
 ### Task 3: diff, safety gates, and atomic approval
 
