@@ -82,6 +82,8 @@ export type Policy = {
   sourceType?: "internal" | "external";
   actionStatus?: "infoOnly";
   photo?: PolicyPhoto | null;
+  eligibleIslandCount?: number | null;
+  eligibleIslandsOfficialUrl?: string | null;
 };
 
 export type AppliedPolicyLinkedTrip = {

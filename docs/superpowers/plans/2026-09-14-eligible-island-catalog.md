@@ -205,7 +205,7 @@ def test_snapshot_item_has_catalog_diff_not_policy_review_fields(client, admin_h
 
 **Interfaces:** Produces optional `Policy.eligibleIslandCount` and `Policy.eligibleIslandsOfficialUrl`; island recommendation filtering reads approved entries only.
 
-- [ ] **Step 1: Write failing policy-text preservation and exact-match tests.**
+- [x] **Step 1: Write failing policy-text preservation and exact-match tests.**
 
 ~~~python
 def test_island_policy_exposes_approved_count_without_changing_text(db):
@@ -222,18 +222,18 @@ def test_island_recommendation_requires_exact_normalized_place_name(db):
     assert recommended_slugs_for_places(db, ["가거도 선착장"]) == set()
 ~~~
 
-- [ ] **Step 2: Run `cd backend && python -m pytest tests/test_policy_service.py tests/test_trip_db_service.py -q`; confirm failure.**
+- [x] **Step 2: Run `cd backend && python -m pytest tests/test_policy_service.py tests/test_trip_db_service.py -q`; confirm failure.**
 
-- [ ] **Step 3: Implement narrow fields and predicate.** Populate fields only for `source_category == "island_visit"`, reading only approved catalog count and official URL. Apply the exact place predicate before `_trip_policy_candidate_score`; retain all existing scoring, locality filtering, and ordering. An empty approved catalog excludes only island policy.
+- [x] **Step 3: Implement narrow fields and predicate.** Populate fields only for `source_category == "island_visit"`, reading only approved catalog count and official URL. Apply the exact place predicate before `_trip_policy_candidate_score`; retain all existing scoring, locality filtering, and ordering. An empty approved catalog excludes only island policy.
 
 ~~~python
 def _matches_approved_island(place_name: str, approved_names: set[str]) -> bool:
     return normalize_island_name(place_name) in approved_names
 ~~~
 
-- [ ] **Step 4: Add optional frontend fields and detail UI.** Render `대상 섬 N곳` and `대상 섬 공식 안내` only when count is positive and URL is nonempty. Do not display the entire list or alter card title, summary, amount, or layout.
+- [x] **Step 4: Add optional frontend fields and detail UI.** Render `대상 섬 N곳` and `대상 섬 공식 안내` only when count is positive and URL is nonempty. Do not display the entire list or alter card title, summary, amount, or layout.
 
-- [ ] **Step 5: Run `cd frontend && npx vitest run src/app/__tests__/policy-detail.test.tsx`; expected PASS, including an ordinary-policy no-section assertion. Commit `feat: recommend island support for approved exact matches`.**
+- [x] **Step 5: Run `cd frontend && npx vitest run src/app/__tests__/policy-detail.test.tsx`; expected PASS, including an ordinary-policy no-section assertion. Commit `feat: recommend island support for approved exact matches`.**
 
 ### Task 6: 관리자 화면, 문서, 격리 실행 검증
 

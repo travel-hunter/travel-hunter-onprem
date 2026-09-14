@@ -20,7 +20,6 @@ from sqlalchemy.orm import Session
 
 from app.repositories import eligible_islands as repository
 from app.repositories.eligible_islands import normalize_island_name
-from app.services.travelmonth_live_collector import DEFAULT_HEADERS, DEFAULT_TIMEOUT_SECONDS
 
 PARSER_VERSION = "xlsx-v1"
 
@@ -88,6 +87,9 @@ HttpGet = Callable[[str], _Response]
 
 
 def _default_http_get(url: str) -> httpx.Response:
+    # local import: the collector module chain reaches policies.py, which imports this package
+    from app.services.travelmonth_live_collector import DEFAULT_HEADERS, DEFAULT_TIMEOUT_SECONDS
+
     return httpx.get(url, timeout=DEFAULT_TIMEOUT_SECONDS, follow_redirects=True, headers=DEFAULT_HEADERS)
 
 

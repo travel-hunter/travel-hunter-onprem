@@ -176,6 +176,39 @@ def reject_snapshot(db: Session, *, catalog_key: str, snapshot_id: int, admin: U
     return snapshot
 
 
+@dataclass(frozen=True)
+class EligibleIslandSummary:
+    """Read-only view of the approved catalog for policy detail and recommendation."""
+
+    count: int
+    official_url: str | None
+    normalized_names: frozenset[str]
+
+    def policy_fields(self) -> dict[str, object]:
+        return {"eligibleIslandCount": self.count, "eligibleIslandsOfficialUrl": self.official_url}
+
+
+EMPTY_ELIGIBLE_ISLAND_SUMMARY = EligibleIslandSummary(count=0, official_url=None, normalized_names=frozenset())
+ISLAND_POLICY_SOURCE_CATEGORY = "island_visit"
+
+
+def build_eligible_island_summary(db: Session | None, *, catalog_key: str = repository.CATALOG_KEY_ISLAND_VISIT_2026) -> EligibleIslandSummary:
+    if db is None or not hasattr(db, "scalars"):
+        return EMPTY_ELIGIBLE_ISLAND_SUMMARY
+    try:
+        catalog = repository.lock_catalog_row(db, catalog_key=catalog_key)
+        rows = repository.list_approved_entries(db, catalog_key=catalog_key)
+        approved = db.get(EligibleIslandCatalogSnapshot, catalog.approved_snapshot_id) if catalog.approved_snapshot_id else None
+    except Exception:
+        # Derived decoration only: a missing table or bad session must not break policy responses.
+        return EMPTY_ELIGIBLE_ISLAND_SUMMARY
+    return EligibleIslandSummary(
+        count=len(rows),
+        official_url=(approved.notice_url if approved is not None and approved.notice_url else catalog.notice_list_url),
+        normalized_names=frozenset(row.normalized_name for row in rows),
+    )
+
+
 def get_snapshot_diff(db: Session, *, catalog_key: str, snapshot_id: int) -> SnapshotDiff:
     catalog = repository.lock_catalog_row(db, catalog_key=catalog_key)
     snapshot = db.scalar(

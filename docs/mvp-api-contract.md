@@ -1430,6 +1430,8 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | applyUrl | string \| null | 신청 URL |
 | sourceType | string | `"internal"` \| `"external"`; 생략 시 internal로 간주 |
 | actionStatus | string \| null | 생략/`null` 또는 `"infoOnly"`; `"infoOnly"`는 raw fallback 상세 전용이며 저장/일정 연결 불가 |
+| eligibleIslandCount | number \| null | `island_visit` 정책에만 존재. 관리자가 승인한 대상 섬 카탈로그의 총 대상지 수. 승인 전이면 `0`. 전체 대상 섬 목록은 정책 응답에 싣지 않는다 |
+| eligibleIslandsOfficialUrl | string \| null | `island_visit` 정책에만 존재. 승인 스냅샷의 공지 URL(없으면 공식 안내 URL). 화면 라벨은 `대상 섬 공식 안내` |
 
 ### Trip
 
