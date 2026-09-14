@@ -230,3 +230,69 @@ class AdminCollectionSourceListResponse(BaseModel):
 
 class AdminCollectionSourceUpdateRequest(BaseModel):
     enabled: bool
+
+
+# Eligible island catalog review — independent of policy review candidates.
+
+
+class AdminEligibleIslandAttachment(BaseModel):
+    url: str
+    filename: str
+    sha256: str
+
+
+class AdminEligibleIslandSnapshotItem(BaseModel):
+    id: str
+    reviewStatus: Literal["pending", "approved", "rejected", "superseded"]
+    isCurrentApproved: bool
+    entryCount: int
+    addedCount: int
+    removedCount: int
+    changedCount: int
+    sourceNoticeUrl: str | None = None
+    sourceNoticeTitle: str | None = None
+    attachmentFiles: list[AdminEligibleIslandAttachment]
+    attachmentFingerprint: str | None = None
+    parserVersion: str
+    fetchedAt: str
+    reviewedAt: str | None = None
+    reviewNote: str | None = None
+    createdAt: str
+
+
+class AdminEligibleIslandSnapshotListResponse(BaseModel):
+    items: list[AdminEligibleIslandSnapshotItem]
+    total: int
+    limit: int
+    offset: int
+    approvedSnapshotId: str | None = None
+    approvedEntryCount: int
+
+
+class AdminEligibleIslandEntry(BaseModel):
+    displayName: str
+    normalizedName: str
+    jurisdictionName: str
+
+
+class AdminEligibleIslandSnapshotDetail(BaseModel):
+    snapshot: AdminEligibleIslandSnapshotItem
+    added: list[AdminEligibleIslandEntry]
+    removed: list[AdminEligibleIslandEntry]
+    unchanged: list[AdminEligibleIslandEntry]
+    addedTotal: int
+    removedTotal: int
+    unchangedTotal: int
+    limit: int
+    offset: int
+
+
+class AdminEligibleIslandRejectRequest(BaseModel):
+    note: str = Field(min_length=1, max_length=2000)
+
+
+class AdminEligibleIslandCollectResponse(BaseModel):
+    outcome: Literal["created", "unchanged", "identical", "suspicious_shrink", "download_failed", "parser_changed"]
+    snapshotId: str | None = None
+    entryCount: int
+    error: str | None = None

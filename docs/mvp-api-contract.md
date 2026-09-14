@@ -1758,3 +1758,15 @@ All endpoints below require bearer authentication and the admin role. Collection
 - `POST /api/admin/policy-review-candidates/{candidateId}/reject` requires `{ "note": string }`; a later material evidence change creates a fresh pending candidate.
 
 Approve/reject writes an admin audit log. Source raw payload remains admin-only and is not returned by these DTOs.
+
+## Admin eligible island catalog review
+
+Independent of `/api/admin/policy-review-candidates`: these endpoints never read or write policy review candidates, `policies`, or `trip_policies`. The catalog key is code-owned (`island_visit_2026`); an unknown key is `404`. All routes require the admin role.
+
+- `POST /api/admin/eligible-island-catalogs/{catalogKey}/collect` fetches the official notice page, downloads same-host `.xlsx` attachments, and stages one pending snapshot when the attachment fingerprint is new and the parsed set differs from the approved catalog. Response: `{ "outcome": "created" | "unchanged" | "identical" | "suspicious_shrink" | "download_failed" | "parser_changed", "snapshotId": string | null, "entryCount": number, "error": string | null }`. Failures are health outcomes (`200`), never stack traces; nothing is written on failure.
+- `GET /api/admin/eligible-island-catalogs/{catalogKey}/snapshots?limit=&offset=` lists snapshots newest first with `reviewStatus`, `isCurrentApproved`, `entryCount`, `addedCount`, `removedCount`, `changedCount`, `sourceNoticeUrl`, `sourceNoticeTitle`, `attachmentFiles[{url, filename, sha256}]`, `attachmentFingerprint`, `parserVersion`, `fetchedAt`, `reviewedAt`, `reviewNote`, `createdAt`, plus `approvedSnapshotId` and `approvedEntryCount`. Attachment bytes are never stored or returned.
+- `GET /api/admin/eligible-island-catalogs/{catalogKey}/snapshots/{snapshotId}?limit=&offset=` returns the snapshot item and its diff against the current approved catalog: `added`, `removed`, `unchanged` entries (`displayName`, `normalizedName`, `jurisdictionName`) windowed by `limit`/`offset`, with `addedTotal`, `removedTotal`, `unchangedTotal`.
+- `POST /api/admin/eligible-island-catalogs/{catalogKey}/snapshots/{snapshotId}/approve` replaces the approved catalog atomically in one locked transaction. Only `pending` snapshots can be approved; `rejected`, `superseded`, or already `approved` return `409 snapshot_not_pending`.
+- `POST /api/admin/eligible-island-catalogs/{catalogKey}/snapshots/{snapshotId}/reject` requires `{ "note": string }` (blank → `422 note_required`) and leaves the approved catalog unchanged.
+
+Approve/reject writes an admin audit log (`eligible_island_catalog.approve` / `.reject`).

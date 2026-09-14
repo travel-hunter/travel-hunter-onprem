@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -10,6 +12,13 @@ from app.schemas.admin import (
     AdminCollectionSourceItem,
     AdminCollectionSourceListResponse,
     AdminCollectionSourceUpdateRequest,
+    AdminEligibleIslandAttachment,
+    AdminEligibleIslandCollectResponse,
+    AdminEligibleIslandEntry,
+    AdminEligibleIslandRejectRequest,
+    AdminEligibleIslandSnapshotDetail,
+    AdminEligibleIslandSnapshotItem,
+    AdminEligibleIslandSnapshotListResponse,
     AdminPolicyReviewCandidateItem,
     AdminPolicyReviewCandidateListResponse,
     AdminPolicyReviewBatchApproveRequest,
@@ -26,8 +35,11 @@ from app.schemas.admin import (
     AdminUserListResponse,
     AdminUserUpdateRequest,
 )
+from app.repositories import eligible_islands as eligible_island_repository
 from app.repositories import policy_collection_sources
+from app.repositories.eligible_islands import EligibleIslandCatalogError
 from app.services import admin as admin_service
+from app.services import eligible_island_catalog, eligible_island_notice
 from app.services import policy_candidate_review
 
 
@@ -346,3 +358,187 @@ def update_policy_collection_source(
     )
     session.commit()
     return _collection_source_item(updated)
+
+
+# --- Eligible island catalog review (separate from policy review candidates) ---
+
+_ELIGIBLE_ISLAND_ERROR_STATUS = {
+    "catalog_not_found": 404,
+    "snapshot_not_found": 404,
+    "snapshot_not_pending": 409,
+    "note_required": 422,
+}
+
+
+def _raise_eligible_island_error(error: EligibleIslandCatalogError) -> None:
+    raise HTTPException(status_code=_ELIGIBLE_ISLAND_ERROR_STATUS.get(str(error), 400), detail=str(error)) from error
+
+
+def _snapshot_item(snapshot, *, approved_snapshot_id: int | None) -> AdminEligibleIslandSnapshotItem:
+    return AdminEligibleIslandSnapshotItem(
+        id=str(snapshot.id),
+        reviewStatus=snapshot.review_status,
+        isCurrentApproved=snapshot.id == approved_snapshot_id,
+        entryCount=snapshot.entry_count,
+        addedCount=snapshot.added_count,
+        removedCount=snapshot.removed_count,
+        changedCount=snapshot.changed_count,
+        sourceNoticeUrl=snapshot.notice_url,
+        sourceNoticeTitle=snapshot.notice_title,
+        attachmentFiles=[AdminEligibleIslandAttachment(**document) for document in (snapshot.attachment_documents or [])],
+        attachmentFingerprint=snapshot.attachment_fingerprint,
+        parserVersion=snapshot.parser_version,
+        fetchedAt=snapshot.fetched_at.isoformat(),
+        reviewedAt=snapshot.reviewed_at.isoformat() if snapshot.reviewed_at else None,
+        reviewNote=snapshot.review_note,
+        createdAt=snapshot.created_at.isoformat(),
+    )
+
+
+def _entry_item(row) -> AdminEligibleIslandEntry:
+    return AdminEligibleIslandEntry(
+        displayName=row.display_name, normalizedName=row.normalized_name, jurisdictionName=row.jurisdiction_name
+    )
+
+
+def _snapshot_id_or_404(snapshot_id: str) -> int:
+    try:
+        return int(snapshot_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="snapshot_not_found") from None
+
+
+@router.post(
+    "/eligible-island-catalogs/{catalog_key}/collect",
+    response_model=AdminEligibleIslandCollectResponse,
+)
+def collect_eligible_island_catalog(
+    catalog_key: str,
+    db: Session | None = Depends(get_optional_db),
+    _current_admin: User = Depends(require_admin_user),
+) -> AdminEligibleIslandCollectResponse:
+    session = _require_db(db)
+    try:
+        catalog = eligible_island_repository.lock_catalog_row(session, catalog_key=catalog_key)
+        notice_url = catalog.notice_list_url
+        session.commit()
+        result = eligible_island_notice.collect_eligible_island_catalog(
+            session, catalog_key=catalog_key, notice_url=notice_url, fetched_at=datetime.now(UTC)
+        )
+    except EligibleIslandCatalogError as error:
+        session.rollback()
+        _raise_eligible_island_error(error)
+    return AdminEligibleIslandCollectResponse(
+        outcome=result.outcome,
+        snapshotId=str(result.snapshot_id) if result.snapshot_id is not None else None,
+        entryCount=result.entry_count,
+        error=result.error,
+    )
+
+
+@router.get(
+    "/eligible-island-catalogs/{catalog_key}/snapshots",
+    response_model=AdminEligibleIslandSnapshotListResponse,
+)
+def list_eligible_island_snapshots(
+    catalog_key: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session | None = Depends(get_optional_db),
+    _current_admin: User = Depends(require_admin_user),
+) -> AdminEligibleIslandSnapshotListResponse:
+    session = _require_db(db)
+    try:
+        catalog = eligible_island_repository.lock_catalog_row(session, catalog_key=catalog_key)
+    except EligibleIslandCatalogError as error:
+        _raise_eligible_island_error(error)
+    rows, total = eligible_island_repository.list_snapshots(session, catalog_id=catalog.id, limit=limit, offset=offset)
+    return AdminEligibleIslandSnapshotListResponse(
+        items=[_snapshot_item(row, approved_snapshot_id=catalog.approved_snapshot_id) for row in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+        approvedSnapshotId=str(catalog.approved_snapshot_id) if catalog.approved_snapshot_id is not None else None,
+        approvedEntryCount=eligible_island_repository.count_approved_entries(session, catalog_id=catalog.id),
+    )
+
+
+@router.get(
+    "/eligible-island-catalogs/{catalog_key}/snapshots/{snapshot_id}",
+    response_model=AdminEligibleIslandSnapshotDetail,
+)
+def get_eligible_island_snapshot(
+    catalog_key: str,
+    snapshot_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session | None = Depends(get_optional_db),
+    _current_admin: User = Depends(require_admin_user),
+) -> AdminEligibleIslandSnapshotDetail:
+    session = _require_db(db)
+    numeric_id = _snapshot_id_or_404(snapshot_id)
+    try:
+        catalog = eligible_island_repository.lock_catalog_row(session, catalog_key=catalog_key)
+        diff = eligible_island_catalog.get_snapshot_diff(session, catalog_key=catalog_key, snapshot_id=numeric_id)
+    except EligibleIslandCatalogError as error:
+        _raise_eligible_island_error(error)
+    window = slice(offset, offset + limit)
+    return AdminEligibleIslandSnapshotDetail(
+        snapshot=_snapshot_item(diff.snapshot, approved_snapshot_id=catalog.approved_snapshot_id),
+        added=[_entry_item(row) for row in diff.added[window]],
+        removed=[_entry_item(row) for row in diff.removed[window]],
+        unchanged=[_entry_item(row) for row in diff.unchanged[window]],
+        addedTotal=len(diff.added),
+        removedTotal=len(diff.removed),
+        unchangedTotal=len(diff.unchanged),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post(
+    "/eligible-island-catalogs/{catalog_key}/snapshots/{snapshot_id}/approve",
+    response_model=AdminEligibleIslandSnapshotItem,
+)
+def approve_eligible_island_snapshot(
+    catalog_key: str,
+    snapshot_id: str,
+    db: Session | None = Depends(get_optional_db),
+    current_admin: User = Depends(require_admin_user),
+) -> AdminEligibleIslandSnapshotItem:
+    session = _require_db(db)
+    numeric_id = _snapshot_id_or_404(snapshot_id)
+    try:
+        snapshot = eligible_island_catalog.approve_snapshot(
+            session, catalog_key=catalog_key, snapshot_id=numeric_id, admin=current_admin
+        )
+    except EligibleIslandCatalogError as error:
+        session.rollback()
+        _raise_eligible_island_error(error)
+    return _snapshot_item(snapshot, approved_snapshot_id=snapshot.id)
+
+
+@router.post(
+    "/eligible-island-catalogs/{catalog_key}/snapshots/{snapshot_id}/reject",
+    response_model=AdminEligibleIslandSnapshotItem,
+)
+def reject_eligible_island_snapshot(
+    catalog_key: str,
+    snapshot_id: str,
+    payload: AdminEligibleIslandRejectRequest,
+    db: Session | None = Depends(get_optional_db),
+    current_admin: User = Depends(require_admin_user),
+) -> AdminEligibleIslandSnapshotItem:
+    session = _require_db(db)
+    numeric_id = _snapshot_id_or_404(snapshot_id)
+    try:
+        snapshot = eligible_island_catalog.reject_snapshot(
+            session, catalog_key=catalog_key, snapshot_id=numeric_id, admin=current_admin, note=payload.note
+        )
+    except EligibleIslandCatalogError as error:
+        session.rollback()
+        _raise_eligible_island_error(error)
+    catalog = eligible_island_repository.lock_catalog_row(session, catalog_key=catalog_key)
+    approved_id = catalog.approved_snapshot_id
+    session.commit()
+    return _snapshot_item(snapshot, approved_snapshot_id=approved_id)

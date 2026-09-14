@@ -4,7 +4,7 @@ import hashlib
 import re
 import unicodedata
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -89,6 +89,19 @@ def find_snapshot_by_fingerprint(
         )
         .order_by(EligibleIslandCatalogSnapshot.id.desc())
     )
+
+
+def list_snapshots(
+    db: Session, *, catalog_id: int, limit: int, offset: int
+) -> tuple[list[EligibleIslandCatalogSnapshot], int]:
+    base = select(EligibleIslandCatalogSnapshot).where(EligibleIslandCatalogSnapshot.catalog_id == catalog_id)
+    rows = db.scalars(base.order_by(EligibleIslandCatalogSnapshot.id.desc()).limit(limit).offset(offset)).all()
+    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    return list(rows), int(total)
+
+
+def count_approved_entries(db: Session, *, catalog_id: int) -> int:
+    return int(db.scalar(select(func.count()).select_from(EligibleIsland).where(EligibleIsland.catalog_id == catalog_id)) or 0)
 
 
 def supersede_pending_snapshots(db: Session, *, catalog_id: int, keep_snapshot_id: int) -> int:

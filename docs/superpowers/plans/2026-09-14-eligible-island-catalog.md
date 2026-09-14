@@ -177,7 +177,7 @@ Reject non-pending and superseded IDs. Do not mutate `policies`, `trip_policies`
 
 **Interfaces:** Produces admin-only collect, list, detail, approve, and reject routes below `/api/admin/eligible-island-catalogs/island_visit_2026`. The list accepts `limit` and `offset`; detail exposes paginated added, removed, and unchanged entries.
 
-- [ ] **Step 1: Write failing authorization and DTO isolation tests.**
+- [x] **Step 1: Write failing authorization and DTO isolation tests.**
 
 ~~~python
 def test_non_admin_cannot_collect_or_approve_catalog(client, user_headers):
@@ -189,13 +189,13 @@ def test_snapshot_item_has_catalog_diff_not_policy_review_fields(client, admin_h
     assert "externalSourceRecordId" not in item
 ~~~
 
-- [ ] **Step 2: Run `cd backend && python -m pytest tests/test_admin_routes.py -q`; confirm failure.**
+- [x] **Step 2: Run `cd backend && python -m pytest tests/test_admin_routes.py -q`; confirm failure.**
 
-- [ ] **Step 3: Add `AdminEligibleIslandSnapshotItem`, `AdminEligibleIslandSnapshotDetail`, `AdminEligibleIslandSnapshotListResponse`, and `AdminEligibleIslandRejectRequest`.** Routes use `require_admin_user`, delegate to Task 3, return typed 400/404/409 errors, and never expose file bytes or stack traces.
+- [x] **Step 3: Add `AdminEligibleIslandSnapshotItem`, `AdminEligibleIslandSnapshotDetail`, `AdminEligibleIslandSnapshotListResponse`, and `AdminEligibleIslandRejectRequest`.** Routes use `require_admin_user`, delegate to Task 3, return typed 400/404/409 errors, and never expose file bytes or stack traces.
 
-- [ ] **Step 4: Test rejected/superseded approval as 409, blank rejection note as 422, parser failure as health outcome, and zero calls to policy normalization. Update the API contract to state the path is independent of `/api/admin/policy-review-candidates`.**
+- [x] **Step 4: Test rejected/superseded approval as 409, blank rejection note as 422, parser failure as health outcome, and zero calls to policy normalization. Update the API contract to state the path is independent of `/api/admin/policy-review-candidates`.**
 
-- [ ] **Step 5: Run `cd backend && python -m pytest tests/test_admin_routes.py tests/test_eligible_island_catalog.py -q`; expected PASS. Commit `feat: expose eligible island catalog review API`.**
+- [x] **Step 5: Run `cd backend && python -m pytest tests/test_admin_routes.py tests/test_eligible_island_catalog.py -q`; expected PASS. Commit `feat: expose eligible island catalog review API`.**
 
 ### Task 5: 공개 정책 상세와 정확 일치 일정 추천
 
