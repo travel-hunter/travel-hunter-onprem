@@ -1451,6 +1451,7 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | actionStatus | string \| null | 생략/`null` 또는 `"infoOnly"`; `"infoOnly"`는 raw fallback 상세 전용이며 저장/일정 연결 불가 |
 | eligibleIslandCount | number \| null | `island_visit` 정책에만 존재. 관리자가 승인한 대상 섬 카탈로그의 총 대상지 수. 승인 전이면 `0`. 전체 대상 섬 목록은 정책 응답에 싣지 않는다 |
 | eligibleIslandsOfficialUrl | string \| null | `island_visit` 정책에만 존재. 승인 스냅샷의 공지 URL(없으면 공식 안내 URL). 화면 라벨은 `대상 섬 공식 안내` |
+| applicationGuide | ApplicationGuide \| null | `island_visit` 정책에만 존재. 관리자 승인된 신청 절차: `rounds[{key, label, status: past\|current\|upcoming, applyStart, applyUntil, travelStart, travelEnd, documentsDueBy, applicationFormUrl, documentFormUrl}]`, `currentRoundKey`, `applyFormUrl`(신청이 열린 회차가 있을 때만), `documentDeadlineDaysAfterTrip`, `minNights`, `minPaymentKrw`, `requiredDocuments[]`, `photoRequirement`, `exclusions[]`, `contacts{email, phones[]}`. 상태·서류 마감일·열린 폼은 조회일(KST) 기준 계산. 폼 링크는 Google Forms 호스트만. `applyFormUrl`이 있고 정책 `applyUrl`이 비어 있으면 `applyUrl`도 그 폼으로 채운다. 절차가 바뀐 수집 후보는 자동 발행하지 않는다(`reviewReason = procedure_changed`). |
 
 ### Trip
 

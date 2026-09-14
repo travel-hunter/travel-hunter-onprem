@@ -295,3 +295,53 @@ def test_successful_run_records_last_parsed_count_but_failed_run_keeps_it(db: Se
         collected_at=datetime(2026, 9, 14, 1, 0, 0),
     )
     assert policy_collection_sources.get_collection_source_by_key(db, key=CATEGORY).last_parsed_count == 12
+
+
+# --- island_visit: a changed application procedure always waits for a human ------------------------------
+
+
+def _island_record():
+    from test_island_application_guide import island_record
+
+    return island_record()
+
+
+def _island_auto_source(db: Session):
+    source = policy_collection_sources.get_collection_source_by_key(db, key="island_visit")
+    source.publication_mode = "auto_after_reviewed_baseline"
+    db.flush()
+    return source
+
+
+def test_island_procedure_change_holds_as_procedure_changed(db: Session) -> None:
+    from copy import deepcopy
+
+    record = _island_record()
+    db.add(record)
+    db.flush()
+    human_baseline(db, record)
+    _island_auto_source(db)
+    payload = deepcopy(record.raw_payload)
+    payload["procedure"]["rounds"][1]["documentFormUrl"] = "https://forms.gle/NewDocumentForm"
+    record.raw_payload = payload
+    db.flush()
+
+    run_collection_queue(db, [record], [success(category="island_visit")])
+
+    candidate = latest_candidate(db, record)
+    assert (candidate.review_status, candidate.review_reason) == ("pending", "procedure_changed")
+
+
+def test_island_benefit_change_with_the_same_procedure_auto_publishes(db: Session) -> None:
+    record = _island_record()
+    db.add(record)
+    db.flush()
+    human_baseline(db, record)
+    _island_auto_source(db)
+    record.benefit_text = "여행비 10만원 (숙박비, 왕복 배편 승선권, 식비 등) 지급"
+    db.flush()
+
+    run_collection_queue(db, [record], [success(category="island_visit")])
+
+    candidate = latest_candidate(db, record)
+    assert (candidate.review_status, candidate.review_reason) == ("approved", "auto")

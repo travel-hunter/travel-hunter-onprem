@@ -628,6 +628,7 @@ const REVIEW_REASON_LABEL: Record<string, string> = {
   would_publish_hidden: "비공개 예정",
   low_confidence: "신뢰도 낮음",
   stay_discount_manual: "숙박세일 수동",
+  procedure_changed: "신청 절차 변경",
 };
 
 export function AdminPolicyReviewPage() {

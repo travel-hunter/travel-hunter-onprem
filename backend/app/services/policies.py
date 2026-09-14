@@ -40,6 +40,8 @@ from app.services.eligible_island_catalog import (
     EligibleIslandSummary,
     build_eligible_island_summary,
 )
+from app.models.policy_status import policy_visibility_date
+from app.services.island_application_guide import application_guide_for_api
 
 
 LEGACY_CATEGORY_MAP = {
@@ -153,6 +155,12 @@ def policy_to_api(
         policy_id=policy.id,
     )
     _attach_eligible_islands(payload, islands, policy.source_category)
+    guide = application_guide_for_api(policy.structured_detail, today=policy_visibility_date())
+    if guide is not None:
+        payload["applicationGuide"] = guide
+        # The reviewed column stays empty; offer the official form only while its round is open.
+        if guide["applyFormUrl"] and not payload.get("applyUrl"):
+            payload["applyUrl"] = guide["applyFormUrl"]
     if (
         stay_discount_aliases.is_stay_discount_canonical_policy(policy)
         or stay_discount_aliases.is_stay_discount_area_policy(policy)

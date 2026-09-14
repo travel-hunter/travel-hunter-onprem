@@ -24,6 +24,10 @@ def evidence_fingerprint(record: ExternalSourceRecord) -> str:
         "officialUrl": record.detail_url or record.source_url,
         "status": record.status,
     }
+    raw_payload = record.raw_payload if isinstance(record.raw_payload, dict) else {}
+    # Only records that carry a procedure hash it, so every other record keeps its existing fingerprint.
+    if isinstance(raw_payload.get("procedure"), dict):
+        payload["procedure"] = raw_payload["procedure"]
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
@@ -308,10 +312,16 @@ def _hold_reason(db: Session, *, candidate: PolicyReviewCandidate, record: Exter
         return "new_policy"
     if (published.title, published.region, published.city) != (record.title, record.region, record.city):
         return "identity_changed"
+    mapping = policy_semantic_mapping.map_external_source_semantics(record)
+    published_detail = published.structured_detail if isinstance(published.structured_detail, dict) else {}
+    new_guide = mapping.structured_detail.get("applicationGuide")
+    old_guide = published_detail.get("applicationGuide")
+    if (new_guide is not None or old_guide is not None) and new_guide != old_guide:
+        return "procedure_changed"
     if (
         record.status == "ended"
         or record.freshness_status == "stale"
-        or policy_semantic_mapping.map_external_source_semantics(record).policy_status == "hidden"
+        or mapping.policy_status == "hidden"
     ):
         return "would_publish_hidden"
     if (

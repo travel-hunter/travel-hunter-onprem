@@ -41,8 +41,8 @@
   - `requiredDocuments: [..]`, `exclusions: [..]`, `contacts: {email, phones}`
   - 폼 링크는 **HTML 주석 밖**에 있고 호스트가 `forms.gle` 또는 `docs.google.com/forms`일 때만 채택(페이지에 주석 처리된 옛 버튼이 남아 있음).
   - 필수 항목(현재 회차 신청 마감·여행 기간·서류 제출 기한) 중 하나라도 못 찾으면 `IslandVisitParserChangedError` → 기존대로 `parser_changed`.
-- `structuredDetail`에 새 섹션 `applicationSteps`를 추가한다(다른 정책도 관리자 편집으로 쓸 수 있는 일반 섹션). 항목 키는 기존 허용 키(`title/label/description/url/startDate/endDate/type`)만 사용하고, `type`은 `apply | selection | travel | documents | payout`.
-- `island_visit` 전용 mapper를 `policy_semantic_mapping._MAPPERS`에 추가해 `supportContent`(10만원, 조건), `periods`(신청 마감·여행 기간·서류 제출 기한), `applicationTarget`(1팀 1인, 대상 섬 1박 2일 이상, 등록 숙박업소, 결제 10만원 이상), `requiredDocuments`, `notes`(제외 기준·사진 요건·문의처), `applicationSteps`를 채운다. 신청 폼 링크는 `applyUrl`로 승격해 기존 "신청하러 가기" CTA가 동작하게 한다.
+- (2026-09-14 개정) `structuredDetail` 항목은 평평한 키(`title/label/description/amount/value/url/startDate/endDate/type`)만 허용해 회차(신청 시작·마감, 여행 시작·종료, 폼 2개, 조회일 기준 상태)를 담을 수 없다. 그래서 새 섹션을 만들지 않고, 이미 있는 선례(`applicationPeriod`/`usagePeriod`처럼 `policies.structured_detail`에 저장되지만 공개 5섹션에서는 빠지는 검토 키)를 따른다: mapper가 파싱한 절차를 `structured_detail["applicationGuide"]`에 넣고, 승인 시 정책 행에 함께 저장된다. 공개 API는 이를 별도 DTO `applicationGuide`로 투영하며 회차 상태·서류 마감일·열린 신청 폼은 **조회일 기준으로 계산**한다. 공개 `structuredDetail` 5섹션 계약은 그대로다.
+- `island_visit` 전용 mapper를 `policy_semantic_mapping._MAPPERS`에 추가해 `supportContent`(10만원, 조건), `periods`(신청 마감·여행 기간·서류 제출 기한), `applicationTarget`(1팀 1인, 대상 섬 1박 2일 이상, 등록 숙박업소, 결제 10만원 이상), `requiredDocuments`, `notes`(제외 기준·사진 요건·문의처), `applicationSteps`를 채운다. `policies.apply_url`은 그대로 비워 두고, API 투영 시 **신청이 열린 회차가 있을 때만** 그 회차 신청 폼을 `applyUrl`로 내려 기존 "신청하러 가기" CTA가 동작하게 한다(마감이 지나면 자동으로 사라짐).
 - `evidence_fingerprint`에 `procedure` 해시를 포함해 폼 링크·기간·서류가 바뀌면 새 검토 후보가 생기게 하고, 자동 발행 게이트에 `procedure_changed` 보류 사유를 추가한다.
 
 ### 진행 상태 (일정 단위, 마이그레이션 `0042_trip_policy_application`)
@@ -70,7 +70,7 @@
 
 ## API
 
-- `GET /api/policies/{slug}`: `structuredDetail.applicationSteps` 추가(island_visit은 채워짐, 나머지는 빈 배열).
+- `GET /api/policies/{slug}` 등 Policy DTO: `applicationGuide: { rounds: [{key, label, status: past|current|upcoming, applyStart, applyUntil, travelStart, travelEnd, documentsDueBy, applicationFormUrl, documentFormUrl}], currentRoundKey, applyFormUrl, documentDeadlineDaysAfterTrip, minNights, minPaymentKrw, requiredDocuments, photoRequirement, exclusions, contacts } | null` 추가(island_visit만 채워짐). 폼 링크는 투영 시에도 Google Forms 호스트만 통과.
 - `GET /api/trips/{id}`: `linkedPolicies[]`에 `deadline`(기존 누락)과 섬 정책일 때 `application` 추가.
 - `PATCH /api/trips/{id}/policies/{slug}/application` (편집자): `{ status?, checklist? }`. 허용되지 않은 전이는 409, 섬 정책이 아니면 404, 알 수 없는 서류 키는 422. 일정 행을 잠가 동시 수정 직렬화.
 - `GET /api/me/applied-policy-links`: `linkedTrips[]`에 `applicationStatus` 추가.

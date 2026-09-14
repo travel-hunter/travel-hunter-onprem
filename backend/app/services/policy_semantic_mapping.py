@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 import re
 from typing import Callable
@@ -502,7 +503,95 @@ def _digital_tourism_resident_card(record: ExternalSourceRecord) -> ExternalSour
     return ExternalSourceSemanticMapping(target, detail, "mapped")
 
 
+def _island_moment_text(value: object) -> str:
+    text = _text(value)
+    if text.endswith("T23:59") or text.endswith("T00:00"):
+        return text[:10]
+    return text.replace("T", " ")
+
+
+def _island_visit(record: ExternalSourceRecord) -> ExternalSourceSemanticMapping:
+    """2026 섬 방문의 해 여행비 지원: screen sections plus the reviewed procedure kept for applicationGuide."""
+    payload = record.raw_payload if isinstance(record.raw_payload, dict) else {}
+    procedure = payload.get("procedure")
+    if not isinstance(procedure, dict) or not procedure.get("rounds"):
+        return ExternalSourceSemanticMapping(None, empty_structured_detail(), "invalid")
+
+    detail = empty_structured_detail()
+    _append(detail["supportContent"], title="지원 내용", description=_text(record.benefit_text))
+    min_payment = procedure.get("minPaymentKrw")
+    if isinstance(min_payment, int) and min_payment > 0:
+        _append(detail["supportContent"], title="지급 조건", description=f"결제 금액 {min_payment // 10_000}만원 이상 이용자 대상 지급")
+
+    for round_ in procedure["rounds"]:
+        if not isinstance(round_, dict) or not round_.get("key"):
+            continue
+        label = f"{round_['key']}차"
+        if round_.get("applyUntil"):
+            item: dict[str, object] = {
+                "title": f"{label} 신청 기간",
+                "description": " ~ ".join(
+                    part for part in (_island_moment_text(round_.get("applyStart")), _island_moment_text(round_["applyUntil"])) if part
+                ),
+                "type": "application",
+                "endDate": str(round_["applyUntil"])[:10],
+            }
+            if round_.get("applyStart"):
+                item["startDate"] = str(round_["applyStart"])[:10]
+            detail["periods"].append(item)
+        if round_.get("travelStart") and round_.get("travelEnd"):
+            detail["periods"].append(
+                {
+                    "title": f"{label} 여행 기간",
+                    "description": f"{round_['travelStart']} ~ {round_['travelEnd']}",
+                    "startDate": round_["travelStart"],
+                    "endDate": round_["travelEnd"],
+                    "type": "usage",
+                }
+            )
+    days = procedure.get("documentDeadlineDaysAfterTrip")
+    if isinstance(days, int) and days > 0:
+        detail["periods"].append(
+            {"title": "서류 제출 기한", "description": f"여행 종료 후 {days}일 이내 서류 제출 구글폼으로 제출", "type": "documents"}
+        )
+
+    exclusions = [item for item in procedure.get("exclusions") or [] if isinstance(item, str)]
+    if any("대표자 1인" in item for item in exclusions):
+        _append(detail["applicationTarget"], title="신청 대상", description="1팀(가족, 친구, 모임)별 대표자 1인 1회 신청 (중복 신청 불가)")
+    nights = procedure.get("minNights")
+    if isinstance(nights, int) and nights > 0:
+        _append(
+            detail["applicationTarget"],
+            title="여행 조건",
+            description=f"대상 섬 리스트에 있는, 육지와 연결되지 않아 배로 들어가는 섬에서 {nights}박 {nights + 1}일 이상 체류",
+        )
+    _append(detail["applicationTarget"], title="숙박", description="섬 내 등록 숙박업소 이용 (호텔, 리조트, 펜션, 민박 등 / 캠핑 가능)")
+    if isinstance(min_payment, int) and min_payment > 0:
+        _append(detail["applicationTarget"], title="결제 금액", description=f"결제 금액 {min_payment // 10_000}만원 이상")
+
+    for document in procedure.get("requiredDocuments") or []:
+        if isinstance(document, str):
+            _append(detail["requiredDocuments"], title="필수 증빙", description=document)
+
+    if isinstance(procedure.get("photoRequirement"), str):
+        _append(detail["notes"], title="증빙 사진", description=procedure["photoRequirement"])
+    for item in exclusions:
+        _append(detail["notes"], title="지원 제외", description=item)
+    contacts = procedure.get("contacts") if isinstance(procedure.get("contacts"), dict) else {}
+    contact_parts = []
+    if contacts.get("email"):
+        contact_parts.append(f"이메일 {contacts['email']}")
+    if contacts.get("phones"):
+        contact_parts.append("전화 " + " / ".join(str(phone) for phone in contacts["phones"]))
+    if contact_parts:
+        _append(detail["notes"], title="문의", description=" · ".join(contact_parts))
+
+    detail["applicationGuide"] = deepcopy(procedure)  # type: ignore[assignment]  # stored with the reviewed policy, projected separately
+    return ExternalSourceSemanticMapping(None, detail, "mapped")
+
+
 _MAPPERS: dict[str, Callable[[ExternalSourceRecord], ExternalSourceSemanticMapping]] = {
+    "island_visit": _island_visit,
     "local_half_trip": _local_half_trip,
     dgtour_identity.SOURCE_CATEGORY: _digital_tourism_resident_card,
     "stay_discount": _stay_discount,

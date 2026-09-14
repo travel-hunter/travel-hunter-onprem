@@ -53,6 +53,32 @@ export type PolicyStructuredDetail = {
   notes: PolicyStructuredDetailItem[];
 };
 
+export type ApplicationGuideRound = {
+  key: string;
+  label: string;
+  status: "past" | "current" | "upcoming";
+  applyStart: string | null;
+  applyUntil: string | null;
+  travelStart: string | null;
+  travelEnd: string | null;
+  documentsDueBy: string | null;
+  applicationFormUrl: string | null;
+  documentFormUrl: string | null;
+};
+
+export type ApplicationGuide = {
+  rounds: ApplicationGuideRound[];
+  currentRoundKey: string | null;
+  applyFormUrl: string | null;
+  documentDeadlineDaysAfterTrip: number | null;
+  minNights: number | null;
+  minPaymentKrw: number | null;
+  requiredDocuments: string[];
+  photoRequirement: string | null;
+  exclusions: string[];
+  contacts: { email: string | null; phones: string[] };
+};
+
 export type PolicyPhoto = {
   imageUrl: string;
   thumbnailUrl?: string | null;
@@ -84,6 +110,7 @@ export type Policy = {
   photo?: PolicyPhoto | null;
   eligibleIslandCount?: number | null;
   eligibleIslandsOfficialUrl?: string | null;
+  applicationGuide?: ApplicationGuide | null;
 };
 
 export type AppliedPolicyLinkedTrip = {

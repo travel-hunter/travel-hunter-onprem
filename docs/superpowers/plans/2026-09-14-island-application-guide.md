@@ -25,19 +25,21 @@
 - [x] Step 3: 구현. HTML 주석 제거 후 섹션별 추출, 폼 링크는 `forms.gle`/`docs.google.com/forms` 호스트만. 1차·2차 **모든 회차를 저장**하고, 회차 상태(`past`/`current`/`upcoming`)는 저장하지 않고 조회 시 `round_status(round, today)`로 계산한다.
 - [x] Step 4: 전체 pytest → 커밋 `feat: parse the island travel support procedure`.
 
-### Task 2: `applicationSteps` 섹션과 island_visit mapper
+### Task 2: island_visit mapper와 `applicationGuide` DTO
 
-**Files:** Modify `backend/app/services/policy_structured_detail.py`, `backend/app/services/policy_semantic_mapping.py`, `backend/app/services/policy_normalization.py`, `backend/app/services/policy_candidate_review.py`, `backend/app/schemas/policy.py`, tests (`test_policy_semantic_mapping*.py`, `test_policy_auto_publish.py`, contract golden), `frontend/src/api/types.ts`, `docs/mvp-api-contract.md`.
+> 2026-09-14 개정: `structuredDetail` 항목 스키마가 평평해 회차를 담을 수 없어, 새 섹션 대신 `structured_detail["applicationGuide"]` 저장 + 별도 DTO 투영으로 바꿨다(스펙 개정 참고).
 
-- [ ] Step 1: 실패 테스트 — island_visit 레코드 → `structuredDetail.applicationSteps` 5개(`apply/selection/travel/documents/payout`), periods 3개, requiredDocuments 5개, notes에 제외 기준, `apply_url`=신청 폼. 다른 source_category는 `applicationSteps == []`. 절차만 바뀐 레코드는 새 후보(지문 변경)이고 게이트 사유 `procedure_changed`.
-- [ ] Step 2: 구현 — 섹션 키 추가(normalize/projection/admin 저장 경로), `_MAPPERS["island_visit"]`, 승격 시 `apply_url`, `evidence_fingerprint`에 `procedure` 해시, 게이트 규칙 추가(identity 검사 다음).
-- [ ] Step 3: 계약 문서·골든·프론트 타입 동기화 → 전체 pytest/vitest/typecheck → 커밋 `feat: map the island support procedure into structured detail`.
+**Files:** Modify `backend/app/services/policy_semantic_mapping.py`, `backend/app/services/policies.py`, `backend/app/services/policy_candidate_review.py`, `backend/app/schemas/policy.py`, `backend/tests/test_policy_auto_publish.py`, `.agent/evals/api-contract-golden.json`, `frontend/src/api/types.ts`, `frontend/src/pages/admin/AdminPages.tsx`(사유 라벨), `docs/mvp-api-contract.md`; Create `backend/app/services/island_application_guide.py`, `backend/tests/test_island_application_guide.py`.
+
+- [x] Step 1: 실패 테스트 — island_visit 레코드 → 5섹션(지원내용·회차별 신청/여행 기간·서류 제출 기한·신청 조건·필요 서류 5종·제외 기준/사진 요건/문의처)과 `structured_detail["applicationGuide"]`, 공개 `structuredDetail`은 여전히 5섹션. `application_guide_for_api(detail, today)`가 회차 상태·`documentsDueBy`·`currentRoundKey`·열린 회차일 때만 `applyFormUrl`을 계산하고, Google Forms가 아닌 링크는 버림. `policy_to_api`가 `applicationGuide`와 열린 `applyUrl`을 내려주고 다른 정책은 없음. procedure 없는 레코드의 지문은 기존 값과 동일, procedure만 바뀌면 지문 변경, 자동 발행 게이트 사유 `procedure_changed`.
+- [x] Step 2: 구현 — `_MAPPERS["island_visit"]`, `island_application_guide.application_guide_for_api`, `policy_to_api` 투영(+`policy_visibility_date`), `evidence_fingerprint`는 procedure가 있을 때만 키 추가, 게이트 규칙(identity 검사 다음).
+- [x] Step 3: 계약 문서·골든·프론트 타입 동기화 → 전체 pytest/vitest/typecheck → 커밋 `feat: map the island support procedure into structured detail`.
 
 ### Task 3: 정책 상세 `신청 절차` 화면
 
 **Files:** Modify `frontend/src/pages/PolicyPages.tsx`, `frontend/src/app/__tests__/policy-detail.test.tsx`, `frontend/src/styles/app.css`.
 
-- [ ] Step 1: 실패 테스트 — applicationSteps가 있으면 회차 목록(지난 회차 접힘 "종료", 현재 회차 펼침 + 신청 마감 D-n, 다음 회차 "예정"), 현재 회차 스텝 5개·기간, `신청 폼 열기`/`서류 제출 폼 열기` 링크와 선정자 경고, 마감 3일 이내 강조·지나면 "마감". 없으면 섹션 없음(기존 정책 회귀).
+- [ ] Step 1: 실패 테스트 — `applicationGuide`가 있으면 회차 목록(지난 회차 접힘 "종료", 현재 회차 펼침 + 신청 마감 D-n, 다음 회차 "예정"), 현재 회차 스텝 5개·기간, `신청 폼 열기`/`서류 제출 폼 열기` 링크와 선정자 경고, 마감 3일 이내 강조·지나면 "마감". 없으면 섹션 없음(기존 정책 회귀).
 - [ ] Step 2: 구현(기존 `section-block`/`SurfaceCard` 재사용, 새 컴포넌트 최소화).
 - [ ] Step 3: typecheck/build/mojibake → 5174 재빌드 후 island_visit 후보 수집·승인해 실제 화면 확인 → 커밋 `feat: show the island support application steps`.
 
