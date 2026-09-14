@@ -417,6 +417,60 @@ describe("admin pages", () => {
     expect(sourcesSpy).toHaveBeenCalledTimes(1);
   });
 
+  function makeCandidate(id: number) {
+    return { id: String(id), externalSourceRecordId: `record-${id}`, reviewStatus: "pending", changeKind: "new", title: `Candidate ${id}`, sourceCategory: "island_visit", officialUrl: "https://official.example/island", benefitText: "support", region: null, city: null, status: "scheduled", startDate: null, endDate: null, createdAt: "2026-09-13T00:00:00" };
+  }
+
+  function installBatchReviewPage() {
+    installStoredUser({ ...getPreviewUser(), role: "admin" });
+    vi.spyOn(appDataApi as any, "listAdminCollectionSources").mockResolvedValue({ items: [] });
+    vi.spyOn(appDataApi as any, "listAdminEligibleIslandSnapshots").mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0, approvedSnapshotId: null, approvedEntryCount: 0 });
+    const listSpy = vi.spyOn(appDataApi as any, "listAdminPolicyReviewCandidates").mockImplementation(async (...args: unknown[]) => {
+      const offset = (args[0] as { offset?: number } | undefined)?.offset ?? 0;
+      const items = offset >= 50 ? [makeCandidate(51)] : Array.from({ length: 50 }, (_, index) => makeCandidate(index + 1));
+      return { items, total: 71, limit: 50, offset };
+    });
+    const batchSpy = vi.spyOn(appDataApi as any, "approveAdminPolicyReviewCandidates").mockReset().mockResolvedValue({ approvedCount: 1, approvedCandidateIds: ["1"] });
+    return { listSpy, batchSpy };
+  }
+
+  it("pages review candidates by 50 and approves only the selected ones", async () => {
+    const { listSpy, batchSpy } = installBatchReviewPage();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReset().mockReturnValue(true);
+
+    renderAppRoute("/admin/policy-review");
+
+    await waitFor(() => expect(document.body).toHaveTextContent("Candidate 50"));
+    expect(document.body).toHaveTextContent("1 / 2");
+    expect(screen.getByRole("button", { name: "선택 승인" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("checkbox", { name: "Candidate 1 선택" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Candidate 3 선택" }));
+    await userEvent.click(screen.getByRole("button", { name: "선택 승인" }));
+    await waitFor(() => expect(batchSpy).toHaveBeenCalledWith({ candidateIds: ["1", "3"], approveAll: false }));
+    expect(confirmSpy.mock.calls[0][0]).toContain("2건");
+
+    await userEvent.click(screen.getByRole("button", { name: "다음" }));
+    await waitFor(() => expect(document.body).toHaveTextContent("Candidate 51"));
+    expect(document.body).toHaveTextContent("2 / 2");
+    expect(listSpy).toHaveBeenLastCalledWith({ limit: 50, offset: 50 });
+    confirmSpy.mockRestore();
+  });
+
+  it("approves all pending candidates only after a confirmation that states the total", async () => {
+    const { batchSpy } = installBatchReviewPage();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReset().mockReturnValueOnce(false).mockReturnValueOnce(true);
+
+    renderAppRoute("/admin/policy-review");
+
+    await waitFor(() => expect(document.body).toHaveTextContent("Candidate 1"));
+    await userEvent.click(screen.getByRole("button", { name: "전체 승인" }));
+    expect(batchSpy).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "전체 승인" }));
+    await waitFor(() => expect(batchSpy).toHaveBeenCalledWith({ candidateIds: [], approveAll: true }));
+    expect(confirmSpy.mock.calls[1][0]).toContain("71건");
+    confirmSpy.mockRestore();
+  });
+
   it("shows catalog changes separately from policy review candidates", async () => {
     installStoredUser({ ...getPreviewUser(), role: "admin" });
     vi.spyOn(appDataApi as any, "listAdminCollectionSources").mockResolvedValue({ items: [] });
@@ -429,7 +483,7 @@ describe("admin pages", () => {
     };
     vi.spyOn(appDataApi as any, "listAdminEligibleIslandSnapshots").mockResolvedValue({ items: [snapshot], total: 1, limit: 20, offset: 0, approvedSnapshotId: null, approvedEntryCount: 0 });
     const approveSpy = vi.spyOn(appDataApi as any, "approveAdminEligibleIslandSnapshot").mockResolvedValue({ ...snapshot, reviewStatus: "approved", isCurrentApproved: true });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReset().mockReturnValue(true);
 
     renderAppRoute("/admin/policy-review");
 

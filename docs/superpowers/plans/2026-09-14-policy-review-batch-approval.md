@@ -39,7 +39,7 @@
 - Produces: `GET /api/admin/policy-review-candidates?limit=50&offset=0` returning `{items,total,limit,offset}`.
 - Produces: `POST /api/admin/policy-review-candidates/approve-batch` accepting `{candidateIds?: string[], approveAll?: boolean, note?: string}` and returning `{approvedCount, approvedCandidateIds}`.
 
-- [ ] **Step 1: Write failing backend tests**
+- [x] **Step 1: Write failing backend tests**
 
 Add a service test that creates two pending candidates, calls:
 ```python
@@ -63,7 +63,7 @@ assert response.json()["offset"] == 50
 
 Add a route test that posts `{"candidateIds":["7","8"],"approveAll":false}` and asserts the batch service receives those exact IDs. Add a second test posting `{"approveAll":true}` and asserts the service receives the all-pending mode.
 
-- [ ] **Step 2: Run backend tests to verify RED**
+- [x] **Step 2: Run backend tests to verify RED**
 
 Run:
 ```powershell
@@ -72,7 +72,7 @@ docker run --rm -v "${PWD}/.superpowers/worktrees/admin-policy-source-review/bac
 
 Expected: FAIL because batch approval functions, request/response schemas, route, total, and offset do not exist.
 
-- [ ] **Step 3: Implement the minimal repository-service and route behavior**
+- [x] **Step 3: Implement the minimal repository-service and route behavior**
 
 Implement:
 ```python
@@ -93,7 +93,7 @@ Add `count_pending_candidates` using `select(func.count())`. Resolve every batch
 
 Add Pydantic request/response DTOs, list response pagination fields, a maximum request size of 100 candidate IDs, and the `approve-batch` route before the parameterized `/{candidate_id}` routes.
 
-- [ ] **Step 4: Update contract and tests to GREEN**
+- [x] **Step 4: Update contract and tests to GREEN**
 
 Document query parameters, paged response, request validation, atomic rollback, and the two batch modes in `docs/mvp-api-contract.md`.
 
@@ -101,7 +101,7 @@ Run the Task 1 command again.
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```powershell
 git add backend/app/services/policy_candidate_review.py backend/app/schemas/admin.py backend/app/api/routes/admin.py backend/tests/test_policy_candidate_review.py backend/tests/test_admin_routes.py docs/mvp-api-contract.md
@@ -121,10 +121,40 @@ git commit -m "feat: page and batch-approve policy review candidates"
 - Consumes: `listAdminPolicyReviewCandidates({limit, offset})` and `approveAdminPolicyReviewCandidates({candidateIds, approveAll})`.
 - Produces: a page-local `offset`, `total`, and `selectedCandidateIds` state; page size `50`.
 
-- [ ] **Step 1: Write failing frontend tests**
+- [x] **Step 1: Write failing frontend tests**
 
 Add a test with 71 candidates and a list response:
 ```ts
 { items: [candidate51], total: 71, limit: 50, offset: 50 }
 ```
-Render the review page after moving forward and assert it displays b��y��y� 7;�u���t`, enables `5�Q�����������́���������A�����I�٥��������ѕ̡쁱������������͕���������()�����ѕ�Ёѡ�Ё�����́�����������є����������������͕����)�����)�����С��э���ɽٕM�䤹ѽ!�ٕ	��������]�Ѡ��(���������ѕ%���l��������є�ĉt�(�����ɽٕ��聙��͔�)���)���()�����ѕ�Ёѡ�Ё�����́��u���n�ן�w�Ћ�u���n�ן�w�ူ���Չ́�ݥ���ܹ�����ɵ���́��Ք��������͕����)�����)�����С��э���ɽٕM�䤹ѽ!�ٕ	��������]�Ѡ��(���������ѕ%���mt�(�����ɽٕ�����Ք�)���)���((��l�t���Mѕ����Iո��ɽ�ѕ���ѕ�ЁѼ�ٕɥ��I��()Iո�)�����ݕ�͡���)�����������ݕ�̽ݽɭ�ɕ�̽������������ͽ�ɍ��ɕ٥�ܽ�ɽ�ѕ��)����٥ѕ�Ё�ո��Ɍ�����̽����������A���̹ѕ�й���)���()����ѕ��%0������͔��������х��ф��������ѥ������������̰�������э��A$���ѡ��́�����Ё���и((��l�t���Mѕ����%�������Ёѡ����������A$���չ���䁅���U$��()U͔�)�����)����ЁIY%]}A}M%i�����)����Ёm���͕а�͕�=��͕�t���͕Mхє����)����Ёmѽх���͕�Q�х�t���͕Mхє����)����Ёm͕���ѕ�������ѕ%�̰�͕�M����ѕ�������ѕ%��t���͕Mхє�M�����ɥ�������܁M�Р���)���()1�����������ѕ́ݥѠ��쁱�����IY%]}A}M%i�����͕Ё��쁍���ȁ͕���ѥ���ݡ���ѡ�������������̸�������ɕ�е�����͕���е�����͕���ѥ���ѽ�������ɕ٥��̽���Ё����ɽ�̰���������ן�w���y��yЮ�ן�w����y��yр����ѽ����ͅ������ѥ��́ݡ������ɕ�Օ�Ё�́��������и�	���ɔ�͕���ѕ���������ɽم���������ݥ���ܹ�����ɵ��ݥѠ�ѡ���ᅍЁ�������є���չЁ�����хє�ѡ�Ё���ɽم���Չ��͡�́�����䁍�ɑ̸�=���Ս���́ɕ�����ѡ��ͅ�������쁥��ѡ�������������́����䁅�������͕Ѐ������ɕ�����ѡ���ɕ������������((��l�t���Mѕ����Iո��ɽ�ѕ���ѕ�ЁѼ�ٕɥ��I8��()Iո�)�����ݕ�͡���)�����������ݕ�̽ݽɭ�ɕ�̽������������ͽ�ɍ��ɕ٥�ܽ�ɽ�ѕ��)����٥ѕ�Ё�ո��Ɍ�����̽����������A���̹ѕ�й���)�����ո����������)�����ո��ե��)���()����ѕ��AML�((��l�t���Mѕ��������ЁQ�ͬ�Ȩ�()�����ݕ�͡���)��Ё�����ɽ�ѕ����Ɍ���������̹�́�ɽ�ѕ����Ɍ�������х����́�ɽ�ѕ����Ɍ����������������́�ɽ�ѕ����Ɍ�����̽����������A���̹�����ɽ�ѕ����Ɍ�����̽����������A���̹ѕ�й���)��Ё�����Ѐ���������������є�������э�����ɽٔ�������ɕ٥��̈)���((����Q�ͬ���Y�ɥ��A$�ͅ���䁅���ѡ�����Ё�ͽ��ѕ���͕ȁ����((������訨(��5�����聁���̽�������ݕ�̽����̼���ش���е������ɕ٥�ܵ��э�����ɽم���������ɬ�����ٕɥ�����хͭ́������є�((��%�ѕə����訨(�����յ���Q�ͬ�āA$�����Q�ͬ�ȁU$�(��Aɽ�Ս���م����ѥ����٥������ѡ�Ё����Չ������ɐ��́������������ɔ�������ɽم��ɕ�Օ�и((��l�t���Mѕ����Iո�����͕���ձ���х���ɕ�ɕ�ͥ���ѕ��̨�()Iո�)�����ݕ�͡���)�����ȁ�ո���ɴ��؀���A]����������ݕ�̽ݽɭ�ɕ�̽������������ͽ�ɍ��ɕ٥�ܽ�������轉�������ɼ���܀������������AeQ!=9AQ �����������Ʌٕ���չѕȵ������ɕ٥�ܵ�������鱽������ѡ��������ѕ�Ёѕ��̽ѕ��}������}�������ѕ}ɕ٥�ܹ��ѕ��̽ѕ��}�����}ɽ�ѕ̹��ѕ��̽ѕ��}��ѕɹ��}�������}������ѥ�����ѕ��̽ѕ��}������}ͽ�ɍ�}��х������ѕ��̽ѕ��}��}͍������䀵�)�����������ݕ�̽ݽɭ�ɕ�̽������������ͽ�ɍ��ɕ٥�ܽ�ɽ�ѕ��)����٥ѕ�Ё�ո��Ɍ�����̽����������A���̹ѕ�й���)���()����ѕ��AML�((��l�t���Mѕ����I��ե�������ѡ���ͽ��ѕ�����Ё�х����()Iո�)�����ݕ�͡���)�����ȁ�����͔����ɽ���е�����������ͽ�ɍ��ɕ٥�܀����ص��������؀�����������ݕ�̽ݽɭ�ɕ�̽������������ͽ�ɍ��ɕ٥�ܽ�����͔�兵����������Q5@�������ɕ٥�ܴ���й�ٕ�ɥ���兵�����������ե������������ɽ�ѕ��)���()����Ё�ո�ѡ�́������Ёѡ��ɽ�Ё��Ʌٕ���չѕȵ���ɕ�������͔��ɽ���и((��l�t���Mѕ����	ɽ�͕ȁ͵����ѕ�Ш�()M���������������������輼��ܸ���������р������ɴ������ā��̀����ȁ��ݕȁ�������ѕ̰����Ё���������͕́ѡ���ͱ�����������є��͕���ѥ��������������є�������́����ѡ�Ё��ɐ���ѕȁ�����ɵ�ѥ������������������ѡ���������ɽم�������ɵ�ѥ�������́���A$�ɕ�Օ�и((��l�t���Mѕ����������хѥ�������̨�()Iո�)�����ݕ�͡���)��Ё������������)ɜ�����qq������������ɽ�ѕ�������)���()����ѕ�聹���������ɽ�́�������ɕ��������Ё���Ʌ�ѕ�̸((��l�t���Mѕ��������ЁQ�ͬ�́���յ��хѥ����хє�����ݡ���ɕ��䨨()����Ё�����䁁!-1%MP�����չѥ��ѡ��������є������ɔ��Ʌ�����́ɕ��䁙�ȁ��ɝ���%��ѡ���������������́�ɔ�����ѕ��������Ё����ѡ������������ݥѠ�ѡ�������������ɔ������и
+
+Render the review page after moving forward and assert it displays `Candidate 51` and `2 / 2`, enables `선택 승인` only after a checkbox is selected, calls `approveAdminPolicyReviewCandidates({ candidateIds, approveAll: false })` with exactly the selected ids, and calls `{ candidateIds: [], approveAll: true }` for `전체 승인` only after `window.confirm` returned true with a message that states the total (`71건`).
+
+- [x] **Step 2: Run frontend tests to verify RED**
+
+Run: `cd frontend && npx vitest run src/pages/admin/AdminPages.test.tsx`
+Expected: FAIL because the review page has no checkboxes, batch buttons, or pagination.
+
+- [x] **Step 3: Implement the minimal page state and controls**
+
+In `AdminPolicyReviewPage`: `REVIEW_PAGE_SIZE = 50`, page-local `offset`/`total`/`selectedIds`; `load()` passes `{ limit, offset }` and clears the selection; a checkbox per candidate (`aria-label="<title> 선택"`); `선택 승인` (disabled with no selection) and `전체 승인` (disabled when `total === 0`), both gated by `window.confirm` whose text states the count; reuse the `admin-pagination` block (`이전` / `n / m` / `다음`). The single-candidate `반려` / `승인하고 공개` buttons are unchanged. A failed batch shows one error line saying nothing in that request was published (the API is atomic).
+
+- [x] **Step 4: Run frontend tests to verify GREEN**
+
+Run: `cd frontend && npx vitest run src/pages/admin/AdminPages.test.tsx && npm run typecheck && npm run build && npm run test:mojibake`
+Expected: PASS.
+
+- [x] **Step 5: Commit Task 2**
+
+```bash
+git add frontend/src/pages/admin/AdminPages.tsx frontend/src/pages/admin/AdminPages.test.tsx docs/superpowers/plans/2026-09-14-policy-review-batch-approval.md
+git commit -m "feat: page and batch-approve policy review candidates in the admin UI"
+```
+
+## Verification
+
+- Backend: `cd backend && python -m pytest -q` (batch route tests in `tests/test_admin_routes.py`, atomic rollback in `tests/test_policy_candidate_review.py`).
+- Frontend: `cd frontend && npx vitest run && npm run typecheck && npm run build && npm run test:mojibake`.
+- Isolated stack (`policy-source-review`, 5174/8002): approve a selected subset, confirm only those candidates become `approved`, then move to page 2 and confirm the remaining pending count. Do not update `CHECKLIST.md` until merge-ready.
+
+> 2026-09-14: lines after Task 2 Step 1 of this file were byte-corrupted in the original commit (1789d2e); this tail was rewritten from the implemented behavior.

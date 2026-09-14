@@ -616,8 +616,13 @@ export function AdminAuditLogsPage() {
 }
 
 
+const REVIEW_PAGE_SIZE = 50;
+
 export function AdminPolicyReviewPage() {
   const [candidates, setCandidates] = useState<AdminPolicyReviewCandidate[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [sources, setSources] = useState<AdminCollectionSource[]>([]);
   const [error, setError] = useState("");
   const [workingId, setWorkingId] = useState<string | null>(null);
@@ -626,17 +631,45 @@ export function AdminPolicyReviewPage() {
     setError("");
     try {
       const [candidateResponse, sourceResponse] = await Promise.all([
-        appDataApi.listAdminPolicyReviewCandidates(),
+        appDataApi.listAdminPolicyReviewCandidates({ limit: REVIEW_PAGE_SIZE, offset }),
         appDataApi.listAdminCollectionSources(),
       ]);
       setCandidates(candidateResponse.items);
+      setTotal(candidateResponse.total);
+      setSelectedIds([]);
       setSources(sourceResponse.items);
     } catch {
       setError("수집 검토 정보를 불러오지 못했습니다.");
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [offset]);
+
+  const totalPages = Math.max(1, Math.ceil(total / REVIEW_PAGE_SIZE));
+  const currentPage = Math.floor(offset / REVIEW_PAGE_SIZE) + 1;
+
+  const toggleSelected = (candidateId: string) => {
+    setSelectedIds((current) => current.includes(candidateId) ? current.filter((id) => id !== candidateId) : [...current, candidateId]);
+  };
+
+  const approveBatch = async (mode: "selected" | "all") => {
+    const message = mode === "all"
+      ? `검토 대기 정책 전체 ${total}건을 승인하고 공개합니다. 되돌릴 수 없습니다. 계속할까요?`
+      : `선택한 ${selectedIds.length}건을 승인하고 공개합니다. 계속할까요?`;
+    if (!window.confirm(message)) return;
+    setWorkingId("batch");
+    setError("");
+    try {
+      await appDataApi.approveAdminPolicyReviewCandidates(
+        mode === "all" ? { candidateIds: [], approveAll: true } : { candidateIds: selectedIds, approveAll: false },
+      );
+      await load();
+    } catch {
+      setError("일괄 승인에 실패했습니다. 이 요청의 후보는 하나도 공개되지 않았습니다. 새로고침 후 다시 시도하세요.");
+    } finally {
+      setWorkingId(null);
+    }
+  };
 
   const decide = async (candidate: AdminPolicyReviewCandidate, decision: "approve" | "reject") => {
     const note = decision === "reject" ? window.prompt("반려 사유를 입력하세요.") : undefined;
@@ -686,15 +719,29 @@ export function AdminPolicyReviewPage() {
         ))}</div>
       </section>
       <section className="admin-table-card" style={{ padding: 20 }}>
-        <div className="admin-section-head"><div><p>Pending</p><h2>검토 대기 정책</h2></div></div>
+        <div className="admin-section-head">
+          <div><p>Pending · {total}건</p><h2>검토 대기 정책</h2></div>
+          <div className="admin-section-actions">
+            <button className="btn secondary" type="button" disabled={workingId === "batch" || selectedIds.length === 0} onClick={() => approveBatch("selected")}>선택 승인</button>
+            <button className="btn primary" type="button" disabled={workingId === "batch" || total === 0} onClick={() => approveBatch("all")}>전체 승인</button>
+          </div>
+        </div>
         <div className="admin-source-list">{candidates.map((candidate) => (
           <article className="admin-source-card" key={candidate.id}>
-            <div><span className="admin-source-label">{candidate.changeKind === "new" ? "신규" : "변경"}</span><strong>{candidate.title}</strong></div>
+            <div>
+              <input aria-label={`${candidate.title} 선택`} checked={selectedIds.includes(candidate.id)} onChange={() => toggleSelected(candidate.id)} type="checkbox" />
+              <span className="admin-source-label">{candidate.changeKind === "new" ? "신규" : "변경"}</span><strong>{candidate.title}</strong>
+            </div>
             <p>{candidate.region ?? "전국"} · {candidate.benefitText}</p>
             <p><a href={candidate.officialUrl} target="_blank" rel="noreferrer">공식 원문 보기</a></p>
             <div className="admin-section-actions"><button className="btn secondary" type="button" disabled={workingId === candidate.id} onClick={() => decide(candidate, "reject")}>반려</button><button className="btn primary" type="button" disabled={workingId === candidate.id} onClick={() => decide(candidate, "approve")}>승인하고 공개</button></div>
           </article>
         ))}{candidates.length === 0 && <p className="admin-empty">검토 대기 정책이 없습니다.</p>}</div>
+        <div className="admin-pagination" aria-label="검토 대기 정책 페이지 이동">
+          <button disabled={offset === 0} onClick={() => setOffset((current) => Math.max(0, current - REVIEW_PAGE_SIZE))} type="button">이전</button>
+          <span>{currentPage} / {totalPages}</span>
+          <button disabled={offset + REVIEW_PAGE_SIZE >= total} onClick={() => setOffset((current) => current + REVIEW_PAGE_SIZE)} type="button">다음</button>
+        </div>
       </section>
       <AdminEligibleIslandCatalogSection />
     </section>
