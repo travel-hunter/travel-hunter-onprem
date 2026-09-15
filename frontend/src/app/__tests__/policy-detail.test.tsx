@@ -34,7 +34,7 @@ describe("Travel Hunter app — policy detail", () => {
       org: "섬 방문의 해 추진위원회",
       region: "전국",
       deadline: "2026-09-21",
-      amount: "10만원",
+      amount: "최대 10만원",
       summary: "여행비 10만원 (숙박비, 왕복 배편 승선권, 식비 등)",
       match: 80,
       category: "여행상품",
@@ -43,6 +43,18 @@ describe("Travel Hunter app — policy detail", () => {
       officialUrl: "https://www.visitisland.kr/promotion2",
       applyUrl: guide.applyFormUrl,
       sourceType: "internal",
+      structuredDetail: {
+        supportContent: [
+          { title: "핵심 혜택", description: "최대 10만원 혜택" },
+          { title: "지원 내용", description: "여행비 10만원 (숙박비, 왕복 배편 승선권, 식비 등)" },
+        ],
+        periods: [
+          { title: "1차 신청 기간", description: "2026-09-21 18:00", type: "application" },
+        ],
+        applicationTarget: [],
+        requiredDocuments: [],
+        notes: [],
+      },
       applicationGuide: guide,
     };
   }
@@ -78,7 +90,7 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/travelmonth-81");
       const section = await screen.findByRole("region", { name: "신청 절차" });
 
-      // current round: open, deadline D-day emphasised within 3 days, five ordered steps, form link
+      // current round: open, deadline D-day emphasised within 3 days, five ordered steps
       expect(within(section).getByText("2차 · 진행 중")).toBeInTheDocument();
       const deadline = within(section).getByText("신청 마감 D-2");
       expect(deadline).toHaveClass("tag", "warning");
@@ -92,7 +104,23 @@ describe("Travel Hunter app — policy detail", () => {
       ]);
       expect(within(steps).getByText(/2026-10-01 ~ 2026-11-04/)).toBeInTheDocument();
       expect(within(steps).getByText(/여행 종료 후 14일 이내 \(2026-11-18까지\)/)).toBeInTheDocument();
-      expect(within(section).getByRole("link", { name: "신청 폼 열기" })).toHaveAttribute("href", ROUND2_APPLY_FORM);
+      expect(within(section).queryByRole("link", { name: "신청 폼 열기" })).toBeNull();
+      const supportSection = screen.getByRole("region", { name: "지원내용" });
+      expect(supportSection).not.toBeNull();
+      const actionRow = (supportSection as HTMLElement).previousElementSibling;
+      expect(actionRow).toHaveClass("policy-detail-actions");
+      expect(within(actionRow as HTMLElement).getByRole("link", { name: "신청 폼 열기" })).toHaveAttribute("href", ROUND2_APPLY_FORM);
+      expect(within(actionRow as HTMLElement).getByRole("button", { name: /내 일정에 담기/ })).toBeInTheDocument();
+      expect(document.querySelector(".sticky-cta")).toBeNull();
+
+      const periodSection = screen.getByRole("heading", { name: /기간/ }).closest("section");
+      expect(periodSection).not.toBeNull();
+      expect(within(periodSection as HTMLElement).getByText("2026-09-21 18:00")).toBeInTheDocument();
+      expect((periodSection as HTMLElement).querySelector(".bullet")).toBeNull();
+      expect(within(periodSection as HTMLElement).queryByText("✓")).toBeNull();
+      expect(screen.queryByText("핵심 혜택")).toBeNull();
+      expect(screen.queryByText("최대 10만원 혜택")).toBeNull();
+      expect(screen.getByText("여행비 10만원 (숙박비, 왕복 배편 승선권, 식비 등)")).toBeInTheDocument();
 
       // past round: collapsed, still offers its document form with the selected-applicant warning
       const past = within(section).getByText("1차 · 종료").closest("details");

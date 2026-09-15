@@ -414,14 +414,30 @@ function renderPolicyBenefitItem(item: PolicyBenefitItem) {
   );
 }
 
+function normalizeBenefitDisplayComparison(value: string) {
+  return normalizeBenefitTextWithLineBreaks(value)
+    .replace(/\s*혜택(?:\s*(?:제공|지원))?\s*$/, "")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function isTopAmountDuplicate(itemText: string, amountLabel: string) {
+  const rawItem = normalizeBenefitTextWithLineBreaks(itemText);
+  if (!/혜택(?:\s*(?:제공|지원))?\s*$/.test(rawItem)) return false;
+  const item = normalizeBenefitDisplayComparison(rawItem);
+  const amount = normalizeBenefitDisplayComparison(amountLabel);
+  return Boolean(item && amount && item === amount);
+}
+
 function getStructuredBenefitSections(policy: Policy): PolicyBenefitSection[] {
   const sections: PolicyBenefitSection[] = [];
   const sectionIndex = new Map<string, number>();
+  const amountLabel = getPolicyAmountLabel(policy);
 
   for (const item of structuredDetailItems(policy, "supportContent")) {
     if (isStructuredUsageConditionItem(item)) continue;
     const text = structuredBenefitText(item.amount, item.description, item.value);
-    if (!text) continue;
+    if (!text || isTopAmountDuplicate(text, amountLabel)) continue;
 
     const title = normalizedStructuredBenefitTitle(structuredText(item.title, item.label));
     const url = safeStructuredBenefitUrl(item.url);
@@ -599,8 +615,6 @@ function guideMoment(value: string | null): string {
 }
 
 function ApplicationRoundSteps({ guide, round }: { guide: ApplicationGuide; round: ApplicationGuideRound }) {
-  const applyDays = daysUntilPolicyDeadline(guideDate(round.applyUntil));
-  const applyOpen = round.status === "current" && Boolean(round.applicationFormUrl) && applyDays !== null && applyDays >= 0;
   const nights = guide.minNights;
   return (
     <>
@@ -626,17 +640,10 @@ function ApplicationRoundSteps({ guide, round }: { guide: ApplicationGuide; roun
           <span>서류 검토 후 계좌이체</span>
         </li>
       </ol>
-      {(applyOpen || round.documentFormUrl) && (
+      {round.documentFormUrl && (
         <div className="application-guide-actions">
-          {applyOpen && round.applicationFormUrl && (
-            <a className="btn primary" href={round.applicationFormUrl} rel="noreferrer" target="_blank">신청 폼 열기</a>
-          )}
-          {round.documentFormUrl && (
-            <>
-              <a className="btn secondary" href={round.documentFormUrl} rel="noreferrer" target="_blank">서류 제출 폼 열기</a>
-              <p className="warning-text">선정 문자를 받은 분만 제출할 수 있어요</p>
-            </>
-          )}
+          <a className="btn secondary" href={round.documentFormUrl} rel="noreferrer" target="_blank">서류 제출 폼 열기</a>
+          <p className="warning-text">선정 문자를 받은 분만 제출할 수 있어요</p>
         </div>
       )}
     </>
@@ -706,7 +713,17 @@ type PolicyApplicationCta =
   | { kind: "official"; label: string; url: string }
   | { kind: "unavailable"; label: string; disabledNotice: string };
 
+function getCurrentGuideApplicationCta(guide: Policy["applicationGuide"]): PolicyApplicationCta | null {
+  const round = guide?.rounds.find((candidate) => candidate.status === "current" && candidate.key === guide.currentRoundKey)
+    ?? guide?.rounds.find((candidate) => candidate.status === "current");
+  const applyDays = daysUntilPolicyDeadline(guideDate(round?.applyUntil ?? null));
+  if (!round?.applicationFormUrl || applyDays === null || applyDays < 0) return null;
+  return { kind: "apply", label: "신청 폼 열기", url: round.applicationFormUrl };
+}
+
 function getPolicyApplicationCta(policy: Policy): PolicyApplicationCta {
+  const guideCta = getCurrentGuideApplicationCta(policy.applicationGuide);
+  if (guideCta) return guideCta;
   if (policy.applyUrl) return { kind: "apply", label: "신청하러 가기", url: policy.applyUrl };
   if (policy.officialUrl) return { kind: "official", label: "혜택 안내 보기", url: policy.officialUrl };
   return {
@@ -1362,6 +1379,43 @@ export function PolicyDetailPage() {
           </div>
         </div>
 
+      <div className="policy-detail-actions">
+        {!canUsePolicyControls && (
+          <p className="helper-text" id={policyControlsHelpId}>
+            {policyControlsHelpText}
+          </p>
+        )}
+        {applicationCta.kind === "unavailable" && (
+          <p className="helper-text" id={policyApplicationHelpId}>
+            {applicationCta.disabledNotice}
+          </p>
+        )}
+        <button
+          aria-describedby={!canUsePolicyControls ? policyControlsHelpId : undefined}
+          className="btn secondary"
+          disabled={!canUsePolicyControls}
+          onClick={canUsePolicyControls ? addToTrip : undefined}
+          type="button"
+        >
+          {isPolicyInTrip ? "일정에 담김" : "📅 내 일정에 담기"}
+        </button>
+        {applicationCta.kind !== "unavailable" ? (
+          <a className={applicationCta.kind === "apply" ? "btn primary" : "btn secondary"} href={applicationCta.url} rel="noreferrer" target="_blank">
+            {applicationCta.label}
+          </a>
+        ) : (
+          <button
+            aria-describedby={policyApplicationHelpId}
+            className="btn secondary"
+            disabled
+            title={applicationCta.disabledNotice}
+            type="button"
+          >
+            {applicationCta.label}
+          </button>
+        )}
+      </div>
+
         <section
           className="section-block"
           aria-label="지원내용"
@@ -1396,9 +1450,9 @@ export function PolicyDetailPage() {
               {periodSections.map((section) => (
                 <SurfaceCard className="policy-benefit-group" key={policyBenefitSectionKey(section)}>
                   <div className="policy-benefit-title">{section.title}</div>
-                  <ul className="bullet-list">
+                  <ul className="policy-period-list">
                     {section.items.map((item) => (
-                      <li key={policyBenefitItemKey(item)}><span className="bullet">✓</span><span>{renderPolicyBenefitItem(item)}</span></li>
+                      <li key={policyBenefitItemKey(item)}>{renderPolicyBenefitItem(item)}</li>
                     ))}
                   </ul>
                 </SurfaceCard>
@@ -1479,42 +1533,6 @@ export function PolicyDetailPage() {
         {notice && <Toast>{notice}</Toast>}
       </div>
 
-      <div className="sticky-cta">
-        {!canUsePolicyControls && (
-          <p className="helper-text" id={policyControlsHelpId}>
-            {policyControlsHelpText}
-          </p>
-        )}
-        {applicationCta.kind === "unavailable" && (
-          <p className="helper-text" id={policyApplicationHelpId}>
-            {applicationCta.disabledNotice}
-          </p>
-        )}
-        <button
-          aria-describedby={!canUsePolicyControls ? policyControlsHelpId : undefined}
-          className="btn secondary"
-          disabled={!canUsePolicyControls}
-          onClick={canUsePolicyControls ? addToTrip : undefined}
-          type="button"
-        >
-          {isPolicyInTrip ? "일정에 담김" : "📅 내 일정에 담기"}
-        </button>
-        {applicationCta.kind !== "unavailable" ? (
-          <a className={applicationCta.kind === "apply" ? "btn primary" : "btn secondary"} href={applicationCta.url} rel="noreferrer" target="_blank">
-            {applicationCta.label}
-          </a>
-        ) : (
-          <button
-            aria-describedby={policyApplicationHelpId}
-            className="btn secondary"
-            disabled
-            title={applicationCta.disabledNotice}
-            type="button"
-          >
-            {applicationCta.label}
-          </button>
-        )}
-      </div>
 
       <TripSelectSheet
         error={sheetError}
