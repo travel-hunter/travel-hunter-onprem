@@ -31,8 +31,14 @@ from app.schemas.trip import (
     UpdateTripPlaceRequest,
     UpdateTripStatusRequest,
 )
+from app.repositories.eligible_islands import normalize_island_name
 from app.services import email as email_service
 from app.services import itinerary_recommendations
+from app.services.eligible_island_catalog import (
+    ISLAND_POLICY_SOURCE_CATEGORY,
+    EligibleIslandSummary,
+    build_eligible_island_summary,
+)
 from app.services import local_half_trip_display
 from app.services import stay_discount_aliases
 from app.services import digital_tourism_policy_aliases
@@ -619,6 +625,21 @@ def _trip_policy_style_score(candidate: dict[str, object], trip: Trip) -> int:
     return min(matched * 15, 30)
 
 
+def _matches_approved_island(candidate: dict[str, object], trip: Trip) -> bool:
+    """Island support is recommended only when a trip place name exactly equals an approved island name.
+
+    Exact NFC + whitespace normalization only: `거문도 선착장` does not match `거문도` (spec).
+    """
+    approved_names = candidate.get("eligibleIslandNames")
+    if approved_names is None:
+        return True
+    return any(
+        normalize_island_name(place.place_name or "") in approved_names
+        for day in trip.days
+        for place in day.places
+    )
+
+
 def _recommended_policies(trip: Trip, candidates: list[dict[str, object]] | None = None, limit: int = 3) -> list[dict[str, str]]:
     if not candidates:
         return []
@@ -640,6 +661,7 @@ def _recommended_policies(trip: Trip, candidates: list[dict[str, object]] | None
         and str(candidate.get("canonicalSlug") or "") not in linked_slugs
         and candidate.get("canonicalPolicyId") not in linked_policy_ids
         and not _is_expired_external_trip_policy_candidate(candidate, trip)
+        and _matches_approved_island(candidate, trip)
     ]
     trip_region = (trip.region or "").strip()
     if trip.travel_area_id:
@@ -703,6 +725,7 @@ def _list_recommended_policy_candidates(db: Session) -> list[dict[str, object]]:
             return []
         raise
     candidates: list[dict[str, object]] = []
+    island_summary: EligibleIslandSummary | None = None
     for policy in policies:
         if (
             policy.external_source_record_id is not None
@@ -720,7 +743,12 @@ def _list_recommended_policy_candidates(db: Session) -> list[dict[str, object]]:
             if policy.external_source_record_id is not None
             else None
         )
-        candidates.append(_policy_to_trip_policy_candidate(policy, external_record))
+        candidate = _policy_to_trip_policy_candidate(policy, external_record)
+        if policy.source_category == ISLAND_POLICY_SOURCE_CATEGORY:
+            if island_summary is None:
+                island_summary = build_eligible_island_summary(db)
+            candidate["eligibleIslandNames"] = island_summary.normalized_names
+        candidates.append(candidate)
     return candidates
 
 

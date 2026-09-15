@@ -45,6 +45,9 @@ class Policy(BaseModel):
     sourceType: PolicySourceType = "internal"
     actionStatus: PolicyActionStatus | None = None
     photo: PolicyPhoto | None = None
+    # island_visit only: derived from the approved eligible island catalog, never the full list.
+    eligibleIslandCount: int | None = None
+    eligibleIslandsOfficialUrl: str | None = None
 
 
 class AppliedPolicyLinkedTrip(BaseModel):

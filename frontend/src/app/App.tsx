@@ -9,7 +9,7 @@ import { MyPage } from "../pages/MyPage";
 import { PolicyDetailPage, PolicyListPage } from "../pages/PolicyPages";
 import { ProfileSetupPage } from "../pages/ProfileSetupPage";
 import { LoadingState } from "../components/ui";
-import { AdminAuditLogsPage, AdminDashboardPage, AdminForbiddenPage, AdminLayout, AdminPoliciesPage, AdminPolicyEditorPage, AdminUserDetailPage, AdminUsersPage } from "../pages/admin/AdminPages";
+import { AdminAuditLogsPage, AdminDashboardPage, AdminForbiddenPage, AdminLayout, AdminPoliciesPage, AdminPolicyEditorPage, AdminPolicyReviewPage, AdminUserDetailPage, AdminUsersPage } from "../pages/admin/AdminPages";
 import { getOnboardingPath, isOnboardingRoute, withRedirect } from "./onboarding";
 import { useSession } from "./session";
 
@@ -36,6 +36,7 @@ export function App() {
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
             <Route path="/admin/policies" element={<AdminPoliciesPage />} />
+            <Route path="/admin/policy-review" element={<AdminPolicyReviewPage />} />
             <Route path="/admin/policies/new" element={<AdminPolicyEditorPage mode="create" />} />
             <Route path="/admin/policies/:policyId" element={<AdminPolicyEditorPage />} />
             <Route path="/admin/audit-logs" element={<AdminAuditLogsPage />} />

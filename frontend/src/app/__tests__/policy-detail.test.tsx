@@ -21,6 +21,81 @@ import {
 import { login, renderAppRoute } from "../../test/renderAppRoute";
 
 describe("Travel Hunter app — policy detail", () => {
+  it("shows the approved eligible island count and official link only for the island policy", async () => {
+    const islandPolicy: Policy = {
+      id: "2026-island-visit-support",
+      slug: "2026-island-visit-support",
+      label: "섬",
+      tag: "최대 10만원",
+      title: "2026 섬 여행비 지원",
+      org: "섬 방문의 해 추진위원회",
+      region: "전국",
+      deadline: "2026-12-31",
+      amount: "최대 10만원",
+      summary: "대상 섬 여행 시 여행비 지원",
+      match: 80,
+      category: "여행상품",
+      requirements: [],
+      documents: [],
+      officialUrl: "https://www.visitisland.kr/promotion2",
+      applyUrl: null,
+      sourceType: "external",
+      eligibleIslandCount: 12,
+      eligibleIslandsOfficialUrl: "https://www.visitisland.kr/notice/1",
+    };
+    const getPolicySpy = vi.spyOn(appDataApi, "getPolicy").mockResolvedValue(islandPolicy);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies/2026-island-visit-support");
+      expect(await screen.findByRole("heading", { name: "2026 섬 여행비 지원" })).toBeInTheDocument();
+      expect(screen.getByText("대상 섬 12곳")).toBeVisible();
+      expect(screen.getByRole("link", { name: "대상 섬 공식 안내" })).toHaveAttribute(
+        "href",
+        "https://www.visitisland.kr/notice/1",
+      );
+      expect(screen.getAllByText("최대 10만원").length).toBeGreaterThan(0);
+    } finally {
+      getPolicySpy.mockRestore();
+    }
+  });
+
+  it("renders no eligible island section when the count is missing or zero", async () => {
+    const plainPolicy: Policy = {
+      id: "plain-policy",
+      slug: "plain-policy",
+      label: "부산",
+      tag: "최대 2만원",
+      title: "부산 공식 캐시백",
+      org: "부산관광공사",
+      region: "부산",
+      deadline: "2026-06-30",
+      amount: "최대 2만원",
+      summary: "부산 야경투어 상품 할인",
+      match: 80,
+      category: "지역할인",
+      requirements: [],
+      documents: [],
+      officialUrl: "https://korean.visitkorea.or.kr/travelmonth/benefit.do",
+      applyUrl: null,
+      sourceType: "external",
+      eligibleIslandCount: 0,
+      eligibleIslandsOfficialUrl: "https://www.visitisland.kr/notice/1",
+    };
+    const getPolicySpy = vi.spyOn(appDataApi, "getPolicy").mockResolvedValue(plainPolicy);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies/plain-policy");
+      expect(await screen.findByRole("heading", { name: "부산 공식 캐시백" })).toBeInTheDocument();
+      expect(document.body).not.toHaveTextContent("대상 섬");
+    } finally {
+      getPolicySpy.mockRestore();
+    }
+  });
+
   it("renders normalized official benefit detail with enabled save and trip controls", async () => {
     const collectedPolicy: Policy = {
       id: "travelmonth-58",

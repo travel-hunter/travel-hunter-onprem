@@ -401,4 +401,100 @@ describe("admin pages", () => {
     await waitFor(() => expect(summarySpy.mock.calls.length).toBeGreaterThanOrEqual(2));
     expect(document.body).toHaveTextContent("수집 결과 success");
   });
+
+  it("renders review candidates separately from official source controls", async () => {
+    installStoredUser({ ...getPreviewUser(), role: "admin" });
+    const sourcesSpy = vi.spyOn(appDataApi as any, "listAdminCollectionSources").mockResolvedValue({ items: [{ key: "island_visit", displayName: "Island Visit support", officialUrl: "https://www.visitisland.kr/promotion2", sourceCategory: "island_visit", enabled: false, publicationMode: "review", lastOutcome: null, lastCollectedAt: null, lastError: null }] });
+    vi.spyOn(appDataApi as any, "listAdminPolicyReviewCandidates").mockResolvedValue({ items: [{ id: "candidate-1", externalSourceRecordId: "record-1", reviewStatus: "pending", changeKind: "new", title: "Island travel support", sourceCategory: "island_visit", officialUrl: "https://www.visitisland.kr/promotion2", benefitText: "travel support", region: null, city: null, status: "scheduled", startDate: "2026-10-01", endDate: "2026-10-31", createdAt: "2026-09-13T00:00:00" }] });
+    const updateSpy = vi.spyOn(appDataApi as any, "updateAdminCollectionSource").mockResolvedValue({ key: "island_visit", displayName: "Island Visit support", officialUrl: "https://www.visitisland.kr/promotion2", sourceCategory: "island_visit", enabled: true, publicationMode: "review", lastOutcome: null, lastCollectedAt: null, lastError: null });
+
+    renderAppRoute("/admin/policy-review");
+
+    await waitFor(() => expect(document.body).toHaveTextContent("Island Visit support"));
+    expect(document.body).toHaveTextContent("Island travel support");
+    await userEvent.click(screen.getByRole("button", { name: "\uC218\uC9D1 \uD65C\uC131\uD654" }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith("island_visit", true));
+    expect(sourcesSpy).toHaveBeenCalledTimes(1);
+  });
+
+  function makeCandidate(id: number) {
+    return { id: String(id), externalSourceRecordId: `record-${id}`, reviewStatus: "pending", changeKind: "new", title: `Candidate ${id}`, sourceCategory: "island_visit", officialUrl: "https://official.example/island", benefitText: "support", region: null, city: null, status: "scheduled", startDate: null, endDate: null, createdAt: "2026-09-13T00:00:00" };
+  }
+
+  function installBatchReviewPage() {
+    installStoredUser({ ...getPreviewUser(), role: "admin" });
+    vi.spyOn(appDataApi as any, "listAdminCollectionSources").mockResolvedValue({ items: [] });
+    vi.spyOn(appDataApi as any, "listAdminEligibleIslandSnapshots").mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0, approvedSnapshotId: null, approvedEntryCount: 0 });
+    const listSpy = vi.spyOn(appDataApi as any, "listAdminPolicyReviewCandidates").mockImplementation(async (...args: unknown[]) => {
+      const offset = (args[0] as { offset?: number } | undefined)?.offset ?? 0;
+      const items = offset >= 50 ? [makeCandidate(51)] : Array.from({ length: 50 }, (_, index) => makeCandidate(index + 1));
+      return { items, total: 71, limit: 50, offset };
+    });
+    const batchSpy = vi.spyOn(appDataApi as any, "approveAdminPolicyReviewCandidates").mockReset().mockResolvedValue({ approvedCount: 1, approvedCandidateIds: ["1"] });
+    return { listSpy, batchSpy };
+  }
+
+  it("pages review candidates by 50 and approves only the selected ones", async () => {
+    const { listSpy, batchSpy } = installBatchReviewPage();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReset().mockReturnValue(true);
+
+    renderAppRoute("/admin/policy-review");
+
+    await waitFor(() => expect(document.body).toHaveTextContent("Candidate 50"));
+    expect(document.body).toHaveTextContent("1 / 2");
+    expect(screen.getByRole("button", { name: "선택 승인" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("checkbox", { name: "Candidate 1 선택" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Candidate 3 선택" }));
+    await userEvent.click(screen.getByRole("button", { name: "선택 승인" }));
+    await waitFor(() => expect(batchSpy).toHaveBeenCalledWith({ candidateIds: ["1", "3"], approveAll: false }));
+    expect(confirmSpy.mock.calls[0][0]).toContain("2건");
+
+    await userEvent.click(screen.getByRole("button", { name: "다음" }));
+    await waitFor(() => expect(document.body).toHaveTextContent("Candidate 51"));
+    expect(document.body).toHaveTextContent("2 / 2");
+    expect(listSpy).toHaveBeenLastCalledWith({ limit: 50, offset: 50 });
+    confirmSpy.mockRestore();
+  });
+
+  it("approves all pending candidates only after a confirmation that states the total", async () => {
+    const { batchSpy } = installBatchReviewPage();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReset().mockReturnValueOnce(false).mockReturnValueOnce(true);
+
+    renderAppRoute("/admin/policy-review");
+
+    await waitFor(() => expect(document.body).toHaveTextContent("Candidate 1"));
+    await userEvent.click(screen.getByRole("button", { name: "전체 승인" }));
+    expect(batchSpy).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "전체 승인" }));
+    await waitFor(() => expect(batchSpy).toHaveBeenCalledWith({ candidateIds: [], approveAll: true }));
+    expect(confirmSpy.mock.calls[1][0]).toContain("71건");
+    confirmSpy.mockRestore();
+  });
+
+  it("shows catalog changes separately from policy review candidates", async () => {
+    installStoredUser({ ...getPreviewUser(), role: "admin" });
+    vi.spyOn(appDataApi as any, "listAdminCollectionSources").mockResolvedValue({ items: [] });
+    vi.spyOn(appDataApi as any, "listAdminPolicyReviewCandidates").mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    const snapshot = {
+      id: "3", reviewStatus: "pending", isCurrentApproved: false, entryCount: 42, addedCount: 3, removedCount: 1, changedCount: 0,
+      sourceNoticeUrl: "https://www.visitisland.kr/notice/12", sourceNoticeTitle: "2026 대상 섬 목록 안내",
+      attachmentFiles: [{ url: "https://www.visitisland.kr/files/south.xlsx", filename: "south.xlsx", sha256: "a".repeat(64) }],
+      attachmentFingerprint: "b".repeat(64), parserVersion: "xlsx-v1", fetchedAt: "2026-09-14T09:00:00", reviewedAt: null, reviewNote: null, createdAt: "2026-09-14T09:00:00",
+    };
+    vi.spyOn(appDataApi as any, "listAdminEligibleIslandSnapshots").mockResolvedValue({ items: [snapshot], total: 1, limit: 20, offset: 0, approvedSnapshotId: null, approvedEntryCount: 0 });
+    const approveSpy = vi.spyOn(appDataApi as any, "approveAdminEligibleIslandSnapshot").mockResolvedValue({ ...snapshot, reviewStatus: "approved", isCurrentApproved: true });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReset().mockReturnValue(true);
+
+    renderAppRoute("/admin/policy-review");
+
+    expect(await screen.findByRole("heading", { name: "대상 섬 목록 갱신" })).toBeVisible();
+    expect(screen.getByText("추가 3 · 삭제 1 · 변경 0")).toBeVisible();
+    expect(screen.getByRole("link", { name: "south.xlsx" })).toHaveAttribute("href", "https://www.visitisland.kr/files/south.xlsx");
+    expect(document.body).not.toHaveTextContent("승인하고 공개");
+    await userEvent.click(screen.getByRole("button", { name: "카탈로그 승인" }));
+    await waitFor(() => expect(approveSpy).toHaveBeenCalledWith("3"));
+    expect(confirmSpy.mock.calls[0][0]).toContain("추가 3");
+    expect(confirmSpy.mock.calls[0][0]).toContain("삭제 1");
+    confirmSpy.mockRestore();
+  });
 });

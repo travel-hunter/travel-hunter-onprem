@@ -1,5 +1,13 @@
 import {
   AdminAuditLogListResponse,
+  AdminCollectionSource,
+  AdminCollectionSourceListResponse,
+  AdminEligibleIslandCollectResponse,
+  AdminEligibleIslandSnapshot,
+  AdminEligibleIslandSnapshotDetail,
+  AdminEligibleIslandSnapshotListResponse,
+  AdminPolicyReviewCandidate,
+  AdminPolicyReviewCandidateListResponse,
   AdminExternalSourceSummaryResponse,
   AdminPolicyDetail,
   AdminPolicyListResponse,
@@ -295,4 +303,15 @@ export type AppDataApi = {
   createAdminPolicy: (policy: Record<string, unknown>) => Promise<AdminPolicyDetail>;
   updateAdminPolicy: (policyId: string, policy: Record<string, unknown>) => Promise<AdminPolicyDetail>;
   listAdminAuditLogs: (options?: { targetType?: string; targetId?: string; action?: string; limit?: number; offset?: number }) => Promise<AdminAuditLogListResponse>;
+  listAdminPolicyReviewCandidates: (options?: { limit?: number; offset?: number }) => Promise<AdminPolicyReviewCandidateListResponse>;
+  approveAdminPolicyReviewCandidates: (payload: { candidateIds: string[]; approveAll: boolean }) => Promise<{ approvedCount: number; approvedCandidateIds: string[] }>;
+  approveAdminPolicyReviewCandidate: (candidateId: string, note?: string) => Promise<AdminPolicyReviewCandidate>;
+  rejectAdminPolicyReviewCandidate: (candidateId: string, note: string) => Promise<AdminPolicyReviewCandidate>;
+  listAdminCollectionSources: () => Promise<AdminCollectionSourceListResponse>;
+  updateAdminCollectionSource: (sourceKey: string, enabled: boolean) => Promise<AdminCollectionSource>;
+  listAdminEligibleIslandSnapshots: (options?: { limit?: number; offset?: number }) => Promise<AdminEligibleIslandSnapshotListResponse>;
+  getAdminEligibleIslandSnapshot: (snapshotId: string) => Promise<AdminEligibleIslandSnapshotDetail>;
+  collectAdminEligibleIslandCatalog: () => Promise<AdminEligibleIslandCollectResponse>;
+  approveAdminEligibleIslandSnapshot: (snapshotId: string) => Promise<AdminEligibleIslandSnapshot>;
+  rejectAdminEligibleIslandSnapshot: (snapshotId: string, note: string) => Promise<AdminEligibleIslandSnapshot>;
 };

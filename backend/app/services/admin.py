@@ -65,6 +65,7 @@ SOURCE_CATEGORY_LABELS = {
     "local_half_trip": "반값여행",
     "digital_tourism_resident_card": "디지털관광주민증",
     "stay_discount": "숙박세일 페스타",
+    "island_visit": "섬 방문의 해",
 }
 
 def _source_label(source_category: str | None) -> str:

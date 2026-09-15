@@ -82,6 +82,8 @@ export type Policy = {
   sourceType?: "internal" | "external";
   actionStatus?: "infoOnly";
   photo?: PolicyPhoto | null;
+  eligibleIslandCount?: number | null;
+  eligibleIslandsOfficialUrl?: string | null;
 };
 
 export type AppliedPolicyLinkedTrip = {
@@ -398,4 +400,92 @@ export type ProfileOptions = {
   regions: readonly string[];
   travelStyles: readonly string[];
   budgets: readonly string[];
+};
+
+
+export type AdminPolicyReviewCandidate = {
+  id: string;
+  externalSourceRecordId: string;
+  reviewStatus: "pending" | "approved" | "rejected" | "superseded";
+  changeKind: "new" | "material_change";
+  title: string;
+  sourceCategory: string;
+  officialUrl: string;
+  benefitText: string;
+  region: string | null;
+  city: string | null;
+  status: string;
+  startDate: string | null;
+  endDate: string | null;
+  createdAt: string;
+};
+
+export type AdminPolicyReviewCandidateListResponse = { items: AdminPolicyReviewCandidate[]; total: number; limit: number; offset: number };
+
+export type AdminPolicyReviewBatchApproveResponse = { approvedCount: number; approvedCandidateIds: string[] };
+
+export type AdminCollectionSource = {
+  key: string;
+  displayName: string;
+  officialUrl: string;
+  sourceCategory: string;
+  enabled: boolean;
+  publicationMode: string;
+  lastOutcome: string | null;
+  lastCollectedAt: string | null;
+  lastError: string | null;
+};
+
+export type AdminCollectionSourceListResponse = { items: AdminCollectionSource[] };
+
+// Eligible island catalog review — separate from policy review candidates.
+export type AdminEligibleIslandAttachment = { url: string; filename: string; sha256: string };
+
+export type AdminEligibleIslandSnapshot = {
+  id: string;
+  reviewStatus: "pending" | "approved" | "rejected" | "superseded";
+  isCurrentApproved: boolean;
+  entryCount: number;
+  addedCount: number;
+  removedCount: number;
+  changedCount: number;
+  sourceNoticeUrl: string | null;
+  sourceNoticeTitle: string | null;
+  attachmentFiles: AdminEligibleIslandAttachment[];
+  attachmentFingerprint: string | null;
+  parserVersion: string;
+  fetchedAt: string;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+};
+
+export type AdminEligibleIslandSnapshotListResponse = {
+  items: AdminEligibleIslandSnapshot[];
+  total: number;
+  limit: number;
+  offset: number;
+  approvedSnapshotId: string | null;
+  approvedEntryCount: number;
+};
+
+export type AdminEligibleIslandEntry = { displayName: string; normalizedName: string; jurisdictionName: string };
+
+export type AdminEligibleIslandSnapshotDetail = {
+  snapshot: AdminEligibleIslandSnapshot;
+  added: AdminEligibleIslandEntry[];
+  removed: AdminEligibleIslandEntry[];
+  unchanged: AdminEligibleIslandEntry[];
+  addedTotal: number;
+  removedTotal: number;
+  unchangedTotal: number;
+  limit: number;
+  offset: number;
+};
+
+export type AdminEligibleIslandCollectResponse = {
+  outcome: "created" | "unchanged" | "identical" | "suspicious_shrink" | "download_failed" | "parser_changed";
+  snapshotId: string | null;
+  entryCount: number;
+  error: string | null;
 };

@@ -1,6 +1,7 @@
 import ast
 from pathlib import Path
 
+import sqlalchemy as sa
 import app.models  # noqa: F401
 from app.db.base import Base
 
@@ -28,6 +29,10 @@ def test_current_schema_tables_are_registered() -> None:
         "user_saved_policies",
         "notification_deliveries",
         "recommendations",
+        "eligible_island_catalogs",
+        "eligible_island_catalog_snapshots",
+        "eligible_island_snapshot_entries",
+        "eligible_islands",
     }
 
     assert expected_tables.issubset(set(Base.metadata.tables))
@@ -201,3 +206,8 @@ def test_alembic_revision_ids_fit_version_table() -> None:
         for filename, revision in revisions
         if len(revision) > ALEMBIC_VERSION_NUM_MAX_LENGTH
     ] == []
+
+
+def test_external_source_status_text_preserves_long_official_notice() -> None:
+    external_source_records = Base.metadata.tables["external_source_records"]
+    assert isinstance(external_source_records.c["status_text"].type, sa.Text)

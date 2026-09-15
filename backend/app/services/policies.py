@@ -35,6 +35,11 @@ from app.services.region_photos import (
     build_region_photo_index,
 )
 from app.services.policy_semantic_mapping import map_external_source_semantics
+from app.services.eligible_island_catalog import (
+    ISLAND_POLICY_SOURCE_CATEGORY,
+    EligibleIslandSummary,
+    build_eligible_island_summary,
+)
 
 
 LEGACY_CATEGORY_MAP = {
@@ -92,10 +97,20 @@ def _attach_region_photo(
         payload["photo"] = resolved.to_api()
 
 
+def _attach_eligible_islands(
+    payload: dict[str, object],
+    islands: EligibleIslandSummary | None,
+    source_category: str | None,
+) -> None:
+    if islands is not None and source_category == ISLAND_POLICY_SOURCE_CATEGORY:
+        payload.update(islands.policy_fields())
+
+
 def policy_to_api(
     policy: PolicyModel,
     *,
     photos: RegionPhotoIndex | None = None,
+    islands: EligibleIslandSummary | None = None,
 ) -> dict[str, object]:
     slug = policy.slug or str(policy.id)
     display = DISPLAY_OVERRIDES.get(slug, {})
@@ -137,6 +152,7 @@ def policy_to_api(
         policy.city,
         policy_id=policy.id,
     )
+    _attach_eligible_islands(payload, islands, policy.source_category)
     if (
         stay_discount_aliases.is_stay_discount_canonical_policy(policy)
         or stay_discount_aliases.is_stay_discount_area_policy(policy)
@@ -213,6 +229,7 @@ def external_source_record_to_policy_api(
     record: ExternalSourceRecord,
     *,
     photos: RegionPhotoIndex | None = None,
+    islands: EligibleIslandSummary | None = None,
 ) -> dict[str, object]:
     amount = record.benefit_value_text or record.benefit_text or "혜택 확인 필요"
     category = _external_policy_category(record)
@@ -282,6 +299,7 @@ def external_source_record_to_policy_api(
         "actionStatus": "infoOnly",
     }
     _attach_region_photo(payload, photos, record.region, record.city)
+    _attach_eligible_islands(payload, islands, record.source_category)
     if record.source_category == stay_discount_aliases.SOURCE_CATEGORY:
         stay_discount_aliases.apply_detail_display_fields(payload)
     return payload
@@ -291,8 +309,9 @@ def list_policies(db: Session | None = None) -> list[dict[str, object]]:
     if db is None:
         raise RuntimeError("DB session is required.")
     photos = build_region_photo_index(db)
+    islands = build_eligible_island_summary(db)
     return [
-        policy_to_api(policy, photos=photos)
+        policy_to_api(policy, photos=photos, islands=islands)
         for policy in policy_repository.list_policies(db)
     ]
 
@@ -307,10 +326,11 @@ def get_policy(
         raise RuntimeError("DB session is required.")
 
     photos = build_region_photo_index(db)
+    islands = build_eligible_island_summary(db)
     policy = policy_repository.get_policy_by_slug_any_status(db, policy_slug)
     if policy is not None:
         if is_public_policy(policy, today=today):
-            return policy_to_api(policy, photos=photos)
+            return policy_to_api(policy, photos=photos, islands=islands)
         digital_alias_policy = digital_tourism_policy_aliases.resolve_digital_tourism_alias_slug(
             db,
             policy_slug,
@@ -349,7 +369,7 @@ def get_policy(
     )
     if external_record is None:
         return None
-    return external_source_record_to_policy_api(external_record, photos=photos)
+    return external_source_record_to_policy_api(external_record, photos=photos, islands=islands)
 
 
 def save_policy(
@@ -405,10 +425,11 @@ def list_saved_policies(
         raise RuntimeError("User is required.")
 
     photos = build_region_photo_index(db)
+    islands = build_eligible_island_summary(db)
     seen_slugs: set[str] = set()
     saved_policies: list[dict[str, object]] = []
     for policy in policy_repository.list_saved_policies(db, user_id=user.id):
-        policy_payload = policy_to_api(policy, photos=photos)
+        policy_payload = policy_to_api(policy, photos=photos, islands=islands)
         slug = str(policy_payload["slug"])
         if slug in seen_slugs:
             continue
@@ -427,8 +448,9 @@ def list_applied_policies(
         raise RuntimeError("User is required.")
 
     photos = build_region_photo_index(db)
+    islands = build_eligible_island_summary(db)
     return [
-        policy_to_api(policy, photos=photos)
+        policy_to_api(policy, photos=photos, islands=islands)
         for policy in policy_repository.list_applied_policies(db, user_id=user.id)
     ]
 
@@ -443,6 +465,7 @@ def list_applied_policy_links(
         raise RuntimeError("User is required.")
 
     photos = build_region_photo_index(db)
+    islands = build_eligible_island_summary(db)
     grouped: dict[int, dict[str, object]] = {}
     for link in policy_repository.list_applied_policy_links(db, user_id=user.id):
         policy = link.policy
@@ -451,7 +474,7 @@ def list_applied_policy_links(
             continue
         if policy.id not in grouped:
             grouped[policy.id] = {
-                "policy": policy_to_api(policy, photos=photos),
+                "policy": policy_to_api(policy, photos=photos, islands=islands),
                 "linkedTrips": [],
             }
         linked_trips = grouped[policy.id]["linkedTrips"]

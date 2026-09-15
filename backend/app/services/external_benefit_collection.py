@@ -13,8 +13,14 @@ from sqlalchemy.orm import Session
 
 from app.models import ExternalSourceRecord
 from app.repositories import external_sources as external_source_repository
+from app.repositories import policy_collection_sources
 from app.services import digital_tourism_resident_card as dgtour_identity
-from app.services import policy_normalization
+from app.services import policy_candidate_review
+from app.services.island_visit_parser import (
+    SOURCE_CATEGORY as ISLAND_VISIT_SOURCE_CATEGORY,
+    SOURCE_URL as ISLAND_VISIT_SOURCE_URL,
+    parse_island_visit_support,
+)
 from app.services.dgtourcard_parser import (
     enrich_dgtourcard_benefits_with_detail_pages,
     parse_dgtourcard_benefits,
@@ -100,8 +106,8 @@ def collect_external_benefits_from_html_sources(
                     error=str(exc),
                 )
             )
-    if all_rows:
-        policy_normalization.promote_external_benefits_to_policies(db)
+    _queue_review_candidates(db, all_rows)
+    _record_source_results(db, source_results, collected_at=fetched_at)
     db.commit()
     return _build_result(source_results, len(all_rows))
 
@@ -117,7 +123,10 @@ def collect_external_benefits_from_live_sources(
     today = today or fetched_at.date()
     source_results: list[SourceCollectionResult] = []
     all_rows = []
+    enabled_categories = _enabled_source_categories(db)
     for source in _source_registry():
+        if source.source_category not in enabled_categories:
+            continue
         try:
             if source.source_category == dgtour_identity.SOURCE_CATEGORY:
                 rows, result = _collect_digital_tourism_records(
@@ -146,12 +155,47 @@ def collect_external_benefits_from_live_sources(
         for source in source_results
     ):
         enrich_existing_local_half_trip_detail_fields(db, timeout=timeout)
-    if all_rows:
-        policy_normalization.promote_external_benefits_to_policies(db)
+    _queue_review_candidates(db, all_rows)
+    _record_source_results(db, source_results, collected_at=fetched_at)
     db.commit()
     return _build_result(source_results, len(all_rows))
 
 
+
+
+
+def _record_source_results(
+    db: Session,
+    source_results: list[SourceCollectionResult],
+    *,
+    collected_at: datetime,
+) -> None:
+    if not hasattr(db, "scalars"):
+        return
+    for result in source_results:
+        source = policy_collection_sources.get_collection_source_by_key(
+            db, key=result.source_category
+        )
+        if source is not None:
+            policy_collection_sources.record_collection_source_run(
+                db,
+                source=source,
+                outcome=result.outcome,
+                collected_at=collected_at,
+                error=result.error,
+            )
+
+
+def _enabled_source_categories(db: Session) -> set[str]:
+    if not hasattr(db, "scalars"):
+        return {source.source_category for source in _source_registry()}
+    return policy_collection_sources.enabled_collection_source_categories(db)
+
+
+def _queue_review_candidates(db: Session, rows: list[object]) -> None:
+    for row in rows:
+        if isinstance(row, ExternalSourceRecord) and row.id is not None:
+            policy_candidate_review.classify_candidate(db, record=row)
 
 def fetch_digital_tourism_partner_benefits(
     *,
@@ -458,6 +502,12 @@ def _parser_for(source_category: str) -> Parser:
             fetched_at=fetched_at,
             today=today,
         )
+    if source_category == ISLAND_VISIT_SOURCE_CATEGORY:
+        return lambda html, fetched_at, today: parse_island_visit_support(
+            html,
+            fetched_at=fetched_at,
+            today=today,
+        )
     if source_category == dgtour_identity.SOURCE_CATEGORY:
         return lambda html, fetched_at, today: []
     if source_category == "stay_discount":
@@ -498,11 +548,20 @@ def _source_registry() -> tuple[SourceDefinition, ...]:
             TRAVELMONTH_STAY_DISCOUNT_URL,
             _parser_for("stay_discount"),
         ),
+        SourceDefinition(
+            ISLAND_VISIT_SOURCE_CATEGORY,
+            ISLAND_VISIT_SOURCE_URL,
+            _parser_for(ISLAND_VISIT_SOURCE_CATEGORY),
+        ),
     )
 
 
 def _source_failure_result(source: SourceDefinition, exc: Exception) -> SourceCollectionResult:
-    outcome = "source_unavailable" if _is_source_unavailable(exc) else "error"
+    outcome = (
+        "parser_changed"
+        if exc.__class__.__name__ == "IslandVisitParserChangedError"
+        else "source_unavailable" if _is_source_unavailable(exc) else "error"
+    )
     return SourceCollectionResult(
         source_category=source.source_category,
         parsed_count=0,
@@ -531,7 +590,7 @@ def _build_result(
     failed_count = sum(
         1
         for item in source_results
-        if item.outcome == "error"
+        if item.outcome in {"error", "parser_changed"}
         or (item.outcome == "source_unavailable" and item.source_category in required_sources)
     )
     if failed_count == 0:

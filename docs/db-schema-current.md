@@ -193,6 +193,18 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 - `policies.city`: 시군구 표시명(String(80), nullable). `external_source_records.city`를 승격 시 복사한다. 숙박세일 지역 alias 정책은 시도 단위 노출이므로 `NULL`로 명시 저장한다. 관리자 override/legacy dgtour 조기 반환 경로에서는 갱신하지 않으며, 그 경우 시도 대표 사진으로 폴백한다.
 - `region_photos`: 정책 카드 hero/썸네일용 지역 대표 관광지 사진 조회 테이블. `(provider, sido, city)` UNIQUE이며 `city`는 NOT NULL 기본 `''`(빈 문자열이 시도 대표 사진 sentinel — NULL이면 UNIQUE가 중복 upsert를 못 막는다). `sido`는 `policies.region`과 동일한 축약형(전남/경북)만 저장한다. `hero_image_url`/`thumb_image_url`/`provider_image_url`(원본 출처 보존), `storage_kind`(`remote`→S3 전환 시 `managed`), `attribution_text`(공공누리 1유형 출처표시, 기본 `사진: 한국관광공사`), `status`(`active`/`blocked` — 배포 없이 사진 차단), `fetched_at`(URL 부패 재검증 기준)을 담는다. 채움은 `backend/scripts/backfill_region_photos.py`(TourAPI, 키 없으면 no-op)가 담당한다.
 
+수집 소스·검토 후보 테이블 (2026-09-13, `0038_policy_source_catalog`; `0039_external_source_status_text`는 `external_source_records.status_text`를 Text로 넓혔다):
+
+- `policy_collection_sources`: 코드 소유 수집 소스 카탈로그. `key` UNIQUE, `adapter_key`, `official_url`, `source_category`, `display_name`, `enabled`, `publication_mode`(`review` | `auto_after_reviewed_baseline`, CHECK), `expected_min_records`, 최근 실행 상태(`last_outcome`/`last_collected_at`/`last_successful_at`/`last_error`). 행은 마이그레이션이 아니라 저장소(`ensure_builtin_collection_sources`)가 만든다.
+- `policy_review_candidates`: 수집 근거 1건을 공개 정책으로 승격하기 전 검토 후보. `external_source_record_id` FK(CASCADE), `review_status`(`pending`/`approved`/`rejected`/`superseded`, CHECK), `change_kind`(`new`/`material_change`, CHECK), `evidence_fingerprint`, `reviewed_by_user_id`/`reviewed_at`/`review_note`, `published_policy_id`. `(external_source_record_id, evidence_fingerprint)`? unique? ???. ?? source record? ?? fingerprint? ?? ???? ? pending candidate? ????.
+
+대상 섬 승인 카탈로그 (2026-09-14, `0040_eligible_island_catalog`; 마이그레이션은 행을 넣지 않고 `island_visit_2026` 카탈로그 행은 저장소가 만든다):
+
+- `eligible_island_catalogs`: 프로그램 1건(`key`=`island_visit_2026` UNIQUE, `display_name`, `notice_list_url`, `enabled`)과 현재 승인 스냅샷 참조 `approved_snapshot_id`(FK 없음 — 스냅샷↔카탈로그 순환 참조를 피하며 스냅샷은 삭제되지 않고 상태만 바뀐다). 승인 처리는 이 행을 `FOR UPDATE`로 잠가 직렬화한다.
+- `eligible_island_catalog_snapshots`: 공지 수집 1회의 후보 버전. `catalog_id` FK(CASCADE), `notice_url`/`notice_title`, `attachment_url`/`attachment_filename`(첫 파일), `attachment_fingerprint`(정렬된 `url|sha256` 집합의 SHA-256, index), `attachment_documents` JSONB(`[{url, filename, sha256}]`), `parser_version`, `fetched_at`, `entry_count`, `added_count`/`removed_count`/`changed_count`, `review_status`(`pending`/`approved`/`rejected`/`superseded`, CHECK), `reviewed_by_user_id` FK(SET NULL)/`reviewed_at`/`review_note`. 첨부 바이트는 저장하지 않는다.
+- `eligible_island_snapshot_entries`: 스냅샷의 대상지 행. `snapshot_id` FK(CASCADE), `display_name`, `normalized_name`(NFC + 공백 축약), `jurisdiction_name`, `raw_region_text`, `row_fingerprint`. `(snapshot_id, normalized_name, jurisdiction_name)` UNIQUE — 같은 이름도 관할이 다르면 별도 행이다.
+- `eligible_islands`: 현재 승인된 읽기 전용 카탈로그. `catalog_id`/`snapshot_id` FK(CASCADE), `display_name`, `normalized_name`(index), `jurisdiction_name`. `(catalog_id, normalized_name, jurisdiction_name)` UNIQUE. 승인 시 한 트랜잭션에서 통째로 교체되며 정책 상세 수치와 일정 추천은 이 테이블만 읽는다.
+
 정책 상세 화면용 구조화 컬럼:
 
 - `structured_detail`: `supportContent`, `periods`, `applicationTarget`, `requiredDocuments`, `notes` 다섯 섹션을 담는 JSONB 정리본이다. raw 수집 JSON이 아니라 사용자 화면에서 바로 섹션 렌더링하기 위한 보조/장기 기준 데이터이며, 섹션이 없거나 비어 있으면 해당 섹션만 기존 `summary`/`requirements`/`documents` fallback을 사용한다. 공식 링크는 이 JSON에 중복 저장하지 않고 top-level `official_url`/`apply_url`에서 노출한다.

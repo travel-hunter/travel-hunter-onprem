@@ -1319,6 +1319,16 @@ export function PolicyDetailPage() {
           </section>
         )}
 
+        {(policy.eligibleIslandCount ?? 0) > 0 && policy.eligibleIslandsOfficialUrl && (
+          <section className="section-block" aria-label="대상 섬">
+            <h3>🏝 대상 섬</h3>
+            <div>대상 섬 {policy.eligibleIslandCount}곳</div>
+            <a className="text-link" href={policy.eligibleIslandsOfficialUrl} rel="noreferrer" target="_blank">
+              대상 섬 공식 안내
+            </a>
+          </section>
+        )}
+
         {requirementSections.length > 0 && (
           <section className="section-block">
             <div className="policy-requirement-grid">

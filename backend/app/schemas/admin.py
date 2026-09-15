@@ -167,3 +167,132 @@ class AdminExternalSourceSummaryResponse(BaseModel):
     freshRecords: int
     promotedPolicyCount: int
     latestFetchedAt: str | None = None
+
+
+class AdminPolicyReviewCandidateItem(BaseModel):
+    id: str
+    externalSourceRecordId: str
+    reviewStatus: Literal["pending", "approved", "rejected", "superseded"]
+    changeKind: Literal["new", "material_change"]
+    title: str
+    sourceCategory: str
+    officialUrl: str
+    benefitText: str
+    region: str | None = None
+    city: str | None = None
+    status: str
+    startDate: date | None = None
+    endDate: date | None = None
+    createdAt: str
+
+
+class AdminPolicyReviewCandidateListResponse(BaseModel):
+    items: list[AdminPolicyReviewCandidateItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminPolicyReviewBatchApproveRequest(BaseModel):
+    candidateIds: list[str] = Field(default_factory=list, max_length=100)
+    approveAll: bool = False
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class AdminPolicyReviewBatchApproveResponse(BaseModel):
+    approvedCount: int
+    approvedCandidateIds: list[str]
+
+
+class AdminPolicyReviewDecisionRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class AdminPolicyReviewRejectRequest(BaseModel):
+    note: str = Field(min_length=1, max_length=2000)
+
+
+class AdminCollectionSourceItem(BaseModel):
+    key: str
+    displayName: str
+    officialUrl: str
+    sourceCategory: str
+    enabled: bool
+    publicationMode: str
+    lastOutcome: str | None = None
+    lastCollectedAt: str | None = None
+    lastError: str | None = None
+
+
+class AdminCollectionSourceListResponse(BaseModel):
+    items: list[AdminCollectionSourceItem]
+
+
+class AdminCollectionSourceUpdateRequest(BaseModel):
+    enabled: bool
+
+
+# Eligible island catalog review — independent of policy review candidates.
+
+
+class AdminEligibleIslandAttachment(BaseModel):
+    url: str
+    filename: str
+    sha256: str
+
+
+class AdminEligibleIslandSnapshotItem(BaseModel):
+    id: str
+    reviewStatus: Literal["pending", "approved", "rejected", "superseded"]
+    isCurrentApproved: bool
+    entryCount: int
+    addedCount: int
+    removedCount: int
+    changedCount: int
+    sourceNoticeUrl: str | None = None
+    sourceNoticeTitle: str | None = None
+    attachmentFiles: list[AdminEligibleIslandAttachment]
+    attachmentFingerprint: str | None = None
+    parserVersion: str
+    fetchedAt: str
+    reviewedAt: str | None = None
+    reviewNote: str | None = None
+    createdAt: str
+
+
+class AdminEligibleIslandSnapshotListResponse(BaseModel):
+    items: list[AdminEligibleIslandSnapshotItem]
+    total: int
+    limit: int
+    offset: int
+    approvedSnapshotId: str | None = None
+    approvedEntryCount: int
+
+
+class AdminEligibleIslandEntry(BaseModel):
+    displayName: str
+    normalizedName: str
+    jurisdictionName: str
+
+
+class AdminEligibleIslandSnapshotDetail(BaseModel):
+    snapshot: AdminEligibleIslandSnapshotItem
+    added: list[AdminEligibleIslandEntry]
+    removed: list[AdminEligibleIslandEntry]
+    unchanged: list[AdminEligibleIslandEntry]
+    addedTotal: int
+    removedTotal: int
+    unchangedTotal: int
+    limit: int
+    offset: int
+
+
+class AdminEligibleIslandRejectRequest(BaseModel):
+    note: str = Field(min_length=1, max_length=2000)
+
+
+class AdminEligibleIslandCollectResponse(BaseModel):
+    outcome: Literal["created", "unchanged", "identical", "suspicious_shrink", "download_failed", "parser_changed"]
+    snapshotId: str | None = None
+    entryCount: int
+    error: str | None = None

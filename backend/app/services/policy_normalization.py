@@ -10,6 +10,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, object_session
 
 from app.models import ExternalSourceRecord, Policy
+from app.repositories import admin as admin_repository
 from app.repositories import external_sources as external_source_repository
 from app.services.policies import _external_policy_category
 from app.services import digital_tourism_resident_card as dgtour_identity
@@ -502,6 +503,34 @@ def _hide_stay_discount_policies_for_record(
         policy.last_verified_at = record.last_verified_at
         policy.verification_status = record.freshness_status
     return bool(policies)
+
+
+def promote_external_benefit_record(
+    db: Session,
+    *,
+    record: ExternalSourceRecord,
+) -> Policy:
+    """Promote one explicitly reviewed source record without touching any other cards."""
+    if record.source_category == STAY_DISCOUNT_SOURCE_CATEGORY:
+        _promote_stay_discount_record(db, record)
+        # The app session runs with autoflush=False: a canonical row added just above is
+        # invisible to the lookup below until it is flushed.
+        db.flush()
+        policy = _get_stay_discount_canonical_policy(db, record)
+        if policy is None:
+            raise PolicyNormalizationError("stay discount policy was not created")
+        db.flush()
+        return policy
+
+    policy = _get_policy_for_external_record(db, record)
+    if policy is None:
+        policy = Policy()
+        _assign_policy_from_external_record(policy, record)
+        admin_repository.add_policy(db, policy)
+        return policy
+    _assign_policy_from_external_record(policy, record)
+    db.flush()
+    return policy
 
 
 def promote_external_benefits_to_policies(

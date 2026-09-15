@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict PcMyBnJ0vM5FzsCBhkHVINTl1a8p22d6bMzfeIQVkGiutsacrX58WRv6sWhn8rd
+\restrict TQUVIeKOsPr0aFfzjmZas7eSoAtHYtdDmU1Mhu6edjIVDxUh8LcOmETBPJ5xJLE
 
 -- Dumped from database version 16.14
 -- Dumped by pg_dump version 16.14
@@ -96,6 +96,158 @@ ALTER SEQUENCE public.auth_refresh_tokens_id_seq OWNED BY public.auth_refresh_to
 
 
 --
+-- Name: eligible_island_catalog_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.eligible_island_catalog_snapshots (
+    id bigint NOT NULL,
+    catalog_id bigint NOT NULL,
+    notice_url character varying(500),
+    notice_title character varying(300),
+    attachment_url character varying(500),
+    attachment_filename character varying(255),
+    attachment_fingerprint character varying(64),
+    attachment_documents jsonb DEFAULT '[]'::jsonb NOT NULL,
+    parser_version character varying(40) DEFAULT 'v1'::character varying NOT NULL,
+    fetched_at timestamp without time zone DEFAULT now() NOT NULL,
+    entry_count integer DEFAULT 0 NOT NULL,
+    added_count integer DEFAULT 0 NOT NULL,
+    removed_count integer DEFAULT 0 NOT NULL,
+    changed_count integer DEFAULT 0 NOT NULL,
+    review_status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
+    reviewed_by_user_id bigint,
+    reviewed_at timestamp without time zone,
+    review_note text,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_eligible_island_catalog_snapshots_review_status CHECK (((review_status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying, 'superseded'::character varying])::text[])))
+);
+
+
+--
+-- Name: eligible_island_catalog_snapshots_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.eligible_island_catalog_snapshots_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: eligible_island_catalog_snapshots_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.eligible_island_catalog_snapshots_id_seq OWNED BY public.eligible_island_catalog_snapshots.id;
+
+
+--
+-- Name: eligible_island_catalogs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.eligible_island_catalogs (
+    id bigint NOT NULL,
+    key character varying(80) NOT NULL,
+    display_name character varying(120) NOT NULL,
+    notice_list_url character varying(500) NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    approved_snapshot_id bigint,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: eligible_island_catalogs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.eligible_island_catalogs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: eligible_island_catalogs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.eligible_island_catalogs_id_seq OWNED BY public.eligible_island_catalogs.id;
+
+
+--
+-- Name: eligible_island_snapshot_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.eligible_island_snapshot_entries (
+    id bigint NOT NULL,
+    snapshot_id bigint NOT NULL,
+    display_name character varying(120) NOT NULL,
+    normalized_name character varying(120) NOT NULL,
+    jurisdiction_name character varying(120) NOT NULL,
+    raw_region_text character varying(300),
+    row_fingerprint character varying(64) NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: eligible_island_snapshot_entries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.eligible_island_snapshot_entries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: eligible_island_snapshot_entries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.eligible_island_snapshot_entries_id_seq OWNED BY public.eligible_island_snapshot_entries.id;
+
+
+--
+-- Name: eligible_islands; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.eligible_islands (
+    id bigint NOT NULL,
+    catalog_id bigint NOT NULL,
+    snapshot_id bigint NOT NULL,
+    display_name character varying(120) NOT NULL,
+    normalized_name character varying(120) NOT NULL,
+    jurisdiction_name character varying(120) NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: eligible_islands_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.eligible_islands_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: eligible_islands_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.eligible_islands_id_seq OWNED BY public.eligible_islands.id;
+
+
+--
 -- Name: external_source_records; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -115,7 +267,7 @@ CREATE TABLE public.external_source_records (
     region character varying(50),
     city character varying(80),
     is_nationwide boolean DEFAULT false NOT NULL,
-    status_text character varying(50),
+    status_text text,
     status character varying(30) NOT NULL,
     start_date date,
     end_date date,
@@ -371,6 +523,49 @@ ALTER SEQUENCE public.policies_id_seq OWNED BY public.policies.id;
 
 
 --
+-- Name: policy_collection_sources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_collection_sources (
+    id bigint NOT NULL,
+    key character varying(80) NOT NULL,
+    adapter_key character varying(80) NOT NULL,
+    official_url character varying(500) NOT NULL,
+    source_category character varying(80) NOT NULL,
+    display_name character varying(120) NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    publication_mode character varying(40) DEFAULT 'review'::character varying NOT NULL,
+    expected_min_records integer DEFAULT 0 NOT NULL,
+    last_outcome character varying(40),
+    last_collected_at timestamp without time zone,
+    last_successful_at timestamp without time zone,
+    last_error text,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_policy_collection_sources_publication_mode CHECK (((publication_mode)::text = ANY ((ARRAY['review'::character varying, 'auto_after_reviewed_baseline'::character varying])::text[])))
+);
+
+
+--
+-- Name: policy_collection_sources_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.policy_collection_sources_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: policy_collection_sources_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.policy_collection_sources_id_seq OWNED BY public.policy_collection_sources.id;
+
+
+--
 -- Name: policy_documents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -400,6 +595,87 @@ CREATE SEQUENCE public.policy_documents_id_seq
 --
 
 ALTER SEQUENCE public.policy_documents_id_seq OWNED BY public.policy_documents.id;
+
+
+--
+-- Name: policy_photos; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_photos (
+    id bigint NOT NULL,
+    policy_id bigint NOT NULL,
+    provider character varying(30) NOT NULL,
+    provider_content_id character varying(60),
+    image_url character varying(500) NOT NULL,
+    thumbnail_url character varying(500),
+    alt_text character varying(200) NOT NULL,
+    attribution_text character varying(120) NOT NULL,
+    relevance_score integer NOT NULL,
+    assignment_reason character varying(30) NOT NULL,
+    status character varying(20) DEFAULT 'active'::character varying NOT NULL,
+    fetched_at timestamp without time zone,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: policy_photos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.policy_photos_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: policy_photos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.policy_photos_id_seq OWNED BY public.policy_photos.id;
+
+
+--
+-- Name: policy_review_candidates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_review_candidates (
+    id bigint NOT NULL,
+    external_source_record_id bigint NOT NULL,
+    review_status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
+    change_kind character varying(20) NOT NULL,
+    evidence_fingerprint character varying(64) NOT NULL,
+    reviewed_by_user_id bigint,
+    reviewed_at timestamp without time zone,
+    review_note text,
+    published_policy_id bigint,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_policy_review_candidates_change_kind CHECK (((change_kind)::text = ANY ((ARRAY['new'::character varying, 'material_change'::character varying])::text[]))),
+    CONSTRAINT ck_policy_review_candidates_review_status CHECK (((review_status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying, 'superseded'::character varying])::text[])))
+);
+
+
+--
+-- Name: policy_review_candidates_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.policy_review_candidates_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: policy_review_candidates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.policy_review_candidates_id_seq OWNED BY public.policy_review_candidates.id;
 
 
 --
@@ -808,6 +1084,34 @@ ALTER TABLE ONLY public.auth_refresh_tokens ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
+-- Name: eligible_island_catalog_snapshots id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_island_catalog_snapshots ALTER COLUMN id SET DEFAULT nextval('public.eligible_island_catalog_snapshots_id_seq'::regclass);
+
+
+--
+-- Name: eligible_island_catalogs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_island_catalogs ALTER COLUMN id SET DEFAULT nextval('public.eligible_island_catalogs_id_seq'::regclass);
+
+
+--
+-- Name: eligible_island_snapshot_entries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_island_snapshot_entries ALTER COLUMN id SET DEFAULT nextval('public.eligible_island_snapshot_entries_id_seq'::regclass);
+
+
+--
+-- Name: eligible_islands id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_islands ALTER COLUMN id SET DEFAULT nextval('public.eligible_islands_id_seq'::regclass);
+
+
+--
 -- Name: external_source_records id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -850,10 +1154,31 @@ ALTER TABLE ONLY public.policies ALTER COLUMN id SET DEFAULT nextval('public.pol
 
 
 --
+-- Name: policy_collection_sources id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_collection_sources ALTER COLUMN id SET DEFAULT nextval('public.policy_collection_sources_id_seq'::regclass);
+
+
+--
 -- Name: policy_documents id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.policy_documents ALTER COLUMN id SET DEFAULT nextval('public.policy_documents_id_seq'::regclass);
+
+
+--
+-- Name: policy_photos id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_photos ALTER COLUMN id SET DEFAULT nextval('public.policy_photos_id_seq'::regclass);
+
+
+--
+-- Name: policy_review_candidates id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_review_candidates ALTER COLUMN id SET DEFAULT nextval('public.policy_review_candidates_id_seq'::regclass);
 
 
 --
@@ -955,6 +1280,46 @@ ALTER TABLE ONLY public.alembic_version
 
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: eligible_island_catalog_snapshots eligible_island_catalog_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_island_catalog_snapshots
+    ADD CONSTRAINT eligible_island_catalog_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: eligible_island_catalogs eligible_island_catalogs_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_island_catalogs
+    ADD CONSTRAINT eligible_island_catalogs_key_key UNIQUE (key);
+
+
+--
+-- Name: eligible_island_catalogs eligible_island_catalogs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_island_catalogs
+    ADD CONSTRAINT eligible_island_catalogs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: eligible_island_snapshot_entries eligible_island_snapshot_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_island_snapshot_entries
+    ADD CONSTRAINT eligible_island_snapshot_entries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: eligible_islands eligible_islands_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_islands
+    ADD CONSTRAINT eligible_islands_pkey PRIMARY KEY (id);
 
 
 --
@@ -1070,11 +1435,51 @@ ALTER TABLE ONLY public.policies
 
 
 --
+-- Name: policy_collection_sources policy_collection_sources_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_collection_sources
+    ADD CONSTRAINT policy_collection_sources_key_key UNIQUE (key);
+
+
+--
+-- Name: policy_collection_sources policy_collection_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_collection_sources
+    ADD CONSTRAINT policy_collection_sources_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: policy_documents policy_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.policy_documents
     ADD CONSTRAINT policy_documents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: policy_photos policy_photos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_photos
+    ADD CONSTRAINT policy_photos_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: policy_photos policy_photos_policy_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_photos
+    ADD CONSTRAINT policy_photos_policy_id_key UNIQUE (policy_id);
+
+
+--
+-- Name: policy_review_candidates policy_review_candidates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_review_candidates
+    ADD CONSTRAINT policy_review_candidates_pkey PRIMARY KEY (id);
 
 
 --
@@ -1206,6 +1611,22 @@ ALTER TABLE ONLY public.trips
 
 
 --
+-- Name: eligible_island_snapshot_entries uq_eligible_island_snapshot_entries_snapshot_name_jurisdiction; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_island_snapshot_entries
+    ADD CONSTRAINT uq_eligible_island_snapshot_entries_snapshot_name_jurisdiction UNIQUE (snapshot_id, normalized_name, jurisdiction_name);
+
+
+--
+-- Name: eligible_islands uq_eligible_islands_catalog_name_jurisdiction; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_islands
+    ADD CONSTRAINT uq_eligible_islands_catalog_name_jurisdiction UNIQUE (catalog_id, normalized_name, jurisdiction_name);
+
+
+--
 -- Name: user_saved_policies user_saved_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1291,6 +1712,62 @@ CREATE INDEX ix_admin_audit_logs_target_id ON public.admin_audit_logs USING btre
 --
 
 CREATE INDEX ix_admin_audit_logs_target_type ON public.admin_audit_logs USING btree (target_type);
+
+
+--
+-- Name: ix_eligible_island_catalog_snapshots_attachment_fingerprint; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_eligible_island_catalog_snapshots_attachment_fingerprint ON public.eligible_island_catalog_snapshots USING btree (attachment_fingerprint);
+
+
+--
+-- Name: ix_eligible_island_catalog_snapshots_catalog_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_eligible_island_catalog_snapshots_catalog_id ON public.eligible_island_catalog_snapshots USING btree (catalog_id);
+
+
+--
+-- Name: ix_eligible_island_catalog_snapshots_reviewed_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_eligible_island_catalog_snapshots_reviewed_by_user_id ON public.eligible_island_catalog_snapshots USING btree (reviewed_by_user_id);
+
+
+--
+-- Name: ix_eligible_island_catalogs_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_eligible_island_catalogs_key ON public.eligible_island_catalogs USING btree (key);
+
+
+--
+-- Name: ix_eligible_island_snapshot_entries_snapshot_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_eligible_island_snapshot_entries_snapshot_id ON public.eligible_island_snapshot_entries USING btree (snapshot_id);
+
+
+--
+-- Name: ix_eligible_islands_catalog_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_eligible_islands_catalog_id ON public.eligible_islands USING btree (catalog_id);
+
+
+--
+-- Name: ix_eligible_islands_normalized_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_eligible_islands_normalized_name ON public.eligible_islands USING btree (normalized_name);
+
+
+--
+-- Name: ix_eligible_islands_snapshot_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_eligible_islands_snapshot_id ON public.eligible_islands USING btree (snapshot_id);
 
 
 --
@@ -1434,6 +1911,41 @@ CREATE INDEX ix_policies_source_type ON public.policies USING btree (source_type
 
 
 --
+-- Name: ix_policy_collection_sources_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_policy_collection_sources_key ON public.policy_collection_sources USING btree (key);
+
+
+--
+-- Name: ix_policy_collection_sources_source_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_policy_collection_sources_source_category ON public.policy_collection_sources USING btree (source_category);
+
+
+--
+-- Name: ix_policy_review_candidates_external_source_record_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_policy_review_candidates_external_source_record_id ON public.policy_review_candidates USING btree (external_source_record_id);
+
+
+--
+-- Name: ix_policy_review_candidates_published_policy_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_policy_review_candidates_published_policy_id ON public.policy_review_candidates USING btree (published_policy_id);
+
+
+--
+-- Name: ix_policy_review_candidates_reviewed_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_policy_review_candidates_reviewed_by_user_id ON public.policy_review_candidates USING btree (reviewed_by_user_id);
+
+
+--
 -- Name: ix_trip_places_external_place_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1485,6 +1997,46 @@ ALTER TABLE ONLY public.auth_refresh_tokens
 
 
 --
+-- Name: eligible_island_catalog_snapshots eligible_island_catalog_snapshots_catalog_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_island_catalog_snapshots
+    ADD CONSTRAINT eligible_island_catalog_snapshots_catalog_id_fkey FOREIGN KEY (catalog_id) REFERENCES public.eligible_island_catalogs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: eligible_island_catalog_snapshots eligible_island_catalog_snapshots_reviewed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_island_catalog_snapshots
+    ADD CONSTRAINT eligible_island_catalog_snapshots_reviewed_by_user_id_fkey FOREIGN KEY (reviewed_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: eligible_island_snapshot_entries eligible_island_snapshot_entries_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_island_snapshot_entries
+    ADD CONSTRAINT eligible_island_snapshot_entries_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES public.eligible_island_catalog_snapshots(id) ON DELETE CASCADE;
+
+
+--
+-- Name: eligible_islands eligible_islands_catalog_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_islands
+    ADD CONSTRAINT eligible_islands_catalog_id_fkey FOREIGN KEY (catalog_id) REFERENCES public.eligible_island_catalogs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: eligible_islands eligible_islands_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eligible_islands
+    ADD CONSTRAINT eligible_islands_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES public.eligible_island_catalog_snapshots(id) ON DELETE CASCADE;
+
+
+--
 -- Name: policies fk_policies_external_source_record_id_external_source_records; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1522,6 +2074,38 @@ ALTER TABLE ONLY public.password_reset_tokens
 
 ALTER TABLE ONLY public.policy_documents
     ADD CONSTRAINT policy_documents_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.policies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: policy_photos policy_photos_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_photos
+    ADD CONSTRAINT policy_photos_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.policies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: policy_review_candidates policy_review_candidates_external_source_record_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_review_candidates
+    ADD CONSTRAINT policy_review_candidates_external_source_record_id_fkey FOREIGN KEY (external_source_record_id) REFERENCES public.external_source_records(id) ON DELETE CASCADE;
+
+
+--
+-- Name: policy_review_candidates policy_review_candidates_published_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_review_candidates
+    ADD CONSTRAINT policy_review_candidates_published_policy_id_fkey FOREIGN KEY (published_policy_id) REFERENCES public.policies(id) ON DELETE SET NULL;
+
+
+--
+-- Name: policy_review_candidates policy_review_candidates_reviewed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_review_candidates
+    ADD CONSTRAINT policy_review_candidates_reviewed_by_user_id_fkey FOREIGN KEY (reviewed_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -1640,4 +2224,4 @@ ALTER TABLE ONLY public.user_saved_policies
 -- PostgreSQL database dump complete
 --
 
-\unrestrict PcMyBnJ0vM5FzsCBhkHVINTl1a8p22d6bMzfeIQVkGiutsacrX58WRv6sWhn8rd
+\unrestrict TQUVIeKOsPr0aFfzjmZas7eSoAtHYtdDmU1Mhu6edjIVDxUh8LcOmETBPJ5xJLE

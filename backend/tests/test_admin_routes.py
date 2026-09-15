@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -122,3 +123,115 @@ def test_admin_routes_external_source_summary_for_admin(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["items"][0]["label"] == "반값여행"
+
+
+def test_admin_routes_list_pending_policy_review_candidates(monkeypatch) -> None:
+    fake_db = object()
+    admin = make_user(1, role="admin")
+    install_admin_dependencies(fake_db, admin)
+    candidate = SimpleNamespace(
+        id=7, external_source_record_id=11, review_status="pending",
+        change_kind="new", created_at=datetime(2026, 9, 13, 10, 0, 0)
+    )
+    record = SimpleNamespace(
+        id=11, title="Island support", source_category="island_visit",
+        detail_url=None, source_url="https://official.example/island", benefit_text="100000",
+        region="Nationwide", city=None, status="scheduled", start_date=None, end_date=None
+    )
+    monkeypatch.setattr(
+        admin_routes.policy_candidate_review,
+        "list_pending_candidates",
+        lambda db, *, limit, offset=0: [(candidate, record)],
+    )
+    monkeypatch.setattr(admin_routes.policy_candidate_review, "count_pending_candidates", lambda db: 1)
+
+    try:
+        response = client.get("/api/admin/policy-review-candidates")
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["sourceCategory"] == "island_visit"
+    assert response.json()["items"][0]["reviewStatus"] == "pending"
+
+
+def test_admin_routes_list_collection_sources(monkeypatch) -> None:
+    fake_db = object()
+    admin = make_user(1, role="admin")
+    install_admin_dependencies(fake_db, admin)
+    source = SimpleNamespace(
+        key="island_visit", display_name="Island Visit",
+        official_url="https://official.example/island", source_category="island_visit",
+        enabled=False, publication_mode="review", last_outcome=None,
+        last_collected_at=None, last_error=None
+    )
+    monkeypatch.setattr(
+        admin_routes.policy_collection_sources,
+        "list_collection_sources",
+        lambda db: [source],
+    )
+
+    try:
+        response = client.get("/api/admin/policy-collection-sources")
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["items"] == [{
+        "key": "island_visit", "displayName": "Island Visit",
+        "officialUrl": "https://official.example/island", "sourceCategory": "island_visit",
+        "enabled": False, "publicationMode": "review", "lastOutcome": None,
+        "lastCollectedAt": None, "lastError": None
+    }]
+
+
+def test_admin_routes_page_pending_policy_review_candidates(monkeypatch) -> None:
+    fake_db = object()
+    admin = make_user(1, role="admin")
+    install_admin_dependencies(fake_db, admin)
+    candidate = SimpleNamespace(id=71, external_source_record_id=11, review_status="pending", change_kind="new", created_at=datetime(2026, 9, 13, 10, 0, 0))
+    record = SimpleNamespace(id=11, title="Island support", source_category="island_visit", detail_url=None, source_url="https://official.example/island", benefit_text="100000", region="Nationwide", city=None, status="scheduled", start_date=None, end_date=None)
+    monkeypatch.setattr(admin_routes.policy_candidate_review, "list_pending_candidates", lambda db, *, limit, offset=0: [(candidate, record)])
+    monkeypatch.setattr(admin_routes.policy_candidate_review, "count_pending_candidates", lambda db: 71)
+
+    try:
+        response = client.get("/api/admin/policy-review-candidates?limit=50&offset=50")
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 71
+    assert response.json()["limit"] == 50
+    assert response.json()["offset"] == 50
+
+
+def test_admin_routes_batch_approve_selected_policy_review_candidates(monkeypatch) -> None:
+    fake_db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    admin = make_user(1, role="admin")
+    install_admin_dependencies(fake_db, admin)
+    captured = {}
+    monkeypatch.setattr(admin_routes.policy_candidate_review, "approve_pending_candidates", lambda db, *, candidate_ids, approve_all, admin, note: captured.update(candidate_ids=candidate_ids, approve_all=approve_all) or [])
+
+    try:
+        response = client.post("/api/admin/policy-review-candidates/approve-batch", json={"candidateIds": ["7", "8"], "approveAll": False})
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert captured == {"candidate_ids": ["7", "8"], "approve_all": False}
+
+
+def test_admin_routes_batch_approve_all_pending_policy_review_candidates(monkeypatch) -> None:
+    fake_db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    admin = make_user(1, role="admin")
+    install_admin_dependencies(fake_db, admin)
+    captured = {}
+    monkeypatch.setattr(admin_routes.policy_candidate_review, "approve_pending_candidates", lambda db, *, candidate_ids, approve_all, admin, note: captured.update(candidate_ids=candidate_ids, approve_all=approve_all) or [])
+
+    try:
+        response = client.post("/api/admin/policy-review-candidates/approve-batch", json={"candidateIds": [], "approveAll": True})
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert captured == {"candidate_ids": [], "approve_all": True}
