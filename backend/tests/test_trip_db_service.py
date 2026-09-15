@@ -842,6 +842,33 @@ def test_policy_repository_applied_lists_exclude_hidden_rows(sqlite_db_session) 
     ] == ["active-policy"]
 
 
+def test_policy_is_attachable_to_trip_requires_matching_locality() -> None:
+    trip = make_trip()
+    trip.travel_area_id = "gangwon-sokcho-goseong-yangyang"
+    trip.region = "속초·고성·양양"
+
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=1, slug="goseong-policy", title="[고성] 숙박 할인", region="강원", city="고성"),
+        trip,
+        None,
+    ) is True
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=2, slug="samcheok-policy", title="[삼척] 숙박 할인", region="강원", city="삼척"),
+        trip,
+        None,
+    ) is False
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=3, slug="nationwide-policy", title="전국 교통 할인", region="전국"),
+        trip,
+        None,
+    ) is True
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=4, slug="named-jeju-policy", title="제주 여행 할인", region="전국"),
+        trip,
+        None,
+    ) is False
+
+
 def test_add_policy_to_trip_rejects_hidden_policy_slug_in_db_path(sqlite_db_session) -> None:
     user = make_user(70, "Hidden Slug User")
     hidden_policy = Policy(

@@ -347,6 +347,15 @@ def _stay_alias_to_trip_policy_candidate(
     }
 
 
+def _policy_attachment_candidate(
+    policy: Policy,
+    alias_area: stay_discount_aliases.StayDiscountAliasArea | None,
+) -> dict[str, object]:
+    if alias_area is not None:
+        return _stay_alias_to_trip_policy_candidate(policy, alias_area)
+    return _policy_to_trip_policy_candidate(policy)
+
+
 def _external_source_record_to_trip_policy_candidate(record: ExternalSourceRecord) -> dict[str, object]:
     title = local_half_trip_display.policy_title(record.title, record.source_category, record.city)
     local_terms = _candidate_local_terms(
@@ -520,6 +529,22 @@ def _candidate_matches_trip_locality(candidate: dict[str, object], trip: Trip) -
     if normalized_area_sido and candidate_sido and candidate_sido != normalized_area_sido:
         return False
     return bool(candidate_local_terms & normalized_local_terms)
+
+
+def _policy_is_attachable_to_trip(
+    policy: Policy,
+    trip: Trip,
+    alias_area: stay_discount_aliases.StayDiscountAliasArea | None,
+) -> bool:
+    candidate = _policy_attachment_candidate(policy, alias_area)
+    if not _candidate_has_explicit_locality(candidate):
+        return (
+            not _candidate_sido(candidate)
+            and _normalized_text(candidate.get("region")) == _normalized_text(NATIONWIDE_REGION)
+        )
+    if not trip.travel_area_id:
+        return False
+    return _candidate_matches_trip_locality(candidate, trip)
 
 
 def _known_destination_terms() -> list[str]:
