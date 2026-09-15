@@ -4,6 +4,7 @@ from datetime import datetime
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session, sessionmaker
 
 import app.models  # noqa: F401
@@ -13,6 +14,7 @@ from app.services.policy_candidate_review import (
     approve_candidate,
     approve_pending_candidates,
     classify_candidate,
+    get_candidate_with_record,
     reject_candidate,
 )
 
@@ -95,6 +97,26 @@ def test_material_change_supersedes_prior_rejected_candidate(db: Session) -> Non
     assert rejected.review_status == "superseded"
 
 
+def test_reintroduced_evidence_creates_a_new_pending_candidate(db: Session) -> None:
+    record = make_record()
+    admin = User(id=10, email="admin@example.com", nickname="admin", role="admin")
+    db.add_all([record, admin])
+    db.flush()
+
+    original = classify_candidate(db, record=record)
+    approve_candidate(db, candidate=original, record=record, admin=admin)
+    record.benefit_text = "Changed benefit"
+    changed = classify_candidate(db, record=record)
+    approve_candidate(db, candidate=changed, record=record, admin=admin)
+    record.benefit_text = "Example benefit"
+
+    restored = classify_candidate(db, record=record)
+
+    assert restored.id not in {original.id, changed.id}
+    assert restored.review_status == "pending"
+    assert restored.change_kind == "material_change"
+
+
 def test_approval_publishes_only_the_reviewed_candidate(db: Session) -> None:
     record = make_record()
     admin = User(id=10, email="admin@example.com", nickname="admin", role="admin")
@@ -137,3 +159,20 @@ def test_batch_approval_publishes_selected_pending_candidates(db: Session) -> No
 
     assert [candidate.id for candidate in approved] == [first_candidate.id, second_candidate.id]
     assert all(candidate.review_status == "approved" for candidate in approved)
+
+
+def test_decision_candidate_lookup_requests_a_row_lock() -> None:
+    captured = []
+
+    class Result:
+        def one_or_none(self):
+            return None
+
+    class RecordingSession:
+        def execute(self, statement):
+            captured.append(statement)
+            return Result()
+
+    get_candidate_with_record(RecordingSession(), candidate_id=1, lock=True)
+
+    assert "FOR UPDATE" in str(captured[0].compile(dialect=postgresql.dialect()))

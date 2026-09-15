@@ -196,7 +196,7 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 수집 소스·검토 후보 테이블 (2026-09-13, `0038_policy_source_catalog`; `0039_external_source_status_text`는 `external_source_records.status_text`를 Text로 넓혔다):
 
 - `policy_collection_sources`: 코드 소유 수집 소스 카탈로그. `key` UNIQUE, `adapter_key`, `official_url`, `source_category`, `display_name`, `enabled`, `publication_mode`(`review` | `auto_after_reviewed_baseline`, CHECK), `expected_min_records`, 최근 실행 상태(`last_outcome`/`last_collected_at`/`last_successful_at`/`last_error`). 행은 마이그레이션이 아니라 저장소(`ensure_builtin_collection_sources`)가 만든다.
-- `policy_review_candidates`: 수집 근거 1건을 공개 정책으로 승격하기 전 검토 후보. `external_source_record_id` FK(CASCADE), `review_status`(`pending`/`approved`/`rejected`/`superseded`, CHECK), `change_kind`(`new`/`material_change`, CHECK), `evidence_fingerprint`, `reviewed_by_user_id`/`reviewed_at`/`review_note`, `published_policy_id`. `(external_source_record_id, evidence_fingerprint)` UNIQUE.
+- `policy_review_candidates`: 수집 근거 1건을 공개 정책으로 승격하기 전 검토 후보. `external_source_record_id` FK(CASCADE), `review_status`(`pending`/`approved`/`rejected`/`superseded`, CHECK), `change_kind`(`new`/`material_change`, CHECK), `evidence_fingerprint`, `reviewed_by_user_id`/`reviewed_at`/`review_note`, `published_policy_id`. `(external_source_record_id, evidence_fingerprint)`? unique? ???. ?? source record? ?? fingerprint? ?? ???? ? pending candidate? ????.
 
 대상 섬 승인 카탈로그 (2026-09-14, `0040_eligible_island_catalog`; 마이그레이션은 행을 넣지 않고 `island_visit_2026` 카탈로그 행은 저장소가 만든다):
 

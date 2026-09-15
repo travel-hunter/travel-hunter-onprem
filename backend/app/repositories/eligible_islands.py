@@ -19,7 +19,7 @@ from app.services.island_visit_parser import SOURCE_URL as ISLAND_VISIT_SOURCE_U
 
 CATALOG_KEY_ISLAND_VISIT_2026 = "island_visit_2026"
 
-# Code-owned rows: the migration inserts nothing; the repository materializes these on first use.
+# Migration 0040 seeds these rows; this upsert only supports legacy or create_all databases on explicit admin write paths.
 BUILTIN_CATALOGS: tuple[dict[str, object], ...] = (
     {
         "key": CATALOG_KEY_ISLAND_VISIT_2026,
@@ -40,7 +40,7 @@ def normalize_island_name(name: str) -> str:
     return _WHITESPACE.sub(" ", unicodedata.normalize("NFC", name)).strip()
 
 
-def ensure_builtin_catalogs(db: Session) -> None:
+def bootstrap_builtin_catalogs(db: Session) -> None:
     existing_keys = set(db.scalars(select(EligibleIslandCatalog.key)).all())
     values = [row for row in BUILTIN_CATALOGS if row["key"] not in existing_keys]
     if not values:
@@ -58,7 +58,6 @@ def ensure_builtin_catalogs(db: Session) -> None:
 
 def get_catalog(db: Session, *, catalog_key: str) -> EligibleIslandCatalog:
     """Plain read — use for public/list paths. Only stage/approve/reject take the row lock."""
-    ensure_builtin_catalogs(db)
     catalog = db.scalar(select(EligibleIslandCatalog).where(EligibleIslandCatalog.key == catalog_key))
     if catalog is None:
         raise EligibleIslandCatalogError("catalog_not_found")
@@ -66,7 +65,7 @@ def get_catalog(db: Session, *, catalog_key: str) -> EligibleIslandCatalog:
 
 
 def lock_catalog_row(db: Session, *, catalog_key: str) -> EligibleIslandCatalog:
-    ensure_builtin_catalogs(db)
+    bootstrap_builtin_catalogs(db)
     catalog = db.scalar(
         select(EligibleIslandCatalog).where(EligibleIslandCatalog.key == catalog_key).with_for_update()
     )
@@ -76,7 +75,6 @@ def lock_catalog_row(db: Session, *, catalog_key: str) -> EligibleIslandCatalog:
 
 
 def list_approved_entries(db: Session, *, catalog_key: str) -> list[EligibleIsland]:
-    ensure_builtin_catalogs(db)
     return list(
         db.scalars(
             select(EligibleIsland)

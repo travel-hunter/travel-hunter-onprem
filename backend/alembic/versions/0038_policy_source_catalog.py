@@ -62,7 +62,6 @@ def upgrade() -> None:
         sa.Column("published_policy_id", sa.BigInteger(), sa.ForeignKey("policies.id", ondelete="SET NULL"), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
-        sa.UniqueConstraint("external_source_record_id", "evidence_fingerprint"),
         sa.CheckConstraint("review_status IN ('pending', 'approved', 'rejected', 'superseded')", name="ck_policy_review_candidates_review_status"),
         sa.CheckConstraint("change_kind IN ('new', 'material_change')", name="ck_policy_review_candidates_change_kind"),
     )

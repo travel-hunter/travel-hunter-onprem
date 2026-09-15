@@ -199,8 +199,7 @@ def build_eligible_island_summary(db: Session | None, *, catalog_key: str = repo
         catalog = repository.get_catalog(db, catalog_key=catalog_key)
         rows = repository.list_approved_entries(db, catalog_key=catalog_key)
         approved = db.get(EligibleIslandCatalogSnapshot, catalog.approved_snapshot_id) if catalog.approved_snapshot_id else None
-    except Exception:
-        # Derived decoration only: a missing table or bad session must not break policy responses.
+    except EligibleIslandCatalogError:
         return EMPTY_ELIGIBLE_ISLAND_SUMMARY
     return EligibleIslandSummary(
         count=len(rows),

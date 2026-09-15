@@ -1755,7 +1755,8 @@ All endpoints below require bearer authentication and the admin role. Collection
 
 - `GET /api/admin/policy-collection-sources` returns configured sources, their enabled state, and most recent collection health.
 - `PATCH /api/admin/policy-collection-sources/{sourceKey}` accepts `{ "enabled": boolean }`. It cannot create an arbitrary URL or parser.
-- `GET /api/admin/policy-review-candidates` returns pending source evidence only. These records are not public policy cards.
+- `GET /api/admin/policy-review-candidates?limit=&offset=` returns pending source evidence only, windowed with `limit` (1-100) and `offset` (0+). These records are not public policy cards.
+- `POST /api/admin/policy-review-candidates/approve-batch` accepts `{ "approveAll": boolean, "candidateIds": string[], "note": string | null }`. `approveAll: true` approves the current pending set; otherwise `candidateIds` selects up to 100 pending candidates. The operation is atomic: a missing, already-decided, or concurrently rejected candidate returns `409` and approves none.
 - `POST /api/admin/policy-review-candidates/{candidateId}/approve` accepts optional `{ "note": string | null }` and publishes only that candidate's source record through the existing policy normalization mapping.
 - `POST /api/admin/policy-review-candidates/{candidateId}/reject` requires `{ "note": string }`; a later material evidence change creates a fresh pending candidate.
 

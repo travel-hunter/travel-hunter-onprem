@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 import app.models  # noqa: F401
 from app.db.base import Base
-from app.models import Policy, Trip, TripDay, TripPlace, User
+from app.models import EligibleIslandCatalog, Policy, Trip, TripDay, TripPlace, User
 from app.repositories.eligible_islands import CATALOG_KEY_ISLAND_VISIT_2026 as KEY
 from app.services import trips as trip_service
 from app.services.eligible_island_catalog import approve_snapshot, build_eligible_island_summary, stage_snapshot
@@ -26,6 +26,15 @@ def db() -> Session:
     Base.metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
     with TestingSessionLocal() as session:
+        session.add(
+            EligibleIslandCatalog(
+                key=KEY,
+                display_name="2026 Island Visit Year eligible islands",
+                notice_list_url="https://www.visitisland.kr/promotion2",
+                enabled=True,
+            )
+        )
+        session.commit()
         yield session
 
 
@@ -110,3 +119,21 @@ def test_island_policy_never_recommended_before_any_approval_but_others_are(db: 
     make_policy(db, slug=ISLAND_SLUG, title="2026 섬 여행비 지원", source_category="island_visit", benefit_detail="최대 10만원")
     make_policy(db, slug="jeonnam-stay", title="전남 숙박 할인", source_category="regional_benefit", benefit_detail="30%")
     assert recommended_slugs_for_places(db, ["가거도"]) == {"jeonnam-stay"}
+
+
+def test_missing_catalog_summary_never_writes_during_a_public_read() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    TestingSessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+    statements: list[str] = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def record_statement(_connection, _cursor, statement, _parameters, _context, _executemany) -> None:
+        statements.append(statement)
+
+    with TestingSessionLocal() as session:
+        summary = build_eligible_island_summary(session)
+
+    assert summary.count == 0
+    assert summary.official_url is None
+    assert not any(statement.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE")) for statement in statements)

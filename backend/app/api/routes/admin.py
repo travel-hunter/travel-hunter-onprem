@@ -270,12 +270,12 @@ def approve_policy_review_candidates_batch(
         approvedCandidateIds=[str(candidate.id) for candidate in approved],
     )
 
-def _candidate_or_404(db: Session, candidate_id: str):
+def _candidate_or_404(db: Session, candidate_id: str, *, lock: bool = False):
     try:
         numeric_id = int(candidate_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Policy review candidate not found") from None
-    resolved = policy_candidate_review.get_candidate_with_record(db, candidate_id=numeric_id)
+    resolved = policy_candidate_review.get_candidate_with_record(db, candidate_id=numeric_id, lock=lock)
     if resolved is None:
         raise HTTPException(status_code=404, detail="Policy review candidate not found")
     return resolved
@@ -289,7 +289,7 @@ def approve_policy_review_candidate(
     current_admin: User = Depends(require_admin_user),
 ) -> AdminPolicyReviewCandidateItem:
     session = _require_db(db)
-    candidate, record = _candidate_or_404(session, candidate_id)
+    candidate, record = _candidate_or_404(session, candidate_id, lock=True)
     try:
         approved = policy_candidate_review.approve_candidate(
             session, candidate=candidate, record=record, admin=current_admin, note=payload.note
@@ -309,7 +309,7 @@ def reject_policy_review_candidate(
     current_admin: User = Depends(require_admin_user),
 ) -> AdminPolicyReviewCandidateItem:
     session = _require_db(db)
-    candidate, record = _candidate_or_404(session, candidate_id)
+    candidate, record = _candidate_or_404(session, candidate_id, lock=True)
     try:
         rejected = policy_candidate_review.reject_candidate(
             session, candidate=candidate, admin=current_admin, note=payload.note
@@ -421,6 +421,7 @@ def collect_eligible_island_catalog(
 ) -> AdminEligibleIslandCollectResponse:
     session = _require_db(db)
     try:
+        eligible_island_repository.bootstrap_builtin_catalogs(session)
         notice_url = eligible_island_repository.get_catalog(session, catalog_key=catalog_key).notice_list_url
         session.commit()
         result = eligible_island_notice.collect_eligible_island_catalog(

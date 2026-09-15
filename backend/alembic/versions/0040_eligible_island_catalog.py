@@ -4,7 +4,7 @@ Revision ID: 0040_eligible_island_catalog
 Revises: 0039_external_source_status_text
 Create Date: 2026-09-14
 
-Inserts no rows: the island_visit_2026 catalog row is code-owned by the repository.
+Seeds the code-owned island_visit_2026 catalog row so public reads remain read-only.
 """
 
 from __future__ import annotations
@@ -35,6 +35,24 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
     )
     op.create_index("ix_eligible_island_catalogs_key", "eligible_island_catalogs", ["key"])
+    catalogs = sa.table(
+        "eligible_island_catalogs",
+        sa.column("key", sa.String),
+        sa.column("display_name", sa.String),
+        sa.column("notice_list_url", sa.String),
+        sa.column("enabled", sa.Boolean),
+    )
+    op.bulk_insert(
+        catalogs,
+        [
+            {
+                "key": "island_visit_2026",
+                "display_name": "2026 Island Visit Year eligible islands",
+                "notice_list_url": "https://www.visitisland.kr/promotion2",
+                "enabled": True,
+            }
+        ],
+    )
 
     op.create_table(
         "eligible_island_catalog_snapshots",

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict U40bbROGByUU9tKz4WlCYdqpyuIir3jPcgIwVlImaXGXlFMRD35qNhmITfFPcWm
+\restrict TQUVIeKOsPr0aFfzjmZas7eSoAtHYtdDmU1Mhu6edjIVDxUh8LcOmETBPJ5xJLE
 
 -- Dumped from database version 16.14
 -- Dumped by pg_dump version 16.14
@@ -499,7 +499,7 @@ CREATE TABLE public.policies (
     updated_at timestamp without time zone DEFAULT now() NOT NULL,
     structured_detail jsonb,
     city character varying(80),
-    CONSTRAINT ck_policies_status_active_hidden CHECK (((status)::text = ANY (ARRAY[('active'::character varying)::text, ('hidden'::character varying)::text])))
+    CONSTRAINT ck_policies_status_active_hidden CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'hidden'::character varying])::text[])))
 );
 
 
@@ -1053,7 +1053,7 @@ CREATE TABLE public.users (
     privacy_version character varying(32),
     withdrawn_at timestamp without time zone,
     withdrawn_email_hash character varying(64),
-    CONSTRAINT ck_users_role_user_admin CHECK (((role)::text = ANY (ARRAY[('user'::character varying)::text, ('admin'::character varying)::text])))
+    CONSTRAINT ck_users_role_user_admin CHECK (((role)::text = ANY ((ARRAY['user'::character varying, 'admin'::character varying])::text[])))
 );
 
 
@@ -1472,14 +1472,6 @@ ALTER TABLE ONLY public.policy_photos
 
 ALTER TABLE ONLY public.policy_photos
     ADD CONSTRAINT policy_photos_policy_id_key UNIQUE (policy_id);
-
-
---
--- Name: policy_review_candidates policy_review_candidates_external_source_record_id_evidence_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.policy_review_candidates
-    ADD CONSTRAINT policy_review_candidates_external_source_record_id_evidence_key UNIQUE (external_source_record_id, evidence_fingerprint);
 
 
 --
@@ -2232,4 +2224,4 @@ ALTER TABLE ONLY public.user_saved_policies
 -- PostgreSQL database dump complete
 --
 
-\unrestrict U40bbROGByUU9tKz4WlCYdqpyuIir3jPcgIwVlImaXGXlFMRD35qNhmITfFPcWm
+\unrestrict TQUVIeKOsPr0aFfzjmZas7eSoAtHYtdDmU1Mhu6edjIVDxUh8LcOmETBPJ5xJLE

@@ -329,7 +329,6 @@ class ExternalSourceRecord(Base):
 class PolicyReviewCandidate(Base):
     __tablename__ = "policy_review_candidates"
     __table_args__ = (
-        UniqueConstraint("external_source_record_id", "evidence_fingerprint"),
         CheckConstraint(
             "review_status IN ('pending', 'approved', 'rejected', 'superseded')",
             name="ck_policy_review_candidates_review_status",

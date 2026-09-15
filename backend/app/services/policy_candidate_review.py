@@ -33,27 +33,30 @@ def classify_candidate(
 ) -> PolicyReviewCandidate:
     if record.id is None:
         raise ValueError("External source record must be persisted before review")
-    fingerprint = evidence_fingerprint(record)
-    existing = db.scalar(
-        select(PolicyReviewCandidate).where(
-            PolicyReviewCandidate.external_source_record_id == record.id,
-            PolicyReviewCandidate.evidence_fingerprint == fingerprint,
-        )
+    locked_record = db.scalar(
+        select(ExternalSourceRecord)
+        .where(ExternalSourceRecord.id == record.id)
+        .with_for_update()
     )
-    if existing is not None:
-        return existing
+    if locked_record is None:
+        raise ValueError("External source record must be persisted before review")
 
+    fingerprint = evidence_fingerprint(locked_record)
     latest = db.scalar(
         select(PolicyReviewCandidate)
-        .where(PolicyReviewCandidate.external_source_record_id == record.id)
+        .where(PolicyReviewCandidate.external_source_record_id == locked_record.id)
         .order_by(PolicyReviewCandidate.created_at.desc(), PolicyReviewCandidate.id.desc())
+        .limit(1)
+        .with_for_update()
     )
+    if latest is not None and latest.evidence_fingerprint == fingerprint:
+        return latest
     if latest is not None and latest.review_status in {"pending", "rejected"}:
         latest.review_status = "superseded"
         db.add(latest)
 
     candidate = PolicyReviewCandidate(
-        external_source_record_id=record.id,
+        external_source_record_id=locked_record.id,
         review_status="pending",
         change_kind="material_change" if latest is not None else "new",
         evidence_fingerprint=fingerprint,
@@ -61,7 +64,6 @@ def classify_candidate(
     db.add(candidate)
     db.flush()
     return candidate
-
 
 def reject_candidate(
     db: Session,
@@ -73,6 +75,10 @@ def reject_candidate(
     cleaned_note = note.strip()
     if not cleaned_note:
         raise ValueError("A rejection note is required")
+    resolved = get_candidate_with_record(db, candidate_id=int(candidate.id), lock=True)
+    if resolved is None:
+        raise ValueError("Policy review candidate not found")
+    candidate, _record = resolved
     if candidate.review_status != "pending":
         raise ValueError("Only pending candidates can be rejected")
     candidate.review_status = "rejected"
@@ -93,21 +99,23 @@ def reject_candidate(
     )
     return candidate
 
-
 def get_candidate_with_record(
     db: Session,
     *,
     candidate_id: int,
+    lock: bool = False,
 ) -> tuple[PolicyReviewCandidate, ExternalSourceRecord] | None:
-    return db.execute(
+    statement = (
         select(PolicyReviewCandidate, ExternalSourceRecord)
         .join(
             ExternalSourceRecord,
             PolicyReviewCandidate.external_source_record_id == ExternalSourceRecord.id,
         )
         .where(PolicyReviewCandidate.id == candidate_id)
-    ).one_or_none()
-
+    )
+    if lock:
+        statement = statement.execution_options(populate_existing=True).with_for_update(of=PolicyReviewCandidate)
+    return db.execute(statement).one_or_none()
 
 def list_pending_candidates(
     db: Session,
@@ -158,13 +166,13 @@ def approve_pending_candidates(
             raise ValueError("Select at least one candidate")
         if len(candidate_ids) != len(set(candidate_ids)):
             raise ValueError("candidateIds must not contain duplicates")
+        try:
+            numeric_ids = sorted(int(candidate_id) for candidate_id in candidate_ids)
+        except ValueError as error:
+            raise ValueError("Policy review candidate not found") from error
         resolved = []
-        for candidate_id in candidate_ids:
-            try:
-                numeric_id = int(candidate_id)
-            except ValueError as error:
-                raise ValueError("Policy review candidate not found") from error
-            candidate_and_record = get_candidate_with_record(db, candidate_id=numeric_id)
+        for numeric_id in numeric_ids:
+            candidate_and_record = get_candidate_with_record(db, candidate_id=numeric_id, lock=True)
             if candidate_and_record is None:
                 raise ValueError("Policy review candidate not found")
             resolved.append(candidate_and_record)
@@ -187,6 +195,10 @@ def approve_candidate(
     admin: User,
     note: str | None = None,
 ) -> PolicyReviewCandidate:
+    resolved = get_candidate_with_record(db, candidate_id=int(candidate.id), lock=True)
+    if resolved is None:
+        raise ValueError("Policy review candidate not found")
+    candidate, record = resolved
     if candidate.review_status != "pending":
         raise ValueError("Only pending candidates can be approved")
     policy = policy_normalization.promote_external_benefit_record(db, record=record)
