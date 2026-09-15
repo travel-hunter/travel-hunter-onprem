@@ -1,0 +1,381 @@
+# Trip Policy Region Eligibility Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Prevent a trip from newly linking a localized policy outside its selected travel area, while preserving valid same-area and truly nationwide policy links.
+
+**Architecture:** Make the backend the single authority for policy-to-trip geographic eligibility. Reuse the existing travel-area locality matcher that powers recommendations, but adapt one policy (including stay-discount alias slugs) into the same candidate shape before a link is created. Apply that guard both to the existing-trip attach route and the policy preselection path used while creating a trip; the frontend must only display the server’s rejection reason rather than maintain a second, lossy location-matching implementation.
+
+**Tech Stack:** FastAPI, SQLAlchemy/PostgreSQL, Pydantic API contract, React/TypeScript, Vitest, pytest.
+
+**Spec:** `docs/mvp-api-contract.md` — `POST /trips/{trip_id}/policies/{policy_slug}`, trip `recommendedPolicies`, and trip creation with `policySlug`.
+
+## Global Constraints
+
+- Keep API DTO names camelCase and database names snake_case.
+- Keep `/api/trips/{trip_id}/policies/{policy_slug}` as the only attach API; no new endpoint or schema migration is needed.
+- The backend is authoritative: UI code must not infer a policy city from display title or duplicate travel-area matching rules.
+- A localized policy is attachable only when its normalized locality matches the trip’s selected `travelAreaId`; a `whole:` area may accept localized policies within that same `sido`.
+- A truly nationwide policy (`region == "전국"` and no explicit locality in its candidate terms) remains attachable. A policy that says `전국` but explicitly names another municipality is still localized and must match that municipality.
+- A legacy trip without a resolvable `travelAreaId` may attach only a truly nationwide policy; it must be edited to choose a travel area before adding a localized policy. This is fail-closed because a broad text region cannot safely distinguish distant municipalities.
+- Preserve existing behavior: the same already-linked policy is idempotent, different policy categories may coexist when each is geographically eligible, and only `stay_discount` keeps its existing one-per-trip source-category limit.
+- Do not delete, hide, or migrate existing `trip_policies`; this change governs new links only.
+- Do not modify crawler, policy-collection, policy-photo, database schema, or unrelated worktree files.
+- Do not update `CHECKLIST.md` until this branch is ready to merge.
+- Tests must cover the rejection before implementation, and changed Korean files must remain UTF-8-clean with no `U+FFFD`.
+
+---
+
+## File Structure
+
+| File | Responsibility |
+| --- | --- |
+| `backend/app/services/trips.py` | Converts a resolved policy to geographic candidate data, decides attach eligibility, validates both link-creation paths, and retains recommendation behavior. |
+| `backend/tests/test_trip_db_service.py` | Locks geographic attach behavior with SQLite-backed service tests, including aliases, legacy trips, and no partial creation. |
+| `docs/mvp-api-contract.md` | Documents the new `409` response and its geographic eligibility semantics. |
+| `frontend/src/pages/PolicyPages.tsx` | Maps the authoritative geographic rejection detail to actionable Korean copy while keeping the trip picker open for another choice. |
+| `frontend/src/app/__tests__/policies.test.tsx` | Verifies the message mapping and failed picker flow. |
+
+## Eligibility Contract
+
+1. Resolve the requested slug before deciding eligibility. For a stay-discount alias, use `StayDiscountAliasArea.sido` and `.city`, not the canonical source row’s broad campaign region.
+2. Build candidate locality terms with `Policy.city` first, falling back to the linked `ExternalSourceRecord.city` only when `Policy.city` is empty. This keeps materialized policy data usable without an additional lookup and supports future collectors.
+3. For a trip whose `travelAreaId` resolves to a city or curated multi-city area, the policy’s explicit locality must intersect `TravelArea.included_cities` and, when both values exist, its `sido` must match.
+4. For `whole:<sido>`, accept an explicitly localized policy only when its `sido` equals the trip’s `sido`. This matches the already documented recommendation exception for a whole-province trip.
+5. For a policy with no explicit locality, allow only a truly nationwide candidate. Do not treat an unlocalized provincial policy as evidence that it applies to every city in that province.
+6. Check an existing `TripPolicy` link before this guard so re-adding an old link remains a no-op even after the trip region has changed. For a new link, fail with `TripServiceError(409, "Policy does not match trip travel area")`; do not insert or commit anything.
+7. Validate a preselected `policySlug` before `create_trip` writes the trip, member, days, invite, or link. A rejected request must leave no partial trip rows.
+
+### Task 1: Establish the authoritative attach-eligibility helper
+
+**Files:**
+- Modify: `backend/app/services/trips.py:247-308, 421-483`
+- Test: `backend/tests/test_trip_db_service.py`
+
+**Interfaces:**
+- Consumes: `Trip.travel_area_id`, `Policy.region`, `Policy.city`, `StayDiscountAliasArea`, `_candidate_matches_trip_locality(candidate, trip)`.
+- Produces: `_policy_attachment_candidate(policy: Policy, alias_area: stay_discount_aliases.StayDiscountAliasArea | None) -> dict[str, object]` and `_policy_is_attachable_to_trip(policy: Policy, trip: Trip, alias_area: stay_discount_aliases.StayDiscountAliasArea | None) -> bool`.
+- Error detail used by later tasks: `"Policy does not match trip travel area"`.
+
+- [ ] **Step 1: Write failing helper-level service tests for the full eligibility matrix**
+
+Add these tests near the existing recommendation and `add_policy_to_trip` tests. Use a real `Trip` with `travel_area_id="gangwon-sokcho-goseong-yangyang"`, `region="속초·고성·양양"`, and active policies with explicit `city` values.
+
+```python
+def test_policy_is_attachable_to_trip_requires_an_included_city() -> None:
+    trip = make_trip()
+    trip.travel_area_id = "gangwon-sokcho-goseong-yangyang"
+    trip.region = "속초·고성·양양"
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=1, slug="goseong", title="[고성] 숙박 할인", region="강원", city="고성"),
+        trip,
+        None,
+    ) is True
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=2, slug="samcheok", title="[삼척] 숙박 할인", region="강원", city="삼척"),
+        trip,
+        None,
+    ) is False
+
+
+def test_policy_is_attachable_to_trip_allows_only_unscoped_nationwide_policy() -> None:
+    trip = make_trip()
+    trip.travel_area_id = "gangwon-sokcho-goseong-yangyang"
+    trip.region = "속초·고성·양양"
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=3, slug="nationwide", title="전국 교통 할인", region="전국"), trip, None
+    ) is True
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=4, slug="named-jeju", title="제주 여행 할인", region="전국"), trip, None
+    ) is False
+```
+
+Add a `whole:강원` assertion for a `city="삼척", region="강원"` policy and a legacy (`travel_area_id=None`) assertion that rejects the same localized policy but accepts `nationwide`.
+
+- [ ] **Step 2: Run the new helper tests and confirm they fail**
+
+Run:
+
+```powershell
+cd backend
+python -m pytest tests/test_trip_db_service.py -k "attachable_to_trip" -q
+```
+
+Expected: FAIL because `_policy_is_attachable_to_trip` does not exist.
+
+- [ ] **Step 3: Implement candidate conversion and the attach predicate**
+
+In `backend/app/services/trips.py`, retain `_policy_to_trip_policy_candidate` for recommendation data but make its locality source prefer the materialized policy city:
+
+```python
+city = policy.city or (external_record.city if external_record is not None else None)
+```
+
+Add the two interfaces declared above. The candidate factory must call `_stay_alias_to_trip_policy_candidate(policy, alias_area)` for aliases and `_policy_to_trip_policy_candidate(policy)` otherwise. Implement the predicate with these exact branches:
+
+```python
+def _policy_is_attachable_to_trip(policy: Policy, trip: Trip, alias_area: StayDiscountAliasArea | None) -> bool:
+    candidate = _policy_attachment_candidate(policy, alias_area)
+    has_locality = _candidate_has_explicit_locality(candidate)
+    is_nationwide = not _candidate_sido(candidate) and _normalized_text(candidate.get("region")) == _normalized_text(NATIONWIDE_REGION)
+    if not has_locality:
+        return is_nationwide
+    if not trip.travel_area_id:
+        return False
+    return _candidate_matches_trip_locality(candidate, trip)
+```
+
+Use the module’s existing `stay_discount_aliases.StayDiscountAliasArea` type annotation rather than adding a new dependency or data model. Do not change `_recommended_policies` scoring or its limit in this task.
+
+- [ ] **Step 4: Run the helper tests and existing recommendation tests**
+
+Run:
+
+```powershell
+cd backend
+python -m pytest tests/test_trip_db_service.py -k "attachable_to_trip or recommendations" -q
+```
+
+Expected: PASS. In particular, existing multi-city recommendation tests retain their current result ordering.
+
+- [ ] **Step 5: Commit the helper and its tests**
+
+```powershell
+git add backend/app/services/trips.py backend/tests/test_trip_db_service.py
+git commit -m "feat: define trip policy region eligibility"
+```
+
+### Task 2: Guard both policy-link creation paths without partial writes
+
+**Files:**
+- Modify: `backend/app/services/trips.py:1010-1072, 1075-1105`
+- Test: `backend/tests/test_trip_db_service.py`
+
+**Interfaces:**
+- Consumes: `_policy_is_attachable_to_trip(policy, trip, alias_area) -> bool` from Task 1.
+- Produces: `TripServiceError(409, "Policy does not match trip travel area")` for a new mismatched link; no changed API response body on success.
+
+- [ ] **Step 1: Write failing attach-route tests for unrelated and duplicate regional policies**
+
+Create a trip in `gangwon-sokcho-goseong-yangyang`, then persist one matching `city="고성"` policy and one non-matching `city="삼척"` policy. Assert the first link succeeds, the second link raises the exact `409`, and only the matching row exists.
+
+```python
+with pytest.raises(trip_service.TripServiceError) as error:
+    trip_service.add_policy_to_trip(sqlite_db_session, user, str(trip.id), "samcheok-policy")
+
+assert error.value.status_code == 409
+assert error.value.detail == "Policy does not match trip travel area"
+assert [link.policy_id for link in sqlite_db_session.query(TripPolicy).all()] == [goseong.id]
+```
+
+Add a separate test proving a stay-discount alias for `삼척` is rejected for the same trip even though its canonical campaign policy is broad. Keep the existing same-slug idempotency test unchanged.
+
+- [ ] **Step 2: Write a failing preselected-policy creation test**
+
+Build `CreateTripRequest` with `travelAreaId="policy-region:%EC%A0%84%EB%82%A8:%EC%98%81%EA%B4%91"` and a stored policy with `region="강원", city="삼척"`. Assert `create_trip` raises the exact `409`; after `db.expire_all()`, assert no trip with that title and no `TripPolicy` row were committed.
+
+```python
+with pytest.raises(trip_service.TripServiceError, match="Policy does not match trip travel area"):
+    trip_service.create_trip(sqlite_db_session, user, request)
+
+sqlite_db_session.expire_all()
+assert sqlite_db_session.query(Trip).filter_by(title="영광 여행").count() == 0
+assert sqlite_db_session.query(TripPolicy).count() == 0
+```
+
+- [ ] **Step 3: Run the route-path tests and confirm they fail**
+
+Run:
+
+```powershell
+cd backend
+python -m pytest tests/test_trip_db_service.py -k "different_city or preselected_policy" -q
+```
+
+Expected: FAIL because both paths currently call `add_trip_policy` without an eligibility check.
+
+- [ ] **Step 4: Implement the guard before mutation**
+
+For `create_trip`, resolve `payload["policySlug"]` and call `_policy_is_attachable_to_trip` against a transient `Trip(region=region, travel_area_id=travel_area_id)` **before** calling `trip_repository.create_trip`, `add_trip_member`, `add_trip_day`, `_ensure_invite`, or `add_trip_policy`. Preserve the current `404 "Policy not found"` behavior and store the resolved `policy`/`alias_area` for the later successful insert.
+
+For `add_policy_to_trip`, retain this ordering:
+
+```python
+trip_repository.lock_trip_row(db, trip_id=trip.id)
+existing = trip_repository.get_trip_policy(db, trip_id=trip.id, policy_id=policy.id)
+if existing is not None:
+    return {"tripId": str(trip.id), "policyId": policy_slug, "added": True}
+if not _policy_is_attachable_to_trip(policy, trip, alias_area):
+    raise TripServiceError(409, "Policy does not match trip travel area")
+# keep the existing stay_discount source-category conflict check and insert below it
+```
+
+This preserves the PostgreSQL trip-row lock before all new-link checks and preserves old links when a trip’s travel area changes.
+
+- [ ] **Step 5: Run focused backend tests**
+
+Run:
+
+```powershell
+cd backend
+python -m pytest tests/test_trip_db_service.py -k "add_policy_to_trip or preselected_policy or attachable_to_trip" -q
+```
+
+Expected: PASS, including the pre-existing stay-discount one-per-trip and lock-order tests.
+
+- [ ] **Step 6: Commit the guarded service paths**
+
+```powershell
+git add backend/app/services/trips.py backend/tests/test_trip_db_service.py
+git commit -m "fix: reject out-of-region trip policy links"
+```
+
+### Task 3: Document the API conflict and show an actionable picker error
+
+**Files:**
+- Modify: `docs/mvp-api-contract.md:1006-1022`
+- Modify: `frontend/src/pages/PolicyPages.tsx:17-27, 985-998`
+- Test: `frontend/src/app/__tests__/policies.test.tsx`
+
+**Interfaces:**
+- Consumes: backend error detail `"Policy does not match trip travel area"` from Task 2.
+- Produces: Korean UI message `"선택한 일정의 여행 지역과 맞지 않아 연결할 수 없어요. 일정 지역을 변경하거나 다른 일정을 선택해 주세요."`.
+
+- [ ] **Step 1: Write failing frontend message and picker-flow tests**
+
+Extend the existing `policyTripErrorMessage` unit assertions:
+
+```tsx
+expect(policyTripErrorMessage(new Error("Policy does not match trip travel area"))).toBe(
+  "선택한 일정의 여행 지역과 맞지 않아 연결할 수 없어요. 일정 지역을 변경하거나 다른 일정을 선택해 주세요.",
+);
+```
+
+Add a policy-detail picker test where `listTrips` returns two trips and `addPolicyToTrip` rejects the first click with that error. Assert the error text is rendered and both `.trip-select-row` choices remain present, so the user can choose a different valid trip rather than reopening the policy page.
+
+- [ ] **Step 2: Run the frontend tests and confirm they fail**
+
+Run:
+
+```powershell
+cd frontend
+npx vitest run src/app/__tests__/policies.test.tsx
+```
+
+Expected: FAIL because the new backend detail currently falls through to the generic retry message.
+
+- [ ] **Step 3: Implement only error translation, not client-side geo matching**
+
+Add this branch before the generic fallback in `policyTripErrorMessage`:
+
+```ts
+if (message.includes("Policy does not match trip travel area")) {
+  return "선택한 일정의 여행 지역과 맞지 않아 연결할 수 없어요. 일정 지역을 변경하거나 다른 일정을 선택해 주세요.";
+}
+```
+
+Keep `attachPolicyToTrip`’s existing `error` state and list rendering. Do not filter or disable rows in `TripSelectSheet`; `Policy` DTO intentionally does not expose a canonical city and backend validation must remain the only geographic authority.
+
+In `docs/mvp-api-contract.md`, add this `409` bullet under the POST route errors:
+
+```markdown
+- 409: `Policy does not match trip travel area` — 지역 정책의 시·군·구가 일정의 `travelAreaId`와 일치하지 않음. `전국`이며 별도 지역명이 없는 정책만 예외로 연결 가능.
+```
+
+- [ ] **Step 4: Run frontend and API-boundary verification**
+
+Run:
+
+```powershell
+cd frontend
+npx vitest run src/app/__tests__/policies.test.tsx
+npm run typecheck
+```
+
+Expected: PASS. No frontend API type changes are required because the success response and DTOs are unchanged.
+
+- [ ] **Step 5: Commit the contract and UI feedback**
+
+```powershell
+git add docs/mvp-api-contract.md frontend/src/pages/PolicyPages.tsx frontend/src/app/__tests__/policies.test.tsx
+git commit -m "docs: explain trip policy region conflicts"
+```
+
+### Task 4: Run regression and release-readiness verification
+
+**Files:**
+- Modify: none unless a regression is found.
+- Test: `backend/tests/test_trip_db_service.py`, `frontend/src/app/__tests__/policies.test.tsx`, existing full test suites.
+
+**Interfaces:**
+- Consumes: all implementation from Tasks 1-3.
+- Produces: verification evidence for the branch; `CHECKLIST.md` remains untouched until the branch is ready to merge.
+
+- [ ] **Step 1: Run backend trip-policy regression tests**
+
+```powershell
+cd backend
+python -m pytest tests/test_trip_db_service.py -q
+```
+
+Expected: PASS. If the known repository-wide baseline failure appears only in a full suite, record it separately; do not classify it as a geographic-link regression.
+
+- [ ] **Step 2: Run frontend policy and trip creation tests**
+
+```powershell
+cd frontend
+npx vitest run src/app/__tests__/policies.test.tsx src/app/__tests__/trip-create.test.tsx
+```
+
+Expected: PASS. This guards the policy-detail attach sheet and the `policySlug` new-trip flow.
+
+- [ ] **Step 3: Run project checks required for this cross-layer behavior change**
+
+```powershell
+cd frontend
+npm run typecheck
+npm run build
+
+cd ../backend
+python -m pytest
+alembic upgrade head --sql
+
+cd ..
+git diff --check
+```
+
+Expected: typecheck, build, Alembic SQL rendering, and diff check PASS; full pytest result recorded exactly with any pre-existing baseline failure identified.
+
+- [ ] **Step 4: Verify UTF-8 and intended scope**
+
+```powershell
+git diff --check
+rg -n "\x{FFFD}" backend/app/services/trips.py backend/tests/test_trip_db_service.py frontend/src/pages/PolicyPages.tsx frontend/src/app/__tests__/policies.test.tsx docs/mvp-api-contract.md
+git diff --stat origin/develop...HEAD
+git status --short
+```
+
+Expected: no `U+FFFD`, no whitespace errors, and only the five planned files are part of the feature diff. Preserve the root’s pre-existing untracked handoff and prior search-latency documents.
+
+- [ ] **Step 5: Commit any regression-only adjustment, then prepare the branch for review**
+
+```powershell
+git add <only-files-changed-by-the-regression-fix>
+git commit -m "test: cover trip policy region eligibility regression"
+```
+
+If no regression adjustment is needed, do not create an empty commit. At branch-readiness time only, update `CHECKLIST.md` with concise current validation and active risks, then validate it with `git diff --check -- CHECKLIST.md`.
+
+## Self-Review
+
+**Spec coverage:**
+
+- Unrelated/far policies: Tasks 1 and 2 use city/sido-aware server validation before every new policy link.
+- Multiple regional policies: Task 2 proves a valid local policy followed by a different-city policy leaves one link only; it does not over-restrict different eligible policy categories.
+- Existing trip attach and new-trip preselection: Task 2 covers both paths.
+- User feedback: Task 3 maps the exact server conflict and preserves alternative trip choices.
+- API contract and regression proof: Tasks 3 and 4 cover documentation, targeted tests, full checks, and UTF-8/scope validation.
+
+**Placeholder scan:** The plan has no deferred implementation markers or unspecified error/testing steps. The one literal `<only-files-changed-by-the-regression-fix>` is a Git staging safety instruction, not an implementation dependency; it intentionally prevents staging unrelated worktree files.
+
+**Type consistency:** All tasks use the same `Policy`, `Trip`, `StayDiscountAliasArea`, `_policy_attachment_candidate`, `_policy_is_attachable_to_trip`, and `TripServiceError(409, "Policy does not match trip travel area")` names.

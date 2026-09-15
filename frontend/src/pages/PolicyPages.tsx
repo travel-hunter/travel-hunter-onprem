@@ -23,6 +23,9 @@ export function policyTripErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   if (message.includes("Policy not found")) return "정책 정보를 찾을 수 없어요. 다시 확인해 주세요.";
   if (message.includes("Trip not found")) return "일정을 찾을 수 없어요. 다른 일정을 선택해 주세요.";
+  if (message.includes("Policy does not match trip travel area")) {
+    return "선택한 일정의 여행 지역과 맞지 않아 연결할 수 없어요. 일정 지역을 변경하거나 다른 일정을 선택해 주세요.";
+  }
   // 숙박세일은 지역마다 정책 행이 따로 있어 백엔드가 409로 막는다.
   // 기본 문구("잠시 후 다시 시도")는 원인을 오해하게 만든다.
   if (message.includes("Trip already has a stay discount policy")) {

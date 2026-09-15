@@ -1021,6 +1021,7 @@ Changing the travel area does not move, delete, or reorder places, days, or link
 **Errors**
 - 403: viewer는 추가 불가
 - 404: 일정 또는 정책 없음
+- 409: `Policy does not match trip travel area` — 지역 정책은 일정의 `travelAreaId`에 포함된 시/군과 일치해야 한다. 전국 정책은 연결할 수 있다. 이미 같은 정책이 연결된 재시도는 기존처럼 성공한다.
 
 ---
 
@@ -1653,6 +1654,8 @@ Rules:
 | `travelAreaId` present and valid | Resolve backend travel-area catalog, including dynamic `policy-region:{urlencoded-sido}:{urlencoded-city}` ids, store `trips.travel_area_id`, and use the travel-area display name as `trips.region`. |
 | `travelAreaId` present and invalid | Return 400 with `Travel area not found`. |
 | `travelAreaId` absent and `region` present | Preserve legacy region-only trip creation behavior. |
+| `policySlug` is a regional policy but `travelAreaId` is absent or does not contain its city/county | Return 409 `Policy does not match trip travel area` before creating a trip, trip days, invite, or policy link. |
+| `policySlug` is nationwide | Allow attachment with or without `travelAreaId`. |
 
 Trip response includes:
 

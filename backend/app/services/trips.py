@@ -1140,6 +1140,19 @@ def create_trip(
         end_date = start_date + timedelta(days=duration_days - 1)
     title = str(payload.get("title") or f"{region} {duration_days}일 여행")
     participant_count = int(payload.get("participantCount") or 1)
+    policy_slug = str(payload["policySlug"]) if payload.get("policySlug") else None
+    policy = None
+    alias_area = None
+    if policy_slug:
+        policy, alias_area = _resolve_policy_for_request_slug(db, policy_slug)
+        if policy is None:
+            raise TripServiceError(404, "Policy not found")
+        prospective_trip = Trip(
+            region=region,
+            travel_area_id=travel_area.id if travel_area else None,
+        )
+        if not _policy_is_attachable_to_trip(policy, prospective_trip, alias_area):
+            raise TripServiceError(409, "Policy does not match trip travel area")
 
     trip = trip_repository.create_trip(
         db,
@@ -1164,15 +1177,8 @@ def create_trip(
         )
 
     _ensure_invite(db, trip, user)
-    if payload.get("policySlug"):
-        policy_slug = str(payload["policySlug"])
-        policy, alias_area = _resolve_policy_for_request_slug(db, policy_slug)
-        if policy is None:
-            raise TripServiceError(404, "Policy not found")
+    if policy is not None:
         trip_repository.add_trip_policy(db, trip_id=trip.id, policy_id=policy.id)
-    else:
-        alias_area = None
-        policy = None
     db.commit()
 
     created = trip_repository.get_accessible_trip_by_id(db, trip.id, user.id)
@@ -1202,6 +1208,8 @@ def add_policy_to_trip(
     trip_repository.lock_trip_row(db, trip_id=trip.id)
     existing = trip_repository.get_trip_policy(db, trip_id=trip.id, policy_id=policy.id)
     if existing is None:
+        if not _policy_is_attachable_to_trip(policy, trip, _alias_area):
+            raise TripServiceError(409, "Policy does not match trip travel area")
         # 숙박세일 페스타는 지역마다 정책 행이 따로 있어 policy_id 중복 검사를
         # 통과한다. 일정 하나에는 지역 하나만 붙는다. 같은 지역을 다시 누르면
         # existing이 있어 여기까지 오지 않으므로 기존처럼 조용히 성공한다.

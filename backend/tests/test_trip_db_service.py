@@ -899,6 +899,37 @@ def test_add_policy_to_trip_rejects_hidden_policy_slug_in_db_path(sqlite_db_sess
     assert sqlite_db_session.query(TripPolicy).count() == 0
 
 
+
+def test_add_policy_to_trip_rejects_policy_outside_the_trip_travel_area(sqlite_db_session) -> None:
+    user = make_user(83, "Regional Policy User")
+    samcheok = Policy(
+        id=840,
+        slug="samcheok-local-policy",
+        title="Samcheok local benefit",
+        region="강원",
+        city="삼척",
+        benefit_detail="Local benefit",
+        status="active",
+    )
+    trip = Trip(
+        owner_id=user.id,
+        title="Sokcho trip",
+        start_date=date(2026, 7, 12),
+        end_date=date(2026, 7, 13),
+        region="속초·고성·양양",
+        travel_area_id="gangwon-sokcho-goseong-yangyang",
+        status="draft",
+    )
+    sqlite_db_session.add_all([user, samcheok, trip])
+    sqlite_db_session.commit()
+
+    with pytest.raises(trip_service.TripServiceError) as error:
+        trip_service.add_policy_to_trip(sqlite_db_session, user, str(trip.id), samcheok.slug)
+
+    assert error.value.status_code == 409
+    assert error.value.detail == "Policy does not match trip travel area"
+    assert sqlite_db_session.query(TripPolicy).count() == 0
+
 def test_add_policy_to_trip_rejects_a_second_stay_discount_area(sqlite_db_session) -> None:
     # 숙박세일 페스타는 지역마다 별도 정책 행이라 policy_id 중복 검사를 통과한다.
     # 일정 하나에는 지역 하나만 붙어야 한다.
@@ -927,7 +958,8 @@ def test_add_policy_to_trip_rejects_a_second_stay_discount_area(sqlite_db_sessio
         title="Stay discount trip",
         start_date=date(2026, 7, 1),
         end_date=date(2026, 7, 2),
-        region="강원",
+        region="강원 전체",
+        travel_area_id="whole:강원",
         status="draft",
     )
     sqlite_db_session.add_all([user, goseong, samcheok, trip])
@@ -968,7 +1000,8 @@ def test_add_policy_to_trip_allows_re_adding_the_same_stay_discount_area(
         title="Same area trip",
         start_date=date(2026, 7, 1),
         end_date=date(2026, 7, 2),
-        region="강원",
+        region="속초·고성·양양",
+        travel_area_id="gangwon-sokcho-goseong-yangyang",
         status="draft",
     )
     sqlite_db_session.add_all([user, goseong, trip])
@@ -1007,7 +1040,8 @@ def test_add_policy_to_trip_locks_the_trip_row_before_checking(
         title="Lock order trip",
         start_date=date(2026, 7, 1),
         end_date=date(2026, 7, 2),
-        region="강원",
+        region="속초·고성·양양",
+        travel_area_id="gangwon-sokcho-goseong-yangyang",
         status="draft",
     )
     sqlite_db_session.add_all([user, policy, trip])
@@ -1051,10 +1085,10 @@ def test_add_policy_to_trip_allows_a_non_stay_discount_policy_alongside(
     )
     other = Policy(
         id=831,
-        slug="local-half-trip-gangwon",
-        title="강원 반값여행",
-        benefit_detail="최대 20만원 환급",
-        region="강원",
+        slug="nationwide-policy",
+        title="Nationwide policy",
+        benefit_detail="General benefit",
+        region="전국",
         status="active",
         source_category="local_half_trip",
     )
@@ -1064,7 +1098,8 @@ def test_add_policy_to_trip_allows_a_non_stay_discount_policy_alongside(
         title="Mixed policy trip",
         start_date=date(2026, 7, 1),
         end_date=date(2026, 7, 2),
-        region="강원",
+        region="속초·고성·양양",
+        travel_area_id="gangwon-sokcho-goseong-yangyang",
         status="draft",
     )
     sqlite_db_session.add_all([user, goseong, other, trip])
@@ -1074,7 +1109,7 @@ def test_add_policy_to_trip_allows_a_non_stay_discount_policy_alongside(
         sqlite_db_session, user, str(trip.id), "stay-discount-gangwon-goseong"
     )
     trip_service.add_policy_to_trip(
-        sqlite_db_session, user, str(trip.id), "local-half-trip-gangwon"
+        sqlite_db_session, user, str(trip.id), "nationwide-policy"
     )
 
     assert sqlite_db_session.query(TripPolicy).count() == 2
@@ -1441,6 +1476,8 @@ def test_add_policy_to_trip_uses_stay_discount_area_policy(monkeypatch) -> None:
     fake_db = FakeDb()
     user = make_user()
     trip = make_trip()
+    trip.region = "속초·고성·양양"
+    trip.travel_area_id = "gangwon-sokcho-goseong-yangyang"
     stay_policy = make_stay_area_policy(id=188, slug="stay-discount-gangwon-goseong")
     added_links: list[dict[str, int]] = []
 
@@ -3192,7 +3229,7 @@ def test_create_trip_rejects_reversed_date_range() -> None:
 def test_create_trip_links_policy_when_policy_slug_is_present(monkeypatch) -> None:
     fake_db = FakeDb()
     user = make_user()
-    policy = Policy(id=3, slug="fixture-policy", title="Vacation policy", benefit_amount=300000)
+    policy = Policy(id=3, slug="fixture-policy", title="Vacation policy", region="전국", benefit_amount=300000)
     captured = install_create_trip_stubs(monkeypatch, policy=policy)
 
     trip_service.create_trip(fake_db, user, CreateTripRequest(policySlug="fixture-policy"))
@@ -3214,7 +3251,10 @@ def test_create_trip_with_stay_discount_area_policy_links_area_row(monkeypatch) 
     payload = trip_service.create_trip(
         fake_db,
         user,
-        CreateTripRequest(policySlug="stay-discount-gyeongnam-goseong"),
+        CreateTripRequest(
+            travelAreaId="gyeongnam-tongyeong-geoje-goseong",
+            policySlug="stay-discount-gyeongnam-goseong",
+        ),
     )
 
     assert captured["add_trip_policy"] == {"trip_id": 11, "policy_id": 188}
@@ -3222,6 +3262,35 @@ def test_create_trip_with_stay_discount_area_policy_links_area_row(monkeypatch) 
     assert payload["linkedPolicies"][0]["title"] == "[고성] 2026 대한민국 숙박세일 페스타 숙박 할인"
     assert payload["linkedPolicies"][0]["region"] == "경남"
 
+
+
+def test_create_trip_rejects_a_preselected_policy_outside_its_travel_area(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    samcheok = Policy(
+        id=841,
+        slug="samcheok-local-policy",
+        title="Samcheok local benefit",
+        region="강원",
+        city="삼척",
+    )
+    captured = install_create_trip_stubs(monkeypatch, policy=samcheok)
+
+    with pytest.raises(trip_service.TripServiceError) as error:
+        trip_service.create_trip(
+            fake_db,
+            user,
+            CreateTripRequest(
+                travelAreaId="gangwon-sokcho-goseong-yangyang",
+                policySlug=samcheok.slug,
+            ),
+        )
+
+    assert error.value.status_code == 409
+    assert error.value.detail == "Policy does not match trip travel area"
+    assert "create_trip" not in captured
+    assert "add_trip_policy" not in captured
+    assert fake_db.commits == 0
 
 def test_create_trip_rejects_unknown_policy_slug(monkeypatch) -> None:
     fake_db = FakeDb()
