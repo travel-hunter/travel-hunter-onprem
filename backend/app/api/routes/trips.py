@@ -9,6 +9,7 @@ from app.schemas.trip import (
     CreateTripPlacesRequest,
     CreateTripPlaceRequest,
     CreateTripRequest,
+    DeleteTripPlacesRequest,
     DeleteTripResponse,
     InviteEmailResult,
     InviteState,
@@ -270,6 +271,26 @@ def delete_trip_place(
             trip_id,
             place_id,
             expected_revision,
+        )
+    except trip_service.TripServiceError as error:
+        _raise_trip_error(error)
+    return Trip(**trip)
+
+
+@router.post("/{trip_id}/places/batch-delete", response_model=Trip)
+def delete_trip_places(
+    trip_id: str,
+    payload: DeleteTripPlacesRequest,
+    db: Session | None = Depends(get_optional_db),
+    current_user: User | None = Depends(get_current_user),
+) -> Trip:
+    try:
+        trip = trip_service.delete_trip_places(
+            _require_db(db),
+            _require_user(current_user),
+            trip_id,
+            payload.placeIds,
+            payload.expectedRevision,
         )
     except trip_service.TripServiceError as error:
         _raise_trip_error(error)

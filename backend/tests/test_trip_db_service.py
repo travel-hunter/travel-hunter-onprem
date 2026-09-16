@@ -2042,6 +2042,100 @@ def test_delete_trip_place_removes_existing_place(monkeypatch) -> None:
     assert fake_db.commits == 1
 
 
+def _add_places_for_batch_delete(trip: Trip) -> None:
+    day_one = trip.days[0]
+    day_one.places.append(
+        TripPlace(id=2, trip_day_id=1, place_name="Market", visit_time=time(11, 0), order_num=2, memo="Food")
+    )
+    day_one.places.append(
+        TripPlace(id=3, trip_day_id=1, place_name="Museum", visit_time=time(14, 0), order_num=3, memo="Art")
+    )
+    day_two = TripDay(id=2, trip_id=7, day_number=2, date=date(2026, 6, 16))
+    day_two.places = [
+        TripPlace(id=4, trip_day_id=2, place_name="Cafe stop", visit_time=time(12, 0), order_num=1, memo="Dessert")
+    ]
+    trip.days.append(day_two)
+
+
+def test_delete_trip_places_removes_many_across_days(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    _add_places_for_batch_delete(trip)
+    deleted: list[TripPlace] = []
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "get_accessible_trip_by_id",
+        lambda *_args, **_kwargs: trip,
+    )
+
+    def delete_place_stub(_db, place):
+        deleted.append(place)
+
+    monkeypatch.setattr(trip_service.trip_repository, "delete_trip_place", delete_place_stub)
+
+    payload = trip_service.delete_trip_places(fake_db, user, "7", [1, 3, 4], 1)
+
+    assert sorted(place.id for place in deleted) == [1, 3, 4]   # 두 Day 에 걸쳐 삭제
+    assert fake_db.commits == 1
+    assert trip.revision == 2
+    assert payload["revision"] == 2
+
+
+def test_delete_trip_places_dedupes_ids_and_bumps_revision_once(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    _add_places_for_batch_delete(trip)
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "get_accessible_trip_by_id",
+        lambda *_args, **_kwargs: trip,
+    )
+    deleted: list[TripPlace] = []
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "delete_trip_place",
+        lambda _db, place: deleted.append(place),
+    )
+    bumps: list[int] = []
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "bump_trip_revision_if_current",
+        lambda _db, *, trip_id, expected_revision: bumps.append(expected_revision) or True,
+    )
+
+    trip_service.delete_trip_places(fake_db, user, "7", [1, 1, 2], 1)
+
+    assert [place.id for place in deleted] == [1, 2]
+    assert bumps == [1]
+    assert fake_db.commits == 1
+
+
+def test_delete_trip_places_404_on_unknown_id_without_bump(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "get_accessible_trip_by_id",
+        lambda *_args, **_kwargs: trip,
+    )
+    bumped = []
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "bump_trip_revision_if_current",
+        lambda *_a, **_k: bumped.append(True) or True,
+    )
+
+    with pytest.raises(trip_service.TripServiceError) as error:
+        trip_service.delete_trip_places(fake_db, user, "7", [1, 999], 1)
+
+    assert error.value.status_code == 404
+    assert bumped == []
+    assert fake_db.commits == 0
+
+
 def test_trip_place_crud_returns_404_for_missing_day_or_place(monkeypatch) -> None:
     fake_db = FakeDb()
     user = make_user()

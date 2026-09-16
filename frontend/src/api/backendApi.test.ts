@@ -243,4 +243,26 @@ describe("backendApi trip mutation methods", () => {
       }),
     );
   });
+
+  it("posts a batch delete with numeric place ids", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(tripResponse), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      backendApi.deleteTripPlaces("7", { expectedRevision: 4, placeIds: ["3", "5"] }),
+    ).resolves.toMatchObject({ id: "7" });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/trips/7/places/batch-delete`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ expectedRevision: 4, placeIds: [3, 5] }),
+      }),
+    );
+  });
 });

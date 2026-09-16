@@ -11808,6 +11808,10 @@ a.prototype-stat-card:active {
   justify-content: center;
 }
 
+.trip-primary-actions .prototype-trip-action-edit {
+  grid-column: 1 / -1;
+}
+
 .trip-primary-actions .prototype-trip-action-date {
   grid-column: 1 / -1;
   border: 1px solid #d8e0ec;
@@ -11968,6 +11972,82 @@ a.prototype-stat-card:active {
 @media (min-width: 1200px) {
   .recommendation-preview-action-bar {
     width: min(100vw, 820px);
+  }
+}
+
+.edit-mode-list {
+  display: grid;
+  gap: 14px;
+  padding: 0 16px 96px; /* 하단 바가 마지막 카드를 가리지 않게 */
+}
+
+.edit-mode-day h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.edit-mode-day h3 em {
+  font-style: normal;
+  color: var(--gray-500);
+  font-size: 12px;
+}
+
+.edit-mode-day h3 span {
+  margin-left: auto;
+  color: var(--gray-500);
+  font-size: 12px;
+}
+
+.edit-mode-place {
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.edit-mode-place input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.edit-mode-place.selected {
+  border-color: var(--primary-500);
+  background: var(--primary-50);
+}
+
+.edit-mode-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  z-index: 88;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: min(100vw - 24px, 560px);
+  padding: 10px 12px;
+  transform: translateX(-50%);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-default);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.edit-mode-count {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* 탭바가 사라지는 768px 부터는 바닥에 붙인다 (.recommendation-preview-action-bar 와 같은 구조). */
+@media (min-width: 768px) {
+  .edit-mode-bar {
+    bottom: 0;
+    width: min(100vw, 760px);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   }
 }
 

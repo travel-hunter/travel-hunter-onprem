@@ -1359,6 +1359,25 @@ def delete_trip_place(
     return _refresh_trip_payload(db, trip.id, user)
 
 
+def delete_trip_places(
+    db: Session,
+    user: User,
+    trip_handle: str,
+    place_ids: list[int],
+    expected_revision: int,
+) -> dict[str, object]:
+    trip = _resolve_required_trip(db, trip_handle, user)
+    _require_trip_editor(trip, user)
+    # 하나라도 없으면 리비전을 올리기 전에 404. 부분 삭제는 없다.
+    unique_ids = list(dict.fromkeys(place_ids))
+    places = [_find_trip_place(trip, place_id) for place_id in unique_ids]
+    _bump_trip_revision_or_conflict(db, trip, expected_revision)
+    for place in places:
+        trip_repository.delete_trip_place(db, place)
+    db.commit()
+    return _refresh_trip_payload(db, trip.id, user)
+
+
 def _recommendation_items(value: Any, *, source_type: str = "savedSummary") -> list[dict[str, object]]:
     if isinstance(value, list):
         raw_items = value

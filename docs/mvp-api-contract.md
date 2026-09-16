@@ -1184,6 +1184,25 @@ Adds multiple selected place-search candidates to one trip day with a single opt
 
 ---
 
+### POST /trips/{trip_id}/places/batch-delete
+
+여러 장소를 한 번에 삭제한다. owner/editor만 가능. 낙관적 리비전 검사 1회, 증가 1회. 하나라도 없는 id가 있으면 아무것도 삭제하지 않고 404.
+
+**Request**
+```json
+{ "expectedRevision": 4, "placeIds": [3, 5] }
+```
+
+- `expectedRevision`: required, 현재 `Trip.revision`.
+- `placeIds`: required, 1~200개. 중복은 한 번으로 취급.
+
+**Response 200** → `Trip`
+
+**Errors**
+- 403: viewer는 삭제 불가
+- 404: placeIds 중 하나라도 이 일정에 없음
+- 409: revision 불일치
+- 422: placeIds 비어 있음
 
 ---
 

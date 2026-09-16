@@ -931,6 +931,25 @@
       "dbModeBehavior": "Requires owner/editor access, atomically compares and increments trips.revision, deletes trip_places, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
     },
     {
+      "method": "POST",
+      "path": "/api/trips/1/places/batch-delete",
+      "status": 200,
+      "request": {
+        "expectedRevision": 1,
+        "placeIds": [2, 3]
+      },
+      "requiredFields": {
+        "id": "string",
+        "title": "string",
+        "revision": "number",
+        "days": "object",
+        "currentUserRole": "string enum(owner|editor|viewer)",
+        "region": "string"
+      },
+      "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale.",
+      "dbModeBehavior": "Requires owner/editor access; resolves every placeId first and returns 404 without touching the revision if any id is missing; then atomically compares and increments trips.revision once and deletes all listed trip_places in one transaction (all-or-nothing), returning the updated Trip. Duplicate ids count once. Viewer access returns 403 Trip edit permission required."
+    },
+    {
       "method": "GET",
       "path": "/api/trips/1/place-search",
       "status": 200,

@@ -1338,7 +1338,11 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     expect(source).toContain("openTimeEditorId");
     // 동작은 이미 선택 저장인데 문구만 완료로 남아 있었다.
     expect(source).toContain('"저장 중" : "선택 저장"');
-    expect(source).not.toMatch(/>\s*완료\s*</);
+    // 금지 범위는 미리보기 저장 바 안뿐이다. 편집 모드 하단 바의 `완료` 는
+    // 문구와 동작이 실제로 같아(편집 종료) 이 버그와 무관하다.
+    expect(source).not.toMatch(
+      /recommendation-preview-action-bar[\s\S]{0,1200}>\s*완료\s*</,
+    );
     // 드래그 중에는 타임라인 높이를 고정해 날짜 전환이 문서를 줄이지 못하게 한다.
     expect(source).toContain("resolveTimelineHeightLock");
     expect(source).toContain("timelineElement.style.minHeight");
