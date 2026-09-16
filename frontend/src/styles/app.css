@@ -3602,6 +3602,27 @@
   max-width: 230px;
 }
 
+/* 옮긴 카드가 어디로 갔는지 잠깐 밝혀 준다. PLACE_MOVED_FLASH_MS 와 같이 간다. */
+.timeline-slot.just-moved .place-detail {
+  animation: placeJustMoved 1.6s ease-out;
+}
+
+@keyframes placeJustMoved {
+  /* 100% 프레임은 일부러 안 둔다. 두면 .place-detail 의 흰 배경으로 돌아가지
+     못하고(inherit 는 부모 배경이다) 애니메이션이 끝나는 순간 튄다. */
+  from {
+    box-shadow: 0 0 0 3px rgba(255, 94, 91, 0.55);
+    background: var(--primary-50);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-slot.just-moved .place-detail {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(255, 94, 91, 0.55);
+  }
+}
+
 .place-moving-badge {
   min-height: 28px;
   display: inline-flex;
@@ -4576,6 +4597,11 @@
 .sheet-actions {
   display: grid;
   gap: 10px;
+}
+
+.place-sheet-actions {
+  grid-template-columns: auto 1fr;
+  gap: 8px;
 }
 
 .trip-select-list {
@@ -7550,7 +7576,8 @@
    `.prototype-trip-detail-screen .drag-handle`(0,2,0)이 `.sr-only`(0,1,0)를 이겨
    34px 크기와 테두리가 살아 있었고, clip 이 outline 까지 잘라 초점이 안 보였다.
    여기서 확실히 감추고, 초점이 오면 다시 드러낸다. */
-.prototype-trip-detail-screen .drag-handle.sr-only {
+.prototype-trip-detail-screen .drag-handle.sr-only,
+.prototype-trip-detail-screen .place-sheet-opener.sr-only {
   position: absolute;
   width: 1px;
   min-width: 0;
@@ -7565,7 +7592,8 @@
   white-space: nowrap;
 }
 
-.prototype-trip-detail-screen .drag-handle.sr-only:focus-visible {
+.prototype-trip-detail-screen .drag-handle.sr-only:focus-visible,
+.prototype-trip-detail-screen .place-sheet-opener.sr-only:focus-visible {
   z-index: 3;
   width: auto;
   min-width: 34px;
@@ -8022,15 +8050,11 @@
   background: #ff5e5b;
 }
 
-.place-detail-backdrop {
-  align-items: center;
-  padding: 18px;
-}
-
-.place-detail-dialog {
-  width: min(100%, 460px);
-  justify-self: center;
-  border-radius: var(--radius-xl);
+.place-sheet-detail {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #ececf2;
 }
 
 .place-detail-summary {

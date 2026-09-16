@@ -2283,29 +2283,42 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await screen.findByRole("dialog", { name: "성산 일출봉 지도 상세" });
       await user.click(screen.getByRole("button", { name: "상세 보기" }));
 
-      const detailDialog = await screen.findByRole("dialog", {
-        name: "성산 일출봉 장소 상세",
-      });
-      expect(within(detailDialog).getByText("Day 1")).toBeInTheDocument();
-      expect(within(detailDialog).getByText("09:00")).toBeInTheDocument();
-      expect(within(detailDialog).getByText("관광명소")).toBeInTheDocument();
-      expect(
-        within(detailDialog).getByText("제주 서귀포시 성산읍 성산리 1"),
-      ).toBeInTheDocument();
-      expect(
-        within(detailDialog).getByText("일출 보기 좋은 자연 명소"),
-      ).toBeInTheDocument();
-      expect(within(detailDialog).getByText("33.458, 126.942")).toBeInTheDocument();
-      expect(within(detailDialog).getByRole("link", { name: "카카오맵에서 보기" })).toHaveAttribute(
+      const sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+      expect(within(sheet).getByText("제주 서귀포시 성산읍 성산리 1")).toBeInTheDocument();
+      expect(within(sheet).getByText("33.458, 126.942")).toBeInTheDocument();
+      expect(within(sheet).getByText("관광명소")).toBeInTheDocument();
+      expect(within(sheet).getByRole("link", { name: "카카오맵에서 보기" })).toHaveAttribute(
         "href",
         "https://place.map.kakao.com/123",
       );
-      expect(screen.queryByText("장소 상세 보기는 준비 중이에요.")).not.toBeInTheDocument();
+      expect(within(sheet).getByDisplayValue("성산 일출봉")).toBeInTheDocument();
 
-      await user.click(within(detailDialog).getByRole("button", { name: "닫기" }));
-      expect(
-        screen.queryByRole("dialog", { name: "성산 일출봉 장소 상세" }),
-      ).not.toBeInTheDocument();
+      await user.click(within(sheet).getByRole("button", { name: "닫기" }));
+      expect(screen.queryByRole("dialog", { name: "장소 수정" })).not.toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
+  it("opens a read-only place sheet for viewers", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "56",
+      currentUserRole: "viewer",
+      days: { 1: [{ id: "1", time: "09:00", label: "성산 일출봉", meta: "메모", address: "제주 성산읍" }] },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/56?day=1");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "성산 일출봉 상세 열기" }));
+      const sheet = await screen.findByRole("dialog", { name: "장소 상세" });
+      expect(within(sheet).getByText("제주 성산읍")).toBeInTheDocument();
+      expect(within(sheet).queryByRole("button", { name: "저장하기" })).not.toBeInTheDocument();
+      expect(within(sheet).queryByRole("button", { name: "삭제" })).not.toBeInTheDocument();
+      expect(within(sheet).getByDisplayValue("성산 일출봉")).toBeDisabled();
     } finally {
       getTripSpy.mockRestore();
     }

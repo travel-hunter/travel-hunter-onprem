@@ -517,6 +517,8 @@ export const PLACE_DRAG_TOUCH_TOLERANCE_PX = 8;
 export const PLACE_DRAG_MOUSE_DISTANCE_PX = 8;
 /* 이만큼 넘게 밀어야 "끌었다"로 본다. 그 아래는 그냥 클릭이다. */
 export const DRAG_SCROLL_THRESHOLD_PX = 6;
+/** 옮긴 카드를 강조하는 시간. app.css 의 placeJustMoved 1.6s 와 같이 간다 */
+const PLACE_MOVED_FLASH_MS = 1600;
 
 /** 첫날·마지막날도 가운데에 설 수 있도록 양 끝에 줄 여백 */
 export function resolveDayStripPadding(
@@ -1785,6 +1787,40 @@ export function ItineraryDetailPage() {
   const [placeSaveEligibility, setPlaceSaveEligibility] =
     useState<PlaceSaveEligibility>("empty");
   const [movingPlaceId, setMovingPlaceId] = useState<string | null>(null);
+  const [recentlyMovedPlaceId, setRecentlyMovedPlaceId] = useState<
+    string | null
+  >(null);
+  const recentlyMovedTimerRef = useRef<number | null>(null);
+  /* 시트가 타임라인을 덮고 있으면(시트 높이는 min(86dvh, 720px)) 지금 켜 봐야
+     백드롭 뒤에서 타이머만 돌다 끝난다. 시트를 닫을 때로 미룬다. */
+  const pendingMovedFlashRef = useRef<string | null>(null);
+  const flashMovedPlace = (placeId: string) => {
+    if (recentlyMovedTimerRef.current !== null)
+      window.clearTimeout(recentlyMovedTimerRef.current);
+    setRecentlyMovedPlaceId(placeId);
+    recentlyMovedTimerRef.current = window.setTimeout(() => {
+      setRecentlyMovedPlaceId(null);
+      recentlyMovedTimerRef.current = null;
+    }, PLACE_MOVED_FLASH_MS);
+  };
+  const flashOrDefer = (placeId: string) => {
+    const sheetCoversTimeline =
+      placeEditor?.mode === "edit" && placeEditor.place.id === placeId;
+    if (sheetCoversTimeline) pendingMovedFlashRef.current = placeId;
+    else flashMovedPlace(placeId);
+  };
+  const releasePendingFlash = () => {
+    const pending = pendingMovedFlashRef.current;
+    pendingMovedFlashRef.current = null;
+    if (pending) flashMovedPlace(pending);
+  };
+  useEffect(
+    () => () => {
+      if (recentlyMovedTimerRef.current !== null)
+        window.clearTimeout(recentlyMovedTimerRef.current);
+    },
+    [],
+  );
   const [draggingPlaceId, setDraggingPlaceId] = useState<string | null>(null);
   // 추천 미리보기 시간 수정창은 한 번에 하나만 열린다. <details>가 서로를
   // 모르므로 부모가 열린 카드를 하나 들고 있어야 한다.
@@ -1796,10 +1832,6 @@ export function ItineraryDetailPage() {
   >(null);
   const [moveError, setMoveError] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
-  const [placeDetail, setPlaceDetail] = useState<{
-    dayNumber: number;
-    place: ItineraryPlace;
-  } | null>(null);
   const [deleteCandidatePlace, setDeleteCandidatePlace] =
     useState<ItineraryPlace | null>(null);
   const [dateEditor, setDateEditor] = useState<{
@@ -2967,15 +2999,13 @@ export function ItineraryDetailPage() {
     setPlaceSaveEligibility("empty");
     setPlaceDraftNotice("");
     setPlaceError("");
+    // 시트가 moveError 도 보여주므로, 이전에 끌어 옮기다 실패한 메시지를 안고 열지 않는다.
+    setMoveError("");
   };
 
   const openEditPlace = (place: ItineraryPlace) => {
-    if (!canEditTrip) {
-      setPlaceError("이 일정은 보기 권한으로 참여 중이라 편집할 수 없어요.");
-      return;
-    }
     const draft =
-      trip && place.id
+      canEditTrip && trip && place.id
         ? readDraft<TripPlaceEditDraft>(
             tripPlaceEditDraftKey(trip.id, place.id),
           )
@@ -2995,6 +3025,7 @@ export function ItineraryDetailPage() {
     );
     setPlaceDraftNotice(draft ? "수정 중이던 장소 내용을 불러왔어요." : "");
     setPlaceError("");
+    setMoveError("");
   };
 
   const loadPlaceSearchCandidates = async (
@@ -3258,42 +3289,34 @@ export function ItineraryDetailPage() {
         payload,
       );
 
-      /* 날짜나 시간을 고쳤으면 그 카드만 알맞은 자리로 옮긴다.
-         손으로 끌어 옮겨 생긴 역전은 건드리지 않는다 — 그건 "시간 확인" 경고가 맡는다. */
+      /* 시간을 고쳤으면 같은 Day 안에서 알맞은 자리로 옮긴다. Day 는 시트의 칩이
+         이미 옮겼다. 손으로 끌어 생긴 역전은 건드리지 않는다 — "시간 확인" 경고가 맡는다. */
       const editedPlaceId = placeEditor.place.id;
+      let resortFailed = false;
       if (placeEditor.mode === "edit" && editedPlaceId) {
         const located = findTripPlaceById(nextTrip, editedPlaceId);
-        const targetDay = placeEditor.dayNumber;
         const timeChanged = (placeEditor.place.time ?? "") !== time;
-        const dayChanged = Boolean(located) && located!.dayNumber !== targetDay;
-        if (located && (timeChanged || dayChanged)) {
-          const targetPlaces = nextTrip.days[targetDay] ?? [];
+        if (located && timeChanged) {
           const position = resolveTimeSortedPosition({
-            places: targetPlaces,
+            places: nextTrip.days[located.dayNumber] ?? [],
             movingPlaceId: editedPlaceId,
             nextTime: time,
           });
-          const alreadyThere =
-            !dayChanged && position === located.index + 1;
-          if (!alreadyThere) {
+          if (position !== located.index + 1) {
             try {
               nextTrip = await appDataApi.moveTripPlace(
                 nextTrip.id,
                 editedPlaceId,
                 {
-                  dayNumber: targetDay,
+                  dayNumber: located.dayNumber,
                   position,
                   expectedRevision: nextTrip.revision,
                 },
               );
-              if (dayChanged) {
-                // 옮긴 날짜로 화면이 따라가지 않으면 카드가 사라진 것처럼 보인다.
-                setActiveDay(targetDay);
-                updateDetailSearchParams({ day: targetDay, place: null });
-              }
+              // 저장은 언제나 시트를 닫으므로 플래시는 닫는 자리에서 켠다.
+              pendingMovedFlashRef.current = editedPlaceId;
             } catch {
-              /* 자리 이동만 실패한 경우다. 나머지 수정은 이미 저장됐으니 되돌리지 않는다.
-                 되돌리면 사용자가 방금 한 수정이 사라진다. */
+              resortFailed = true; // 수정은 저장됐다. 되돌리면 방금 한 수정이 사라진다.
             }
           }
         }
@@ -3303,9 +3326,17 @@ export function ItineraryDetailPage() {
         clearDraft(tripPlaceEditDraftKey(trip.id, placeEditor.place.id));
       setTrip(nextTrip);
       setPlaceEditor(null);
+      releasePendingFlash();
+      // 칩 이동이 실패한 뒤 저장으로 시트를 닫으면, 자동으로 사라지지 않는 이동 실패 토스트가
+      // 성공 알림 옆에 그대로 남는다. 닫는 자리에서 같이 지운다.
+      setMoveError("");
       clearPlacePreview();
       setPlaceDraftNotice("");
-      setNotice("장소 정보를 수정했어요.");
+      setNotice(
+        resortFailed
+          ? "장소 정보는 저장했지만 순서를 맞추지 못했어요."
+          : "장소 정보를 수정했어요.",
+      );
       window.setTimeout(() => setNotice(null), 1800);
     } catch (error) {
       if (isTripConflict(error)) {
@@ -3363,12 +3394,24 @@ export function ItineraryDetailPage() {
         expectedRevision: trip.revision,
       });
       setTrip(nextTrip);
+      flashOrDefer(place.id);
+      // 시트가 열린 채 옮겼으면 칩 선택도 따라가야 한다. 안 그러면 옛 Day 가 선택된 채로 남는다.
+      setPlaceEditor((current) =>
+        current && current.mode === "edit" && current.place.id === place.id
+          ? { ...current, dayNumber }
+          : current,
+      );
       setActiveDay(dayNumber);
       updateDetailSearchParams({ day: dayNumber, place: null });
       setNotice("장소 순서를 변경했어요.");
       window.setTimeout(() => setNotice(null), 1800);
     } catch (error) {
       if (isTripConflict(error)) {
+        /* 새로 받은 trip 과 시트가 들고 있는 옛 place 객체는 더 이상 같은 것이 아니다.
+           시트를 닫으면 백드롭에 가려 있던 moveError 토스트가 그제서야 보이며 충돌을 알린다. */
+        // trip 은 아래서 새로 받아온다; 미룬 flash 가 남아 있으면 나중에 무관한 시트가 닫힐 때 튄다.
+        pendingMovedFlashRef.current = null;
+        setPlaceEditor(null);
         await refreshTripAfterConflict(setMoveError);
       } else {
         setMoveError(
@@ -3378,6 +3421,22 @@ export function ItineraryDetailPage() {
     } finally {
       setMovingPlaceId(null);
     }
+  };
+
+  /* 시트의 Day 칩은 저장과 분리해 그 자리에서 옮긴다. 저장에 묶어 두면
+     move 실패를 조용히 삼키게 되고, 사용자는 옮겨진 줄 안다. */
+  const movePlaceFromSheet = async (nextDay: number) => {
+    if (!trip || !placeEditor || placeEditor.mode !== "edit") return;
+    const place = placeEditor.place;
+    if (!place.id || nextDay === placeEditor.dayNumber) return;
+    // 저장된 시간(place.time)으로 자리를 정한다. 아직 저장 안 한 폼의 시간을 쓰면
+    // 저장 시 재정렬과 기준이 둘이 된다.
+    const position = resolveTimeSortedPosition({
+      places: trip.days[nextDay] ?? [],
+      movingPlaceId: place.id,
+      nextTime: place.time ?? "",
+    });
+    await movePlaceTo(place, nextDay, position);
   };
 
   const handlePlaceDragStart = (event: DragStartEvent) => {
@@ -3632,6 +3691,9 @@ export function ItineraryDetailPage() {
       clearDraft(tripPlaceEditDraftKey(trip.id, place.id));
       setTrip(nextTrip);
       setDeleteCandidatePlace(null);
+      setPlaceEditor(null);
+      // 삭제된 카드는 매칭될 곳이 없어 아무 일도 안 일어난다. 미뤄 둔 값만 비운다.
+      releasePendingFlash();
       setPlaceDraftNotice("");
       setNotice("장소를 일정에서 삭제했어요.");
       window.setTimeout(() => setNotice(null), 1800);
@@ -3703,18 +3765,20 @@ export function ItineraryDetailPage() {
   };
 
   const closePlaceEditor = () => {
-    if (isSavingPlace) return;
+    if (isSavingPlace || movingPlaceId) return;
     if (trip && placeEditor?.mode === "edit" && placeEditor.place.id)
       clearDraft(tripPlaceEditDraftKey(trip.id, placeEditor.place.id));
     cancelPendingPlaceSearch();
     placeEditorSessionRef.current += 1;
     setPlaceDraftNotice("");
+    setMoveError("");
     setPlaceSearchCandidates([]);
     setPlaceSearchQuery("");
     setPlaceBasket([]);
     setBatchPlaceRecovery({ kind: "none" });
     clearPlacePreview();
     setPlaceEditor(null);
+    releasePendingFlash();
   };
 
   const discardPlaceDraft = () => {
@@ -3982,7 +4046,7 @@ export function ItineraryDetailPage() {
           onSelectPlace={selectMapPlace}
           onShowPlaceDetail={(place) => {
             setNotice(null);
-            setPlaceDetail({ dayNumber: visibleDay, place });
+            openEditPlace(place);
           }}
           places={mapPlaces}
           selectedPlaceId={selectedMapPlaceId}
@@ -4133,6 +4197,9 @@ export function ItineraryDetailPage() {
                   }
                   isMoving={movingPlaceId === place.id}
                   isPreviewMode={isPreviewActive}
+                  isRecentlyMoved={
+                    Boolean(place.id) && place.id === recentlyMovedPlaceId
+                  }
                   previewDayPlaceCounts={Object.fromEntries(
                     dayNumbers.map((day) => [
                       day,
@@ -4146,7 +4213,6 @@ export function ItineraryDetailPage() {
                   onCancelRecommendationPreviewPlace={
                     cancelRecommendationPreviewPlace
                   }
-                  onDelete={requestDeletePlace}
                   onEdit={openEditPlace}
                   onMove={movePlaceTo}
                   onSelectRecommendationPreviewPlace={
@@ -4263,18 +4329,20 @@ export function ItineraryDetailPage() {
         <PlaceEditorSheet
           dayNumber={placeEditor.dayNumber}
           dayOptions={placeEditorDayOptions}
-          error={placeError}
+          error={placeError || moveError}
           form={placeForm}
           isLoadingSearch={isLoadingPlaceSearch}
+          isMovingDay={Boolean(movingPlaceId)}
           isSaving={isSavingPlace}
           mode={placeEditor.mode}
           onChange={updatePlaceForm}
           onClose={closePlaceEditor}
-          onDayChange={(nextDay) =>
-            setPlaceEditor((current) =>
-              current ? { ...current, dayNumber: nextDay } : current,
-            )
+          onDelete={() =>
+            placeEditor.mode === "edit" && requestDeletePlace(placeEditor.place)
           }
+          place={placeEditor.mode === "edit" ? placeEditor.place : null}
+          readOnly={!canEditTrip}
+          onDayChange={(nextDay) => void movePlaceFromSheet(nextDay)}
           onSelectedDayRef={scrollSelectedDayIntoView}
           onDiscardDraft={discardPlaceDraft}
           onSearchInput={invalidatePlaceSearch}
@@ -4291,13 +4359,6 @@ export function ItineraryDetailPage() {
           searchError={placeSearchError}
           searchQuery={placeSearchQuery}
           restoredDraftMessage={placeDraftNotice}
-        />
-      )}
-      {placeDetail && (
-        <PlaceDetailDialog
-          dayNumber={placeDetail.dayNumber}
-          onClose={() => setPlaceDetail(null)}
-          place={placeDetail.place}
         />
       )}
       {/* 껍데기는 장소 편집 시트와 같은 것을 쓴다. 새 클래스를 만들면 같은 시트가 셋이 된다. */}
@@ -4659,81 +4720,6 @@ function PlaceMapBottomSheet({
   );
 }
 
-function PlaceDetailDialog({
-  dayNumber,
-  onClose,
-  place,
-}: {
-  dayNumber: number;
-  onClose: () => void;
-  place: ItineraryPlace;
-}) {
-  const titleId = "place-detail-title";
-  const detailText = place.meta || "메모가 아직 없어요.";
-  const addressText = place.address || "주소 정보 없음";
-  const categoryText = place.category || place.categoryCode || "장소";
-  const coordinateText =
-    Number.isFinite(place.latitude) && Number.isFinite(place.longitude)
-      ? `${place.latitude}, ${place.longitude}`
-      : "좌표 정보 없음";
-  const kakaoPlaceUrl =
-    place.placeUrl ||
-    `https://map.kakao.com/link/search/${encodeURIComponent(place.address || place.label)}`;
-
-  return (
-    <div
-      className="sheet-backdrop place-detail-backdrop"
-      role="presentation"
-      onMouseDown={onClose}
-    >
-      <section
-        aria-labelledby={titleId}
-        aria-modal="true"
-        className="trip-select-sheet place-detail-dialog"
-        role="dialog"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="sheet-head">
-          <div>
-            <h2 id={titleId}>{place.label} 장소 상세</h2>
-            <p className="meta">Day {dayNumber} 지도에서 선택한 장소</p>
-          </div>
-          <button className="btn sm ghost" type="button" onClick={onClose}>
-            닫기
-          </button>
-        </div>
-        <div className="place-detail-summary" aria-label="장소 요약">
-          <span>Day {dayNumber}</span>
-          {place.time && <span>{place.time}</span>}
-          <span>{categoryText}</span>
-        </div>
-        <div className="place-detail-fields">
-          <section>
-            <strong>주소</strong>
-            <p>{addressText}</p>
-          </section>
-          <section>
-            <strong>메모</strong>
-            <p>{detailText}</p>
-          </section>
-          <section>
-            <strong>좌표</strong>
-            <p>{coordinateText}</p>
-          </section>
-        </div>
-        <a
-          className="btn primary"
-          href={kakaoPlaceUrl}
-          rel="noreferrer"
-          target="_blank"
-        >
-          카카오맵에서 보기
-        </a>
-      </section>
-    </div>
-  );
-}
-
 function DroppableDayTab({
   canDrop,
   count,
@@ -4878,8 +4864,8 @@ function SortablePlaceItem({
   hasTimeOrderWarning,
   isMoving,
   isPreviewMode,
+  isRecentlyMoved,
   onCancelRecommendationPreviewPlace,
-  onDelete,
   onEdit,
   onMove,
   onPreviewTimeChange,
@@ -4899,8 +4885,8 @@ function SortablePlaceItem({
   hasTimeOrderWarning: boolean;
   isMoving: boolean;
   isPreviewMode: boolean;
+  isRecentlyMoved: boolean;
   onCancelRecommendationPreviewPlace: (previewId: string) => void;
-  onDelete: (place: ItineraryPlace) => void;
   onEdit: (place: ItineraryPlace) => void;
   onMove: (
     place: DisplayedPlace,
@@ -4943,15 +4929,54 @@ function SortablePlaceItem({
     ),
     transition,
   };
+  // dnd-kit 은 drag 직후 발생하는 click 을 항상 억제하지는 않으므로 직접 추적한다.
+  const wasDraggedRef = useRef(false);
+  useEffect(() => {
+    if (isDragging) {
+      wasDraggedRef.current = true;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      wasDraggedRef.current = false;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [isDragging]);
+  const canOpenSheet =
+    Boolean(place.id) && !isRecommendationPreviewPlace && !isPreviewMode && !disabled;
+  const openSheet = () => {
+    if (!canOpenSheet || wasDraggedRef.current) return;
+    onEdit(place);
+  };
   // 시간 수정창 아코디언 식별자. 미리보기 카드와 기존 카드 모두 값이 있다.
   const timeEditorCardId = displayedPlaceWarningKey(place);
   const className = [
     "timeline-slot",
     isDragging ? "dragging" : "",
     isMoving ? "moving" : "",
+    isRecentlyMoved ? "just-moved" : "",
   ]
     .filter(Boolean)
     .join(" ");
+  // 옮겨 간 자리가 화면 밖이면 강조해 봐야 못 본다. 카드를 가운데로 데려온다.
+  const slotRef = useRef<HTMLDivElement | null>(null);
+  /* dnd-kit 의 setNodeRef 는 원래 렌더마다 같은 함수였다. 인라인으로 합치면
+     매 렌더 null→node 로 붙였다 뗐다 하게 되므로 useCallback 으로 고정한다. */
+  const setSlotRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setNodeRef(node);
+      slotRef.current = node;
+    },
+    [setNodeRef],
+  );
+  useEffect(() => {
+    if (isRecentlyMoved)
+      slotRef.current?.scrollIntoView?.({
+        block: "center",
+        behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+      });
+  }, [isRecentlyMoved]);
   const sortableListeners = listeners ?? {};
   /* 카드 전체에는 포인터 리스너만 건다. onKeyDown 까지 걸면 카드 안쪽 버튼에서
      올라온 Enter·Space 가 키보드 드래그를 시작시킨다. 키보드 경로는 아래
@@ -5000,7 +5025,7 @@ function SortablePlaceItem({
       className={className}
       data-place-id={place.id}
       data-sortable-id={sortableId}
-      ref={setNodeRef}
+      ref={setSlotRef}
     >
       <div className="timeline-sortable-card">
       {/* 손잡이를 없애고 카드 아무 데나 잡을 수 있게 한다. 34px 짜리 목표를
@@ -5019,7 +5044,19 @@ function SortablePlaceItem({
             : "place-detail"
         }
         {...(canEditTrip && canSortPlace && !disabled ? cardPointerListeners : {})}
+        onClick={openSheet}
       >
+        {canOpenSheet && (
+          <button
+            className="sr-only place-sheet-opener"
+            type="button"
+            aria-label={`${place.label} 상세 열기`}
+            onClick={(event) => {
+              event.stopPropagation();
+              openSheet();
+            }}
+          />
+        )}
         {canEditTrip && canSortPlace && (
           <button
             className="drag-handle sr-only"
@@ -5080,7 +5117,10 @@ function SortablePlaceItem({
                       className="place-time-warning-button"
                       aria-label={`${place.label} 방문 시간 확인`}
                       title="앞 장소보다 이른 시간입니다. 방문 시간을 확인해 주세요."
-                      onClick={() => onEdit(place)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onEdit(place);
+                      }}
                     >
                       <AlertTriangle size={13} aria-hidden="true" />
                       <span>시간 확인</span>
@@ -5145,52 +5185,31 @@ function SortablePlaceItem({
               후보 제외
             </button>
           </div>
-        ) : canEditTrip ? (
+        ) : canEditTrip && isPreviewMode ? (
           <div className="place-actions">
-            {isPreviewMode ? (
-              <details
-                className="preview-time-edit"
-                aria-label={`${place.label} 시간 수정`}
-                open={
-                  timeEditorCardId
-                    ? openTimeEditorId === timeEditorCardId
-                    : undefined
-                }
-                onToggle={(event) => {
-                  if (!timeEditorCardId) return;
-                  onToggleTimeEditor(
-                    timeEditorCardId,
-                    (event.currentTarget as HTMLDetailsElement).open,
-                  );
-                }}
-              >
-                <summary>수정</summary>
-                <PlaceTimePicker
-                  disabled={disabled}
-                  value={place.time ?? ""}
-                  onChange={(time) => onPreviewTimeChange(place, time)}
-                />
-              </details>
-            ) : (
-              <button
-                className="btn sm ghost"
-                type="button"
-                onClick={() => onEdit(place)}
-                disabled={!place.id || disabled}
-              >
-                수정
-              </button>
-            )}
-            {!isPreviewMode && (
-              <button
-                className="btn sm line"
-                type="button"
-                onClick={() => onDelete(place)}
-                disabled={!place.id || disabled || isMoving}
-              >
-                삭제
-              </button>
-            )}
+            <details
+              className="preview-time-edit"
+              aria-label={`${place.label} 시간 수정`}
+              open={
+                timeEditorCardId
+                  ? openTimeEditorId === timeEditorCardId
+                  : undefined
+              }
+              onToggle={(event) => {
+                if (!timeEditorCardId) return;
+                onToggleTimeEditor(
+                  timeEditorCardId,
+                  (event.currentTarget as HTMLDetailsElement).open,
+                );
+              }}
+            >
+              <summary>수정</summary>
+              <PlaceTimePicker
+                disabled={disabled}
+                value={place.time ?? ""}
+                onChange={(time) => onPreviewTimeChange(place, time)}
+              />
+            </details>
           </div>
         ) : null}
       </article>
@@ -5458,6 +5477,39 @@ function useDragScroll(externalRef?: MutableRefObject<HTMLDivElement | null>) {
   return { ref, onPointerDown, onClickCapture };
 }
 
+function PlaceSheetDetail({ place }: { place: ItineraryPlace }) {
+  const addressText = place.address || "주소 정보 없음";
+  const categoryText = place.category || place.categoryCode || "장소";
+  const coordinateText =
+    Number.isFinite(place.latitude) && Number.isFinite(place.longitude)
+      ? `${place.latitude}, ${place.longitude}`
+      : "좌표 정보 없음";
+  const kakaoPlaceUrl =
+    place.placeUrl ||
+    `https://map.kakao.com/link/search/${encodeURIComponent(place.address || place.label)}`;
+  return (
+    <div className="place-sheet-detail">
+      <div className="place-detail-summary" aria-label="장소 요약">
+        <span>{categoryText}</span>
+        {place.time && <span>{place.time}</span>}
+      </div>
+      <div className="place-detail-fields">
+        <section>
+          <strong>주소</strong>
+          <p>{addressText}</p>
+        </section>
+        <section>
+          <strong>좌표</strong>
+          <p>{coordinateText}</p>
+        </section>
+      </div>
+      <a className="btn sm line" href={kakaoPlaceUrl} rel="noreferrer" target="_blank">
+        카카오맵에서 보기
+      </a>
+    </div>
+  );
+}
+
 export function PlaceEditorSheet({
   batchRecovery,
   dayNumber,
@@ -5465,11 +5517,13 @@ export function PlaceEditorSheet({
   error,
   form,
   isLoadingSearch,
+  isMovingDay = false,
   isSaving,
   mode,
   onChange,
   onClose,
   onDayChange,
+  onDelete,
   onSelectedDayRef,
   onDiscardDraft,
   onRemoveBasketItem,
@@ -5478,8 +5532,10 @@ export function PlaceEditorSheet({
   onSearchChange,
   onSelectSearchCandidate,
   onSubmit,
+  place = null,
   placeBasket,
   preview,
+  readOnly = false,
   saveEligibility,
   searchCandidates,
   searchError,
@@ -5492,11 +5548,13 @@ export function PlaceEditorSheet({
   error: string;
   form: TripPlaceRequest;
   isLoadingSearch: boolean;
+  isMovingDay?: boolean;
   isSaving: boolean;
   mode: "add" | "edit";
   onChange: (form: TripPlaceRequest) => void;
   onClose: () => void;
   onDayChange: (dayNumber: number) => void;
+  onDelete?: () => void;
   onSelectedDayRef: (node: HTMLButtonElement | null) => void;
   onDiscardDraft: () => void;
   onRemoveBasketItem: (basketId: string) => void;
@@ -5505,8 +5563,10 @@ export function PlaceEditorSheet({
   onSearchChange: (query: string) => void;
   onSelectSearchCandidate: (candidate: PlaceSearchCandidate) => void;
   onSubmit: () => void;
+  place?: ItineraryPlace | null;
   placeBasket: PlaceBasketItem[];
   preview: PlacePreviewState;
+  readOnly?: boolean;
   saveEligibility: PlaceSaveEligibility;
   searchCandidates: PlaceSearchCandidate[];
   searchError: string;
@@ -5554,19 +5614,21 @@ export function PlaceEditorSheet({
         <div className="sheet-head">
           <div>
             <h2 id="place-editor-title">
-              {mode === "add" ? "장소 추가" : "장소 수정"}
+              {mode === "add" ? "장소 추가" : readOnly ? "장소 상세" : "장소 수정"}
             </h2>
             <p className="meta">
               {mode === "add"
                 ? "장소를 검색해 선택한 뒤 목록에 담아 저장하세요."
-                : "장소명, 방문 시간, 메모를 수정하세요."}
+                : readOnly
+                  ? "보기 권한이라 내용을 바꿀 수 없어요."
+                  : "날짜를 고르면 바로 옮겨지고, 나머지는 저장하기로 반영돼요."}
             </p>
           </div>
           <button
             className="btn sm ghost"
             type="button"
             onClick={onClose}
-            disabled={isSaving}
+            disabled={isSaving || isMovingDay}
           >
             닫기
           </button>
@@ -5701,9 +5763,10 @@ export function PlaceEditorSheet({
               saveEligibility={saveEligibility}
             />
           )}
+          {mode === "edit" && place && <PlaceSheetDetail place={place} />}
           {mode === "edit" && (
             <>
-              {dayOptions.length > 1 && (
+              {!readOnly && dayOptions.length > 1 && (
                 <div className="field place-day-picker">
                   <span>날짜</span>
                   {/* 네이티브 select 는 항목 높이를 운영체제가 정해 손댈 수 없다.
@@ -5724,7 +5787,7 @@ export function PlaceEditorSheet({
                               ? "place-day-chip selected"
                               : "place-day-chip"
                           }
-                          disabled={isSaving}
+                          disabled={isSaving || isMovingDay}
                           key={option.dayNumber}
                           onClick={() => onDayChange(option.dayNumber)}
                           ref={selected ? onSelectedDayRef : undefined}
@@ -5743,7 +5806,7 @@ export function PlaceEditorSheet({
                 </div>
               )}
               <PlaceTimePicker
-                disabled={isSaving}
+                disabled={isSaving || readOnly}
                 value={form.time ?? ""}
                 onChange={(time) => onChange({ ...form, time })}
               />
@@ -5762,6 +5825,7 @@ export function PlaceEditorSheet({
                 name="place-label"
                 placeholder="성산일출봉"
                 value={form.label}
+                disabled={readOnly}
                 onChange={(event) =>
                   onChange({ ...form, label: event.target.value })
                 }
@@ -5775,6 +5839,7 @@ export function PlaceEditorSheet({
                 name="place-meta"
                 placeholder="이동 메모나 예약 정보를 적어주세요"
                 value={form.meta ?? ""}
+                disabled={readOnly}
                 onChange={(event) =>
                   onChange({ ...form, meta: event.target.value })
                 }
@@ -5783,15 +5848,28 @@ export function PlaceEditorSheet({
           )}
           {error && <p className="form-error">{error}</p>}
         </div>
-        <div className="sheet-actions">
-          <Button full disabled={isSaving} onClick={onSubmit}>
-            {isSaving
-              ? "저장 중입니다"
-              : hasPlaceBasket
-                ? `${placeBasket.length}개 저장하기`
-                : "저장하기"}
-          </Button>
-        </div>
+        {!readOnly && (
+          <div className="sheet-actions place-sheet-actions">
+            {mode === "edit" && (
+              <button
+                className="btn line"
+                type="button"
+                disabled={isSaving || isMovingDay}
+                onClick={onDelete}
+              >
+                삭제
+              </button>
+            )}
+            {/* 이동이 날아가는 중에 저장하면 낡은 revision 으로 PATCH 가 나가 엉뚱한 409 가 뜬다. */}
+            <Button full disabled={isSaving || isMovingDay} onClick={onSubmit}>
+              {isSaving
+                ? "저장 중입니다"
+                : hasPlaceBasket
+                  ? `${placeBasket.length}개 저장하기`
+                  : "저장하기"}
+            </Button>
+          </div>
+        )}
       </section>
     </div>
   );
