@@ -904,11 +904,8 @@ describe("Travel Hunter app — policies & trip picker", () => {
       cleanup();
       renderAppRoute(examplePolicyPath);
 
-      const addButton = await waitFor(() => {
-        const button = document.querySelector(".sticky-cta button");
-        expect(button).toBeTruthy();
-        return button as HTMLButtonElement;
-      });
+      // 하단 고정 바가 없어지고 액션이 본문 상단으로 올라갔다 - 자리가 아니라 이름으로 찾는다
+      const addButton = await screen.findByRole("button", { name: /내 일정에 담기/ });
       await user.click(addButton);
 
       const row = await waitFor(() => {

@@ -43,10 +43,11 @@ def make_xlsx_bytes(*, headers: list[str], rows: list[list[object]], leading_row
 
 
 class FakeResponse:
-    def __init__(self, *, content: bytes = b"", text: str = "", status: int = 200) -> None:
+    def __init__(self, *, content: bytes = b"", text: str = "", status: int = 200, url: str = "") -> None:
         self.content = content or text.encode("utf-8")
         self.text = text
         self.status_code = status
+        self.url = url  # final URL after redirects; filled in by make_http_get when empty
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -58,8 +59,11 @@ def make_http_get(pages: dict[str, FakeResponse], *, calls: list[str] | None = N
         if calls is not None:
             calls.append(url)
         if url not in pages:
-            return FakeResponse(status=404)
-        return pages[url]
+            return FakeResponse(status=404, url=url)
+        response = pages[url]
+        if not response.url:
+            response.url = url
+        return response
 
     return http_get
 
@@ -171,6 +175,72 @@ def test_fetch_notice_snapshot_downloads_same_host_xlsx_attachments_only() -> No
     assert snapshot.fingerprint == source_fingerprint(snapshot.documents)
 
 
+SHEET_ID = "1Wx48HNm_acr3konWB5wTVSGupKBdnjKn4Qm4lXSnha8"
+SHEET_EXPORT_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=xlsx"
+
+
+def test_fetch_notice_snapshot_follows_shortener_to_google_sheet_export() -> None:
+    # Real site shape (2026-09-14): no attachment, only a buly.kr short link to a public Google Sheet.
+    sheet = make_xlsx_bytes(headers=["연번", "시도", "시군구", "섬명"], rows=[[1, "인천광역시", "강화군", "주문도"]], leading_rows=3)
+    html = '<html><head><title>프로모션 2차</title></head><body>※ 하기 리스트 <a href="https://buly.kr/8piNoSv">https://buly.kr/8piNoSv</a></body></html>'
+    calls: list[str] = []
+    http_get = make_http_get(
+        {
+            NOTICE_URL: FakeResponse(text=html),
+            "https://buly.kr/8piNoSv": FakeResponse(text="<html>sheet</html>", url=f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit?usp=sharing"),
+            SHEET_EXPORT_URL: FakeResponse(content=sheet),
+        },
+        calls=calls,
+    )
+    snapshot = fetch_eligible_island_notice_snapshot(NOTICE_URL, http_get=http_get)
+    assert [(doc.url, doc.filename) for doc in snapshot.documents] == [(SHEET_EXPORT_URL, f"google-sheet-{SHEET_ID}.xlsx")]
+    assert snapshot.documents[0].sha256 == hashlib.sha256(sheet).hexdigest()
+    assert [(item.normalized_name, item.jurisdiction_name) for item in snapshot.entries] == [("주문도", "인천광역시 강화군")]
+    assert calls == [NOTICE_URL, "https://buly.kr/8piNoSv", SHEET_EXPORT_URL]
+
+
+def test_fetch_notice_snapshot_accepts_direct_google_sheet_link_once() -> None:
+    sheet = make_xlsx_bytes(headers=["섬명", "시군구"], rows=[["가거도", "전남 신안군"]])
+    link = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid=0"
+    html = f'<html><body><a href="{link}">리스트</a><a href="{link}">again</a></body></html>'
+    http_get = make_http_get({NOTICE_URL: FakeResponse(text=html), SHEET_EXPORT_URL: FakeResponse(content=sheet)})
+    snapshot = fetch_eligible_island_notice_snapshot(NOTICE_URL, http_get=http_get)
+    assert [doc.url for doc in snapshot.documents] == [SHEET_EXPORT_URL]
+
+
+def test_fetch_notice_snapshot_prefers_same_host_xlsx_over_list_links() -> None:
+    south = make_xlsx_bytes(headers=["섬명", "시군구"], rows=[["가거도", "전남 신안군"]])
+    html = f'<html><body><a href="/files/south.xlsx">전남</a><a href="https://buly.kr/8piNoSv">리스트</a></body></html>'
+    calls: list[str] = []
+    http_get = make_http_get(
+        {NOTICE_URL: FakeResponse(text=html), "https://www.visitisland.kr/files/south.xlsx": FakeResponse(content=south)},
+        calls=calls,
+    )
+    snapshot = fetch_eligible_island_notice_snapshot(NOTICE_URL, http_get=http_get)
+    assert [doc.filename for doc in snapshot.documents] == ["south.xlsx"]
+    assert "https://buly.kr/8piNoSv" not in calls
+
+
+@pytest.mark.parametrize(
+    ("href", "resolved"),
+    [
+        ("https://evil.example/files/list.xlsx", None),  # foreign host xlsx: never downloaded
+        ("https://buly.kr/other", "https://evil.example/list.xlsx"),  # shortener to a non-sheet target
+        ("https://bit.ly/8piNoSv", f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"),  # shortener not on the allowlist
+    ],
+    ids=["foreign_xlsx", "shortener_to_non_sheet", "unlisted_shortener"],
+)
+def test_fetch_notice_snapshot_ignores_links_outside_the_allowlist(href: str, resolved: str | None) -> None:
+    pages = {NOTICE_URL: FakeResponse(text=f'<html><body><a href="{href}">list</a></body></html>')}
+    if resolved is not None:
+        pages[href] = FakeResponse(text="<html></html>", url=resolved)
+    calls: list[str] = []
+    with pytest.raises(EligibleIslandNoticeError, match="parser_changed"):
+        fetch_eligible_island_notice_snapshot(NOTICE_URL, http_get=make_http_get(pages, calls=calls))
+    assert all(not url.endswith(".xlsx") or url.startswith("https://www.visitisland.kr/") for url in calls)
+    assert "https://bit.ly/8piNoSv" not in calls
+
+
 def test_fetch_notice_snapshot_reports_download_failed() -> None:
     html = '<html><body><a href="/files/south.xlsx">전남</a></body></html>'
     http_get = make_http_get({NOTICE_URL: FakeResponse(text=html)})
@@ -247,6 +317,26 @@ def test_collect_new_fingerprint_supersedes_older_pending(db: Session) -> None:
     assert second.outcome == "created"
     assert db.get(EligibleIslandCatalogSnapshot, first.snapshot_id).review_status == "superseded"
     assert db.get(EligibleIslandCatalogSnapshot, second.snapshot_id).review_status == "pending"
+
+
+def test_collect_same_rows_with_different_file_bytes_does_not_churn_pending(db: Session) -> None:
+    rows = [["가거도", "전남 신안군"], ["홍도", "전남 신안군"]]
+    first_pages = _pages(rows)
+    second_pages = _pages(rows)
+    # Same islands, different workbook bytes (an extra title row) — what an unstable export looks like.
+    second_pages["https://www.visitisland.kr/files/list.xlsx"] = FakeResponse(
+        content=make_xlsx_bytes(headers=["섬명", "시군구"], rows=rows, leading_rows=1)
+    )
+    first = collect_eligible_island_catalog(
+        db, catalog_key=CATALOG_KEY_ISLAND_VISIT_2026, notice_url=NOTICE_URL, fetched_at=FETCHED_AT, http_get=make_http_get(first_pages)
+    )
+    second = collect_eligible_island_catalog(
+        db, catalog_key=CATALOG_KEY_ISLAND_VISIT_2026, notice_url=NOTICE_URL, fetched_at=FETCHED_AT, http_get=make_http_get(second_pages)
+    )
+    assert first.outcome == "created"
+    assert (second.outcome, second.snapshot_id, second.entry_count) == ("unchanged", first.snapshot_id, 2)
+    assert db.get(EligibleIslandCatalogSnapshot, first.snapshot_id).review_status == "pending"
+    assert len(db.scalars(select(EligibleIslandCatalogSnapshot.id)).all()) == 1
 
 
 def test_collect_failures_write_no_snapshot(db: Session) -> None:

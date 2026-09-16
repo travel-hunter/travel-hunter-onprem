@@ -289,6 +289,7 @@ def test_trip_to_api_returns_numeric_string_id_and_contract_shape() -> None:
             "amount": "30만원",
             "region": "",
             "status": "active",
+            "deadline": None,
         }
     ]
     place = payload["days"][1][0]

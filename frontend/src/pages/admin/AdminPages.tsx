@@ -1,6 +1,6 @@
 ﻿import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
-import { ApiError, appDataApi, type AdminAuditLogListItem, type AdminCollectionSource, type AdminEligibleIslandSnapshot, type AdminEligibleIslandSnapshotDetail, type AdminExternalSourceSummaryResponse, type AdminPolicyDetail, type AdminPolicyListItem, type AdminPolicyReviewCandidate, type AdminPolicyStatus, type AdminUserDetail, type AdminUserListItem, type ExternalCollectionOpsHealth, type ExternalCollectionRunResponse } from "../../api";
+import { ApiError, appDataApi, type AdminAuditLogListItem, type AdminCollectionSource, type AdminCollectionSourceUpdate, type AdminEligibleIslandSnapshot, type AdminEligibleIslandSnapshotDetail, type AdminExternalSourceSummaryResponse, type AdminPolicyDetail, type AdminPolicyListItem, type AdminPolicyReviewCandidate, type AdminPolicyStatus, type AdminUserDetail, type AdminUserListItem, type ExternalCollectionOpsHealth, type ExternalCollectionRunResponse } from "../../api";
 
 function adminNavClass({ isActive }: { isActive: boolean }) {
   return isActive ? "admin-nav-link active" : "admin-nav-link";
@@ -618,6 +618,19 @@ export function AdminAuditLogsPage() {
 
 const REVIEW_PAGE_SIZE = 50;
 
+/** Why the auto-publish gate left a candidate for a human (backend review_reason). */
+const REVIEW_REASON_LABEL: Record<string, string> = {
+  source_mode_review: "전건 검토 소스",
+  first_baseline: "첫 기준선",
+  new_policy: "새 정책",
+  identity_changed: "제목·지역 변경",
+  source_anomaly: "소스 이상",
+  would_publish_hidden: "비공개 예정",
+  low_confidence: "신뢰도 낮음",
+  stay_discount_manual: "숙박세일 수동",
+  procedure_changed: "신청 절차 변경",
+};
+
 export function AdminPolicyReviewPage() {
   const [candidates, setCandidates] = useState<AdminPolicyReviewCandidate[]>([]);
   const [total, setTotal] = useState(0);
@@ -691,17 +704,38 @@ export function AdminPolicyReviewPage() {
     }
   };
 
-  const toggleSource = async (source: AdminCollectionSource) => {
+  const patchSource = async (source: AdminCollectionSource, patch: AdminCollectionSourceUpdate, failure: string) => {
     setWorkingId(source.key);
     setError("");
     try {
-      const updated = await appDataApi.updateAdminCollectionSource(source.key, !source.enabled);
+      const updated = await appDataApi.updateAdminCollectionSource(source.key, patch);
       setSources((current) => current.map((item) => item.key === updated.key ? updated : item));
-    } catch {
-      setError("수집 소스 설정을 바꿀지 못했습니다.");
+    } catch (cause) {
+      const reason = cause instanceof ApiError && cause.status === 409 && cause.message === "baseline_required"
+        ? " 이 소스에서 관리자가 직접 승인한 후보가 먼저 1건 이상 있어야 합니다."
+        : "";
+      setError(`${failure}${reason}`);
     } finally {
       setWorkingId(null);
     }
+  };
+
+  const toggleSource = (source: AdminCollectionSource) =>
+    patchSource(source, { enabled: !source.enabled }, "수집 소스 설정을 바꾸지 못했습니다.");
+
+  const toggleAutoPublish = (source: AdminCollectionSource) => {
+    const turningOn = source.publicationMode !== "auto_after_reviewed_baseline";
+    if (
+      turningOn &&
+      !window.confirm(`${source.displayName}의 정상 갱신을 관리자 확인 없이 자동 발행합니다.\n새 정책·제목/지역 변경·소스 이상은 계속 검토 대기로 남습니다. 켤까요?`)
+    ) {
+      return;
+    }
+    return patchSource(
+      source,
+      { publicationMode: turningOn ? "auto_after_reviewed_baseline" : "review" },
+      "자동 발행 설정을 바꾸지 못했습니다.",
+    );
   };
 
   return (
@@ -715,7 +749,19 @@ export function AdminPolicyReviewPage() {
           <article className="admin-source-card" key={source.key}>
             <div><span className="admin-source-label">{source.enabled ? "사용 중" : "비활성"}</span><strong>{source.displayName}</strong></div>
             <p>{source.sourceCategory} · {formatAdminDateTime(source.lastCollectedAt)}</p>
-            <button className="btn secondary" type="button" disabled={workingId === source.key} onClick={() => toggleSource(source)}>{source.enabled ? "수집 중지" : "수집 활성화"}</button>
+            <p>
+              {source.publicationMode === "auto_after_reviewed_baseline" ? "자동 발행 중" : "전건 검토"}
+              {" · "}최근 24시간 자동 발행 {source.autoApprovedLast24h ?? 0}건
+              {" · "}기준 건수 {source.expectedMinRecords ?? 0}{source.lastParsedCount != null ? ` (최근 ${source.lastParsedCount}건)` : ""}
+            </p>
+            <div className="admin-section-actions">
+              <button className="btn secondary" type="button" disabled={workingId === source.key} onClick={() => toggleSource(source)}>{source.enabled ? "수집 중지" : "수집 활성화"}</button>
+              {source.sourceCategory !== "stay_discount" && (
+                <button className="btn secondary" type="button" disabled={workingId === source.key} onClick={() => toggleAutoPublish(source)}>
+                  {source.publicationMode === "auto_after_reviewed_baseline" ? "검토로 되돌리기" : "자동 발행 켜기"}
+                </button>
+              )}
+            </div>
           </article>
         ))}</div>
       </section>
@@ -731,7 +777,11 @@ export function AdminPolicyReviewPage() {
           <article className="admin-source-card" key={candidate.id}>
             <div>
               <input aria-label={`${candidate.title} 선택`} checked={selectedIds.includes(candidate.id)} onChange={() => toggleSelected(candidate.id)} type="checkbox" />
-              <span className="admin-source-label">{candidate.changeKind === "new" ? "신규" : "변경"}</span><strong>{candidate.title}</strong>
+              <span className="admin-source-label">{candidate.changeKind === "new" ? "신규" : "변경"}</span>
+              {candidate.reviewReason && REVIEW_REASON_LABEL[candidate.reviewReason] && (
+                <span className="admin-source-label">{REVIEW_REASON_LABEL[candidate.reviewReason]}</span>
+              )}
+              <strong>{candidate.title}</strong>
             </div>
             <p>{candidate.region ?? "전국"} · {candidate.benefitText}</p>
             <p><a href={candidate.officialUrl} target="_blank" rel="noreferrer">공식 원문 보기</a></p>

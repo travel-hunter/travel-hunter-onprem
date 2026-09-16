@@ -53,6 +53,32 @@ export type PolicyStructuredDetail = {
   notes: PolicyStructuredDetailItem[];
 };
 
+export type ApplicationGuideRound = {
+  key: string;
+  label: string;
+  status: "past" | "current" | "upcoming";
+  applyStart: string | null;
+  applyUntil: string | null;
+  travelStart: string | null;
+  travelEnd: string | null;
+  documentsDueBy: string | null;
+  applicationFormUrl: string | null;
+  documentFormUrl: string | null;
+};
+
+export type ApplicationGuide = {
+  rounds: ApplicationGuideRound[];
+  currentRoundKey: string | null;
+  applyFormUrl: string | null;
+  documentDeadlineDaysAfterTrip: number | null;
+  minNights: number | null;
+  minPaymentKrw: number | null;
+  requiredDocuments: string[];
+  photoRequirement: string | null;
+  exclusions: string[];
+  contacts: { email: string | null; phones: string[] };
+};
+
 export type PolicyPhoto = {
   imageUrl: string;
   thumbnailUrl?: string | null;
@@ -84,6 +110,36 @@ export type Policy = {
   photo?: PolicyPhoto | null;
   eligibleIslandCount?: number | null;
   eligibleIslandsOfficialUrl?: string | null;
+  applicationGuide?: ApplicationGuide | null;
+};
+
+export type TripPolicyApplicationStatus =
+  | "not_started"
+  | "applied"
+  | "selected"
+  | "not_selected"
+  | "traveled"
+  | "documents_submitted"
+  | "paid";
+
+export type TripPolicyApplication = {
+  status: TripPolicyApplicationStatus;
+  roundKey: string | null;
+  checklist: { key: string; label: string; checked: boolean }[];
+  checks: {
+    inTravelWindow: boolean | null;
+    meetsMinNights: boolean;
+    eligibleIslandMatched: boolean | null;
+    applyDeadline: string | null;
+    documentsDueDate: string | null;
+  };
+  updatedAt: string | null;
+  updatedBy: string | null;
+};
+
+export type TripPolicyApplicationUpdate = {
+  status?: TripPolicyApplicationStatus;
+  checklist?: Record<string, boolean>;
 };
 
 export type AppliedPolicyLinkedTrip = {
@@ -92,6 +148,7 @@ export type AppliedPolicyLinkedTrip = {
   region: string;
   startDate: string | null;
   endDate: string | null;
+  applicationStatus?: TripPolicyApplicationStatus | null;
 };
 
 export type AppliedPolicyLink = {
@@ -125,6 +182,8 @@ export type LinkedTripPolicy = {
   status?: "active" | "hidden";
   category?: PolicyCategory;
   tag?: string;
+  deadline?: string | null;
+  application?: TripPolicyApplication | null;
 };
 
 export type AdminUserListItem = {
@@ -418,6 +477,7 @@ export type AdminPolicyReviewCandidate = {
   startDate: string | null;
   endDate: string | null;
   createdAt: string;
+  reviewReason?: string | null;
 };
 
 export type AdminPolicyReviewCandidateListResponse = { items: AdminPolicyReviewCandidate[]; total: number; limit: number; offset: number };
@@ -430,13 +490,22 @@ export type AdminCollectionSource = {
   officialUrl: string;
   sourceCategory: string;
   enabled: boolean;
-  publicationMode: string;
+  publicationMode: "review" | "auto_after_reviewed_baseline";
+  expectedMinRecords?: number;
+  lastParsedCount?: number | null;
+  autoApprovedLast24h?: number;
   lastOutcome: string | null;
   lastCollectedAt: string | null;
   lastError: string | null;
 };
 
 export type AdminCollectionSourceListResponse = { items: AdminCollectionSource[] };
+
+export type AdminCollectionSourceUpdate = {
+  enabled?: boolean;
+  publicationMode?: "review" | "auto_after_reviewed_baseline";
+  expectedMinRecords?: number;
+};
 
 // Eligible island catalog review — separate from policy review candidates.
 export type AdminEligibleIslandAttachment = { url: string; filename: string; sha256: string };

@@ -26,7 +26,7 @@ DiffKey = tuple[str, str]  # (normalized_name, jurisdiction_name)
 
 @dataclass(frozen=True)
 class StageResult:
-    outcome: str  # created | identical | empty | suspicious_shrink
+    outcome: str  # created | unchanged (same list as latest pending) | identical | empty | suspicious_shrink
     snapshot: EligibleIslandCatalogSnapshot | None = None
     added_count: int = 0
     removed_count: int = 0
@@ -45,6 +45,10 @@ def _key(item: ParsedIsland | EligibleIsland | EligibleIslandSnapshotEntry) -> D
     return (item.normalized_name, item.jurisdiction_name)
 
 
+def _signature(items) -> frozenset[tuple[str, str, str]]:
+    return frozenset((item.normalized_name, item.jurisdiction_name, (item.display_name or "").strip()) for item in items)
+
+
 def stage_snapshot(
     db: Session,
     *,
@@ -58,6 +62,26 @@ def stage_snapshot(
     catalog = repository.lock_catalog_row(db, catalog_key=catalog_key)
     if not entries:
         return StageResult(outcome="empty")
+
+    # Export bytes can change while the islands do not (Google Sheets), so a new file fingerprint alone
+    # must not replace a pending snapshot that already holds exactly this list.
+    pending = db.scalar(
+        select(EligibleIslandCatalogSnapshot)
+        .where(EligibleIslandCatalogSnapshot.catalog_id == catalog.id, EligibleIslandCatalogSnapshot.review_status == "pending")
+        .order_by(EligibleIslandCatalogSnapshot.id.desc())
+    )
+    if pending is not None:
+        pending_rows = db.scalars(
+            select(EligibleIslandSnapshotEntry).where(EligibleIslandSnapshotEntry.snapshot_id == pending.id)
+        ).all()
+        if _signature(pending_rows) == _signature(entries):
+            return StageResult(
+                outcome="unchanged",
+                snapshot=pending,
+                added_count=pending.added_count,
+                removed_count=pending.removed_count,
+                changed_count=pending.changed_count,
+            )
 
     approved = {_key(row): row for row in repository.list_approved_entries(db, catalog_key=catalog_key)}
     incoming = {_key(item): item for item in entries}

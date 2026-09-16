@@ -184,6 +184,7 @@ class AdminPolicyReviewCandidateItem(BaseModel):
     startDate: date | None = None
     endDate: date | None = None
     createdAt: str
+    reviewReason: str | None = None
 
 
 class AdminPolicyReviewCandidateListResponse(BaseModel):
@@ -219,6 +220,9 @@ class AdminCollectionSourceItem(BaseModel):
     sourceCategory: str
     enabled: bool
     publicationMode: str
+    expectedMinRecords: int = 0
+    lastParsedCount: int | None = None
+    autoApprovedLast24h: int = 0
     lastOutcome: str | None = None
     lastCollectedAt: str | None = None
     lastError: str | None = None
@@ -229,7 +233,9 @@ class AdminCollectionSourceListResponse(BaseModel):
 
 
 class AdminCollectionSourceUpdateRequest(BaseModel):
-    enabled: bool
+    enabled: bool | None = None
+    publicationMode: Literal["review", "auto_after_reviewed_baseline"] | None = None
+    expectedMinRecords: int | None = Field(default=None, ge=0)
 
 
 # Eligible island catalog review — independent of policy review candidates.

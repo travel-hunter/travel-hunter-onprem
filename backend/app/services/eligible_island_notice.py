@@ -79,6 +79,7 @@ class EligibleIslandCollectionResult:
 class _Response(Protocol):
     content: bytes
     text: str
+    url: Any  # final URL after redirects (httpx.URL in production)
 
     def raise_for_status(self) -> Any: ...
 
@@ -242,27 +243,70 @@ def _fetch_documents(notice_url: str, *, http_get: HttpGet) -> tuple[str | None,
     page = _NoticeHtml()
     page.feed(html)
     title = normalize_island_name("".join(page.title_parts)) or None
-    host = urlparse(notice_url).netloc
-    urls: list[str] = []
-    for href in page.hrefs:
-        absolute = urljoin(notice_url, href)
-        parsed = urlparse(absolute)
-        if parsed.netloc == host and parsed.path.lower().endswith(".xlsx") and absolute not in urls:
-            urls.append(absolute)
-    if not urls:
-        raise EligibleIslandNoticeError("parser_changed") from ValueError("notice has no same-host .xlsx attachment")
+    attachments = _discover_attachments(notice_url, page.hrefs, http_get=http_get)
+    if not attachments:
+        raise EligibleIslandNoticeError("parser_changed") from ValueError(
+            "notice has no same-host .xlsx attachment or allowlisted list link"
+        )
     documents: list[SourceDocument] = []
     payloads: list[bytes] = []
-    for url in urls:
+    for url, filename in attachments:
         try:
             response = http_get(url)
             response.raise_for_status()
             payload = response.content
         except Exception as exc:
             raise EligibleIslandNoticeError("download_failed") from exc
-        documents.append(SourceDocument(url=url, filename=urlparse(url).path.rsplit("/", 1)[-1], sha256=hashlib.sha256(payload).hexdigest()))
+        documents.append(SourceDocument(url=url, filename=filename, sha256=hashlib.sha256(payload).hexdigest()))
         payloads.append(payload)
     return title, documents, payloads
+
+
+# The official site (2026-09-14) attaches no workbook: every notice links a public Google Sheet through a
+# buly.kr short link. Both hosts are code-owned here; nothing else on the page is ever fetched, and the
+# export URL is built by us from the sheet id rather than taken from the page.
+LIST_LINK_SHORTENER_HOSTS = frozenset({"buly.kr"})
+_GOOGLE_SHEET_URL = re.compile(r"^https://docs\.google\.com/spreadsheets/d/([A-Za-z0-9_-]+)(?:[/?#]|$)")
+
+
+def _google_sheet_id(url: str) -> str | None:
+    match = _GOOGLE_SHEET_URL.match(url)
+    return match.group(1) if match else None
+
+
+def _discover_attachments(notice_url: str, hrefs: list[str], *, http_get: HttpGet) -> list[tuple[str, str]]:
+    """Same-host .xlsx attachments win; otherwise allowlisted links to a Google Sheet, exported as xlsx."""
+    host = urlparse(notice_url).netloc
+    absolute_links: list[str] = []
+    for href in hrefs:
+        absolute = urljoin(notice_url, href)
+        if absolute not in absolute_links:
+            absolute_links.append(absolute)
+
+    same_host = [
+        (url, urlparse(url).path.rsplit("/", 1)[-1])
+        for url in absolute_links
+        if urlparse(url).netloc == host and urlparse(url).path.lower().endswith(".xlsx")
+    ]
+    if same_host:
+        return same_host
+
+    sheet_ids: list[str] = []
+    for url in absolute_links:
+        sheet_id = _google_sheet_id(url)
+        if sheet_id is None and urlparse(url).netloc in LIST_LINK_SHORTENER_HOSTS:
+            try:
+                response = http_get(url)
+                response.raise_for_status()
+            except Exception as exc:
+                raise EligibleIslandNoticeError("download_failed") from exc
+            sheet_id = _google_sheet_id(str(getattr(response, "url", "") or ""))
+        if sheet_id is not None and sheet_id not in sheet_ids:
+            sheet_ids.append(sheet_id)
+    return [
+        (f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx", f"google-sheet-{sheet_id}.xlsx")
+        for sheet_id in sheet_ids
+    ]
 
 
 # --- collection ----------------------------------------------------------------------
@@ -304,7 +348,8 @@ def collect_eligible_island_catalog(
     if staged.snapshot is None:
         # identical | suspicious_shrink (empty cannot happen: parser rejects zero rows)
         return EligibleIslandCollectionResult(outcome=staged.outcome, entry_count=len(entries))
-    return EligibleIslandCollectionResult(outcome="created", snapshot_id=staged.snapshot.id, entry_count=staged.snapshot.entry_count)
+    # created, or unchanged when the list matches the latest pending snapshot despite new file bytes
+    return EligibleIslandCollectionResult(outcome=staged.outcome, snapshot_id=staged.snapshot.id, entry_count=staged.snapshot.entry_count)
 
 
 def _cause_text(exc: BaseException) -> str:

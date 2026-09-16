@@ -23,6 +23,7 @@ from app.schemas.trip import (
     UpdateTripPlaceRequest,
     UpdateTripStatusRequest,
 )
+from app.schemas.trip import TripPolicyApplication, UpdateTripPolicyApplicationRequest
 from app.services import trips as trip_service
 
 router = APIRouter(prefix="/trips", tags=["trips"])
@@ -132,6 +133,30 @@ def remove_policy_from_trip(
     except trip_service.TripServiceError as error:
         _raise_trip_error(error)
     return TripPolicyResponse(**result)
+
+
+@router.patch(
+    "/{trip_id}/policies/{policy_slug}/application",
+    response_model=TripPolicyApplication,
+)
+def update_trip_policy_application(
+    trip_id: str,
+    policy_slug: str,
+    payload: UpdateTripPolicyApplicationRequest,
+    db: Session | None = Depends(get_optional_db),
+    current_user: User | None = Depends(get_current_user),
+) -> TripPolicyApplication:
+    try:
+        result = trip_service.update_trip_policy_application(
+            _require_db(db),
+            _require_user(current_user),
+            trip_id,
+            policy_slug,
+            payload,
+        )
+    except trip_service.TripServiceError as error:
+        _raise_trip_error(error)
+    return TripPolicyApplication(**result)
 
 
 @router.patch("/{trip_id}/status", response_model=Trip)

@@ -5757,7 +5757,7 @@
 
 .prototype-policy-detail-screen .detail-body {
   display: block;
-  padding: 20px 16px 112px;
+  padding: 20px 16px 28px;
 }
 
 .prototype-policy-detail-screen .title-block {
@@ -5870,6 +5870,14 @@
   left: 0;
   color: #d48b00;
   content: "•";
+}
+
+.prototype-policy-detail-screen .policy-period-list li {
+  padding-left: 0;
+}
+
+.prototype-policy-detail-screen .policy-period-list li::before {
+  content: none;
 }
 
 .prototype-policy-detail-screen .policy-benefit-link {
@@ -6008,34 +6016,27 @@
   font-size: 11px;
 }
 
-.prototype-policy-detail-screen .sticky-cta {
-  position: sticky;
-  right: auto;
-  bottom: 72px;
-  left: auto;
-  z-index: 80;
-  width: 100%;
-  max-width: none;
+.prototype-policy-detail-screen .policy-detail-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 12px 16px 24px;
-  border-top: 1px solid var(--color-border-default);
-  background: var(--surface-app);
-  backdrop-filter: none;
+  margin: 0 0 18px;
 }
 
-.prototype-policy-detail-screen .sticky-cta .btn {
-  min-height: 50px;
+.prototype-policy-detail-screen .policy-detail-actions .helper-text {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.prototype-policy-detail-screen .policy-detail-actions .btn {
+  flex: 1 1 152px;
+  min-height: 44px;
   border-radius: 12px;
   font-size: 14px;
 }
 
-.prototype-policy-detail-screen .sticky-cta .btn.secondary {
-  flex: 1;
-}
-
-.prototype-policy-detail-screen .sticky-cta .btn.primary {
-  flex: 1.4;
+.prototype-policy-detail-screen .policy-detail-actions .btn.primary {
+  flex-grow: 1.4;
 }
 
 .prototype-trip-visual {
@@ -12359,4 +12360,110 @@ a.prototype-stat-card:active {
 .trip-region-selector button:disabled {
   cursor: not-allowed;
   opacity: 0.62;
+}
+
+/* Island support application guide (policy detail) */
+.application-guide-round {
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  padding-block: 12px;
+}
+.application-guide-round-head,
+.application-guide-round > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.application-guide-round > summary {
+  cursor: pointer;
+  color: #64748b;
+}
+.application-guide-steps {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding-left: 1.25rem;
+}
+.application-guide-steps span {
+  display: block;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+.application-guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.application-guide-actions .warning-text {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* Island support progress panel (trip detail) */
+.trip-policy-application {
+  display: grid;
+  gap: 10px;
+  margin: -4px 0 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+.trip-policy-application-head,
+.trip-policy-application-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.trip-policy-application-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+.trip-policy-application-steps li.done {
+  color: #0f766e;
+}
+.trip-policy-application-steps li.current {
+  color: #0f172a;
+  font-weight: 700;
+}
+.trip-policy-application-checks {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+}
+.trip-policy-application-checks li.warn {
+  color: #b45309;
+}
+.trip-policy-application-checklist {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.trip-policy-application-checklist label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.trip-policy-application-meta {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+.prototype-applied-trip-status {
+  color: #0f766e;
+  font-weight: 600;
 }

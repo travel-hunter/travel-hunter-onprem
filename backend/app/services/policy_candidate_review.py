@@ -7,9 +7,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core import security
-from app.models import ExternalSourceRecord, PolicyReviewCandidate, User
+from app.models import ExternalSourceRecord, Policy, PolicyReviewCandidate, User
 from app.repositories import admin as admin_repository
-from app.services import policy_normalization
+from app.services import policy_normalization, policy_semantic_mapping
 
 
 def evidence_fingerprint(record: ExternalSourceRecord) -> str:
@@ -24,6 +24,10 @@ def evidence_fingerprint(record: ExternalSourceRecord) -> str:
         "officialUrl": record.detail_url or record.source_url,
         "status": record.status,
     }
+    raw_payload = record.raw_payload if isinstance(record.raw_payload, dict) else {}
+    # Only records that carry a procedure hash it, so every other record keeps its existing fingerprint.
+    if isinstance(raw_payload.get("procedure"), dict):
+        payload["procedure"] = raw_payload["procedure"]
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
@@ -201,12 +205,9 @@ def approve_candidate(
     candidate, record = resolved
     if candidate.review_status != "pending":
         raise ValueError("Only pending candidates can be approved")
-    policy = policy_normalization.promote_external_benefit_record(db, record=record)
-    candidate.review_status = "approved"
+    policy = _publish_candidate(db, candidate=candidate, record=record)
     candidate.review_note = note.strip() if note and note.strip() else None
     candidate.reviewed_by_user_id = admin.id
-    candidate.reviewed_at = security.utc_now_naive()
-    candidate.published_policy_id = policy.id
     db.add(candidate)
     db.flush()
     admin_repository.add_audit_log(
@@ -220,3 +221,149 @@ def approve_candidate(
         after_json={"reviewStatus": "approved", "policyId": str(policy.id)},
     )
     return candidate
+
+
+def _publish_candidate(db: Session, *, candidate: PolicyReviewCandidate, record: ExternalSourceRecord):
+    policy = policy_normalization.promote_external_benefit_record(db, record=record)
+    candidate.review_status = "approved"
+    candidate.reviewed_at = security.utc_now_naive()
+    candidate.published_policy_id = policy.id
+    return policy
+
+
+# --- auto-publish gate ------------------------------------------------------------------------
+# Spec: docs/superpowers/specs/2026-09-14-policy-auto-publish-design.md. Rules run in order; the
+# first failing rule becomes review_reason. Passing every rule publishes the candidate right away.
+
+AUTO_PUBLISH_MODE = "auto_after_reviewed_baseline"
+REVIEW_REASON_AUTO = "auto"
+AUTO_PUBLISH_MIN_CONFIDENCE = 70
+AUTO_PUBLISH_MIN_COMPLETENESS = 60
+AUTO_PUBLISH_MAX_SHRINK_PERCENT = 30
+_MANUAL_SOURCE_CATEGORIES = {"stay_discount"}
+
+
+def human_baseline_admin_id(db: Session, *, source_category: str) -> int | None:
+    """The admin who most recently approved a candidate of this source by hand — owns the automation."""
+    return db.scalar(
+        select(PolicyReviewCandidate.reviewed_by_user_id)
+        .join(ExternalSourceRecord, PolicyReviewCandidate.external_source_record_id == ExternalSourceRecord.id)
+        .where(
+            ExternalSourceRecord.source_category == source_category,
+            PolicyReviewCandidate.review_status == "approved",
+            PolicyReviewCandidate.reviewed_by_user_id.is_not(None),
+        )
+        .order_by(PolicyReviewCandidate.reviewed_at.desc(), PolicyReviewCandidate.id.desc())
+    )
+
+
+def count_auto_approved_since(db: Session, *, source_category: str, since) -> int:
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(PolicyReviewCandidate)
+            .join(ExternalSourceRecord, PolicyReviewCandidate.external_source_record_id == ExternalSourceRecord.id)
+            .where(
+                ExternalSourceRecord.source_category == source_category,
+                PolicyReviewCandidate.review_reason == REVIEW_REASON_AUTO,
+                PolicyReviewCandidate.reviewed_at >= since,
+            )
+        )
+        or 0
+    )
+
+
+def _published_policy_for_record(db: Session, record: ExternalSourceRecord) -> Policy | None:
+    policy_id = db.scalar(
+        select(PolicyReviewCandidate.published_policy_id)
+        .where(
+            PolicyReviewCandidate.external_source_record_id == record.id,
+            PolicyReviewCandidate.review_status == "approved",
+            PolicyReviewCandidate.published_policy_id.is_not(None),
+        )
+        .order_by(PolicyReviewCandidate.id.desc())
+    )
+    return db.get(Policy, policy_id) if policy_id is not None else None
+
+
+def _source_run_is_normal(source, source_result) -> bool:
+    if source_result is None or source_result.outcome != "success":
+        return False
+    parsed = source_result.parsed_count
+    if parsed < (source.expected_min_records or 0):
+        return False
+    previous = source.last_parsed_count
+    if previous and (previous - parsed) * 100 > AUTO_PUBLISH_MAX_SHRINK_PERCENT * previous:
+        return False
+    return True
+
+
+def _hold_reason(db: Session, *, candidate: PolicyReviewCandidate, record: ExternalSourceRecord, source, source_result) -> str | None:
+    if source is None or source.publication_mode != AUTO_PUBLISH_MODE:
+        return "source_mode_review"
+    if record.source_category in _MANUAL_SOURCE_CATEGORIES:
+        return "stay_discount_manual"
+    if human_baseline_admin_id(db, source_category=record.source_category or "") is None:
+        return "first_baseline"
+    if not _source_run_is_normal(source, source_result):
+        return "source_anomaly"
+    published = _published_policy_for_record(db, record) if candidate.change_kind == "material_change" else None
+    if published is None:
+        return "new_policy"
+    if (published.title, published.region, published.city) != (record.title, record.region, record.city):
+        return "identity_changed"
+    mapping = policy_semantic_mapping.map_external_source_semantics(record)
+    published_detail = published.structured_detail if isinstance(published.structured_detail, dict) else {}
+    new_guide = mapping.structured_detail.get("applicationGuide")
+    old_guide = published_detail.get("applicationGuide")
+    if (new_guide is not None or old_guide is not None) and new_guide != old_guide:
+        return "procedure_changed"
+    if (
+        record.status == "ended"
+        or record.freshness_status == "stale"
+        or mapping.policy_status == "hidden"
+    ):
+        return "would_publish_hidden"
+    if (
+        (record.confidence or 0) < AUTO_PUBLISH_MIN_CONFIDENCE
+        or (record.field_completeness or 0) < AUTO_PUBLISH_MIN_COMPLETENESS
+        or not (record.benefit_text or "").strip()
+    ):
+        return "low_confidence"
+    return None
+
+
+def auto_publish_gate(
+    db: Session,
+    *,
+    candidate: PolicyReviewCandidate,
+    record: ExternalSourceRecord,
+    source,
+    source_result,
+) -> str:
+    """Publish a freshly created pending candidate when every rule passes; otherwise record why it waits."""
+    reason = _hold_reason(db, candidate=candidate, record=record, source=source, source_result=source_result)
+    if reason is not None:
+        candidate.review_reason = reason
+        db.add(candidate)
+        db.flush()
+        return reason
+
+    owner_id = human_baseline_admin_id(db, source_category=record.source_category or "")
+    policy = _publish_candidate(db, candidate=candidate, record=record)
+    candidate.review_note = REVIEW_REASON_AUTO
+    candidate.review_reason = REVIEW_REASON_AUTO
+    candidate.reviewed_by_user_id = None
+    db.add(candidate)
+    db.flush()
+    admin_repository.add_audit_log(
+        db,
+        admin_user_id=int(owner_id),
+        action="policy_review.auto_approve",
+        target_type="policy_review_candidate",
+        target_id=str(candidate.id),
+        summary=f"Auto-published source candidate {record.canonical_key}",
+        before_json={"reviewStatus": "pending"},
+        after_json={"reviewStatus": "approved", "policyId": str(policy.id), "actor": "system"},
+    )
+    return REVIEW_REASON_AUTO

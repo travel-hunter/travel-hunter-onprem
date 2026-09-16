@@ -489,12 +489,27 @@ v1 표준 섹션은 아래 다섯 개다.
    `applyUrl`이 있으면 신청 CTA가 되고, 없으면 `officialUrl`이 안내 CTA가 된다. 외부 수집 승격에서는 현재 `apply_url`을 별도로 채우지 않고 `official_url` 중심으로 연결한다.
 
 7. **`island_visit` 대상 섬 목록은 정책 카드가 아니라 별도 승인 카탈로그다.** (2026-09-14, `0040_eligible_island_catalog`)
-   - 출처는 코드 소유 `eligible_island_catalogs.notice_list_url` 한 곳(`island_visit_2026`)뿐이다. 관리자 API는 임의 URL을 받지 않으며, 공지 페이지와 **같은 호스트**의 `.xlsx` 첨부만 내려받는다. 첨부 파일 자체는 저장하지 않고 URL·파일명·SHA-256만 남긴다.
+   - 출처는 코드 소유 `eligible_island_catalogs.notice_list_url` 한 곳(`island_visit_2026`)뿐이다. 관리자 API는 임의 URL을 받지 않는다. 공지 페이지와 **같은 호스트**의 `.xlsx` 첨부가 있으면 그것만 내려받고, 없으면 페이지의 링크 중 코드에 고정된 허용 목록(단축 URL `buly.kr` → 공개 Google 스프레드시트 `docs.google.com/spreadsheets/d/<id>`)만 따라가 시트를 `export?format=xlsx`로 받는다(2026-09-14 실제 사이트는 첨부 없이 이 방식으로만 대상 섬 목록을 공개). 그 밖의 호스트는 절대 요청하지 않는다. 첨부 파일 자체는 저장하지 않고 URL·파일명·SHA-256만 남긴다.
    - 첨부 집합 지문(정렬된 `url|sha256`의 SHA-256)이 기존 스냅샷과 같으면 파싱도 DB 쓰기도 하지 않는다(`unchanged`). 파일 하나만 바뀌어도 새 후보가 된다.
    - 안전장치: 알려진 헤더(섬명/도서명 + 시군구/관할 등)가 없거나 ZIP이 아닌 파일·HTML·빈 결과는 `parser_changed`, 다운로드 실패는 `download_failed`로 기록되고 승인본은 그대로다. 파싱 결과가 승인본과 같으면 `identical`, 승인본보다 30% 넘게 줄면 `suspicious_shrink`로 후보를 만들지 않는다. 이름 정규화는 NFC + 공백 축약만 한다.
    - 승인은 `/admin/policy-review` 의 `대상 섬 목록 갱신` 섹션에서 **스냅샷 단위**로만 한다(섬 단위 승인 없음). 승인 시 카탈로그 행을 잠근 한 트랜잭션에서 `eligible_islands`를 통째로 교체하고, 이전 `pending` 후보는 `superseded`가 된다. 반려는 사유가 필수다.
    - 승인 전 후보는 어디에도 노출되지 않는다. 정책 상세의 `eligibleIslandCount`/`eligibleIslandsOfficialUrl`과 일정 추천의 섬 정책 포함 여부는 `eligible_islands`만 읽는다. 추천은 `TripPlace.place_name`이 승인된 `normalized_name`과 **완전 일치**할 때만 섬 정책을 넣는다(`거문도 선착장`은 `거문도`와 다르다).
    - 첫 운영 절차: ① DB 백업 ② `공지 다시 확인`으로 수집 ③ 후보의 총수·지역 파일 수를 공식 공지와 대조 ④ `변경 상세`로 추가/삭제 확인 ⑤ 승인. 실패 결과(`download_failed`/`parser_changed`)는 수집 결과 메시지로만 보이고 스택 트레이스는 노출되지 않는다.
+
+8. **수집 후보는 소스별 모드에 따라 자동 발행될 수 있다.** (2026-09-14, `0041_policy_auto_publish`, 스펙 `docs/superpowers/specs/2026-09-14-policy-auto-publish-design.md`)
+   - 기본은 모든 소스 `review`(전건 검토). 관리자가 `/admin/policy-review` 소스 카드에서 `자동 발행 켜기`를 누르면 `auto_after_reviewed_baseline`이 되는데, 그 소스에서 **사람이 승인한 후보가 1건 이상**(기준선) 있어야 켜진다(`409 baseline_required`).
+   - 자동 발행 조건(전부 충족): 이미 발행된 정책의 갱신(`material_change`) · 제목/지역/시군구 불변 · 회차가 정상(파서 성공, `expected_min_records` 이상, 직전 성공 대비 30% 초과 급감 없음) · `ended`/`stale`이 아님 · `confidence ≥ 70`, `field_completeness ≥ 60`, 혜택 문구 있음. 하나라도 어긋나면 `pending`에 남고 `review_reason`(화면 배지)이 이유를 말해 준다. 새 정책은 항상 사람이 본다.
+   - `stay_discount`는 모드와 무관하게 수동(alias 정책 수십 건을 갱신하는 경로). 대상 섬 카탈로그는 이 규칙 밖.
+   - 자동 승인도 `admin_audit_logs`에 `policy_review.auto_approve`로 남는다. `admin_user_id`는 그 소스의 기준선을 마지막으로 승인한 관리자(자동화를 켠 책임자), `after_json.actor = "system"`.
+   - 수집 성공 회차만 `policy_collection_sources.last_parsed_count`를 갱신하므로 파서 실패 회차가 기준선을 0으로 끌어내리지 않는다.
+
+9. **섬 여행비 지원은 신청 절차 안내와 일정(팀) 단위 진행 관리까지 제공한다.** (2026-09-14, 스펙 `docs/superpowers/specs/2026-09-14-island-application-guide-design.md`)
+   - **수집:** `island_visit_parser`가 공식 페이지의 모든 회차(1차·2차)를 파싱해 `raw_payload.procedure`에 저장한다: 회차별 신청 시작·마감, 여행 기간, 신청·서류 제출 구글 폼(HTML 주석 밖의 `forms.gle`/`docs.google.com/forms`만, 버튼·알림 문구의 "N차"로 회차 배정), 서류 제출 기한(여행 후 14일), 최소 1박, 최소 결제 10만원, 필요 서류 5종, 사진 요건, 지원 제외 기준, 문의처. 서류 제출 기한이나 회차 날짜를 못 찾으면 `parser_changed`.
+   - **검토:** `evidence_fingerprint`는 procedure가 있는 레코드에만 procedure를 포함한다(다른 정책 지문은 그대로). 절차가 바뀐 후보는 자동 발행 모드여도 `procedure_changed`로 보류된다.
+   - **승인·표시:** island_visit mapper가 지원내용·회차별 기간·신청 조건·필요 서류·비고를 채우고, 절차를 `policies.structured_detail["applicationGuide"]`에 저장한다. 정책 API는 이를 `applicationGuide` DTO로 내려주며 회차 상태(`past`/`current`/`upcoming`)·서류 마감일·열린 신청 폼은 조회일(KST) 기준 계산이다. `applyUrl`은 신청이 열린 회차가 있을 때만 그 신청 폼. 정책 상세 화면은 "신청 절차" 섹션(지난 회차 접힘, 현재 회차 D-day·5단계, 다음 회차 예정)을 보여 준다.
+   - **진행 관리:** 일정에 연결된 섬 정책마다 `trip_policies.application_*`(0042)에 팀 진행 상태와 서류 준비 체크를 저장한다. `PATCH /api/trips/{id}/policies/{slug}/application`은 편집자만, 한 단계씩 앞뒤로만 이동. 일정 상세 응답의 `linkedPolicies[].application`은 일정으로 계산한 점검(여행 기간 안, 1박 이상, 승인된 대상 섬 포함, 신청 마감, 서류 마감 = 종료일+14일)을 함께 준다. 일정 상세 화면의 "신청 진행" 패널과 신청 정책 목록의 "신청 진행 · 상태" 배지가 이를 쓴다.
+   - **마감 이후:** 카드 마감(`end_date`, 신청 마감)은 공개 목록·카드·추천·상세에 그대로 적용된다. 일정 쪽(연결 정책, 신청 정책 목록, 진행 갱신 API)만 서류 제출 기한이 남은 회차가 있는 동안 계속 보이고 갱신된다(`island_application.active_guide`).
+   - **개인정보:** 증빙 파일·주민번호·계좌번호는 받지도 저장하지도 않는다. 제출은 공식 구글 폼으로만 안내한다. 마감 알림은 앱 안 D-day 표시이며 푸시·이메일 알림은 없다.
 
 ## 빠른 추적 순서
 

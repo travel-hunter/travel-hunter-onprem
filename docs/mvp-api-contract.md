@@ -642,7 +642,7 @@ Account linking policy:
 ### GET /me/applied-policy-links
 
 내 일정에 담긴 정책을 정책 기준으로 묶어서 반환한다. 기존 `GET /me/applied-policies`는 카운트 및 단순 정책 목록 호환용으로 유지하고, 이 엔드포인트는 "정책 -> 연결된 일정들" 화면에 사용한다.
-마감일이 지난 정책과 해당 연결은 응답에서 제외한다.
+마감일이 지난 정책과 해당 연결은 응답에서 제외한다. 예외: `island_visit`(섬 여행비 지원)은 카드 마감(신청 마감)이 지나도 신청 절차에 서류 제출 기한이 남은 회차가 있으면 계속 포함한다(여행·서류 제출 단계 진행용).
 
 **Response 200** - `AppliedPolicyLink[]`
 
@@ -656,12 +656,15 @@ Account linking policy:
         "title": "부산 주말 여행",
         "region": "부산",
         "startDate": "2026-06-12",
-        "endDate": "2026-06-13"
+        "endDate": "2026-06-13",
+        "applicationStatus": null
       }
     ]
   }
 ]
 ```
+
+`applicationStatus`: 해당 일정(팀)의 신청 진행 상태(`not_started` | `applied` | `selected` | `not_selected` | `traveled` | `documents_submitted` | `paid`) 또는 기록이 없으면 `null`.
 
 ---
 ### POST /me/saved-policies/{policy_slug}
@@ -1037,6 +1040,29 @@ Changing the travel area does not move, delete, or reorder places, days, or link
 **Errors**
 - 403: viewer는 해제 불가
 - 404: 일정 또는 정책 없음
+
+---
+
+### PATCH /trips/{trip_id}/policies/{policy_slug}/application
+
+일정(팀) 단위 섬 여행비 지원 신청 진행 상태와 서류 체크리스트를 갱신한다. owner/editor만 가능. 증빙 파일·번호는 받지 않으며 체크리스트는 준비 여부만 저장한다.
+
+**Request**
+```json
+{ "status": "applied", "checklist": { "신분증": true, "통장사본": false } }
+```
+- `status`(선택): `not_started` | `applied` | `selected` | `not_selected` | `traveled` | `documents_submitted` | `paid`. 한 단계 앞으로 또는 한 단계 뒤로만 이동 가능(`applied → selected|not_selected`, `selected → traveled → documents_submitted → paid`). `not_selected`에서 앞으로는 이동 불가.
+- `checklist`(선택): 필요 서류 라벨 → 준비 여부. `true`는 체크, `false`는 해제. 키는 승인된 신청 절차의 `requiredDocuments` 라벨이어야 한다.
+
+**Response 200** - `TripPolicyApplication` (아래 타입 참조)
+
+**Errors**
+- 403: viewer는 갱신 불가
+- 404: `Application guide not found`(섬 정책이 아니거나 모든 회차의 서류 제출 기한이 지남) 또는 `Policy is not linked to this trip`
+- 409: `Invalid application status transition`
+- 422: `Unknown application document` 또는 요청 형식 오류
+
+카드 마감(신청 마감)이 지나도 서류 제출 기한이 남은 회차가 있으면 갱신 가능하다.
 
 ---
 
@@ -1451,6 +1477,7 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | actionStatus | string \| null | 생략/`null` 또는 `"infoOnly"`; `"infoOnly"`는 raw fallback 상세 전용이며 저장/일정 연결 불가 |
 | eligibleIslandCount | number \| null | `island_visit` 정책에만 존재. 관리자가 승인한 대상 섬 카탈로그의 총 대상지 수. 승인 전이면 `0`. 전체 대상 섬 목록은 정책 응답에 싣지 않는다 |
 | eligibleIslandsOfficialUrl | string \| null | `island_visit` 정책에만 존재. 승인 스냅샷의 공지 URL(없으면 공식 안내 URL). 화면 라벨은 `대상 섬 공식 안내` |
+| applicationGuide | ApplicationGuide \| null | `island_visit` 정책에만 존재. 관리자 승인된 신청 절차: `rounds[{key, label, status: past\|current\|upcoming, applyStart, applyUntil, travelStart, travelEnd, documentsDueBy, applicationFormUrl, documentFormUrl}]`, `currentRoundKey`, `applyFormUrl`(신청이 열린 회차가 있을 때만), `documentDeadlineDaysAfterTrip`, `minNights`, `minPaymentKrw`, `requiredDocuments[]`, `photoRequirement`, `exclusions[]`, `contacts{email, phones[]}`. 상태·서류 마감일·열린 폼은 조회일(KST) 기준 계산. 폼 링크는 Google Forms 호스트만. `applyFormUrl`이 있고 정책 `applyUrl`이 비어 있으면 `applyUrl`도 그 폼으로 채운다. 절차가 바뀐 수집 후보는 자동 발행하지 않는다(`reviewReason = procedure_changed`). |
 
 ### Trip
 
@@ -1481,6 +1508,23 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | amount | string | 혜택 금액 표시 |
 | region | string | 적용 지역 |
 | status | `"active" \| "hidden"` | 정책 노출 상태. 사용자에게 제공 가능한 정책은 `active`이며, 연결 기록만 보존하고 공개하지 않는 정책은 `hidden`이다. |
+| deadline | string \| null | 정책 카드 마감일(ISO 날짜). 없으면 `null` |
+| application | TripPolicyApplication \| null | `island_visit` 정책에만 존재. 일정(팀) 단위 신청 진행. 카드 마감이 지나도 서류 제출 기한이 남은 회차가 있으면 연결 정책에 계속 표시된다 |
+
+### TripPolicyApplication
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| status | string | `not_started` \| `applied` \| `selected` \| `not_selected` \| `traveled` \| `documents_submitted` \| `paid` |
+| roundKey | string \| null | 조회일 기준 현재 회차 키 |
+| checklist | `{key, label, checked}[]` | 승인된 필요 서류 목록과 준비 여부 |
+| checks.inTravelWindow | boolean \| null | 일정 기간이 현재 회차 여행 기간 안인지. 회차 여행 기간이 없으면 `null` |
+| checks.meetsMinNights | boolean | 일정 박수가 최소 박수 이상인지 |
+| checks.eligibleIslandMatched | boolean \| null | 일정 장소 중 승인된 대상 섬과 정확 일치하는 곳이 있는지. 카탈로그를 읽지 않은 응답이면 `null` |
+| checks.applyDeadline | string \| null | 현재 회차 신청 마감(`YYYY-MM-DDTHH:MM`) |
+| checks.documentsDueDate | string \| null | 서류 제출 마감 = 일정 종료일 + 제출 기한 일수 |
+| updatedAt | string \| null | 마지막 갱신 시각(UTC ISO, `Z`) |
+| updatedBy | string \| null | 마지막 갱신자 닉네임 |
 
 ### ItineraryPlace
 
@@ -1773,19 +1817,22 @@ Admin policy list items additionally expose `sourceCategory` and `sourceLabel` f
 All endpoints below require bearer authentication and the admin role. Collection source URLs and parser adapters are code-owned; this API only enables or disables approved sources.
 
 - `GET /api/admin/policy-collection-sources` returns configured sources, their enabled state, and most recent collection health.
-- `PATCH /api/admin/policy-collection-sources/{sourceKey}` accepts `{ "enabled": boolean }`. It cannot create an arbitrary URL or parser.
-- `GET /api/admin/policy-review-candidates?limit=&offset=` returns pending source evidence only, windowed with `limit` (1-100) and `offset` (0+). These records are not public policy cards.
+- `PATCH /api/admin/policy-collection-sources/{sourceKey}` accepts any of `{ "enabled": boolean, "publicationMode": "review" | "auto_after_reviewed_baseline", "expectedMinRecords": number ≥ 0 }`; omitted fields are untouched. It cannot create an arbitrary URL or parser. Switching to `auto_after_reviewed_baseline` requires at least one candidate of that source approved by a human, otherwise `409 baseline_required`.
+- Source items also carry `expectedMinRecords`, `lastParsedCount` (last successful run), and `autoApprovedLast24h`.
+- `GET /api/admin/policy-review-candidates?limit=&offset=` returns pending source evidence only, windowed with `limit` (1-100) and `offset` (0+). These records are not public policy cards. Each item has `reviewReason: string | null` — why the auto-publish gate left it for a human: `source_mode_review` | `first_baseline` | `new_policy` | `identity_changed` | `source_anomaly` | `would_publish_hidden` | `low_confidence` | `stay_discount_manual` (`auto` on candidates the gate published itself).
 - `POST /api/admin/policy-review-candidates/approve-batch` accepts `{ "approveAll": boolean, "candidateIds": string[], "note": string | null }`. `approveAll: true` approves the current pending set; otherwise `candidateIds` selects up to 100 pending candidates. The operation is atomic: a missing, already-decided, or concurrently rejected candidate returns `409` and approves none.
 - `POST /api/admin/policy-review-candidates/{candidateId}/approve` accepts optional `{ "note": string | null }` and publishes only that candidate's source record through the existing policy normalization mapping.
 - `POST /api/admin/policy-review-candidates/{candidateId}/reject` requires `{ "note": string }`; a later material evidence change creates a fresh pending candidate.
 
 Approve/reject writes an admin audit log. Source raw payload remains admin-only and is not returned by these DTOs.
 
+Auto-publish (spec `docs/superpowers/specs/2026-09-14-policy-auto-publish-design.md`): when a source is in `auto_after_reviewed_baseline` mode, a freshly collected candidate is published without a human only if it is a `material_change` of an already published policy with unchanged title/region/city, the run was normal (parser success, ≥ `expectedMinRecords`, no >30% shrink vs `lastParsedCount`), the record would not publish hidden, and confidence/completeness pass. Such approvals write `policy_review.auto_approve` audit logs attributed to the admin who approved the source's baseline (`afterJson.actor = "system"`). `stay_discount` is never auto-published.
+
 ## Admin eligible island catalog review
 
 Independent of `/api/admin/policy-review-candidates`: these endpoints never read or write policy review candidates, `policies`, or `trip_policies`. The catalog key is code-owned (`island_visit_2026`); an unknown key is `404`. All routes require the admin role.
 
-- `POST /api/admin/eligible-island-catalogs/{catalogKey}/collect` fetches the official notice page, downloads same-host `.xlsx` attachments, and stages one pending snapshot when the attachment fingerprint is new and the parsed set differs from the approved catalog. Response: `{ "outcome": "created" | "unchanged" | "identical" | "suspicious_shrink" | "download_failed" | "parser_changed", "snapshotId": string | null, "entryCount": number, "error": string | null }`. Failures are health outcomes (`200`), never stack traces; nothing is written on failure.
+- `POST /api/admin/eligible-island-catalogs/{catalogKey}/collect` fetches the official notice page, downloads same-host `.xlsx` attachments (or, when there are none, follows only a code-owned allowlist — the `buly.kr` short link to a public `docs.google.com/spreadsheets/d/<id>` sheet — and downloads that sheet's `export?format=xlsx`), and stages one pending snapshot when the attachment fingerprint is new and the parsed set differs from the approved catalog. Response: `{ "outcome": "created" | "unchanged" | "identical" | "suspicious_shrink" | "download_failed" | "parser_changed", "snapshotId": string | null, "entryCount": number, "error": string | null }`. Failures are health outcomes (`200`), never stack traces; nothing is written on failure.
 - `GET /api/admin/eligible-island-catalogs/{catalogKey}/snapshots?limit=&offset=` lists snapshots newest first with `reviewStatus`, `isCurrentApproved`, `entryCount`, `addedCount`, `removedCount`, `changedCount`, `sourceNoticeUrl`, `sourceNoticeTitle`, `attachmentFiles[{url, filename, sha256}]`, `attachmentFingerprint`, `parserVersion`, `fetchedAt`, `reviewedAt`, `reviewNote`, `createdAt`, plus `approvedSnapshotId` and `approvedEntryCount`. Attachment bytes are never stored or returned.
 - `GET /api/admin/eligible-island-catalogs/{catalogKey}/snapshots/{snapshotId}?limit=&offset=` returns the snapshot item and its diff against the current approved catalog: `added`, `removed`, `unchanged` entries (`displayName`, `normalizedName`, `jurisdictionName`) windowed by `limit`/`offset`, with `addedTotal`, `removedTotal`, `unchangedTotal`.
 - `POST /api/admin/eligible-island-catalogs/{catalogKey}/snapshots/{snapshotId}/approve` replaces the approved catalog atomically in one locked transaction. Only `pending` snapshots can be approved; `rejected`, `superseded`, or already `approved` return `409 snapshot_not_pending`.

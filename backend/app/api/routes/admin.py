@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -220,6 +220,7 @@ def _candidate_item(candidate, record) -> AdminPolicyReviewCandidateItem:
         startDate=record.start_date,
         endDate=record.end_date,
         createdAt=candidate.created_at.isoformat(),
+        reviewReason=getattr(candidate, "review_reason", None),
     )
 
 
@@ -320,7 +321,15 @@ def reject_policy_review_candidate(
     return _candidate_item(rejected, record)
 
 
-def _collection_source_item(source) -> AdminCollectionSourceItem:
+def _auto_approved_last_24h(db: Session, source_category: str) -> int:
+    if not hasattr(db, "scalars"):
+        return 0
+    return policy_candidate_review.count_auto_approved_since(
+        db, source_category=source_category, since=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)
+    )
+
+
+def _collection_source_item(source, *, auto_approved_last_24h: int = 0) -> AdminCollectionSourceItem:
     return AdminCollectionSourceItem(
         key=source.key,
         displayName=source.display_name,
@@ -328,6 +337,9 @@ def _collection_source_item(source) -> AdminCollectionSourceItem:
         sourceCategory=source.source_category,
         enabled=source.enabled,
         publicationMode=source.publication_mode,
+        expectedMinRecords=getattr(source, "expected_min_records", 0) or 0,
+        lastParsedCount=getattr(source, "last_parsed_count", None),
+        autoApprovedLast24h=auto_approved_last_24h,
         lastOutcome=source.last_outcome,
         lastCollectedAt=source.last_collected_at.isoformat() if source.last_collected_at else None,
         lastError=source.last_error,
@@ -339,8 +351,12 @@ def list_policy_collection_sources(
     db: Session | None = Depends(get_optional_db),
     _current_admin: User = Depends(require_admin_user),
 ) -> AdminCollectionSourceListResponse:
+    session = _require_db(db)
     return AdminCollectionSourceListResponse(
-        items=[_collection_source_item(source) for source in policy_collection_sources.list_collection_sources(_require_db(db))]
+        items=[
+            _collection_source_item(source, auto_approved_last_24h=_auto_approved_last_24h(session, source.source_category))
+            for source in policy_collection_sources.list_collection_sources(session)
+        ]
     )
 
 
@@ -355,11 +371,21 @@ def update_policy_collection_source(
     source = policy_collection_sources.get_collection_source_by_key(session, key=source_key)
     if source is None:
         raise HTTPException(status_code=404, detail="Policy collection source not found")
-    updated = policy_collection_sources.update_collection_source_enabled(
-        session, source=source, enabled=payload.enabled
+    if (
+        payload.publicationMode == policy_candidate_review.AUTO_PUBLISH_MODE
+        and source.publication_mode != policy_candidate_review.AUTO_PUBLISH_MODE
+        and policy_candidate_review.human_baseline_admin_id(session, source_category=source.source_category) is None
+    ):
+        raise HTTPException(status_code=409, detail="baseline_required")
+    updated = policy_collection_sources.update_collection_source(
+        session,
+        source=source,
+        enabled=payload.enabled,
+        publication_mode=payload.publicationMode,
+        expected_min_records=payload.expectedMinRecords,
     )
     session.commit()
-    return _collection_source_item(updated)
+    return _collection_source_item(updated, auto_approved_last_24h=_auto_approved_last_24h(session, updated.source_category))
 
 
 # --- Eligible island catalog review (separate from policy review candidates) ---

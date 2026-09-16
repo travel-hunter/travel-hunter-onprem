@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict TQUVIeKOsPr0aFfzjmZas7eSoAtHYtdDmU1Mhu6edjIVDxUh8LcOmETBPJ5xJLE
+\restrict u9vh52NFMlhXUqWIE006EOsvFqGhpGU23DDV7Lyg7sckDU2O9EFZLhdsMqRT7xv
 
 -- Dumped from database version 16.14
 -- Dumped by pg_dump version 16.14
@@ -542,6 +542,7 @@ CREATE TABLE public.policy_collection_sources (
     last_error text,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    last_parsed_count integer,
     CONSTRAINT ck_policy_collection_sources_publication_mode CHECK (((publication_mode)::text = ANY ((ARRAY['review'::character varying, 'auto_after_reviewed_baseline'::character varying])::text[])))
 );
 
@@ -654,6 +655,7 @@ CREATE TABLE public.policy_review_candidates (
     published_policy_id bigint,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    review_reason character varying(40),
     CONSTRAINT ck_policy_review_candidates_change_kind CHECK (((change_kind)::text = ANY ((ARRAY['new'::character varying, 'material_change'::character varying])::text[]))),
     CONSTRAINT ck_policy_review_candidates_review_status CHECK (((review_status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying, 'superseded'::character varying])::text[])))
 );
@@ -933,7 +935,12 @@ CREATE TABLE public.trip_policies (
     id bigint NOT NULL,
     trip_id bigint NOT NULL,
     policy_id bigint NOT NULL,
-    added_at timestamp without time zone DEFAULT now() NOT NULL
+    added_at timestamp without time zone DEFAULT now() NOT NULL,
+    application_status character varying(24),
+    application_checklist jsonb,
+    application_updated_at timestamp without time zone,
+    application_updated_by_user_id bigint,
+    CONSTRAINT ck_trip_policies_application_status CHECK (((application_status IS NULL) OR ((application_status)::text = ANY ((ARRAY['not_started'::character varying, 'applied'::character varying, 'selected'::character varying, 'not_selected'::character varying, 'traveled'::character varying, 'documents_submitted'::character varying, 'paid'::character varying])::text[]))))
 );
 
 
@@ -2045,6 +2052,14 @@ ALTER TABLE ONLY public.policies
 
 
 --
+-- Name: trip_policies fk_trip_policies_application_updated_by_user_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trip_policies
+    ADD CONSTRAINT fk_trip_policies_application_updated_by_user_id FOREIGN KEY (application_updated_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: notification_deliveries notification_deliveries_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2224,4 +2239,4 @@ ALTER TABLE ONLY public.user_saved_policies
 -- PostgreSQL database dump complete
 --
 
-\unrestrict TQUVIeKOsPr0aFfzjmZas7eSoAtHYtdDmU1Mhu6edjIVDxUh8LcOmETBPJ5xJLE
+\unrestrict u9vh52NFMlhXUqWIE006EOsvFqGhpGU23DDV7Lyg7sckDU2O9EFZLhdsMqRT7xv

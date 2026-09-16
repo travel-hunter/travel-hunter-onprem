@@ -180,9 +180,95 @@ def test_admin_routes_list_collection_sources(monkeypatch) -> None:
     assert response.json()["items"] == [{
         "key": "island_visit", "displayName": "Island Visit",
         "officialUrl": "https://official.example/island", "sourceCategory": "island_visit",
-        "enabled": False, "publicationMode": "review", "lastOutcome": None,
+        "enabled": False, "publicationMode": "review", "expectedMinRecords": 0,
+        "lastParsedCount": None, "autoApprovedLast24h": 0, "lastOutcome": None,
         "lastCollectedAt": None, "lastError": None
     }]
+
+
+def _install_source_for_patch(monkeypatch, *, publication_mode: str = "review"):
+    source = SimpleNamespace(
+        key="local_half_trip", display_name="Korea Half-Price Travel",
+        official_url="https://official.example/half", source_category="local_half_trip",
+        enabled=True, publication_mode=publication_mode, expected_min_records=0, last_parsed_count=None,
+        last_outcome=None, last_collected_at=None, last_error=None,
+    )
+    monkeypatch.setattr(admin_routes.policy_collection_sources, "get_collection_source_by_key", lambda db, *, key: source)
+
+    def fake_update(db, *, source, enabled=None, publication_mode=None, expected_min_records=None):
+        if enabled is not None:
+            source.enabled = enabled
+        if publication_mode is not None:
+            source.publication_mode = publication_mode
+        if expected_min_records is not None:
+            source.expected_min_records = expected_min_records
+        return source
+
+    monkeypatch.setattr(admin_routes.policy_collection_sources, "update_collection_source", fake_update)
+    return source
+
+
+def test_admin_routes_refuse_auto_publish_without_human_baseline(monkeypatch) -> None:
+    fake_db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    install_admin_dependencies(fake_db, make_user(1, role="admin"))
+    source = _install_source_for_patch(monkeypatch)
+    monkeypatch.setattr(admin_routes.policy_candidate_review, "human_baseline_admin_id", lambda db, *, source_category: None)
+
+    try:
+        response = client.patch(
+            "/api/admin/policy-collection-sources/local_half_trip",
+            json={"publicationMode": "auto_after_reviewed_baseline"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "baseline_required"}
+    assert source.publication_mode == "review"
+
+
+def test_admin_routes_enable_auto_publish_with_baseline_and_threshold(monkeypatch) -> None:
+    fake_db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    install_admin_dependencies(fake_db, make_user(1, role="admin"))
+    source = _install_source_for_patch(monkeypatch)
+    monkeypatch.setattr(admin_routes.policy_candidate_review, "human_baseline_admin_id", lambda db, *, source_category: 1)
+
+    try:
+        response = client.patch(
+            "/api/admin/policy-collection-sources/local_half_trip",
+            json={"publicationMode": "auto_after_reviewed_baseline", "expectedMinRecords": 11},
+        )
+        negative = client.patch("/api/admin/policy-collection-sources/local_half_trip", json={"expectedMinRecords": -1})
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert (response.json()["publicationMode"], response.json()["expectedMinRecords"]) == ("auto_after_reviewed_baseline", 11)
+    assert source.enabled is True  # untouched when omitted
+    assert negative.status_code == 422
+
+
+def test_admin_routes_expose_review_reason_on_candidates(monkeypatch) -> None:
+    fake_db = object()
+    install_admin_dependencies(fake_db, make_user(1, role="admin"))
+    candidate = SimpleNamespace(
+        id=7, external_source_record_id=11, review_status="pending", change_kind="material_change",
+        review_reason="identity_changed", created_at=datetime(2026, 9, 14, 10, 0, 0),
+    )
+    record = SimpleNamespace(
+        id=11, title="Renamed support", source_category="local_half_trip", detail_url=None,
+        source_url="https://official.example/half", benefit_text="support", region="Gangwon", city=None,
+        status="active", start_date=None, end_date=None,
+    )
+    monkeypatch.setattr(admin_routes.policy_candidate_review, "list_pending_candidates", lambda db, *, limit, offset=0: [(candidate, record)])
+    monkeypatch.setattr(admin_routes.policy_candidate_review, "count_pending_candidates", lambda db: 1)
+
+    try:
+        response = client.get("/api/admin/policy-review-candidates")
+    finally:
+        clear_overrides()
+
+    assert response.json()["items"][0]["reviewReason"] == "identity_changed"
 
 
 def test_admin_routes_page_pending_policy_review_candidates(monkeypatch) -> None:

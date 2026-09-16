@@ -90,18 +90,46 @@ def get_collection_source_by_key(db: Session, *, key: str) -> PolicyCollectionSo
 
 
 def update_collection_source_enabled(db: Session, *, source: PolicyCollectionSource, enabled: bool) -> PolicyCollectionSource:
-    source.enabled = enabled
+    return update_collection_source(db, source=source, enabled=enabled)
+
+
+def update_collection_source(
+    db: Session,
+    *,
+    source: PolicyCollectionSource,
+    enabled: bool | None = None,
+    publication_mode: str | None = None,
+    expected_min_records: int | None = None,
+) -> PolicyCollectionSource:
+    """Only the operator-tunable fields; adapter, URL and category stay code-owned."""
+    if enabled is not None:
+        source.enabled = enabled
+    if publication_mode is not None:
+        source.publication_mode = publication_mode
+    if expected_min_records is not None:
+        source.expected_min_records = expected_min_records
     db.add(source)
     db.flush()
     return source
 
 
-def record_collection_source_run(db: Session, *, source: PolicyCollectionSource, outcome: str, collected_at: datetime, error: str | None = None) -> PolicyCollectionSource:
+def record_collection_source_run(
+    db: Session,
+    *,
+    source: PolicyCollectionSource,
+    outcome: str,
+    collected_at: datetime,
+    error: str | None = None,
+    parsed_count: int | None = None,
+) -> PolicyCollectionSource:
     source.last_outcome = outcome
     source.last_collected_at = collected_at
     source.last_error = error
     if outcome == "success":
         source.last_successful_at = collected_at
+        if parsed_count is not None:
+            # Baseline for the auto-publish shrink guard: only successful runs count.
+            source.last_parsed_count = parsed_count
     db.add(source)
     db.flush()
     return source
