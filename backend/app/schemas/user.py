@@ -1,4 +1,9 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, TypeAdapter, field_validator
+
+from app.core.internal_accounts import is_internal_admin_identifier
+
+
+_login_email_adapter = TypeAdapter(EmailStr)
 
 
 class SocialAccount(BaseModel):
@@ -49,8 +54,16 @@ class ProfileSkipResponse(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str = Field(min_length=1)
+
+    @field_validator("email")
+    @classmethod
+    def validate_login_identifier(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if is_internal_admin_identifier(normalized):
+            return normalized
+        return str(_login_email_adapter.validate_python(normalized))
 
 
 class RequiredAgreement(BaseModel):

@@ -5,13 +5,10 @@ import getpass
 import sys
 
 from app.core import security
+from app.core.internal_accounts import is_internal_admin_identifier
 from app.db.session import get_session_factory
 from app.repositories import users as user_repository
 from app.services import auth as auth_service
-
-def is_internal_admin_identifier(value: str) -> bool:
-    return "@" in value and value.endswith(".invalid")
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Create one internal administrator account.")
