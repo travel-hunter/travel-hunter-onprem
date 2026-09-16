@@ -19,6 +19,9 @@ import {
 } from "../../test/fixtures";
 import { login, renderAppRoute } from "../../test/renderAppRoute";
 
+// jsdom 에는 scrollIntoView 가 없다. 이동 후 카드로 스크롤하는 코드가 여기서 터진다.
+Element.prototype.scrollIntoView = Element.prototype.scrollIntoView ?? vi.fn();
+
 function makePlaceCandidate(title: string, meta: string, overrides: Partial<PlaceSearchCandidate> = {}): PlaceSearchCandidate {
   return {
     id: `kakao:${title}`,
@@ -109,13 +112,14 @@ describe("Travel Hunter app — place editing", () => {
       const user = userEvent.setup();
 
       await waitFor(() => expect(document.body).toHaveTextContent("Sunrise peak"));
-      await user.click(document.querySelector(".place-actions .ghost") as HTMLButtonElement);
+      await user.click(screen.getByRole("button", { name: "Sunrise peak 상세 열기" }));
+      expect(document.querySelector(".place-actions")).toBeNull();
       await setPlaceTimeFromDefault(user, "10:20");
       await user.clear(document.querySelector('input[name="place-label"]') as HTMLInputElement);
       await user.type(document.querySelector('input[name="place-label"]') as HTMLInputElement, "Updated peak");
       await user.clear(document.querySelector('textarea[name="place-meta"]') as HTMLTextAreaElement);
       await user.type(document.querySelector('textarea[name="place-meta"]') as HTMLTextAreaElement, "New memo");
-      await user.click(document.querySelector(".sheet-actions button") as HTMLButtonElement);
+      await user.click(screen.getByRole("button", { name: "저장하기" }));
 
       await waitFor(() =>
         expect(updatePlaceSpy).toHaveBeenCalledWith(
@@ -179,7 +183,7 @@ describe("Travel Hunter app — place editing", () => {
         expect(document.body).toHaveTextContent("Sunrise peak"),
       );
       await user.click(
-        document.querySelector(".place-actions .ghost") as HTMLButtonElement,
+        screen.getByRole("button", { name: "Sunrise peak 상세 열기" }),
       );
       await user.clear(
         document.querySelector('input[name="place-label"]') as HTMLInputElement,
@@ -188,9 +192,7 @@ describe("Travel Hunter app — place editing", () => {
         document.querySelector('input[name="place-label"]') as HTMLInputElement,
         "My unsaved edit",
       );
-      await user.click(
-        document.querySelector(".sheet-actions button") as HTMLButtonElement,
-      );
+      await user.click(screen.getByRole("button", { name: "저장하기" }));
 
       await waitFor(() =>
         expect(updatePlaceSpy).toHaveBeenCalledWith(
@@ -262,7 +264,7 @@ describe("Travel Hunter app — place editing", () => {
         expect(document.body).toHaveTextContent("Sunrise peak"),
       );
       await user.click(
-        document.querySelector(".place-actions .ghost") as HTMLButtonElement,
+        screen.getByRole("button", { name: "Sunrise peak 상세 열기" }),
       );
       await setPlaceTimeFromDefault(user, "11:20");
       await user.clear(
@@ -297,7 +299,7 @@ describe("Travel Hunter app — place editing", () => {
         expect(document.body).toHaveTextContent("Sunrise peak"),
       );
       await user.click(
-        document.querySelector(".place-actions .ghost") as HTMLButtonElement,
+        screen.getByRole("button", { name: "Sunrise peak 상세 열기" }),
       );
       expect(document.querySelector('input[name="place-time"]')).toHaveValue(
         "11:20",
@@ -354,7 +356,6 @@ describe("Travel Hunter app — place editing", () => {
       expect(
         await screen.findByText(/편집 권한이 필요해요/),
       ).toBeInTheDocument();
-      expect(document.querySelector(".place-actions")).not.toBeInTheDocument();
       expect(
         screen.queryByRole("button", { name: "Sunrise peak 순서 이동" }),
       ).not.toBeInTheDocument();
@@ -455,6 +456,11 @@ describe("Travel Hunter app — place editing", () => {
             .textContent,
         ).toBe("Cafe stop"),
       );
+      await waitFor(() => {
+        const moved = document.querySelector(".timeline-slot.just-moved");
+        expect(moved).not.toBeNull();
+        expect(moved).toHaveTextContent("Cafe stop");
+      });
 
       const firstTimelineItem = document.querySelectorAll(
         ".timeline-slot",
@@ -542,6 +548,133 @@ describe("Travel Hunter app — place editing", () => {
     } finally {
       getTripSpy.mockRestore();
       movePlaceSpy.mockRestore();
+    }
+  });
+
+  it("deletes a place from the sheet", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "57",
+      revision: 3,
+      currentUserRole: "owner",
+      days: { 1: [{ id: "1", time: "09:00", label: "Sunrise peak", meta: "Nature" }] },
+    };
+    const afterDelete: Trip = { ...trip, revision: 4, days: { 1: [] } };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const deleteSpy = vi.spyOn(appDataApi, "deleteTripPlace").mockResolvedValue(afterDelete);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/57");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Sunrise peak 상세 열기" }));
+      const sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+      await user.click(within(sheet).getByRole("button", { name: "삭제" }));
+      const confirm = await screen.findByRole("dialog", { name: "장소를 삭제할까요?" });
+      await user.click(within(confirm).getByRole("button", { name: "삭제" }));
+      await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith("57", "1", 3));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "장소 수정" })).not.toBeInTheDocument(),
+      );
+      expect(document.body).not.toHaveTextContent("Sunrise peak");
+    } finally {
+      getTripSpy.mockRestore();
+      deleteSpy.mockRestore();
+    }
+  });
+
+  it("moves the place immediately when a day chip is chosen and saves fields without a move", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "58",
+      revision: 5,
+      currentUserRole: "owner",
+      days: {
+        1: [{ id: "1", time: "09:00", label: "Sunrise peak", meta: "Nature" }],
+        2: [{ id: "2", time: "08:00", label: "Early market", meta: "Food" }],
+      },
+    };
+    const movedTrip: Trip = {
+      ...trip,
+      revision: 6,
+      days: { 1: [], 2: [trip.days[2][0], trip.days[1][0]] },
+    };
+    const savedTrip: Trip = {
+      ...movedTrip,
+      revision: 7,
+      days: { 1: [], 2: [trip.days[2][0], { ...trip.days[1][0], label: "Renamed peak" }] },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const moveSpy = vi.spyOn(appDataApi, "moveTripPlace").mockResolvedValue(movedTrip);
+    const updateSpy = vi.spyOn(appDataApi, "updateTripPlace").mockResolvedValue(savedTrip);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/58?day=1");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Sunrise peak 상세 열기" }));
+      const sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+
+      await user.click(within(sheet).getByRole("radio", { name: /Day 2/ }));
+      await waitFor(() =>
+        expect(moveSpy).toHaveBeenCalledWith("58", "1", {
+          dayNumber: 2,
+          position: 2, // 09:00 은 08:00 뒤
+          expectedRevision: 5,
+        }),
+      );
+      // 시트는 열린 채, Day 2 가 선택됨 — setTrip/setPlaceEditor 는 spy 해결 뒤에 반영되므로 waitFor
+      await waitFor(() =>
+        expect(within(sheet).getByRole("radio", { name: /Day 2/ })).toHaveAttribute("aria-checked", "true"),
+      );
+      // 시트가 타임라인을 덮고 있으니 플래시는 아직 터지지 않는다 — 닫힐 때로 미뤄진다.
+      expect(document.querySelector(".timeline-slot.just-moved")).toBeNull();
+
+      await user.clear(document.querySelector('input[name="place-label"]') as HTMLInputElement);
+      await user.type(document.querySelector('input[name="place-label"]') as HTMLInputElement, "Renamed peak");
+      await user.click(within(sheet).getByRole("button", { name: "저장하기" }));
+
+      await waitFor(() =>
+        expect(updateSpy).toHaveBeenCalledWith("58", "1", expect.objectContaining({ label: "Renamed peak", expectedRevision: 6 })),
+      );
+      await waitFor(() => expect(document.body).toHaveTextContent("Renamed peak"));
+      // PATCH 가 끝난 뒤에 센다. 먼저 세면 저장 뒤 move 가 되살아나도 못 잡는다.
+      expect(moveSpy).toHaveBeenCalledTimes(1); // 저장은 move 를 다시 부르지 않는다
+      // 저장이 시트를 닫았으니 미뤄 둔 플래시가 그제서야 풀린다.
+      await waitFor(() => {
+        const moved = document.querySelector(".timeline-slot.just-moved");
+        expect(moved).toHaveTextContent("Renamed peak");
+      });
+    } finally {
+      getTripSpy.mockRestore();
+      moveSpy.mockRestore();
+      updateSpy.mockRestore();
+    }
+  });
+
+  it("reports a failed day move from the sheet instead of swallowing it", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "59",
+      revision: 1,
+      currentUserRole: "owner",
+      days: { 1: [{ id: "1", time: "09:00", label: "Sunrise peak", meta: "Nature" }], 2: [] },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const moveSpy = vi.spyOn(appDataApi, "moveTripPlace").mockRejectedValue(new Error("network"));
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/59?day=1");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Sunrise peak 상세 열기" }));
+      const sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+      await user.click(within(sheet).getByRole("radio", { name: /Day 2/ }));
+      expect(await within(sheet).findByText("장소 순서를 변경하지 못했어요. 잠시 후 다시 시도해 주세요.")).toBeInTheDocument();
+      expect(within(sheet).getByRole("radio", { name: /Day 1/ })).toHaveAttribute("aria-checked", "true");
+    } finally {
+      getTripSpy.mockRestore();
+      moveSpy.mockRestore();
     }
   });
 });

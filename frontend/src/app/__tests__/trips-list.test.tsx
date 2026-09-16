@@ -308,7 +308,6 @@ describe("Travel Hunter app — trips list", () => {
         document.querySelector(".prototype-trip-action-add"),
       ).toBeInTheDocument();
       expect(document.querySelector(".drag-handle")).toBeInTheDocument();
-      expect(document.querySelector(".place-actions")).toBeInTheDocument();
       expect(
         document.querySelector(".linked-policy-remove"),
       ).toBeInTheDocument();
@@ -375,7 +374,6 @@ describe("Travel Hunter app — trips list", () => {
         document.querySelector(".prototype-trip-action-add"),
       ).toBeInTheDocument();
       expect(document.querySelector(".drag-handle")).toBeInTheDocument();
-      expect(document.querySelector(".place-actions")).toBeInTheDocument();
       expect(
         document.querySelector(".linked-policy-remove"),
       ).toBeInTheDocument();
