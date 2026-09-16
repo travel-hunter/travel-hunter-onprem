@@ -3,6 +3,7 @@ import { ChevronLeft, Dice5 } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { appDataApi, type SignupVerifyResponse } from "../api";
 import { getPostAuthPath } from "../app/onboarding";
+import { shouldShowPublicAuthActions } from "../app/adminHost";
 import { useSession } from "../app/session";
 import { AuthFormShell, BrandMark } from "../components/patterns";
 import { Button, IconButton, LinkButton } from "../components/ui";
@@ -327,6 +328,7 @@ export function LoginPage() {
   };
 
   const oauthRedirect = redirect ?? "/home";
+  const showPublicAuthActions = shouldShowPublicAuthActions();
 
   return (
     <section className="screen white prototype-login-screen">
@@ -364,6 +366,8 @@ export function LoginPage() {
           </button>
         </form>
 
+        {showPublicAuthActions && (
+          <>
         <div className="prototype-login-links">
           <button type="button" onClick={() => navigate(withRedirect("/forgot-password", redirect))}>
             비밀번호 찾기
@@ -395,6 +399,9 @@ export function LoginPage() {
             구글로 시작하기
           </a>
         </div>
+
+          </>
+        )}
         </AuthFormShell>
       </div>
     </section>

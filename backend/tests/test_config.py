@@ -39,9 +39,23 @@ def test_protected_runtime_accepts_https_public_values() -> None:
         app_env="staging",
         auth_secret_key="not-the-default-secret-key",
         travel_hunter_public_base_url="https://staging.travel-hunter.example",
-        cors_origins=("https://staging.travel-hunter.example",),
+        admin_domain="admin.staging.travel-hunter.example",
+        cors_origins=("https://staging.travel-hunter.example", "https://admin.staging.travel-hunter.example"),
         refresh_cookie_secure=True,
     ).validate_runtime()
+
+
+def test_protected_runtime_requires_a_distinct_admin_domain() -> None:
+    settings = Settings(
+        app_env="staging",
+        auth_secret_key="not-the-default-secret-key",
+        travel_hunter_public_base_url="https://dev.travel-hunter.example",
+        cors_origins=("https://dev.travel-hunter.example",),
+        refresh_cookie_secure=True,
+    )
+
+    with pytest.raises(RuntimeError, match="ADMIN_DOMAIN"):
+        settings.validate_runtime()
 
 
 def test_load_env_file_allows_local_file_to_override_prior_file(

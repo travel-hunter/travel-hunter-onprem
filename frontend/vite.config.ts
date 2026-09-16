@@ -2,7 +2,7 @@ import react from "@vitejs/plugin-react";
 import { loadEnv } from "vite";
 import { defineConfig } from "vitest/config";
 
-function parseAllowedHosts(value: string | undefined): string[] {
+export function parseAllowedHosts(value: string | undefined): string[] {
   if (!value) {
     return [];
   }
@@ -12,15 +12,19 @@ function parseAllowedHosts(value: string | undefined): string[] {
     .filter((item) => item.length > 0);
 }
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, ".", "");
-  const previewAllowedHosts = Array.from(
+export function buildPreviewAllowedHosts(env: Record<string, string | undefined>): string[] {
+  return Array.from(
     new Set([
       ".trycloudflare.com",
       ...parseAllowedHosts(env.STAGING_DOMAIN),
+      ...parseAllowedHosts(env.ADMIN_DOMAIN),
       ...parseAllowedHosts(env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS),
     ])
   );
+}
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, ".", "");
+  const previewAllowedHosts = buildPreviewAllowedHosts(env);
 
   return {
     plugins: [react()],
