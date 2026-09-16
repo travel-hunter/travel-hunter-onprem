@@ -26,7 +26,8 @@ http://{$ADMIN_DOMAIN} {
 
   @admin_root path /
   redir @admin_root /admin 302
-  @admin_non_app not path /admin /admin/* /login /api/* /docs* /openapi.json
+# Keep static frontend assets reachable; redirecting JavaScript to HTML causes a blank page.
+  @admin_non_app not path /admin /admin/* /login /assets/* /icons/* /manifest.webmanifest /favicon.ico /api/* /docs* /openapi.json
   redir @admin_non_app /admin 302
 
   handle /api/* {
