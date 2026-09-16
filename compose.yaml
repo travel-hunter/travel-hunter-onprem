@@ -13,6 +13,7 @@ services:
       AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?set AUTH_SECRET_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS}
       TRAVEL_HUNTER_PUBLIC_BASE_URL: ${TRAVEL_HUNTER_PUBLIC_BASE_URL:-}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-}
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
       
@@ -20,16 +21,20 @@ services:
     build:
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:?set VITE_API_BASE_URL}
+        VITE_ADMIN_BASE_URL: ${VITE_ADMIN_BASE_URL:?set VITE_ADMIN_BASE_URL}
     restart: unless-stopped
     environment:
       STAGING_DOMAIN: ${STAGING_DOMAIN:-}
-      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: ${STAGING_DOMAIN:-}
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: ${STAGING_DOMAIN:-},${ADMIN_DOMAIN:-}
     depends_on:
       backend:
         condition: service_healthy
         
   caddy:
     image: caddy:2-alpine
+    environment:
+      STAGING_DOMAIN: ${STAGING_DOMAIN:-dev.localhost}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.dev.localhost}
     restart: unless-stopped
     volumes:
       - ./deploy/Caddyfile.tunnel:/etc/caddy/Caddyfile:ro

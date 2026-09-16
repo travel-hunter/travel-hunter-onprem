@@ -1,5 +1,33 @@
-{$STAGING_DOMAIN} {
+http://{$STAGING_DOMAIN} {
   encode gzip zstd
+
+  @admin_path path /admin /admin/*
+  redir @admin_path https://{$ADMIN_DOMAIN}{uri} 302
+
+  handle /api/* {
+    reverse_proxy backend:8000
+  }
+
+  handle /docs* {
+    reverse_proxy backend:8000
+  }
+
+  handle /openapi.json {
+    reverse_proxy backend:8000
+  }
+
+  handle {
+    reverse_proxy frontend:4173
+  }
+}
+
+http://{$ADMIN_DOMAIN} {
+  encode gzip zstd
+
+  @admin_root path /
+  redir @admin_root /admin 302
+  @admin_non_app not path /admin /admin/* /login /api/* /docs* /openapi.json
+  redir @admin_non_app /admin 302
 
   handle /api/* {
     reverse_proxy backend:8000

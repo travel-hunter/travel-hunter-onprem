@@ -94,6 +94,7 @@ class Settings:
     travel_hunter_public_base_url: str = os.getenv(
         "TRAVEL_HUNTER_PUBLIC_BASE_URL", ""
     )
+    admin_domain: str = os.getenv("ADMIN_DOMAIN", "").strip().lower()
     password_reset_expire_minutes: int = int(
         os.getenv("PASSWORD_RESET_EXPIRE_MINUTES", "30")
     )
@@ -145,6 +146,9 @@ class Settings:
     def frontend_base_url(self) -> str:
         return self.travel_hunter_public_base_url.rstrip("/") or "http://127.0.0.1:4173"
 
+    def admin_base_url(self) -> str:
+        return f"https://{self.admin_domain}" if self.admin_domain else ""
+
     def validate_runtime(self) -> None:
         if not self.is_protected_env:
             return
@@ -158,6 +162,14 @@ class Settings:
             problems.append("TRAVEL_HUNTER_PUBLIC_BASE_URL must not point to localhost")
         if any(any(marker in origin for marker in LOCAL_URL_MARKERS) for origin in self.cors_origins):
             problems.append("CORS_ORIGINS must not include localhost origins")
+        if not self.admin_domain:
+            problems.append("ADMIN_DOMAIN is required")
+        elif "://" in self.admin_domain or "/" in self.admin_domain:
+            problems.append("ADMIN_DOMAIN must be a hostname")
+        elif self.admin_base_url() == self.travel_hunter_public_base_url.rstrip("/"):
+            problems.append("ADMIN_DOMAIN must differ from TRAVEL_HUNTER_PUBLIC_BASE_URL")
+        elif self.admin_base_url() not in self.cors_origins:
+            problems.append("CORS_ORIGINS must include the ADMIN_DOMAIN origin")
         if not self.refresh_cookie_secure:
             problems.append("REFRESH_COOKIE_SECURE=true is required")
 

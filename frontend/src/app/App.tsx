@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { PublicLayout, ServiceLayout } from "../components/AppLayout";
 import { AiResultsPage, FriendInvitePage, ItineraryCreatePage, ItineraryDetailPage, ItineraryEditPage, ItineraryListPage } from "../pages/ItineraryPages";
@@ -12,8 +13,14 @@ import { LoadingState } from "../components/ui";
 import { AdminAuditLogsPage, AdminDashboardPage, AdminForbiddenPage, AdminLayout, AdminPoliciesPage, AdminPolicyEditorPage, AdminPolicyReviewPage, AdminUserDetailPage, AdminUsersPage } from "../pages/admin/AdminPages";
 import { getOnboardingPath, isOnboardingRoute, withRedirect } from "./onboarding";
 import { useSession } from "./session";
+import { adminUrl, isAdminHost } from "./adminHost";
 
 export function App() {
+  const location = useLocation();
+  const isAdminPath = location.pathname === "/admin" || location.pathname.startsWith("/admin/");
+  if (isAdminPath && !isAdminHost()) {
+    return <AdminHostRedirect target={adminUrl(`${location.pathname}${location.search}${location.hash}`)} />;
+  }
   return (
     <Routes>
       <Route element={<PublicLayout />}>
@@ -93,4 +100,11 @@ function ProtectedRoute() {
     return <Navigate to={withRedirect(onboardingPath, redirectTo)} replace />;
   }
   return <Outlet />;
+}
+
+function AdminHostRedirect({ target }: { target: string }) {
+  useEffect(() => {
+    window.location.replace(target);
+  }, [target]);
+  return <LoadingState label="Redirecting to the admin host" />;
 }
