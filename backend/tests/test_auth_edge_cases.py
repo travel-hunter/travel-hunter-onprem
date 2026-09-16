@@ -92,6 +92,11 @@ def test_login_accepts_single_char_password() -> None:
     assert req.password == "x"
 
 
+def test_login_accepts_an_internal_invalid_domain_identifier() -> None:
+    req = LoginRequest(email="admin@dev.invalid", password="x")
+    assert req.email == "admin@dev.invalid"
+
+
 # ---------------------------------------------------------------------------
 # Schema: email format validation
 # ---------------------------------------------------------------------------
