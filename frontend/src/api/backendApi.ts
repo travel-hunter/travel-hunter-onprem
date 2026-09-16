@@ -31,6 +31,7 @@ import {
   TripPlaceMoveRequest,
   TripPlaceMutationRequest,
   TripPlacesBatchRequest,
+  TripPlacesDeleteRequest,
   TripPlaceSearchOptions,
   TripSettingsUpdateRequest,
   TripPlaceUpdateRequest,
@@ -170,6 +171,11 @@ export const backendApi: AppDataApi = {
   moveTripPlace: (tripId: string, placeId: string, move: TripPlaceMoveRequest): Promise<Trip> => apiClient.patch<Trip>(`/api/trips/${tripId}/places/${placeId}/move`, move),
   deleteTripPlace: (tripId: string, placeId: string, expectedRevision: number): Promise<Trip> =>
     apiClient.delete<Trip>(`/api/trips/${tripId}/places/${placeId}${queryString({ expectedRevision })}`),
+  deleteTripPlaces: (tripId: string, request: TripPlacesDeleteRequest): Promise<Trip> =>
+    apiClient.post<Trip>(`/api/trips/${tripId}/places/batch-delete`, {
+      expectedRevision: request.expectedRevision,
+      placeIds: request.placeIds.map(Number),
+    }),
   addPolicyToTrip: (tripId: string, policySlug: string): Promise<TripPolicyResponse> => apiClient.post<TripPolicyResponse>(`/api/trips/${tripId}/policies/${policySlug}`),
   removePolicyFromTrip: (tripId: string, policySlug: string): Promise<TripPolicyResponse> => apiClient.delete<TripPolicyResponse>(`/api/trips/${tripId}/policies/${policySlug}`),
   listRecommendations: (tripId: string): Promise<Recommendation[]> => apiClient.get<Recommendation[]>(`/api/trips/${tripId}/recommendations`),

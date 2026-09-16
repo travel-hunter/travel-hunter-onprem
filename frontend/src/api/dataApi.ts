@@ -209,6 +209,11 @@ export type TripPlacesBatchRequest = {
   places: TripPlaceRequest[];
 };
 
+export type TripPlacesDeleteRequest = {
+  expectedRevision: number;
+  placeIds: string[];
+};
+
 export type TripPlaceUpdateRequest = Partial<TripPlaceRequest> & {
   expectedRevision: number;
 };
@@ -280,6 +285,7 @@ export type AppDataApi = {
   updateTripPlace: (tripId: string, placeId: string, place: TripPlaceUpdateRequest) => Promise<Trip>;
   moveTripPlace: (tripId: string, placeId: string, move: TripPlaceMoveRequest) => Promise<Trip>;
   deleteTripPlace: (tripId: string, placeId: string, expectedRevision: number) => Promise<Trip>;
+  deleteTripPlaces: (tripId: string, request: TripPlacesDeleteRequest) => Promise<Trip>;
   addPolicyToTrip: (tripId: string, policySlug: string) => Promise<TripPolicyResponse>;
   removePolicyFromTrip: (tripId: string, policySlug: string) => Promise<TripPolicyResponse>;
   listRecommendations: (tripId: string) => Promise<Recommendation[]>;

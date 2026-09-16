@@ -1834,6 +1834,32 @@ export function ItineraryDetailPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [deleteCandidatePlace, setDeleteCandidatePlace] =
     useState<ItineraryPlace | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [isSelectedDeleteOpen, setIsSelectedDeleteOpen] = useState(false);
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false);
+  const [selectedDeleteError, setSelectedDeleteError] = useState("");
+  /* 일정이 바뀌면(삭제·새로고침) 사라진 id 가 선택에 남지 않게 걷어낸다.
+     크기가 그대로면 같은 Set 을 돌려줘 불필요한 렌더를 막는다. */
+  useEffect(() => {
+    if (!trip) return;
+    const live = new Set(
+      Object.values(trip.days)
+        .flat()
+        .map((place) => place.id)
+        .filter(Boolean) as string[],
+    );
+    const next = new Set(
+      [...selectedPlaceIds].filter((id) => live.has(id)),
+    );
+    if (next.size === selectedPlaceIds.size) return;
+    setSelectedPlaceIds(next);
+    if (next.size === 0 && selectedPlaceIds.size > 0) {
+      setIsSelectedDeleteOpen(false);
+    }
+  }, [trip, selectedPlaceIds]);
   const [dateEditor, setDateEditor] = useState<{
     startDate: string;
     endDate: string;
@@ -2414,9 +2440,12 @@ export function ItineraryDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleDay]);
 
+  /* isEditMode 도 의존성이다. 편집 모드는 스트립을 통째로 언마운트하므로
+     `완료` 로 돌아오면 여백 없는 새 DOM 이 선다. 다른 의존성은 그대로라
+     이 값이 없으면 effect 가 다시 돌지 않아 스트립이 어긋난 채 남는다. */
   useEffect(() => {
     layoutDayStrip(!draggingPlaceId);
-  }, [layoutDayStrip, dayNumbers.length, draggingPlaceId]);
+  }, [layoutDayStrip, dayNumbers.length, draggingPlaceId, isEditMode]);
 
   /* 창 크기가 바뀌면 여백이 낡는다. 여백은 컨테이너 폭으로 계산하기 때문이다.
      화면 회전이나 창 크기 변경 뒤 날짜를 바꾸기 전까지 어긋난 채로 남았다. */
@@ -2981,6 +3010,7 @@ export function ItineraryDetailPage() {
   };
 
   const openAddPlace = () => {
+    if (isEditMode) return;
     if (!canEditTrip) {
       showEditPermissionRequired();
       return;
@@ -3781,6 +3811,70 @@ export function ItineraryDetailPage() {
     releasePendingFlash();
   };
 
+  const enterEditMode = () => {
+    if (!canEditTrip || isPreviewActive || isSavingPlace || movingPlaceId)
+      return;
+    // 맨 setPlaceEditor(null) 은 moveError·대기 플래시 정리를 건너뛴다.
+    closePlaceEditor();
+    setDeleteCandidatePlace(null);
+    setSelectedPlaceIds(new Set());
+    setIsEditMode(true);
+  };
+
+  const exitEditMode = () => {
+    setIsEditMode(false);
+    setSelectedPlaceIds(new Set());
+    setIsSelectedDeleteOpen(false);
+    setSelectedDeleteError("");
+  };
+
+  const togglePlaceSelection = (placeId: string) =>
+    setSelectedPlaceIds((current) => {
+      const next = new Set(current);
+      if (next.has(placeId)) next.delete(placeId);
+      else next.add(placeId);
+      return next;
+    });
+
+  const requestDeleteSelected = () => {
+    if (selectedPlaceIds.size === 0 || isDeletingSelected) return;
+    setSelectedDeleteError("");
+    setIsSelectedDeleteOpen(true);
+  };
+
+  const confirmDeleteSelected = async () => {
+    if (!trip || selectedPlaceIds.size === 0 || isDeletingSelected) return;
+    // 화면 순서(Day → 순번)대로 보내 서버 로그와 사용자 인식이 같게 한다.
+    const placeIds = Object.values(trip.days)
+      .flat()
+      .map((place) => place.id)
+      .filter((id): id is string => Boolean(id) && selectedPlaceIds.has(id!));
+    setIsDeletingSelected(true);
+    setSelectedDeleteError("");
+    try {
+      const nextTrip = await appDataApi.deleteTripPlaces(trip.id, {
+        expectedRevision: trip.revision,
+        placeIds,
+      });
+      placeIds.forEach((id) => clearDraft(tripPlaceEditDraftKey(trip.id, id)));
+      setTrip(nextTrip);
+      setSelectedPlaceIds(new Set());
+      setIsSelectedDeleteOpen(false);
+      setNotice(`장소 ${placeIds.length}개를 일정에서 삭제했어요.`);
+      window.setTimeout(() => setNotice(null), 1800);
+    } catch (error) {
+      if (isTripConflict(error)) {
+        await refreshTripAfterConflict(setSelectedDeleteError);
+      } else {
+        setSelectedDeleteError(
+          "장소를 삭제하지 못했어요. 잠시 후 다시 시도해 주세요.",
+        );
+      }
+    } finally {
+      setIsDeletingSelected(false);
+    }
+  };
+
   const discardPlaceDraft = () => {
     if (!trip || !placeEditor) return;
     if (placeEditor.mode === "edit" && placeEditor.place.id) {
@@ -4045,6 +4139,7 @@ export function ItineraryDetailPage() {
           dayNumber={visibleDay}
           onSelectPlace={selectMapPlace}
           onShowPlaceDetail={(place) => {
+            if (isEditMode) return;
             setNotice(null);
             openEditPlace(place);
           }}
@@ -4052,26 +4147,39 @@ export function ItineraryDetailPage() {
           selectedPlaceId={selectedMapPlaceId}
         />
 
-        <section
-          className="trip-primary-actions"
-          aria-label="일정 편집 작업"
-          data-itinerary-actions
-        >
-          <button
-            className="prototype-trip-action-button prototype-trip-action-add"
-            type="button"
-            onClick={openAddPlace}
+        {/* 편집 모드에서는 이 섹션을 통째로 숨긴다. 종료는 하단 바의 `완료`
+            하나뿐이라 같은 접근성 이름이 둘로 겹치지 않는다. */}
+        {!isEditMode && (
+          <section
+            className="trip-primary-actions"
+            aria-label="일정 편집 작업"
+            data-itinerary-actions
           >
-            + 장소 추가
-          </button>
-          <button
-            className="prototype-trip-action-button prototype-trip-action-ai"
-            type="button"
-            onClick={() => void openRecommendationPreview()}
-          >
-            ✨ 추천 일정만들기
-          </button>
-        </section>
+            {canEditTrip && !isPreviewActive && (
+              <button
+                className="prototype-trip-action-button prototype-trip-action-edit"
+                type="button"
+                onClick={enterEditMode}
+              >
+                편집
+              </button>
+            )}
+            <button
+              className="prototype-trip-action-button prototype-trip-action-add"
+              type="button"
+              onClick={openAddPlace}
+            >
+              + 장소 추가
+            </button>
+            <button
+              className="prototype-trip-action-button prototype-trip-action-ai"
+              type="button"
+              onClick={() => void openRecommendationPreview()}
+            >
+              ✨ 추천 일정만들기
+            </button>
+          </section>
+        )}
 
         {isPreviewActive && (
           <section
@@ -4115,6 +4223,15 @@ export function ItineraryDetailPage() {
           </>
         )}
 
+        {isEditMode ? (
+          <EditModeList
+            dayNumbers={dayNumbers}
+            onToggle={togglePlaceSelection}
+            selectedPlaceIds={selectedPlaceIds}
+            trip={trip}
+          />
+        ) : (
+          <>
         <div
           aria-label="일정 날짜 선택"
           className="day-tabs"
@@ -4259,7 +4376,17 @@ export function ItineraryDetailPage() {
             </div>
           )}
         </DragOverlay>
+          </>
+        )}
       </DndContext>
+      {isEditMode && (
+        <EditModeBar
+          isDeleting={isDeletingSelected}
+          onDelete={requestDeleteSelected}
+          onDone={exitEditMode}
+          selectedCount={selectedPlaceIds.size}
+        />
+      )}
       {isPreviewActive && (
         <aside
           className="recommendation-preview-action-bar"
@@ -4403,6 +4530,16 @@ export function ItineraryDetailPage() {
         isSubmitting={isSavingPlace}
         onCancel={cancelDeletePlace}
         onConfirm={confirmDeletePlace}
+      />
+      <ConfirmDialog
+        open={isSelectedDeleteOpen}
+        title={`선택한 장소 ${selectedPlaceIds.size}개를 삭제할까요?`}
+        body="선택한 장소가 이 일정에서 한 번에 삭제됩니다."
+        error={selectedDeleteError}
+        confirmLabel="삭제"
+        isSubmitting={isDeletingSelected}
+        onCancel={() => setIsSelectedDeleteOpen(false)}
+        onConfirm={() => void confirmDeleteSelected()}
       />
     </section>
   );
@@ -4853,6 +4990,95 @@ function DroppableTimelinePosition({
       data-position={position}
       ref={setNodeRef}
     />
+  );
+}
+
+function EditModeList({
+  dayNumbers,
+  onToggle,
+  selectedPlaceIds,
+  trip,
+}: {
+  dayNumbers: number[];
+  onToggle: (placeId: string) => void;
+  selectedPlaceIds: Set<string>;
+  trip: Trip;
+}) {
+  return (
+    <div className="edit-mode-list" role="list" aria-label="전체 일정 편집 목록">
+      {dayNumbers.map((day) => {
+        const places = trip.days[day] ?? [];
+        return (
+          <section className="edit-mode-day" key={day} role="listitem">
+            <h3>
+              Day {day} <em>{formatDayDateLabel(trip.dates, day)}</em>
+              <span>{places.length > 0 ? `${places.length}곳` : "비어 있음"}</span>
+            </h3>
+            {places.map((place) => {
+              const checked = Boolean(place.id) && selectedPlaceIds.has(place.id!);
+              return (
+                /* <label> 은 phrasing content 만 허용해 h4/div 를 감쌀 수 없다.
+                   행 전체 클릭은 div 가, 접근성 이름은 체크박스가 맡는다. */
+                <div
+                  className={
+                    checked
+                      ? "place-detail edit-mode-place selected"
+                      : "place-detail edit-mode-place"
+                  }
+                  key={place.id ?? `${place.time}-${place.label}`}
+                  onClick={() => place.id && onToggle(place.id)}
+                >
+                  <input
+                    aria-label={`${place.label} 선택`}
+                    checked={checked}
+                    disabled={!place.id}
+                    onChange={() => place.id && onToggle(place.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    type="checkbox"
+                  />
+                  <div className="place-copy">
+                    <div className="place-prototype-meta">
+                      {place.time && <span>{place.time}</span>}
+                      <em aria-hidden="true">{getPlaceEmoji(place)}</em>
+                    </div>
+                    <h4>{place.label}</h4>
+                    <div className="meta">{place.meta}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function EditModeBar({
+  isDeleting,
+  onDelete,
+  onDone,
+  selectedCount,
+}: {
+  isDeleting: boolean;
+  onDelete: () => void;
+  onDone: () => void;
+  selectedCount: number;
+}) {
+  return (
+    <aside className="edit-mode-bar" aria-label="편집 도구" role="region">
+      <span className="edit-mode-count">{`${selectedCount}개 선택`}</span>
+      <Button
+        variant="danger"
+        disabled={selectedCount === 0 || isDeleting}
+        onClick={onDelete}
+      >
+        {isDeleting ? "삭제 중" : "삭제"}
+      </Button>
+      <Button disabled={isDeleting} onClick={onDone}>
+        완료
+      </Button>
+    </aside>
   );
 }
 

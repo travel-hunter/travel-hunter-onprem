@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import BigInteger, Integer, create_engine
+from sqlalchemy import BigInteger, Integer, create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 # 초대 링크 주소는 환경설정에서 온다. 리터럴로 박으면 .env 에 따라 갈린다.
@@ -1179,6 +1179,118 @@ def test_update_trip_settings_changes_title_and_dates(monkeypatch) -> None:
     assert fake_db.commits == 1
 
 
+def add_date_range_trip_rows(sqlite_db_session, *, trip_id: int, day_dates: list[date]):
+    user = make_user(trip_id, f"Range User {trip_id}")
+    trip = Trip(
+        id=trip_id,
+        owner_id=user.id,
+        title="Range trip",
+        start_date=day_dates[0],
+        end_date=day_dates[-1],
+        region="제주",
+        status="draft",
+    )
+    rows: list[object] = [user, trip, TripMember(trip_id=trip.id, user_id=user.id, role="owner")]
+    for day_number, day_date in enumerate(day_dates, start=1):
+        day = TripDay(id=trip_id * 10 + day_number, trip_id=trip.id, day_number=day_number, date=day_date)
+        rows.append(day)
+        rows.append(TripPlace(trip_day_id=day.id, place_name=f"Day {day_number} place", order_num=1))
+    sqlite_db_session.add_all(rows)
+    sqlite_db_session.commit()
+    return user
+
+
+def fetch_trip_days(sqlite_db_session, trip_id: int) -> list[TripDay]:
+    sqlite_db_session.expire_all()
+    return list(
+        sqlite_db_session.scalars(
+            select(TripDay).where(TripDay.trip_id == trip_id).order_by(TripDay.day_number)
+        ).all()
+    )
+
+
+def test_update_trip_settings_shifts_range_forward_without_unique_violation(sqlite_db_session) -> None:
+    user = add_date_range_trip_rows(
+        sqlite_db_session,
+        trip_id=910,
+        day_dates=[date(2026, 6, 15), date(2026, 6, 16)],
+    )
+
+    trip_service.update_trip_settings(
+        sqlite_db_session,
+        user,
+        "910",
+        UpdateTripSettingsRequest(
+            expectedRevision=1,
+            startDate=date(2026, 6, 16),
+            endDate=date(2026, 6, 17),
+            overflowPlaceStrategy="moveToLastDay",
+        ),
+    )
+
+    days = fetch_trip_days(sqlite_db_session, 910)
+    assert [day.day_number for day in days] == [1, 2]
+    assert [day.date for day in days] == [date(2026, 6, 16), date(2026, 6, 17)]
+    assert sum(len(day.places) for day in days) == 2
+    assert sqlite_db_session.get(Trip, 910).revision == 2
+
+
+def test_update_trip_settings_moves_range_entirely_without_unique_violation(sqlite_db_session) -> None:
+    user = add_date_range_trip_rows(
+        sqlite_db_session,
+        trip_id=911,
+        day_dates=[date(2026, 6, 15), date(2026, 6, 16)],
+    )
+
+    trip_service.update_trip_settings(
+        sqlite_db_session,
+        user,
+        "911",
+        UpdateTripSettingsRequest(
+            expectedRevision=1,
+            startDate=date(2026, 6, 14),
+            endDate=date(2026, 6, 15),
+            overflowPlaceStrategy="moveToLastDay",
+        ),
+    )
+
+    days = fetch_trip_days(sqlite_db_session, 911)
+    assert [day.day_number for day in days] == [1, 2]
+    assert [day.date for day in days] == [date(2026, 6, 14), date(2026, 6, 15)]
+    assert sum(len(day.places) for day in days) == 2
+    assert sqlite_db_session.get(Trip, 911).revision == 2
+
+
+def test_update_trip_settings_shrinks_range_over_overflow_dates(sqlite_db_session) -> None:
+    user = add_date_range_trip_rows(
+        sqlite_db_session,
+        trip_id=912,
+        day_dates=[date(2026, 6, 15), date(2026, 6, 16), date(2026, 6, 17)],
+    )
+
+    trip_service.update_trip_settings(
+        sqlite_db_session,
+        user,
+        "912",
+        UpdateTripSettingsRequest(
+            expectedRevision=1,
+            startDate=date(2026, 6, 16),
+            endDate=date(2026, 6, 16),
+            overflowPlaceStrategy="moveToLastDay",
+        ),
+    )
+
+    days = fetch_trip_days(sqlite_db_session, 912)
+    assert [(day.day_number, day.date) for day in days] == [(1, date(2026, 6, 16))]
+    places = sorted(days[0].places, key=lambda place: place.order_num)
+    assert [place.place_name for place in places] == ["Day 1 place", "Day 2 place", "Day 3 place"]
+    assert [place.order_num for place in places] == [1, 2, 3]
+    assert sqlite_db_session.scalars(
+        select(TripPlace).where(TripPlace.trip_day_id != days[0].id)
+    ).all() == []
+    assert sqlite_db_session.get(Trip, 912).revision == 2
+
+
 def test_viewer_member_cannot_update_trip_status(monkeypatch) -> None:
     fake_db = FakeDb()
     user = make_user(2)
@@ -2040,6 +2152,100 @@ def test_delete_trip_place_removes_existing_place(monkeypatch) -> None:
     assert deleted[0].id == 1
     assert payload["days"][1] == []
     assert fake_db.commits == 1
+
+
+def _add_places_for_batch_delete(trip: Trip) -> None:
+    day_one = trip.days[0]
+    day_one.places.append(
+        TripPlace(id=2, trip_day_id=1, place_name="Market", visit_time=time(11, 0), order_num=2, memo="Food")
+    )
+    day_one.places.append(
+        TripPlace(id=3, trip_day_id=1, place_name="Museum", visit_time=time(14, 0), order_num=3, memo="Art")
+    )
+    day_two = TripDay(id=2, trip_id=7, day_number=2, date=date(2026, 6, 16))
+    day_two.places = [
+        TripPlace(id=4, trip_day_id=2, place_name="Cafe stop", visit_time=time(12, 0), order_num=1, memo="Dessert")
+    ]
+    trip.days.append(day_two)
+
+
+def test_delete_trip_places_removes_many_across_days(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    _add_places_for_batch_delete(trip)
+    deleted: list[TripPlace] = []
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "get_accessible_trip_by_id",
+        lambda *_args, **_kwargs: trip,
+    )
+
+    def delete_place_stub(_db, place):
+        deleted.append(place)
+
+    monkeypatch.setattr(trip_service.trip_repository, "delete_trip_place", delete_place_stub)
+
+    payload = trip_service.delete_trip_places(fake_db, user, "7", [1, 3, 4], 1)
+
+    assert sorted(place.id for place in deleted) == [1, 3, 4]   # 두 Day 에 걸쳐 삭제
+    assert fake_db.commits == 1
+    assert trip.revision == 2
+    assert payload["revision"] == 2
+
+
+def test_delete_trip_places_dedupes_ids_and_bumps_revision_once(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    _add_places_for_batch_delete(trip)
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "get_accessible_trip_by_id",
+        lambda *_args, **_kwargs: trip,
+    )
+    deleted: list[TripPlace] = []
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "delete_trip_place",
+        lambda _db, place: deleted.append(place),
+    )
+    bumps: list[int] = []
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "bump_trip_revision_if_current",
+        lambda _db, *, trip_id, expected_revision: bumps.append(expected_revision) or True,
+    )
+
+    trip_service.delete_trip_places(fake_db, user, "7", [1, 1, 2], 1)
+
+    assert [place.id for place in deleted] == [1, 2]
+    assert bumps == [1]
+    assert fake_db.commits == 1
+
+
+def test_delete_trip_places_404_on_unknown_id_without_bump(monkeypatch) -> None:
+    fake_db = FakeDb()
+    user = make_user()
+    trip = make_trip()
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "get_accessible_trip_by_id",
+        lambda *_args, **_kwargs: trip,
+    )
+    bumped = []
+    monkeypatch.setattr(
+        trip_service.trip_repository,
+        "bump_trip_revision_if_current",
+        lambda *_a, **_k: bumped.append(True) or True,
+    )
+
+    with pytest.raises(trip_service.TripServiceError) as error:
+        trip_service.delete_trip_places(fake_db, user, "7", [1, 999], 1)
+
+    assert error.value.status_code == 404
+    assert bumped == []
+    assert fake_db.commits == 0
 
 
 def test_trip_place_crud_returns_404_for_missing_day_or_place(monkeypatch) -> None:

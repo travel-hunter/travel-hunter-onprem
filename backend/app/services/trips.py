@@ -948,6 +948,11 @@ def _delete_trip_day(db: Session, trip_day: TripDay) -> None:
         db.delete(trip_day)
 
 
+def _flush(db: Session) -> None:
+    if hasattr(db, "flush"):
+        db.flush()
+
+
 def _apply_trip_date_range(
     db: Session,
     trip: Trip,
@@ -961,20 +966,12 @@ def _apply_trip_date_range(
     kept_days = [day for day in ordered_days if day.day_number <= next_day_count]
     overflow_days = [day for day in ordered_days if day.day_number > next_day_count]
 
-    if not kept_days:
-        kept_days = [
-            trip_repository.add_trip_day(
-                db,
-                trip_id=trip.id,
-                day_number=1,
-                date_value=start_date,
-            )
-        ]
-
-    for day in kept_days:
-        day.date = start_date + timedelta(days=day.day_number - 1)
-
-    if overflow_place_strategy == "moveToLastDay" and overflow_days:
+    # trip_days 에는 UniqueConstraint("trip_id", "date") 가 걸려 있다.
+    # 한 flush 안에서 날짜를 한꺼번에 바꾸면 SQLAlchemy 가 UPDATE 를 DELETE 보다 먼저,
+    # 그것도 PK 순서대로 내보내므로 "어떤 날의 새 날짜 == 아직 남아 있는 다른 행의 옛 날짜"
+    # 인 순간(예: 범위 전체를 하루 뒤로 밀기) 제약에 걸린다.
+    # 그래서 ① 넘치는 날 삭제 → ② 충돌할 수 없는 임시 날짜 → ③ 최종 날짜 로 나눠 flush 한다.
+    if overflow_place_strategy == "moveToLastDay" and overflow_days and kept_days:
         target_day = kept_days[-1]
         target_places = _ordered_places(target_day)
         for overflow_day in overflow_days:
@@ -986,6 +983,24 @@ def _apply_trip_date_range(
         _delete_trip_day(db, overflow_day)
         if overflow_day in trip.days:
             trip.days.remove(overflow_day)
+    _flush(db)
+
+    if not kept_days:
+        kept_days = [
+            trip_repository.add_trip_day(
+                db,
+                trip_id=trip.id,
+                day_number=1,
+                date_value=start_date,
+            )
+        ]
+    else:
+        for day in kept_days:
+            day.date = start_date + timedelta(days=10_000 + day.day_number)
+        _flush(db)
+        for day in kept_days:
+            day.date = start_date + timedelta(days=day.day_number - 1)
+        _flush(db)
 
     existing_numbers = {day.day_number for day in kept_days}
     for day_number in range(1, next_day_count + 1):
@@ -1355,6 +1370,25 @@ def delete_trip_place(
     place = _find_trip_place(trip, place_id)
     _bump_trip_revision_or_conflict(db, trip, expected_revision)
     trip_repository.delete_trip_place(db, place)
+    db.commit()
+    return _refresh_trip_payload(db, trip.id, user)
+
+
+def delete_trip_places(
+    db: Session,
+    user: User,
+    trip_handle: str,
+    place_ids: list[int],
+    expected_revision: int,
+) -> dict[str, object]:
+    trip = _resolve_required_trip(db, trip_handle, user)
+    _require_trip_editor(trip, user)
+    # 하나라도 없으면 리비전을 올리기 전에 404. 부분 삭제는 없다.
+    unique_ids = list(dict.fromkeys(place_ids))
+    places = [_find_trip_place(trip, place_id) for place_id in unique_ids]
+    _bump_trip_revision_or_conflict(db, trip, expected_revision)
+    for place in places:
+        trip_repository.delete_trip_place(db, place)
     db.commit()
     return _refresh_trip_payload(db, trip.id, user)
 

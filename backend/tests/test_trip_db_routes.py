@@ -833,6 +833,46 @@ def test_db_trip_place_batch_route_maps_missing_day_error(monkeypatch) -> None:
     assert response.json() == {"detail": "Trip day not found"}
 
 
+def test_db_trip_place_batch_delete_route_returns_updated_trip(monkeypatch) -> None:
+    fake_db = object()
+    user = make_user()
+    install_db_route_dependencies(monkeypatch, fake_db, user)
+
+    def delete_places(db, current_user, trip_id, place_ids, expected_revision):
+        assert db is fake_db
+        assert current_user is user
+        assert trip_id == "7"
+        assert place_ids == [3, 5]
+        assert expected_revision == 4
+        return trip_payload(trip_id)
+
+    monkeypatch.setattr(trip_routes.trip_service, "delete_trip_places", delete_places)
+
+    try:
+        response = client.post(
+            "/api/trips/7/places/batch-delete",
+            json={"expectedRevision": 4, "placeIds": [3, 5]},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "7"
+
+
+def test_db_trip_place_batch_delete_route_rejects_empty_ids(monkeypatch) -> None:
+    fake_db = object()
+    install_db_route_dependencies(monkeypatch, fake_db, make_user())
+    try:
+        response = client.post(
+            "/api/trips/7/places/batch-delete",
+            json={"expectedRevision": 1, "placeIds": []},
+        )
+    finally:
+        clear_overrides()
+    assert response.status_code == 422
+
+
 def test_db_trip_place_routes_map_service_errors(monkeypatch) -> None:
     fake_db = object()
     user = make_user()

@@ -193,6 +193,12 @@ class CreateTripPlacesRequest(BaseModel):
     places: list[CreateTripPlaceItem] = Field(min_length=1, max_length=50)
 
 
+class DeleteTripPlacesRequest(BaseModel):
+    expectedRevision: int = Field(ge=1)
+    # ids are ints, unlike batch-add's full place objects; a whole-trip clear must fit
+    placeIds: list[int] = Field(min_length=1, max_length=200)
+
+
 class UpdateTripPlaceRequest(BaseModel):
     expectedRevision: int = Field(ge=1)
     time: str | None = None
