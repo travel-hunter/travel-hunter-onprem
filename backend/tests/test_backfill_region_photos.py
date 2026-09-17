@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from scripts.backfill_region_photos import (
+    NATIONWIDE_KEYWORD,
+    _spots_for_target,
     build_target_keys,
     choose_representative_spot,
     resolve_area_code_for_sido,
@@ -100,6 +102,30 @@ def test_build_target_keys_dedupes_and_appends_sido_sentinels() -> None:
     assert ("전남", "") in keys
     assert ("강원", "") in keys
     assert keys.count(("전남", "해남")) == 1
+
+
+def test_build_target_keys_keeps_nationwide_sentinel() -> None:
+    # 전국 정책은 시군이 없다 - (전국, "") 한 행만 만들고 시군 키는 만들지 않는다
+    keys = build_target_keys(policy_pairs=[("전국", None), ("전국", "")], record_pairs=[])
+    assert keys == [("전국", "")]
+
+
+def test_nationwide_target_searches_by_country_keyword() -> None:
+    class Provider:
+        def __init__(self) -> None:
+            self.keywords: list[str] = []
+
+        def list_area_spots(self, *, area_code: str):  # pragma: no cover - 전국은 지역코드가 없다
+            raise AssertionError("nationwide must not use an area code")
+
+        def search_spots_by_keyword(self, *, keyword: str):
+            self.keywords.append(keyword)
+            return [make_spot(addr1="")]
+
+    provider = Provider()
+    spots = _spots_for_target(provider, sido="전국", city="", area_code=None)  # type: ignore[arg-type]
+    assert provider.keywords == [NATIONWIDE_KEYWORD]
+    assert len(spots) == 1
 
 
 def test_dry_run_does_not_commit(monkeypatch) -> None:

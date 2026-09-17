@@ -21,7 +21,7 @@ if str(APP_ROOT) not in sys.path:
 
 from app.repositories.policies import list_active_policies_for_photo_backfill
 from app.repositories.policy_photos import get_policy_photo, upsert_policy_photo
-from app.services.pixabay import PixabayImage, PixabayPhotoProvider, build_pixabay_client
+from app.services.pixabay import PixabayImage, PixabayPhotoProvider
 from scripts.backfill_region_photos import (
     PROVIDER,
     _addr_matches_sido,
@@ -358,7 +358,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             policies=policies,
             dry_run=args.dry_run,
             refresh_older_than=refresh_older_than,
-            fallback_provider=build_pixabay_client(),
+            # Pixabay 폴백은 끈다. API 가 주는 이미지 주소는 임시라 저장하면 며칠 뒤 죽는다 -
+            # 9/07 배정분 16건이 그렇게 전부 만료됐다. 내려받아 보관하는 길이 생기기 전까지는
+            # 시군 사진이 없으면 저장하지 않고 응답 시점의 지역 폴백에 맡긴다.
+            # (2026-09-17-policy-photo-managed-storage.md 에서 managed 저장과 함께 되살린다)
+            fallback_provider=None,
             force=args.force,
         )
     print("filled={filled} refreshed={refreshed} skipped={skipped} failed={failed}".format(**summary))

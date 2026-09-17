@@ -32,6 +32,10 @@ from app.services.tour_api import (
 )
 
 PROVIDER = "tour_api"
+# 전국 정책은 시도가 없어 지역코드로 못 찾는다 - 나라 전체를 대표하는 사진 한 장을 키워드로 찾아
+# (전국, "") 행에 둔다. resolve() 의 시도 폴백이 그대로 전국에도 적용된다.
+NATIONWIDE_SIDO = "전국"
+NATIONWIDE_KEYWORD = "대한민국 여행"
 SIDO_LEVEL_CITY = ""
 
 # policies.region의 축약형 → TourAPI areaCode 정식명 후보.
@@ -108,7 +112,7 @@ def build_target_keys(
     seen: set[tuple[str, str]] = set()
     sidos: list[str] = []
     for sido, city in [*policy_pairs, *record_pairs]:
-        if not sido or sido == "전국":
+        if not sido:
             continue
         if sido not in sidos:
             sidos.append(sido)
@@ -147,7 +151,10 @@ def _spots_for_target(
                 return matching
         elif spots:
             return spots
-    keyword = f"{city} 관광지" if city else f"{sido} 관광지"
+    if sido == NATIONWIDE_SIDO and not city:
+        keyword = NATIONWIDE_KEYWORD
+    else:
+        keyword = f"{city} 관광지" if city else f"{sido} 관광지"
     return provider.search_spots_by_keyword(keyword=keyword)
 
 
@@ -167,9 +174,12 @@ def run_backfill(
 
     for sido, city in targets:
         if sido not in area_code_by_sido:
-            area_code_by_sido[sido] = resolve_area_code_for_sido(sido, area_codes)
-            if area_code_by_sido[sido] is None:
-                unmapped_sidos.append(sido)
+            if sido == NATIONWIDE_SIDO:
+                area_code_by_sido[sido] = None  # 지역코드가 없는 게 정상 - 경고 대상 아님
+            else:
+                area_code_by_sido[sido] = resolve_area_code_for_sido(sido, area_codes)
+                if area_code_by_sido[sido] is None:
+                    unmapped_sidos.append(sido)
         existing = None
         if not dry_run:
             existing = get_region_photo(db, provider=PROVIDER, sido=sido, city=city)

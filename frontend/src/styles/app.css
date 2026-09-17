@@ -5549,6 +5549,13 @@
 .prototype-policy-list-screen .policy-list-icon.violet {
   background: #f3efff;
 }
+/* getPolicyMoodTone 이 내는 색조 중 빠져 있던 둘 - 없으면 사진 없는 카드 타일이 흰 바탕이 된다 */
+.prototype-policy-list-screen .policy-list-icon.peach {
+  background: #fff4e8;
+}
+.prototype-policy-list-screen .policy-list-icon.sky {
+  background: #f2f7ff;
+}
 
 .prototype-policy-list-screen .policy-list-copy {
   display: grid;
