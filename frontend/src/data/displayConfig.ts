@@ -1,4 +1,5 @@
 ﻿import type { Policy } from "../api";
+import { NATIONWIDE_REGION } from "../utils/policyPrograms";
 
 type PolicyMoodSource = {
   category?: string;
@@ -69,7 +70,6 @@ export function getPolicyMoodTone(policy: PolicyMoodSource): "blue" | "rose" | "
   }
 }
 
-export const featuredPolicySlug = "";
 
 function policyDeadlineTime(policy: Pick<Policy, "deadline">): number {
   const time = new Date(policy.deadline).getTime();
@@ -85,16 +85,6 @@ export function getDeadlinePolicies(
     .slice(0, limit);
 }
 
-const HOME_RECOMMENDED_POLICY_MATCH_THRESHOLD = 90;
-
-function compareRecommendedHomePolicies(left: Policy, right: Policy): number {
-  const matchDifference = right.match - left.match;
-  if (matchDifference !== 0) return matchDifference;
-  const deadlineDifference = policyDeadlineTime(left) - policyDeadlineTime(right);
-  if (deadlineDifference !== 0) return deadlineDifference;
-  return left.title.localeCompare(right.title, "ko");
-}
-
 function compareDeadlineHomePolicies(left: Policy, right: Policy): number {
   const deadlineDifference = policyDeadlineTime(left) - policyDeadlineTime(right);
   if (deadlineDifference !== 0) return deadlineDifference;
@@ -103,27 +93,31 @@ function compareDeadlineHomePolicies(left: Policy, right: Policy): number {
   return left.title.localeCompare(right.title, "ko");
 }
 
+export type HomeBenefitPick = { title: string; policies: Policy[] };
+
+/* 홈 목록. 근거 없는 "인기"(match 는 백엔드가 전부 90) 대신 실제 데이터로 고른다:
+   관심 지역 정책이 있으면 그것만 마감순, 없으면 전체 지역 정책을 마감순. 전국은 홈 카드가 따로 맡는다. */
 export function getHomeBenefitPolicies(
   policies: Policy[] | null | undefined,
   limit: number,
-): Policy[] {
-  const source = [...(policies ?? [])];
-  const recommendedPolicies = source
-    .filter((policy) => policy.match >= HOME_RECOMMENDED_POLICY_MATCH_THRESHOLD)
-    .sort(compareRecommendedHomePolicies);
-  const recommendedPolicyIds = new Set(recommendedPolicies.map((policy) => policy.id));
-  const deadlinePolicies = source
-    .filter((policy) => !recommendedPolicyIds.has(policy.id))
-    .sort(compareDeadlineHomePolicies);
+  preferredRegions: readonly string[] | null | undefined,
+): HomeBenefitPick {
+  const regional = (policies ?? []).filter((policy) => policy.region !== NATIONWIDE_REGION);
+  const wanted = new Set((preferredRegions ?? []).map((region) => region.trim()).filter(Boolean));
+  const mine = wanted.size > 0 ? regional.filter((policy) => wanted.has(policy.region)) : [];
+  if (mine.length > 0) {
+    return { title: "내 관심 지역 혜택", policies: [...mine].sort(compareDeadlineHomePolicies).slice(0, limit) };
+  }
+  return { title: "마감 임박 혜택", policies: [...regional].sort(compareDeadlineHomePolicies).slice(0, limit) };
+}
 
-  return [...recommendedPolicies, ...deadlinePolicies].slice(0, limit);
+export function getNationwideHomePolicies(policies: Policy[] | null | undefined): Policy[] {
+  return (policies ?? [])
+    .filter((policy) => policy.region === NATIONWIDE_REGION)
+    .sort(compareDeadlineHomePolicies);
 }
 
 const homePolicyIcons: Record<string, string> = {};
-
-export function getFeaturedPolicy(policies: Policy[] | null | undefined): Policy | undefined {
-  return policies?.find((policy) => policy.slug === featuredPolicySlug) ?? policies?.[0];
-}
 
 export function getHomePolicyIcon(policy: Policy): string {
   return homePolicyIcons[policy.slug] ?? "💸";

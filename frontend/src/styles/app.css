@@ -2097,129 +2097,6 @@
   font-weight: 600;
 }
 
-.prototype-home-hero {
-  display: grid;
-  position: relative;
-  grid-template-columns: 48px minmax(0, 1fr);
-  align-items: stretch;
-  gap: 0;
-  width: var(--prototype-home-content-width);
-  margin: 0 auto 24px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 94, 91, 0.12);
-  border-radius: 22px;
-  color: #1a1a2e;
-  background: rgba(255, 255, 255, 0.97);
-  box-shadow: 0 14px 34px rgba(28, 28, 46, 0.105);
-}
-
-.prototype-home-hero::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(
-      circle at 94% 12%,
-      rgba(255, 94, 91, 0.18),
-      transparent 24%
-    ),
-    linear-gradient(
-      135deg,
-      rgba(255, 236, 232, 0.78),
-      rgba(255, 255, 255, 0) 50%
-    );
-  pointer-events: none;
-}
-
-.prototype-home-hero-accent {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  min-height: 156px;
-  place-items: center;
-  color: #fff;
-  background: linear-gradient(180deg, #ff5e5b 0%, #ff7a68 100%);
-  font-size: 23px;
-  font-weight: 900;
-  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.22);
-}
-
-.prototype-home-hero-copy {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  padding: 20px 18px 50px;
-}
-
-.prototype-home-hero-kicker {
-  justify-self: start;
-  border-radius: 9999px;
-  padding: 5px 9px;
-  color: #d94b45;
-  background: #fff1f1;
-  font-size: 11px;
-  font-weight: 900;
-  line-height: 1.2;
-}
-
-.prototype-home-hero strong {
-  display: -webkit-box;
-  overflow: hidden;
-  color: #1a1a2e;
-  font-size: clamp(18px, 4.8vw, 22px);
-  font-weight: 900;
-  line-height: 1.25;
-  letter-spacing: -0.035em;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.prototype-home-hero-description {
-  overflow: hidden;
-  color: #5f6475;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.48;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.prototype-home-hero-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  color: #c7433f;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.prototype-home-hero-meta span {
-  display: inline-flex;
-  min-height: 25px;
-  align-items: center;
-  border-radius: 9999px;
-  padding: 4px 9px;
-  background: #fff6e2;
-}
-
-.prototype-home-hero-cta {
-  position: absolute;
-  z-index: 2;
-  right: 18px;
-  bottom: 18px;
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  gap: 5px;
-  color: #ff5e5b;
-  font-size: 12px;
-  font-weight: 900;
-}
-
 .prototype-home-section-header {
   display: flex;
   align-items: center;
@@ -2241,6 +2118,82 @@
   color: #ff5e5b;
   font-size: 13px;
   font-weight: 700;
+}
+
+/* 홈 '전국 혜택' 카드 - 맨 위 추천 카드. 눈에 띄어야 해서 브랜드 코랄 그라디언트에 흰 글씨.
+   오른쪽 원은 그림 자리(지금은 이모지, 나중에 사진). 누르면 정책 탭의 전국 목록으로 간다. */
+.prototype-home-nationwide {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 20px;
+  padding: 18px 18px 16px;
+  border: 0;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #ff6b5e 0%, #ff8a5c 60%, #ffb46b 100%);
+  box-shadow: 0 12px 28px rgba(255, 94, 91, 0.28);
+  color: #fff;
+  text-decoration: none;
+  overflow: hidden;
+}
+.prototype-home-nationwide::before {
+  content: "";
+  position: absolute;
+  right: -30px;
+  top: -40px;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+}
+.prototype-home-nationwide-copy {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.prototype-home-nationwide-copy em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  opacity: 0.9;
+}
+.prototype-home-nationwide-copy strong {
+  font-size: 21px;
+  font-weight: 950;
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+}
+.prototype-home-nationwide-copy span {
+  font-size: 12.5px;
+  font-weight: 800;
+  opacity: 0.92;
+}
+.prototype-home-nationwide-copy b {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #fff;
+  color: #ff5e5b;
+  font-size: 12px;
+  font-weight: 950;
+}
+.prototype-home-nationwide-visual {
+  position: relative;
+  display: grid;
+  width: 76px;
+  height: 76px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 36px;
+  line-height: 1;
 }
 
 .ds-section-header {

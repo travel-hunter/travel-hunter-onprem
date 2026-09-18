@@ -23,10 +23,11 @@ import {
 import { HomeSectionHeader } from "../components/patterns";
 import { ErrorState, LoadingState } from "../components/ui";
 import {
-  getFeaturedPolicy,
   getHomeBenefitPolicies,
   getHomePolicyIcon,
+  getNationwideHomePolicies,
 } from "../data/displayConfig";
+import { NATIONWIDE_REGION } from "../utils/policyPrograms";
 import {
   formatPolicyDeadlineTag,
   formatPolicyPeriodSummary,
@@ -77,8 +78,8 @@ export function HomePage() {
     );
   }, [dismissalKey]);
   const name = currentUser?.nickname ?? "여행자";
-  const featuredPolicy = getFeaturedPolicy(policies);
-  const weeklyBenefitPolicies = getHomeBenefitPolicies(policies, 3);
+  const weeklyBenefit = getHomeBenefitPolicies(policies, 3, profile.preferredRegions);
+  const nationwidePolicies = getNationwideHomePolicies(policies);
   const preferredAiRegions = useMemo(
     () =>
       Array.from(
@@ -157,35 +158,16 @@ export function HomePage() {
       {policiesError && (
         <ErrorState title="혜택을 불러오지 못했어요" message={policiesError} />
       )}
-      {featuredPolicy && (
-        <Link
-          className="prototype-home-hero"
-          to={`/policies/${featuredPolicy.slug}`}
-        >
-          <span className="prototype-home-hero-accent" aria-hidden="true">
-            ★
-          </span>
-          <span className="prototype-home-hero-copy">
-            <span className="prototype-home-hero-kicker">이번 주 인기 정책</span>
-            <strong>{featuredPolicy.title}</strong>
-            <span className="prototype-home-hero-description">
-              {featuredPolicy.amount}
-            </span>
-            <span className="prototype-home-hero-meta">
-              <span>{featuredPolicy.region}</span>
-              <span>{formatPolicyDeadlineTag(featuredPolicy)}</span>
-            </span>
-          </span>
-          <span className="prototype-home-hero-cta">자세히 보기 →</span>
-        </Link>
-      )}
 
+      {nationwidePolicies.length > 0 && (
+        <NationwideBenefitCard policies={nationwidePolicies} />
+      )}
       <HomeSectionHeader
-        title="이번 주 혜택"
+        title={weeklyBenefit.title}
         actionLabel="더보기"
         to="/policies"
       />
-      <WeeklyPolicyList policies={weeklyBenefitPolicies} />
+      <WeeklyPolicyList policies={weeklyBenefit.policies} />
 
       <div className="prototype-home-ai-title">AI 추천 맞춤 일정</div>
       {aiRegionCards.length > 1 ? (
@@ -259,12 +241,33 @@ export function HomePage() {
   );
 }
 
+/* 전국 정책은 지역이 아니라 혜택 종류가 정체성이다 - 지역 카드에 섞지 않고 홈 맨 위에 카드 한 장으로
+   둔다. 카드 안에 정책을 늘어놓지 않고, 누르면 정책 탭 목록(전국 필터)으로 간다.
+   그림 자리(.prototype-home-nationwide-visual)는 지금 이모지, 나중에 이미지로 바꾼다. */
+function NationwideBenefitCard({ policies }: { policies: Policy[] }) {
+  return (
+    <Link
+      className="ds-card prototype-home-nationwide"
+      to={`/policies?region=${NATIONWIDE_REGION}`}
+      aria-label={`${NATIONWIDE_REGION} 혜택 ${policies.length}건 보기`}
+    >
+      <span className="prototype-home-nationwide-copy">
+        <em>추천 · 지역 상관없이</em>
+        <strong>{NATIONWIDE_REGION} 혜택</strong>
+        <span>어디서나 쓰는 정책 {policies.length}건</span>
+        <b>모아보기 ›</b>
+      </span>
+      <span className="prototype-home-nationwide-visual" aria-hidden="true">✈️</span>
+    </Link>
+  );
+}
+
 function WeeklyPolicyList({ policies }: { policies: Policy[] }) {
   return (
     <div className="prototype-home-policy-list-wrap">
       <div
         className="prototype-home-policy-list"
-        aria-label="이번 주 혜택 정책 목록"
+        aria-label="추천 혜택 정책 목록"
       >
         {policies.map((policy) => (
           <PrototypePolicyCard key={policy.id} policy={policy} />

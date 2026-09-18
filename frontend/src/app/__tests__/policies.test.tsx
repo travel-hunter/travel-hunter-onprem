@@ -208,12 +208,12 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await login();
       cleanup();
       renderAppRoute("/policies");
-      // 전국 정책은 어느 지역 타일을 열어도 같이 들어 있다
+      // 전국 정책은 지역 타일에 섞이지 않는다 - 홈 '전국 혜택' 카드 몫이다
       await openSheetTile(userEvent.setup(), /^강원\s*\d/);
 
-      expect(await screen.findByText("마감일만 확인된 목록 정책")).toBeInTheDocument();
-      expect(document.body).toHaveTextContent("전국 · 2026.12.31 마감");
-      expect(document.body).toHaveTextContent("기간 미확인 목록 정책");
+      expect(await screen.findByText("기간 미확인 목록 정책")).toBeInTheDocument();
+      expect(screen.queryByText("마감일만 확인된 목록 정책")).toBeNull();
+      expect(document.body).not.toHaveTextContent("전국 · 2026.12.31 마감");
       expect(document.body).toHaveTextContent("강원");
       expect(document.body).not.toHaveTextContent("시작일 확인 필요");
     } finally {

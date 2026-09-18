@@ -10,7 +10,7 @@ import { getDeadlinePolicies, getPolicyPhoto, getPolicyVisual } from "../data/di
 import { PolicyHeroPhoto } from "../components/policyPhoto";
 import { PolicyRegionMap } from "../components/map/PolicyRegionMap";
 import { PolicyMapSheet } from "../components/map/PolicyMapSheet";
-import { cityOf, groupByProgram } from "../utils/policyPrograms";
+import { cityOf, groupByProgram, NATIONWIDE_REGION } from "../utils/policyPrograms";
 import { REGION_NAMES, type RegionCounts } from "../components/map/regionMapEngine";
 import "../styles/policy-map.css";
 import { daysUntilPolicyDeadline, dday, formatPolicyDeadlineNotice, formatPolicyDeadlineTag, formatPolicyPeriodSummary, isDigitalTourismResidentCardPolicy, isSafePolicyDeadline } from "../utils";
@@ -52,7 +52,6 @@ function getPolicyTripCreatePath(policySlug: string, regionQuery: string | null,
 }
 
 const allFilter = "전체";
-const nationwideRegion = "전국";
 const categoryFilters = [allFilter, "교통", "숙박", "여행상품", "지역할인", "이벤트", "기타"] as const;
 const periodFilters = ["전체", "7일 이내", "30일 이내", "3개월 이내"] as const;
 const amountFilters = ["전체", "금액 명시", "10만원 이상", "30만원 이상"] as const;
@@ -772,21 +771,21 @@ export function PolicyListPage() {
     return [allFilter, ...Array.from(new Set(regions)).sort((left, right) => left.localeCompare(right, "ko"))];
   }, [policies]);
   const groupedRegionFilters = useMemo(() => getAvailableRegionsByGroup(regionFilters), [regionFilters]);
-  /* 지도에 줄 건수. own 은 그 지역 고유 정책만 - 전국 정책 하나에 17곳이 다 켜지면
-     "어디에 정책이 있나"가 사라진다. total 은 목록에 실제로 나올 수(전국 포함). */
+  /* 지도에 줄 건수. 전국 정책은 세지 않는다 - 하나에 17곳이 다 켜지면 "어디에 정책이 있나"가
+     사라지고, 지역 건수가 12건씩 부풀었다. 전국은 홈 카드가 따로 보여준다.
+     own 과 total 이 같아졌지만 엔진 계약(RegionCount)은 그대로 둔다. */
   const regionCounts = useMemo<RegionCounts>(() => {
     const counts: RegionCounts = {};
     if (!policies) return counts;
-    let nationwide = 0;
     for (const policy of policies) {
-      if (policy.region === nationwideRegion) { nationwide += 1; continue; }
+      if (policy.region === NATIONWIDE_REGION) continue;
       const entry = counts[policy.region] ?? (counts[policy.region] = { own: 0, total: 0 });
       entry.own += 1;
     }
-    /* 정책이 있는 지역만 돌면 고유 0건 지역(대구)이 빠져 전국 정책을 못 받는다 */
+    /* 정책 0건 지역도 항목은 있어야 지도가 흐림 처리를 한다 */
     for (const region of REGION_NAMES) {
       const entry = counts[region] ?? (counts[region] = { own: 0, total: 0 });
-      entry.total = entry.own + nationwide;
+      entry.total = entry.own;
     }
     return counts;
   }, [policies]);
@@ -894,10 +893,10 @@ export function PolicyListPage() {
     setIsFilterSheetOpen(false);
   };
 
-  /* 고른 지역의 정책. 필터를 안 거치므로 목록 필터와 같은 규칙(전국 정책 포함)을 여기서 쓴다. */
+  /* 고른 지역의 정책. 그 지역 것만 - 전국은 홈 카드 몫이다. */
   const mapRegionPolicies = useMemo(() => {
     if (!mapRegion || !policies) return [];
-    return policies.filter((policy) => policy.region === mapRegion || policy.region === nationwideRegion);
+    return policies.filter((policy) => policy.region === mapRegion);
   }, [policies, mapRegion]);
   const mapPhotoAttributions = useMemo(
     () => Array.from(new Set(
