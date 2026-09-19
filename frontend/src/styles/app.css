@@ -2390,7 +2390,9 @@
   background: #e9f7fb;
 }
 
+/* 마감은 첫 줄 오른쪽 끝에 - 목록 카드와 같은 자리 규칙 */
 .prototype-home-policy-deadline {
+  margin-left: auto;
   color: #166534;
   background: #eaf8ee;
 }
@@ -5542,7 +5544,9 @@
   color: #8a5a00;
 }
 
+/* 마감은 배지 줄 오른쪽 끝에 고정한다 - 카드를 훑을 때 늘 같은 자리에서 읽히도록 */
 .prototype-policy-list-screen .policy-list-badges em {
+  margin-left: auto;
   background: #fff0f1;
   color: #ff5e5b;
 }

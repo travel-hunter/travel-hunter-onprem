@@ -1033,7 +1033,7 @@ describe("Travel Hunter app — policy detail", () => {
         ),
       ).toBeInTheDocument();
       expect(screen.getByText("상시 발급")).toBeInTheDocument();
-      expect(screen.getByText("상시 발급 · 제휴처별 운영기간 확인")).toBeInTheDocument();
+      expect(screen.getByText("제휴처별 운영기간 확인")).toBeInTheDocument();
       expect(document.body).toHaveTextContent("별도 신청 마감일 없이 발급 후 이용할 수 있습니다.");
       expect(document.body).not.toHaveTextContent("마감일 확인 필요");
       expect(supportSection).not.toHaveTextContent("혜택 제공 혜택");
