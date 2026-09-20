@@ -759,11 +759,15 @@ export function PolicyListPage() {
     savedOnly: showSavedOnly,
   });
   const [searchTerm, setSearchTerm] = useState("");
-  /* 알약을 누르면 지도가 내려가고 그 지역 정책이 종류별로 묶여 올라온다. 뒤로 가면 지도. */
-  const [mapView, setMapView] = useState<"map" | "list">("map");
+  /* 지도 화면의 상태는 URL 에 둔다. 컴포넌트 상태로 두면 정책 상세에 들어갔다 뒤로 왔을 때
+     화면이 다시 만들어지며 지도 홈으로 초기화된다 - 고른 지역도 목록도 사라졌다.
+     알약을 누르면 목록(view=list), 지역을 고르면 place - 둘 다 히스토리에 쌓아
+     뒤로가기가 한 단계씩 되짚게 한다. 시트 열림(sheet)만 덮어쓴다(아래 writeViewParams). */
+  const mapView: "map" | "list" = searchParams.get("view") === "list" ? "list" : "map";
   /* 지도에서 고른 지역. 필터가 아니다 - 지도를 눌렀다고 검색 결과가 줄어들면 안 된다.
-     예전에는 이 값이 filters.region 이라 지역을 누를 때마다 필터가 걸렸다. */
-  const [mapRegion, setMapRegion] = useState<string | null>(null);
+     그래서 필터가 쓰는 region 이 아니라 place 를 쓴다. */
+  const mapRegion = searchParams.get("place");
+  const isSheetOpen = searchParams.get("sheet") === "1";
   const { savedSlugs, addSavedSlug, removeSavedSlug } = useSession();
   const { data: policies, error, isLoading } = useAsyncResource(() => appDataApi.listPolicies(), []);
   const regionFilters = useMemo(() => {
@@ -856,6 +860,30 @@ export function PolicyListPage() {
       else next.delete("saved");
       return next;
     });
+  };
+
+  /* 지도 화면 상태를 URL 에 쓴다. replace 는 히스토리를 남기지 않는다 -
+     시트를 여닫을 때마다 항목이 쌓이면 뒤로가기를 여러 번 눌러야 상세에서 빠져나온다. */
+  const writeViewParams = (
+    changes: { place?: string | null; view?: "map" | "list"; sheet?: boolean },
+    options?: { replace?: boolean },
+  ) => {
+    setSearchParams((params) => {
+      const next = new URLSearchParams(params);
+      if ("place" in changes) {
+        if (changes.place) next.set("place", changes.place);
+        else next.delete("place");
+      }
+      if (changes.view) {
+        if (changes.view === "list") next.set("view", "list");
+        else next.delete("view");
+      }
+      if ("sheet" in changes) {
+        if (changes.sheet) next.set("sheet", "1");
+        else next.delete("sheet");
+      }
+      return next;
+    }, options);
   };
 
   const openFilterSheet = () => {
@@ -971,14 +999,14 @@ export function PolicyListPage() {
         <div className="thmap-stage">
           <PolicyRegionMap
             counts={regionCounts}
-            onSelect={(region) => { setMapRegion(region); if (!region) setMapView("map"); }}
+            onSelect={(region) => writeViewParams({ place: region, view: region ? mapView : "map" })}
             selected={mapRegion}
             renderPill={(region) => selectedRegionTotal > 0 ? (
               <button
                 className="thmap-pill"
                 type="button"
                 aria-label={`${region} 정책 ${selectedRegionTotal}건 보기`}
-                onClick={() => setMapView("list")}
+                onClick={() => writeViewParams({ view: "list" })}
               >
                 {/* 지역 이름은 안 쓴다 - 바로 밑 땅에 이름표가 이미 있다. 이모지만으로는 무슨
                     정책인지 알 수 없어 종류 이름을 적는다. 읽는 이름(aria-label)에는 지역이 남는다. */}
@@ -1000,7 +1028,7 @@ export function PolicyListPage() {
       )}
       {!isLoading && !error && policies && policies.length > 0 && showRegionList && (
         <div className="thmap-list-head">
-          <button className="thmap-back" type="button" aria-label="지도로" onClick={() => setMapView("map")}>‹</button>
+          <button className="thmap-back" type="button" aria-label="지도로" onClick={() => writeViewParams({ view: "map" })}>‹</button>
           <div>
             <h2>{mapRegion}</h2>
             <p>정책 {mapRegionPolicies.length}건 · 시·군 {selectedRegionCityCount}곳</p>
@@ -1052,6 +1080,8 @@ export function PolicyListPage() {
       {!isLoading && !error && policies && policies.length > 0 && (
         <PolicyMapSheet
           enabled={showMap && !isFilterSheetOpen}
+          open={isSheetOpen}
+          onOpenChange={(next) => writeViewParams({ sheet: next }, { replace: true })}
           policies={policies}
           savedSlugs={savedSlugs}
           onToggleSave={handleToggleSave}

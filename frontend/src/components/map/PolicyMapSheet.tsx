@@ -10,33 +10,95 @@ import { REGION_PHOTOS } from "./regionPhotos";
 const PEEK = 20; /* 닫힌 시트가 내미는 높이 - 손잡이 줄까지만 */
 /* 휠 한 칸(보통 deltaY 100)에 시트가 내려가는 거리. 1 이면 한두 번에 닫혀 손이 미끄러진다. */
 const WHEEL_DAMP = 0.8;
-/* 휠은 손을 떼는 순간이 없다 - 이만큼 조용하면 한 동작이 끝난 것으로 본다(ms). */
-const WHEEL_SETTLE = 140;
-/* 시트를 제자리로 미는 transform. CSS 의 translateX(-50%) 를 빼먹으면 시트가 가로로 튄다. */
-const shift = (y: number) => `translateX(-50%) translateY(${y}px)`;
+/* 휠은 손을 떼는 순간이 없다 - 이만큼 조용하면 한 동작이 끝난 것으로 본다(ms).
+   이제는 제자리로 되돌리는 데 쓰지 않는다. 전환을 도로 켜 주기만 한다. */
+const WHEEL_QUIET = 140;
+/* 끌어 올리고 내리는 도중 이 선을 건너가면 그 순간 끝까지 붙는다. 건너기 전에는 그 자리에 멈춘다. */
+const MIDDLE = 0.5;
+/* 양 끝 여유. 중간을 이미 지난 쪽에서 더 밀면 선을 건널 일이 없어 끝 언저리에 어중간하게
+   멈춘다 - 이만큼 가까우면 끝으로 붙여 준다. */
+const EDGE = 0.08;
 
-/* 지도 아래에서 올라오는 정책 시트. 92건을 한 줄로 늘어놓지 않고 지역 줄 또는
-   정책 종류 줄로 접어 보여준다. 여는 방법 셋 - 손잡이 누르기, 아래로 휠, 손잡이 끌기.
-   앱 탭바(72px) 바로 위에서 멈춘다 - 다 올려도 메뉴탭은 그대로 보인다. */
+/* 지도 위로 붙어 올라오는 정책 페이지. 92건을 한 줄로 늘어놓지 않고 지역 줄 또는
+   정책 종류 줄로 접어 보여준다. 올리는 방법 셋 - 손잡이 누르기, 아래로 휠, 끌어올리기.
+   다 올라오면 검색줄 바로 아래에 붙고 탭바는 그 뒤로 가라앉는다. */
 export function PolicyMapSheet({
   policies,
   enabled,
+  open,
+  onOpenChange,
   savedSlugs,
   onToggleSave,
 }: {
   policies: Policy[];
   /** 지도 화면일 때만 보인다. 목록 화면 위에 겹치면 안 된다. */
   enabled: boolean;
+  /** 열림 상태는 URL 이 들고 있다 - 상세에 갔다 뒤로 와도 그대로 돌아오게. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   savedSlugs: Set<string>;
   onToggleSave: (policy: Policy) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
+  const setOpen = (next: boolean | ((value: boolean) => boolean)) => {
+    onOpenChange(typeof next === "function" ? next(open) : next);
+  };
+  /* 진행도 하나(0=지도, 1=한 페이지)에 모든 표현을 건다. 리렌더 없이 CSS 변수로만 흐른다.
+     변수를 body 에 쓰면 한 프레임마다 문서 전체의 스타일이 다시 계산된다 - 정책 카드 수십 장이
+     걸린 화면에서 그게 프레임을 떨어뜨렸다. 이 값을 실제로 읽는 세 요소에만 직접 쓴다.
+     (시트 안 손잡이는 시트에서 상속받는다.) */
+  const tabsRef = useRef<HTMLElement | null>(null);
+  const progressTargets = () => {
+    if (!tabsRef.current) tabsRef.current = document.querySelector<HTMLElement>(".bottom-tabs");
+    return [sheetRef.current, dimRef.current, tabsRef.current];
+  };
+  const progressRef = useRef(open ? 1 : 0);
+  const writeProgress = (value: number) => {
+    progressRef.current = value;
+    const text = value.toFixed(3);
+    for (const node of progressTargets()) node?.style.setProperty("--thmap-progress", text);
+  };
+  /* 양 끝으로 붙인다 - 전환을 도로 켜고 열림 상태까지 맞춘다. */
+  const settleTo = (target: 0 | 1) => {
+    setDragging(false);
+    writeProgress(target);
+    setOpen(target === 1);
+    return true;
+  };
+  /* 끌고 간 자리를 쓴다. 중간을 **건너간** 순간에만 끝까지 붙이고, 건너기 전에는 그 자리에
+     멈춘다 - 손을 떼면 도로 올라가던 것을 없앴다(2026-09-20). 중간 아래에서 조금 더 내리는
+     동안에도 멈춤이 유지되어야 하므로 "지금 어느 쪽인가"가 아니라 "건너갔는가"로 본다.
+     확정했으면 true - 부르는 쪽은 이번 끌기를 거기서 끝낸다. */
+  const moveTo = (next: number) => {
+    const prev = progressRef.current;
+    const value = Math.max(0, Math.min(1, next));
+    writeProgress(value);
+    /* 끝 여유는 그 끝으로 **다가갈 때만** 본다 - 끝에서 출발할 때도 보면 손을 대자마자
+       도로 붙어 버린다(없앤 스프링백이 그 모습이다). */
+    const toward = Math.sign(value - prev);
+    if (value <= 0 || (toward < 0 && value <= EDGE) || (prev >= MIDDLE && value < MIDDLE)) return settleTo(0);
+    if (value >= 1 || (toward > 0 && value >= 1 - EDGE) || (prev <= MIDDLE && value > MIDDLE)) return settleTo(1);
+    return false;
+  };
+  /* 끄는 동안은 시트·딤·탭바의 전환을 같이 끈다. 시트에만 끄면 탭바가 한 박자 늦게 따라온다. */
+  const setDragging = (on: boolean) => {
+    document.body.classList.toggle("thmap-dragging", on);
+  };
+  /* 시트가 닫힌 자리까지 내려가는 거리(px). CSS 의 --thmap-closed-y 와 같은 식이어야 한다. */
+  const travelOf = (sheet: HTMLElement) => {
+    const tabbar = Number.parseFloat(getComputedStyle(sheet).getPropertyValue("--thmap-tabbar")) || 0;
+    return Math.max(1, sheet.clientHeight - PEEK - tabbar);
+  };
+
   const [groupBy, setGroupBy] = useState<"region" | "program">("region");
   const [openKey, setOpenKey] = useState<string | null>(null);
   const sheetRef = useRef<HTMLElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  const dimRef = useRef<HTMLDivElement | null>(null);
   const grabRef = useRef<HTMLButtonElement | null>(null);
   const suppressGrabClickRef = useRef(false);
+  /* 끌기 한 번의 상태. 도중에 중간을 건너가 확정되면 open 이 바뀌며 아래 effect 가 다시 걸린다 -
+     지역 변수로 두면 그 순간 끌기가 사라져, 뒤따르는 click 이 결과를 도로 뒤집었다. */
+  const grabDragRef = useRef<{ y: number; from: number; moved: boolean; done: boolean } | null>(null);
 
   const rows = useMemo<PolicyGroup[]>(
     () => (groupBy === "region" ? groupByRegion(policies, REGION_NAMES) : groupByProgram(policies)),
@@ -52,41 +114,70 @@ export function PolicyMapSheet({
     if (!enabled && open) setOpen(false);
   }, [enabled, open]);
 
-  /* 휠 - 지도 화면 어디서든 아래로 굴리면 열린다. 여는 건 가볍게 한 번이면 된다.
-     닫을 때는 굴린 만큼 시트가 실제로 밀려 내려가고, 제 키의 절반을 넘겨야 닫힌다.
-     절반 위에서 손을 멈추면 도로 올라가 열린 채로 남는다 - 한 칸에 닫혀 버리던 것을 고쳤다.
+  /* 올라온 페이지는 검색줄 바로 아래에서 멈춘다 - 검색창은 어느 화면에서도 계속 보여야 한다.
+     줄 높이는 화면 폭·필터 칩·상단 내비(768px 이상)에 따라 달라지므로 상수 대신 재서 쓴다.
+     같이: 지도 화면은 스크롤하지 않는다. 지도 칸 높이는 화면에 딱 맞게 잡히지만 주소창이
+     여닫히며 몇 px 어긋나면 스크롤이 잠깐 생기고, 그 상태에서 굴리면 검색줄이 위로 밀려
+     올라가 안 돌아온다. 칸 자체를 못 움직이게 막는 편이 확실하다 - 이 화면엔 볼 것이 없다. */
+  useEffect(() => {
+    if (!enabled) return;
+    const scroller = document.querySelector(".app-container");
+    document.body.classList.add("thmap-map-view");
+    if (scroller) scroller.scrollTop = 0; /* 다른 화면에서 굴려 둔 자리를 물고 오지 않게 */
+    const measure = () => {
+      const toolbar = document.querySelector(".prototype-policy-toolbar");
+      if (!toolbar) return;
+      const bottom = Math.round(toolbar.getBoundingClientRect().bottom);
+      if (bottom > 0) document.body.style.setProperty("--thmap-sheet-top", `${bottom}px`);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      document.body.classList.remove("thmap-map-view");
+      document.body.style.removeProperty("--thmap-sheet-top");
+    };
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    /* 멈춰 세워 둔 자리는 그대로 둔다 - 여기서 덮어쓰면 끌던 손이 튕겨 나간다. */
+    if (progressRef.current !== (open ? 1 : 0)) writeProgress(open ? 1 : 0);
+    /* 다 올라오면 지도는 안 보인다 - 그 밑에서 파도와 알약 흐림이 계속 돌 이유가 없다.
+       움직이는 동안도 멈춘다(policy-map.css 의 thmap-up · thmap-dragging). */
+    document.body.classList.toggle("thmap-up", open);
+    /* 정책 탭을 떠나면 지운다 - 안 지우면 다른 탭 탭바가 가라앉은 채로 남는다. */
+    return () => {
+      tabsRef.current?.style.removeProperty("--thmap-progress");
+      document.body.classList.remove("thmap-up");
+      setDragging(false);
+    };
+  }, [enabled, open]);
+
+  /* 휠 - 지도 화면 어디서든 아래로 굴리면 올라온다. 올리는 건 가볍게 한 번이면 된다.
+     내릴 때는 굴린 만큼 페이지가 실제로 따라 내려오고, 중간을 건너가면 그때 지도까지 간다.
+     건너기 전에 멈추면 뒤로 지도가 보이는 채로 그 자리에 선다.
      지도 화면엔 지도 밑 목록이 없으므로(PolicyPages 의 showMap) 삼킬 스크롤도 없다. */
   useEffect(() => {
     if (!enabled) return;
-    let pull = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    /* 한 동작이 끝난 자리에서 판정한다 - 절반을 넘겼으면 닫고 아니면 되돌린다. */
-    const settle = () => {
-      const sheet = sheetRef.current;
-      const passedHalf = sheet ? pull > sheet.clientHeight / 2 : pull > 0;
-      if (sheet) { sheet.classList.remove("thmap-drag"); sheet.style.transform = ""; }
-      pull = 0;
-      if (passedHalf) setOpen(false);
-    };
     const onWheel = (event: WheelEvent) => {
       const body = bodyRef.current, sheet = sheetRef.current;
-      if (open) {
-        /* 시트 안을 아직 다 못 올렸으면 내용 스크롤이 먼저다 */
-        if (body && body.contains(event.target as Node) && body.scrollTop > 0) return;
-        /* 맨 위에서 아래로 굴리는 건 내용 스크롤 - 끌어내리던 중일 때만 되돌리는 데 쓴다 */
-        if (event.deltaY >= 0 && pull === 0) return;
-        if (!sheet) return;
-        pull = Math.max(0, Math.min(sheet.clientHeight - PEEK, pull - event.deltaY * WHEEL_DAMP));
-        sheet.classList.add("thmap-drag");
-        sheet.style.transform = shift(pull);
-        event.preventDefault();
-        clearTimeout(timer);
-        /* 절반을 넘긴 순간 바로 닫는다 - 넘기고도 기다리게 하면 굼떠 보인다 */
-        if (pull > sheet.clientHeight / 2) { settle(); return; }
-        timer = setTimeout(settle, WHEEL_SETTLE);
+      if (!open) {
+        if (event.deltaY > 0) { setOpen(true); event.preventDefault(); }
         return;
       }
-      if (event.deltaY > 0) { setOpen(true); event.preventDefault(); }
+      /* 시트 안을 아직 다 못 올렸으면 내용 스크롤이 먼저다 */
+      if (body && body.contains(event.target as Node) && body.scrollTop > 0) return;
+      /* 다 올라와 있을 때 아래로 굴리는 건 내용 스크롤 - 내려오던 중일 때만 되올리는 데 쓴다 */
+      if (event.deltaY >= 0 && progressRef.current >= 1) return;
+      if (!sheet) return;
+      event.preventDefault();
+      setDragging(true);
+      moveTo(progressRef.current + (event.deltaY * WHEEL_DAMP) / travelOf(sheet));
+      clearTimeout(timer);
+      /* 굴림이 멎으면 전환만 도로 켠다 - 자리는 그대로 둔다 */
+      timer = setTimeout(() => setDragging(false), WHEEL_QUIET);
     };
     document.addEventListener("wheel", onWheel, { passive: false });
     return () => {
@@ -94,6 +185,43 @@ export function PolicyMapSheet({
       clearTimeout(timer);
     };
   }, [enabled, open]);
+
+  /* 모바일에서 페이지를 내리는 길. 다 올라오면 손잡이는 투명해져 잡을 자리가 안 보인다 -
+     목록 맨 위에서 아래로 끌면 어디를 잡든 페이지가 따라 내려온다(터치 전용, 휠은 위 effect). */
+  useEffect(() => {
+    const body = bodyRef.current, sheet = sheetRef.current;
+    if (!open || !body || !sheet) return;
+    let startY: number | null = null, startP = 1, active = false, done = false;
+    const start = (event: TouchEvent) => {
+      if (body.scrollTop > 0) { startY = null; return; }
+      startY = event.touches[0].clientY; startP = progressRef.current;
+      active = false; done = false;
+    };
+    const move = (event: TouchEvent) => {
+      if (startY === null || done) return;
+      const dy = event.touches[0].clientY - startY;
+      if (!active) {
+        if (dy < 8) { if (dy < -8) startY = null; /* 위로 긋는 건 내용 스크롤이다 */ return; }
+        active = true; setDragging(true);
+      }
+      event.preventDefault();
+      if (moveTo(startP - dy / travelOf(sheet))) done = true;
+    };
+    const end = () => {
+      if (active) setDragging(false);
+      startY = null; active = false;
+    };
+    body.addEventListener("touchstart", start, { passive: true });
+    body.addEventListener("touchmove", move, { passive: false });
+    body.addEventListener("touchend", end);
+    body.addEventListener("touchcancel", end);
+    return () => {
+      body.removeEventListener("touchstart", start);
+      body.removeEventListener("touchmove", move);
+      body.removeEventListener("touchend", end);
+      body.removeEventListener("touchcancel", end);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -103,30 +231,29 @@ export function PolicyMapSheet({
   }, [open]);
 
   /* 손잡이 끌기 - 손가락을 그대로 따라간다. 6px 안이면 클릭으로 본다.
-     열 때는 조금만 올려도 열리고, 닫을 때는 제 키의 절반을 넘겨야 닫힌다.
-     절반 위에서 놓으면 도로 올라가 열린 채로 남는다. */
+     중간을 건너가면 그 자리에서 끝까지 붙고, 건너기 전에 놓으면 그 자리에 멈춘다. */
   useEffect(() => {
     const grab = grabRef.current, sheet = sheetRef.current;
     if (!grab || !sheet) return;
-    let startY: number | null = null, moved = false, pull = 0;
     const down = (event: PointerEvent) => {
-      startY = event.clientY; moved = false; pull = 0; sheet.classList.add("thmap-drag");
+      grabDragRef.current = { y: event.clientY, from: progressRef.current, moved: false, done: false };
+      setDragging(true);
       try { grab.setPointerCapture(event.pointerId); } catch { /* 지원 안 하는 브라우저 */ }
     };
     const move = (event: PointerEvent) => {
-      if (startY === null) return;
-      const dy = event.clientY - startY;
-      if (Math.abs(dy) > 6) moved = true;
-      if (!moved) return;
-      const base = open ? 0 : sheet.clientHeight - PEEK;
-      pull = Math.max(0, Math.min(sheet.clientHeight - PEEK, base + dy));
-      sheet.style.transform = shift(pull);
+      const drag = grabDragRef.current;
+      if (!drag || drag.done) return;
+      const dy = event.clientY - drag.y;
+      if (Math.abs(dy) > 6) drag.moved = true;
+      if (!drag.moved) return;
+      if (moveTo(drag.from - dy / travelOf(sheet))) drag.done = true;
     };
     const end = (event: PointerEvent) => {
-      if (startY === null) return;
-      const dy = event.clientY - startY; startY = null;
-      sheet.classList.remove("thmap-drag"); sheet.style.transform = "";
-      if (!moved) return; /* 그냥 클릭이면 click 이 처리 */
+      const drag = grabDragRef.current;
+      if (!drag) return;
+      grabDragRef.current = null;
+      setDragging(false);
+      if (!drag.moved) return; /* 그냥 클릭이면 click 이 처리 */
       /* pointerup 뒤에 합성되는 click 이 드래그 결과를 다시 뒤집지 못하게 한 번만 막는다. */
       suppressGrabClickRef.current = event.type === "pointerup";
       if (suppressGrabClickRef.current) {
@@ -134,9 +261,6 @@ export function PolicyMapSheet({
           suppressGrabClickRef.current = false;
         }, 0);
       }
-      /* 열려 있었으면 절반을 넘겨 내려왔을 때만 닫는다. 아니면 그대로 열린 채 되돌아간다. */
-      if (open) setOpen(!(pull > sheet.clientHeight / 2));
-      else setOpen(dy < 0);
     };
     grab.addEventListener("pointerdown", down);
     grab.addEventListener("pointermove", move);
@@ -168,7 +292,7 @@ export function PolicyMapSheet({
 
   return (
     <>
-      <div className={open ? "thmap-dim thmap-dim-on" : "thmap-dim"} onClick={() => setOpen(false)} aria-hidden="true" />
+      <div className={open ? "thmap-dim thmap-dim-on" : "thmap-dim"} ref={dimRef} onClick={() => setOpen(false)} aria-hidden="true" />
       <section className={open ? "thmap-sheet thmap-open" : "thmap-sheet"} ref={sheetRef} aria-label="정책 모아보기">
         <button
           className="thmap-grab"

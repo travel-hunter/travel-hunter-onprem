@@ -27,7 +27,7 @@ import {
   testIsoDateFromToday,
   testPassword,
 } from "../../test/fixtures";
-import { getLink, login, renderAppRoute } from "../../test/renderAppRoute";
+import { getLink, goBack, login, renderAppRoute, routeLocation } from "../../test/renderAppRoute";
 
 /* 지도 화면엔 지도 밑 목록이 없다(시안 그대로). 카드는 시트 손잡이 → 타일을 거쳐야 보인다.
    타일 이름은 "경남 1건 · …" 꼴 - 지도의 "경남 정책 1건" 버튼과 구분하려고 지역 뒤에 숫자를 건다. */
@@ -427,7 +427,9 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await waitFor(() => expect(mapRegion("전남")?.classList.contains("thmap-on")).toBe(true));
       expect(document.body).toHaveTextContent("전남 선택됨 · 표시를 누르면 목록으로");
       expect(screen.getByRole("button", { name: "전남 정책 1건 보기" })).toBeInTheDocument();
-      expect(window.location.search).toBe("");
+      // 고른 지역은 URL 에 남는다(뒤로가기 복원용). 필터 파라미터는 여전히 안 붙는다
+      expect(new URLSearchParams(routeLocation().search).get("place")).toBe("전남");
+      expect(new URLSearchParams(routeLocation().search).get("region")).toBeNull();
       expect(document.body).toHaveTextContent("전체 2개 중 2개 표시");
       expect(screen.queryByRole("button", { name: "필터 초기화" })).not.toBeInTheDocument();
 
@@ -436,7 +438,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
       expect(mapRegion("전남")?.classList.contains("thmap-on")).toBe(false);
       await waitFor(() => expect(screen.getByRole("button", { name: "광주 정책 1건 보기" })).toBeInTheDocument());
       expect(screen.queryByRole("button", { name: "전남 정책 1건 보기" })).not.toBeInTheDocument();
-      expect(window.location.search).toBe("");
+      expect(new URLSearchParams(routeLocation().search).get("place")).toBe("광주");
 
       // 지도 아래 안내 줄과, 솟은 지역 머리 위 알약. 알약을 누르면 지도가 내려가고 지역 목록이 된다
       expect(document.body).toHaveTextContent("광주 선택됨 · 표시를 누르면 목록으로");
@@ -1110,6 +1112,62 @@ describe("Travel Hunter app — policies & trip picker", () => {
       listTripsSpy.mockRestore();
       addPolicyToTripSpy.mockRestore();
       getTripSpy.mockRestore();
+    }
+  });
+
+  it("keeps the map screen state in the URL so back from a policy returns to it", async () => {
+    const mapPolicies: Policy[] = [
+      { ...examplePolicyDetail, id: "map-jeonnam", slug: "map-jeonnam", title: "전남 해안 혜택", region: "전남" },
+    ];
+    const policyListSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(mapPolicies);
+    const mapRegion = (name: string) =>
+      document.querySelector(`.thmap-rg[data-region="${name}"]`) as SVGGElement | null;
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+      const user = userEvent.setup();
+
+      // 지도 → 지역 선택 → 목록. 둘 다 URL 에 남아 뒤로가기가 한 단계씩 되짚는다
+      await waitFor(() => expect(mapRegion("전남")).toBeTruthy());
+      await user.click(mapRegion("전남") as SVGGElement);
+      await user.click(await screen.findByRole("button", { name: "전남 정책 1건 보기" }));
+      expect(await screen.findByRole("heading", { level: 2, name: "전남" })).toBeInTheDocument();
+      expect(new URLSearchParams(routeLocation().search).get("view")).toBe("list");
+
+      // 카드로 들어갔다 뒤로 오면 지도 홈이 아니라 이 목록으로 돌아온다
+      await user.click(document.querySelector(".policy-list-card-link") as HTMLElement);
+      await waitFor(() => expect(routeLocation().pathname).toBe("/policies/map-jeonnam"));
+      goBack();
+      await waitFor(() => expect(routeLocation().pathname).toBe("/policies"));
+      expect(await screen.findByRole("heading", { level: 2, name: "전남" })).toBeInTheDocument();
+      expect(document.querySelector(".thmap-host")).toBeNull();
+
+      // 한 번 더 뒤로 가면 지도로
+      goBack();
+      await waitFor(() => expect(document.querySelector(".thmap-host")).toBeTruthy());
+      expect(new URLSearchParams(routeLocation().search).get("view")).toBeNull();
+    } finally {
+      policyListSpy.mockRestore();
+    }
+  });
+
+  it("opens the same screen straight from the URL", async () => {
+    const mapPolicies: Policy[] = [
+      { ...examplePolicyDetail, id: "map-jeonnam", slug: "map-jeonnam", title: "전남 해안 혜택", region: "전남" },
+    ];
+    const policyListSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(mapPolicies);
+    try {
+      await login();
+      cleanup();
+      // 새로고침·북마크도 같은 길을 쓴다
+      renderAppRoute("/policies?place=전남&view=list");
+      expect(await screen.findByRole("heading", { level: 2, name: "전남" })).toBeInTheDocument();
+      expect(document.querySelector(".thmap-host")).toBeNull();
+      expect(document.body).toHaveTextContent("전남 해안 혜택");
+    } finally {
+      policyListSpy.mockRestore();
     }
   });
 });
