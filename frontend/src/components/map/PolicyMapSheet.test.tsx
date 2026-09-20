@@ -1,9 +1,15 @@
+import { useState } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { Policy } from "../../api";
 import { examplePolicyDetail } from "../../test/fixtures";
 import { PolicyMapSheet } from "./PolicyMapSheet";
+
+/* 올라온 정도(0=지도, 1=한 페이지). 시트·딤·탭바가 전부 이 값 하나를 읽는다 -
+   매 프레임 문서 전체가 다시 계산되지 않게 body 가 아니라 읽는 요소에 직접 쓴다 */
+const progress = () =>
+  Number((document.querySelector(".thmap-sheet") as HTMLElement).style.getPropertyValue("--thmap-progress"));
 
 /* <b> 로 쪼개진 글자가 접근성 이름으로 합쳐질 때 공백이 들쭉날쭉하다 - 공백을 빼고 견준다 */
 const named = (expected: string) => (name: string) => name.replace(/\s+/g, "") === expected.replace(/\s+/g, "");
@@ -14,11 +20,28 @@ const policies: Policy[] = [
   { ...examplePolicyDetail, id: "s3", slug: "s3", title: "[하동] 대한민국 반값여행 지원", region: "경남" },
 ];
 
+/* 열림 상태는 이제 바깥(URL)이 들고 있다 - 테스트에서는 이 껍데기가 대신 들어 준다 */
+function SheetHarness({ enabled }: { enabled: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className="thmap-wrap" data-testid="map-area" />
+      <PolicyMapSheet
+        enabled={enabled}
+        open={open}
+        onOpenChange={setOpen}
+        policies={policies}
+        savedSlugs={new Set()}
+        onToggleSave={async () => undefined}
+      />
+    </>
+  );
+}
+
 function mount(enabled = true) {
   return render(
     <MemoryRouter>
-      <div className="thmap-wrap" data-testid="map-area" />
-      <PolicyMapSheet enabled={enabled} policies={policies} savedSlugs={new Set()} onToggleSave={async () => undefined} />
+      <SheetHarness enabled={enabled} />
     </MemoryRouter>,
   );
 }
@@ -79,25 +102,34 @@ describe("PolicyMapSheet", () => {
     expect(document.querySelector(".thmap-sheet")?.classList.contains("thmap-open")).toBe(false);
     rerender(
       <MemoryRouter>
-        <PolicyMapSheet enabled={false} policies={policies} savedSlugs={new Set()} onToggleSave={async () => undefined} />
+        <SheetHarness enabled={false} />
       </MemoryRouter>,
     );
     expect(document.querySelector(".thmap-sheet")).toBeNull();
   });
 
   it("opens on a single downward wheel anywhere on the map screen", () => {
-    mount();
-    const isOpen = () => document.querySelector(".thmap-sheet")?.classList.contains("thmap-open");
-    // 여는 건 가볍게 한 번 - 지도 위든 그 밖이든 아래로 굴리면 올라온다
-    fireEvent.wheel(document.body, { deltaY: 40 });
-    expect(isOpen()).toBe(true);
-    // 한 번 위로 굴린다고 닫히지 않는다 (닫는 문턱은 아래 두 테스트가 본다)
-    fireEvent.wheel(document.body, { deltaY: -40 });
-    expect(isOpen()).toBe(true);
+    // 닫는 문턱은 시트 높이에 비례한다 - jsdom 의 0 높이로는 한 칸에 닫혀 버린다
+    const tall = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(400);
+    try {
+      mount();
+      const isOpen = () => document.querySelector(".thmap-sheet")?.classList.contains("thmap-open");
+      // 여는 건 가볍게 한 번 - 지도 위든 그 밖이든 아래로 굴리면 올라온다
+      fireEvent.wheel(document.body, { deltaY: 40 });
+      expect(isOpen()).toBe(true);
+      expect(progress()).toBe(1);
+      // 한 번 위로 굴린다고 닫히지 않는다 (닫는 문턱은 아래 두 테스트가 본다)
+      fireEvent.wheel(document.body, { deltaY: -40 });
+      expect(isOpen()).toBe(true);
+    } finally {
+      tall.mockRestore();
+    }
   });
 
-  it("needs the sheet dragged past half its height before it closes", () => {
-    // jsdom 은 높이가 0 이라 문턱이 사라진다 - 실제 키를 흉내 내야 규칙이 검증된다
+  it("needs a slow pull past half the way down before it closes", () => {
+    // jsdom 은 높이가 0 이라 문턱이 사라진다 - 실제 키를 흉내 내야 규칙이 검증된다.
+    // 내려가는 거리는 400 - 손잡이 20 = 380, 절반은 190.
+    vi.useFakeTimers();
     const tall = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(400);
     try {
       mount();
@@ -106,19 +138,57 @@ describe("PolicyMapSheet", () => {
       fireEvent.click(screen.getByRole("button", { name: named("정책 3건 · 시도 2곳") }));
       expect(isOpen()).toBe(true);
 
-      // 한 칸에 80px - 두 칸(160)은 절반(200)에 못 미쳐 열린 채로 남는다
-      fireEvent.wheel(document.body, { deltaY: -100 });
-      expect(isOpen()).toBe(true);
-      expect(sheet.style.transform).toBe("translateX(-50%) translateY(80px)");
-      fireEvent.wheel(document.body, { deltaY: -100 });
-      expect(isOpen()).toBe(true);
+      // 트랙패드처럼 한 번에 20px 씩, 천천히(50ms 간격) 끌어내린다
+      const slowPull = (times: number) => {
+        for (let i = 0; i < times; i += 1) {
+          fireEvent.wheel(document.body, { deltaY: -25 });
+          vi.advanceTimersByTime(50);
+        }
+      };
 
-      // 세 칸(240)이면 절반을 넘겨 닫히고, 밀어 둔 자리도 지워진다
-      fireEvent.wheel(document.body, { deltaY: -100 });
+      // 절반(190)에 못 미치는 동안은 열린 채로 따라 내려오기만 한다
+      slowPull(8);
+      expect(isOpen()).toBe(true);
+      expect(progress()).toBeCloseTo(1 - 160 / 380, 2);
+
+      // 절반을 넘기면 닫힌다
+      slowPull(2);
       expect(isOpen()).toBe(false);
-      expect(sheet.style.transform).toBe("");
+      expect(progress()).toBe(0);
     } finally {
       tall.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("stays where it was left when the pull stops short of the middle", () => {
+    vi.useFakeTimers();
+    const tall = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(400);
+    try {
+      mount();
+      const sheet = document.querySelector(".thmap-sheet") as HTMLElement;
+      fireEvent.click(screen.getByRole("button", { name: named("정책 3건 · 시도 2곳") }));
+
+      // 두 칸(160px)은 중간(190)에 못 미친다 - 도로 올라가지 않고 그 자리에 선다
+      fireEvent.wheel(document.body, { deltaY: -100 });
+      fireEvent.wheel(document.body, { deltaY: -100 });
+      expect(sheet.classList.contains("thmap-open")).toBe(true);
+      expect(progress()).toBeCloseTo(1 - 160 / 380, 2);
+
+      // 손을 뗀 뒤에도 그대로 - 뒤로 지도가 보이는 채로 멈춰 있는다
+      vi.advanceTimersByTime(600);
+      expect(progress()).toBeCloseTo(1 - 160 / 380, 2);
+      expect(sheet.classList.contains("thmap-open")).toBe(true);
+
+      // 멈춘 자리에서 도로 올려도 중간을 건너가지 않으니 또 그 자리에 선다
+      fireEvent.wheel(document.body, { deltaY: 100 });
+      expect(progress()).toBeCloseTo(1 - 80 / 380, 2);
+      // 끝 언저리(8%)까지 올리면 그때 검색창 밑에 붙는다
+      fireEvent.wheel(document.body, { deltaY: 100 });
+      expect(progress()).toBe(1);
+    } finally {
+      tall.mockRestore();
+      vi.useRealTimers();
     }
   });
 
@@ -140,7 +210,8 @@ describe("PolicyMapSheet", () => {
 
       dispatchPointer("pointerdown", 300);
       dispatchPointer("pointermove", 100);
-      expect(sheet.style.transform).toBe("translateX(-50%) translateY(180px)");
+      // 0 에서 200px 위로 = 0.53, 중간을 건너갔으니 그 자리에서 끝까지 붙는다
+      expect(progress()).toBe(1);
       dispatchPointer("pointerup", 100);
       fireEvent.click(grab);
 
@@ -180,23 +251,33 @@ describe("PolicyMapSheet", () => {
     }
   });
 
-  it("springs back to open when the pull stops above half", () => {
-    vi.useFakeTimers();
+  it("lets the list be pulled down by touch when it is scrolled to the top", () => {
     const tall = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(400);
     try {
       mount();
-      const sheet = document.querySelector(".thmap-sheet") as HTMLElement;
       fireEvent.click(screen.getByRole("button", { name: named("정책 3건 · 시도 2곳") }));
-      fireEvent.wheel(document.body, { deltaY: -100 });
-      expect(sheet.style.transform).toBe("translateX(-50%) translateY(80px)");
+      const body = document.querySelector(".thmap-sheet-body") as HTMLElement;
+      const touch = (type: string, clientY: number) =>
+        fireEvent[type === "touchstart" ? "touchStart" : type === "touchmove" ? "touchMove" : "touchEnd"](
+          body,
+          { touches: type === "touchend" ? [] : [{ clientY }] },
+        );
 
-      // 손을 멈추면 제자리로 돌아가고 열린 채로 남는다
-      vi.advanceTimersByTime(200);
-      expect(sheet.style.transform).toBe("");
-      expect(sheet.classList.contains("thmap-open")).toBe(true);
+      // 손잡이는 다 올라오면 안 보인다 - 목록 맨 위에서 끌어도 페이지가 따라 내려와야 한다
+      touch("touchstart", 200);
+      touch("touchmove", 260);
+      expect(progress()).toBeCloseTo(1 - 60 / 380, 2);
+      touch("touchend", 260);
+      // 중간 전이라 그 자리에 멈춘다
+      expect(progress()).toBeCloseTo(1 - 60 / 380, 2);
+      expect(document.querySelector(".thmap-sheet")?.classList.contains("thmap-open")).toBe(true);
+
+      // 중간을 건너가면 지도까지 내려간다
+      touch("touchstart", 200);
+      touch("touchmove", 400);
+      expect(document.querySelector(".thmap-sheet")?.classList.contains("thmap-open")).toBe(false);
     } finally {
       tall.mockRestore();
-      vi.useRealTimers();
     }
   });
 

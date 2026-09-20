@@ -3,7 +3,8 @@ import { getKstDateInputValue } from "./utils/dateDefaults";
 export const UNKNOWN_DEADLINE_LABEL = "마감일 확인 필요";
 
 export const ALWAYS_AVAILABLE_POLICY_LABEL = "상시 발급";
-export const DIGITAL_TOURISM_PERIOD_LABEL = "상시 발급 · 제휴처별 운영기간 확인";
+/* 카드 아래 줄·상세 "기간" 칸. 앞의 "상시 발급"은 오른쪽 위 마감 배지와 겹쳐서 뺐다. */
+export const DIGITAL_TOURISM_PERIOD_LABEL = "제휴처별 운영기간 확인";
 export const DIGITAL_TOURISM_PERIOD_NOTICE =
   "별도 신청 마감일 없이 발급 후 이용할 수 있습니다. 제휴처별 할인율, 운영 기간, 이용 조건은 공식 안내에서 확인하세요.";
 

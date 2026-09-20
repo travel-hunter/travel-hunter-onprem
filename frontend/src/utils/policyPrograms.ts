@@ -24,11 +24,11 @@ export type PolicyGroup = {
   items: Policy[];
 };
 
-/* 지역별. 전국 정책은 어느 지역을 열어도 들어 있어야 한다 - 목록 필터와 같은 규칙.
+/* 지역별. 전국 정책은 넣지 않는다 - 17개 시도에 같은 정책이 반복돼 건수를 부풀렸다.
+   전국은 홈 '전국 혜택' 카드가 따로 보여준다.
    regions 를 주면 정책 0건 지역도 카드로 낸다 - 지도가 17개 시도를 다 그리므로 시트도 맞춘다.
    0건은 건수 내림차순 정렬에서 자연히 뒤로 밀린다. */
 export function groupByRegion(policies: Policy[], regions?: readonly string[]): PolicyGroup[] {
-  const nationwide = policies.filter((policy) => policy.region === NATIONWIDE_REGION);
   const byRegion = new Map<string, Policy[]>();
   for (const region of regions ?? []) {
     if (region !== NATIONWIDE_REGION) byRegion.set(region, []);
@@ -41,7 +41,7 @@ export function groupByRegion(policies: Policy[], regions?: readonly string[]): 
   }
   return Array.from(byRegion.entries())
     .map(([region, own]) => {
-      const items = [...own, ...nationwide];
+      const items = own;
       const cities = new Set(own.map(cityOf).filter((city): city is string => city !== null));
       return { key: region, label: region, subLabel: `시·군 ${cities.size}곳`, items };
     })
