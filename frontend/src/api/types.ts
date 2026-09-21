@@ -481,6 +481,7 @@ export type AdminPolicyReviewCandidate = {
   endDate: string | null;
   createdAt: string;
   reviewReason?: string | null;
+  cardPreview?: { amount: string; evidence: string; issues: string[] };
 };
 
 export type AdminPolicyReviewCandidateListResponse = { items: AdminPolicyReviewCandidate[]; total: number; limit: number; offset: number };

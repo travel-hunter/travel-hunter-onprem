@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
@@ -59,6 +60,28 @@ def make_policy(policy_id: int, *, slug: str, status: str = "active") -> Policy:
     )
     policy.documents = [PolicyDocument(id=policy_id * 100, document_name="ID card")]
     return policy
+
+
+def test_candidate_card_preview_uses_safe_copy_and_bounds_evidence() -> None:
+    record = SimpleNamespace(
+        raw_payload={
+            "cardCopy": {
+                "version": 1,
+                "summary": "할인혜택 보러가기",
+                "evidence": "근거" * 2500,
+                "issues": [],
+            }
+        },
+        benefit_value_text="할인혜택 보러가기",
+        raw_detail_text="원문",
+        benefit_text="원문",
+    )
+
+    preview = admin_service.build_candidate_card_preview(record)
+
+    assert preview["amount"] == "혜택 상세 확인"
+    assert len(preview["evidence"]) == 2000
+    assert preview["issues"] == ["benefit_navigation_text"]
 
 
 def test_admin_user_update_changes_allowed_fields_and_records_audit(db: Session) -> None:

@@ -136,6 +136,8 @@ def test_admin_routes_list_pending_policy_review_candidates(monkeypatch) -> None
     record = SimpleNamespace(
         id=11, title="Island support", source_category="island_visit",
         detail_url=None, source_url="https://official.example/island", benefit_text="100000",
+        benefit_value_text="최대 10만원 지원", raw_detail_text="공식 신청 안내 원문",
+        raw_payload={"cardCopy": {"version": 1, "summary": "최대 10만원 지원", "evidence": "공식 신청 안내 원문", "issues": []}},
         region="Nationwide", city=None, status="scheduled", start_date=None, end_date=None
     )
     monkeypatch.setattr(
@@ -153,6 +155,11 @@ def test_admin_routes_list_pending_policy_review_candidates(monkeypatch) -> None
     assert response.status_code == 200
     assert response.json()["items"][0]["sourceCategory"] == "island_visit"
     assert response.json()["items"][0]["reviewStatus"] == "pending"
+    assert response.json()["items"][0]["cardPreview"] == {
+        "amount": "최대 10만원 지원",
+        "evidence": "공식 신청 안내 원문",
+        "issues": [],
+    }
 
 
 def test_admin_routes_list_collection_sources(monkeypatch) -> None:

@@ -16,6 +16,7 @@ from app.schemas.admin import (
     AdminUserUpdateRequest,
 )
 from app.services import nicknames
+from app.services.policy_card_quality import card_copy_for_record
 from app.services.policy_requirements import (
     sanitize_requirement_items,
     sanitize_target_condition,
@@ -38,6 +39,15 @@ def _iso(value: datetime | None) -> str:
 
 def _date_iso(value: date | None) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+def build_candidate_card_preview(record: Any) -> dict[str, object]:
+    card_copy = card_copy_for_record(record)
+    return {
+        "amount": card_copy.display_text,
+        "evidence": card_copy.evidence[:2000],
+        "issues": list(card_copy.issues),
+    }
 
 
 def _clean_items(values: list[str] | None) -> list[str]:

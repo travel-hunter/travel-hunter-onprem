@@ -169,6 +169,12 @@ class AdminExternalSourceSummaryResponse(BaseModel):
     latestFetchedAt: str | None = None
 
 
+class AdminPolicyCardPreview(BaseModel):
+    amount: str
+    evidence: str
+    issues: list[str] = Field(default_factory=list)
+
+
 class AdminPolicyReviewCandidateItem(BaseModel):
     id: str
     externalSourceRecordId: str
@@ -185,6 +191,7 @@ class AdminPolicyReviewCandidateItem(BaseModel):
     endDate: date | None = None
     createdAt: str
     reviewReason: str | None = None
+    cardPreview: AdminPolicyCardPreview
 
 
 class AdminPolicyReviewCandidateListResponse(BaseModel):

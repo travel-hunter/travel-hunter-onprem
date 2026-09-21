@@ -91,7 +91,8 @@ def evaluate_card_copy(
 
 
 def card_copy_for_record(record: Any) -> CardCopyResult:
-    raw_payload = record.raw_payload if isinstance(record.raw_payload, dict) else {}
+    raw_payload_value = getattr(record, "raw_payload", None)
+    raw_payload = raw_payload_value if isinstance(raw_payload_value, dict) else {}
     if "cardCopy" not in raw_payload:
         return evaluate_card_copy(
             summary=getattr(record, "benefit_value_text", None),
