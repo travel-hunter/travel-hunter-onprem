@@ -463,6 +463,10 @@ describe("Travel Hunter app — my page", () => {
           name: `${examplePolicyTitle} 연결 삭제`,
         }),
       );
+      // × 뒤에 확인 창이 한 번 더 있다
+      await user.click(
+        within(await screen.findByRole("dialog")).getByRole("button", { name: "빼기" }),
+      );
       await waitFor(() =>
         expect(removePolicyFromTripSpy).toHaveBeenCalledWith(
           trip.id,

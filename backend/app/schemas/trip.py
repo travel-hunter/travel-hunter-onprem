@@ -70,6 +70,9 @@ class LinkedTripPolicy(BaseModel):
     region: str
     status: Literal["active", "hidden"] = "active"
     deadline: str | None = None
+    # 일정 화면의 "혜택 안내 보기"가 앱 안 정책 상세를 거치지 않고 공식 사이트로 바로 나간다
+    officialUrl: str | None = None
+    applyUrl: str | None = None
     application: TripPolicyApplication | None = None
 
 

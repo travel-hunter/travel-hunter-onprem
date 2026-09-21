@@ -1787,6 +1787,73 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
+  it("sends a linked policy straight to its official page and confirms before removing it", async () => {
+    const trip = {
+      ...getPreviewTrip(),
+      id: "61",
+      currentUserRole: "owner" as const,
+      expectedSaving: "최대 5만원",
+      linkedPolicies: [
+        {
+          slug: "seogwipo-stay",
+          title: "[서귀포] 숙박 할인",
+          amount: "최대 5만원",
+          region: "제주",
+          status: "active",
+          officialUrl: "https://ktostay.visitkorea.or.kr/",
+          applyUrl: null,
+        },
+        { slug: "no-url-policy", title: "주소 없는 정책", amount: "혜택 확인", region: "전국", status: "active" },
+      ],
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip as never);
+    const removePolicySpy = vi
+      .spyOn(appDataApi, "removePolicyFromTrip")
+      .mockResolvedValue({ tripId: "61", policyId: "seogwipo-stay", added: false });
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/61");
+      const region = await screen.findByRole("region", { name: "연결된 정책" });
+      const user = userEvent.setup();
+
+      expect(within(region).getByText("2건 · 예상 절약 최대 5만원")).toBeInTheDocument();
+
+      // 앱 안 정책 상세를 거치지 않고 공식 사이트로 바로 나간다(새 탭)
+      const guide = within(region).getByRole("link", { name: "혜택 안내 보기 ↗" });
+      expect(guide).toHaveAttribute("href", "https://ktostay.visitkorea.or.kr/");
+      expect(guide).toHaveAttribute("target", "_blank");
+      expect(guide).toHaveAttribute("rel", "noopener noreferrer");
+      // 주소가 없는 정책만 상세로 보낸다
+      expect(within(region).getByRole("link", { name: "정책 상세 보기 ›" })).toHaveAttribute(
+        "href",
+        "/policies/no-url-policy",
+      );
+
+      // 빨간 '삭제' 대신 조용한 ×, 누르면 확인 창
+      expect(within(region).queryByText("삭제")).not.toBeInTheDocument();
+      await user.click(within(region).getByRole("button", { name: "[서귀포] 숙박 할인 연결 삭제" }));
+      const dialog = await screen.findByRole("dialog");
+      expect(dialog).toHaveTextContent("이 정책을 일정에서 뺄까요?");
+      expect(dialog).toHaveTextContent("[서귀포] 숙박 할인");
+      expect(removePolicySpy).not.toHaveBeenCalled();
+
+      // 취소하면 아무 일도 없다
+      await user.click(within(dialog).getByRole("button", { name: "취소" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(removePolicySpy).not.toHaveBeenCalled();
+
+      // 다시 눌러 확인하면 그때 빠진다
+      await user.click(within(region).getByRole("button", { name: "[서귀포] 숙박 할인 연결 삭제" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "빼기" }));
+      await waitFor(() => expect(removePolicySpy).toHaveBeenCalledWith("61", "seogwipo-stay"));
+      await waitFor(() => expect(within(region).queryByText("[서귀포] 숙박 할인")).not.toBeInTheDocument());
+    } finally {
+      getTripSpy.mockRestore();
+      removePolicySpy.mockRestore();
+    }
+  });
+
   it("shows linked policies from the trip detail response", async () => {
     const trip: Trip = {
       ...getPreviewTrip(),
@@ -1827,8 +1894,12 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.getAllByRole("button", { name: /연결 삭제/ })).toHaveLength(
         2,
       );
-      expect(document.body).toHaveTextContent("최대 10만원 · 부산");
-      expect(document.body).toHaveTextContent("최대 30만원 · 전국");
+      // 금액은 알약, 지역은 📍 줄로 나뉘었다
+      expect(document.body).toHaveTextContent("최대 10만원");
+      expect(document.body).toHaveTextContent("📍 부산");
+      // 금액은 알약, 지역은 📍 줄로 나뉘었다
+      expect(document.body).toHaveTextContent("최대 30만원");
+      expect(document.body).toHaveTextContent("📍 전국");
     } finally {
       getTripSpy.mockRestore();
     }
@@ -2028,6 +2099,11 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
           name: `${examplePolicyTitle} 연결 삭제`,
         }),
       );
+      // × 는 바로 지우지 않는다 - 확인 창에서 한 번 더 받는다
+      expect(removePolicySpy).not.toHaveBeenCalled();
+      await userEvent.setup().click(
+        within(await screen.findByRole("dialog")).getByRole("button", { name: "빼기" }),
+      );
 
       await waitFor(() =>
         expect(removePolicySpy).toHaveBeenCalledWith("61", examplePolicySlug),
@@ -2107,6 +2183,11 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
         within(linkedRegion).getByRole("button", {
           name: `${examplePolicyTitle} 연결 삭제`,
         }),
+      );
+      // × 는 바로 지우지 않는다 - 확인 창에서 한 번 더 받는다
+      expect(removePolicySpy).not.toHaveBeenCalled();
+      await userEvent.setup().click(
+        within(await screen.findByRole("dialog")).getByRole("button", { name: "빼기" }),
       );
 
       await waitFor(() =>
@@ -2286,6 +2367,57 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
+  it("uses the server copy of a just-attached policy so its guide button can leave for the official site", async () => {
+    // 정책 상세에서 "일정에서 보기"로 넘어오면 방금 담은 정책의 요약이 라우터 state 로 먼저 온다.
+    // 그 요약이 서버 것을 밀어내면 공식 주소가 없어 버튼이 "정책 상세 보기"로 떨어졌다.
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "58",
+      linkedPolicies: [
+        {
+          slug: examplePolicySlug,
+          title: examplePolicyTitle,
+          amount: "최대 30만원",
+          region: "전국",
+          status: "active",
+          officialUrl: "https://korean.visitkorea.or.kr/travelmonth/benefits/traffic.do",
+          applyUrl: null,
+        },
+      ],
+      days: { 1: [] },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      render(
+        <MemoryRouter
+          initialEntries={[
+            {
+              pathname: "/trips/58",
+              state: {
+                linkedPolicy: { slug: examplePolicySlug, title: examplePolicyTitle, amount: "최대 30만원", region: "전국" },
+              },
+            },
+          ]}
+        >
+          <AppProviders>
+            <App />
+          </AppProviders>
+        </MemoryRouter>,
+      );
+
+      const guide = await screen.findByRole("link", { name: "혜택 안내 보기 ↗" });
+      expect(guide).toHaveAttribute("href", "https://korean.visitkorea.or.kr/travelmonth/benefits/traffic.do");
+      expect(screen.queryByRole("link", { name: "정책 상세 보기 ›" })).not.toBeInTheDocument();
+      // 같은 정책이 두 번 그려지지 않는다
+      expect(document.querySelectorAll(".linked-policy-card")).toHaveLength(1);
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
   it("keeps the just-attached policy visible when trip detail response is stale", async () => {
     const trip: Trip = {
       ...getPreviewTrip(),
@@ -2332,7 +2464,9 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
             ?.getAttribute("href") ?? "",
         ),
       ).toBe(decodeURIComponent(examplePolicyPath));
-      expect(document.body).toHaveTextContent("최대 30만원 · 전국");
+      // 금액은 알약, 지역은 📍 줄로 나뉘었다
+      expect(document.body).toHaveTextContent("최대 30만원");
+      expect(document.body).toHaveTextContent("📍 전국");
       expect(
         screen.queryByText("연결된 정책이 없어요"),
       ).not.toBeInTheDocument();

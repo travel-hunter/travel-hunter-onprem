@@ -1528,6 +1528,8 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | region | string | 적용 지역 |
 | status | `"active" \| "hidden"` | 정책 노출 상태. 사용자에게 제공 가능한 정책은 `active`이며, 연결 기록만 보존하고 공개하지 않는 정책은 `hidden`이다. |
 | deadline | string \| null | 정책 카드 마감일(ISO 날짜). 없으면 `null` |
+| officialUrl | string \| null | 공식 안내 페이지. 일정 화면의 "혜택 안내 보기"가 앱 안 정책 상세를 거치지 않고 이 주소로 바로 나간다. 없으면 `null` |
+| applyUrl | string \| null | 공식 신청 페이지. 있으면 버튼이 "신청하러 가기"로 바뀌고 이 주소가 우선한다. 없으면 `null` |
 | application | TripPolicyApplication \| null | `island_visit` 정책에만 존재. 일정(팀) 단위 신청 진행. 카드 마감이 지나도 서류 제출 기한이 남은 회차가 있으면 연결 정책에 계속 표시된다 |
 
 ### TripPolicyApplication

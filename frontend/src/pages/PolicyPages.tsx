@@ -1295,6 +1295,9 @@ export function PolicyDetailPage() {
       region: policy.region,
       category: policy.category,
       tag: policy.tag,
+      // 서버 응답이 아직 이 정책을 안 담고 있어도 일정 카드의 버튼이 공식 사이트로 나갈 수 있게
+      officialUrl: policy.officialUrl ?? null,
+      applyUrl: policy.applyUrl ?? null,
     };
     navigate(`/trips/${selectedTrip.id}`, { state: { linkedPolicy } });
   };

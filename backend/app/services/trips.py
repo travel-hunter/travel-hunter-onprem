@@ -275,6 +275,8 @@ def _linked_policies(
             "region": region,
             "status": policy_status(policy),
             "deadline": policy.end_date.isoformat() if policy.end_date else None,
+            "officialUrl": policy.official_url or None,
+            "applyUrl": policy.apply_url or None,
         }
         if guide is not None:
             item["application"] = island_application.application_view(
