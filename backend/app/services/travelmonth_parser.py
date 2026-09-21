@@ -5,6 +5,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin
 
 from app.schemas.external_sources import TravelMonthRegionalBenefitSource
+from app.services.policy_card_quality import evaluate_card_copy
 from app.services.travelmonth_normalizer import (
     calculate_field_completeness,
     extract_benefit_value,
@@ -397,7 +398,13 @@ def parse_regional_benefits(
                 ),
                 raw_list_text=raw_text,
                 raw_detail_text=raw_text,
-                raw_payload={"periodText": period_text},
+                raw_payload={
+                    "periodText": period_text,
+                    "cardCopy": evaluate_card_copy(
+                        summary=benefit_value.value_text,
+                        evidence=benefit_text,
+                    ).to_payload(),
+                },
                 last_fetched_at=fetched_at,
                 last_verified_at=fetched_at if confidence >= 85 else None,
                 freshness_status=_freshness_status(status),
@@ -494,7 +501,14 @@ def _parse_vacation_benefit_summary(
                 ),
                 raw_list_text=raw_text,
                 raw_detail_text=page_text,
-                raw_payload={"periodText": period_text, "fallback": "vacation-benefit-summary"},
+                raw_payload={
+                    "periodText": period_text,
+                    "fallback": "vacation-benefit-summary",
+                    "cardCopy": evaluate_card_copy(
+                        summary=benefit_value.value_text,
+                        evidence=benefit_text,
+                    ).to_payload(),
+                },
                 last_fetched_at=fetched_at,
                 last_verified_at=fetched_at,
                 freshness_status=_freshness_status(status),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 from app.services.travelmonth_traffic_parser import parse_traffic_benefits
 
@@ -52,3 +53,26 @@ def test_parse_traffic_benefits_extracts_rail_and_air_records() -> None:
     assert records[1].organizer_text == "네이버 항공권"
     assert records[1].extracted_amount_krw == 20000
     assert records[1].benefit_value_text == "최대 2만 포인트"
+
+
+def test_air_summary_uses_qualified_maximum_and_excludes_page_chrome() -> None:
+    html = (
+        Path(__file__).parent / "fixtures" / "traffic_card_quality.html"
+    ).read_text(encoding="utf-8")
+
+    rows = parse_traffic_benefits(
+        html,
+        collected_page_url="https://korean.visitkorea.or.kr/travelmonth/benefits/traffic.do",
+        fetched_at=datetime(2026, 9, 21, tzinfo=UTC),
+        today=date(2026, 9, 21),
+    )
+
+    assert len(rows) == 1
+    air = rows[0]
+    assert air.title == "네이버 항공권 국내선 포인트"
+    assert air.raw_payload["cardCopy"]["summary"] == "왕복 기준 최대 4만 포인트"
+    assert "Copyright" not in air.benefit_text
+    assert "99만원" not in air.benefit_text
+    assert air.start_date == date(2026, 9, 15)
+    assert air.end_date == date(2026, 11, 30)
+    assert all(row.benefit_text != "할인혜택 보러가기" for row in rows)

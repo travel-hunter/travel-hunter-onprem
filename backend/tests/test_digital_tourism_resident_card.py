@@ -27,6 +27,7 @@ def test_materialized_sources_cover_all_participating_regions_once() -> None:
     assert all(source.status == "active" for source in sources)
     assert all(source.freshness_status == "fresh" for source in sources)
     assert all(source.logical_key for source in sources)
+    assert all(source.raw_payload["cardCopy"]["summary"] == source.benefit_value_text for source in sources)
 
 
 def test_canonical_policy_slug_is_region_based_and_accepts_legacy_numbered_slugs() -> None:

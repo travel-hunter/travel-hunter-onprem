@@ -5,6 +5,8 @@ from datetime import date, datetime
 from html.parser import HTMLParser
 
 from app.schemas.external_sources import ExternalBenefitSource
+from app.services.policy_card_quality import evaluate_card_copy
+from app.services.policy_periods import period_payload
 from app.services.travelmonth_normalizer import (
     BenefitValue,
     calculate_field_completeness,
@@ -28,8 +30,14 @@ class _TrafficBenefitHtmlParser(HTMLParser):
         self._current: dict[str, object] | None = None
         self._capture: str | None = None
         self._last_dt: str | None = None
+        self._ignored_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"script", "style", "nav", "footer"}:
+            self._ignored_depth += 1
+            return
+        if self._ignored_depth:
+            return
         attr_map = {key: value for key, value in attrs}
         if tag == "h4":
             self._finish_current()
@@ -38,16 +46,23 @@ class _TrafficBenefitHtmlParser(HTMLParser):
             return
         if self._current is None:
             return
-        if tag in {"p", "dt", "dd"}:
+        if tag in {"p", "li", "dt", "dd"}:
             self._capture = tag
         if tag == "a" and attr_map.get("href") and not self._current.get("detail_url"):
             self._current["detail_url"] = attr_map["href"]
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"h4", "p", "dt", "dd"}:
+        if tag in {"script", "style", "nav", "footer"} and self._ignored_depth:
+            self._ignored_depth -= 1
+            return
+        if self._ignored_depth:
+            return
+        if tag in {"h4", "p", "li", "dt", "dd"}:
             self._capture = None
 
     def handle_data(self, data: str) -> None:
+        if self._ignored_depth:
+            return
         text = normalize_text(data)
         if not text:
             return
@@ -56,13 +71,20 @@ class _TrafficBenefitHtmlParser(HTMLParser):
         if self._current is None or self._capture is None:
             return
         if self._capture == "title":
-            self._current["title"] = text
-        elif self._capture == "p":
+            self._current["title"] = normalize_text(
+                f"{self._current.get('title', '')} {text}"
+            )
+        elif self._capture in {"p", "li"}:
             self._current["benefit"] = normalize_text(f"{self._current.get('benefit', '')} {text}")
         elif self._capture == "dt":
             self._last_dt = text
         elif self._capture == "dd":
-            if self._last_dt == "판매 기간":
+            period_label = normalize_text(self._last_dt or "").replace(" ", "")
+            if period_label in {"판매기간", "예약기간", "발급및예약기간"}:
+                self._current["issue_period"] = text
+            elif period_label in {"탑승및이용기간", "이용기간", "사용기간"}:
+                self._current["usage_period"] = text
+            elif "기간" in period_label:
                 self._current["period"] = text
             elif self._last_dt == "문의처":
                 self._current["contact"] = text
@@ -90,10 +112,12 @@ def parse_traffic_benefits(
     parser.close()
 
     records: list[ExternalBenefitSource] = []
-    for raw_record in parser.records:
+    for raw_record in _deduplicate_records(parser.records):
         title = str(raw_record.get("title", ""))
         benefit_text = str(raw_record.get("benefit", ""))
-        period_text = str(raw_record.get("period", ""))
+        issue_period = str(raw_record.get("issue_period", ""))
+        usage_period = str(raw_record.get("usage_period", ""))
+        period_text = issue_period or usage_period or str(raw_record.get("period", ""))
         contact_text = str(raw_record.get("contact", "")) or None
         detail_url = str(raw_record.get("detail_url", "")) or None
         raw_text = str(raw_record.get("raw", ""))
@@ -103,6 +127,18 @@ def parse_traffic_benefits(
         start_date, end_date = _parse_period_with_year(period_text, fetched_at.year)
         status = normalize_status(None, start_date, end_date, today)
         benefit_value = _traffic_benefit_value(benefit_text)
+        card_copy = evaluate_card_copy(
+            summary=_traffic_card_summary(benefit_text, benefit_value),
+            evidence=benefit_text,
+        )
+        _, _, period_evidence_payload = period_payload(
+            [
+                ("예약 기간", issue_period),
+                ("탑승 및 이용 기간", usage_period),
+            ],
+            default_year=fetched_at.year,
+            source="travelmonth-traffic",
+        )
         canonical_text = "|".join([SOURCE_CATEGORY, title, period_text, benefit_text])
         field_completeness = calculate_field_completeness(
             {
@@ -147,13 +183,48 @@ def parse_traffic_benefits(
                 field_completeness=field_completeness,
                 raw_list_text=raw_text,
                 raw_detail_text=raw_text,
-                raw_payload={"periodText": period_text},
+                raw_payload={
+                    **period_evidence_payload,
+                    "periodText": period_text,
+                    "issuePeriod": issue_period or None,
+                    "usagePeriod": usage_period or None,
+                    "cardCopy": card_copy.to_payload(),
+                },
                 last_fetched_at=fetched_at,
                 last_verified_at=fetched_at if confidence >= 85 else None,
                 freshness_status="fresh" if status == "active" else "unknown",
             )
         )
     return records
+
+
+def _deduplicate_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    deduplicated: dict[str, dict[str, object]] = {}
+    without_url: list[dict[str, object]] = []
+    for record in records:
+        detail_url = normalize_text(str(record.get("detail_url", "")))
+        if not detail_url:
+            without_url.append(record)
+            continue
+        current = deduplicated.get(detail_url)
+        if current is None or _record_score(record) > _record_score(current):
+            deduplicated[detail_url] = record
+    return [*deduplicated.values(), *without_url]
+
+
+def _record_score(record: dict[str, object]) -> tuple[int, int]:
+    typed_periods = int(bool(record.get("issue_period"))) + int(
+        bool(record.get("usage_period"))
+    )
+    return typed_periods, len(str(record.get("raw", "")))
+
+
+def _traffic_card_summary(benefit_text: str, benefit_value: BenefitValue) -> str | None:
+    text = normalize_text(benefit_text)
+    qualified_maximum = re.search(r"왕복\s*기준\s*최대\s*\d+\s*만\s*포인트", text)
+    if qualified_maximum:
+        return normalize_text(qualified_maximum.group(0))
+    return benefit_value.value_text
 
 
 def _parse_period_with_year(period_text: str, year: int) -> tuple[date | None, date | None]:

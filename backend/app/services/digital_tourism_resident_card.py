@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlparse
 from app.data import digital_tourism_resident_card as data
 from app.data.source_provenance import CANONICAL_KEY_VERSION, logical_key_for_source
 from app.schemas.external_sources import ExternalBenefitSource
+from app.services.policy_card_quality import evaluate_card_copy
 from app.services.travelmonth_normalizer import stable_hash
 
 SOURCE_CATEGORY = data.SOURCE_CATEGORY
@@ -459,6 +460,10 @@ def materialize_participating_region_sources(
             "usageCondition": USAGE_CONDITION_TEXT,
             "requiredDocuments": REQUIRED_DOCUMENTS_TEXT,
             "notes": [OFFICIAL_CONFIRMATION_NOTE, BENEFIT_VARIATION_NOTE],
+            "cardCopy": evaluate_card_copy(
+                summary=DEFAULT_BENEFIT_VALUE_TEXT,
+                evidence=DEFAULT_BENEFIT_TEXT,
+            ).to_payload(),
         }
         sources.append(
             ExternalBenefitSource(

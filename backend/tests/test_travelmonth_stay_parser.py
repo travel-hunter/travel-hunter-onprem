@@ -101,6 +101,7 @@ def test_parse_stay_discount_benefits_extracts_amount_period_and_raw_payload() -
     assert record.raw_payload["issuePeriod"].startswith("2026.6.11")
     assert record.raw_payload["stayPeriod"].startswith("6월 11일")
     assert record.raw_payload["earlyCloseWarning"] is True
+    assert record.raw_payload["cardCopy"]["summary"] == "2/3/5/7만원 할인권"
 
 
 def test_parse_ktostay_population_decline_areas_and_common_fields() -> None:

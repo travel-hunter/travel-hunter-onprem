@@ -6,6 +6,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
 from app.schemas.external_sources import ExternalBenefitSource
+from app.services.policy_card_quality import evaluate_card_copy
 from app.services import digital_tourism_resident_card as dgtour_identity
 from app.services.local_half_trip_display import title_with_city_prefix
 from app.services.travelmonth_normalizer import normalize_text, parse_period, stable_hash
@@ -320,6 +321,10 @@ def _build_record(
     fetched_at: datetime,
 ) -> ExternalBenefitSource:
     canonical_text = "|".join([SOURCE_CATEGORY, city, application_period or "", ""])
+    raw_payload["cardCopy"] = evaluate_card_copy(
+        summary="최대 20만원 환급",
+        evidence=DEFAULT_BENEFIT_TEXT,
+    ).to_payload()
     return ExternalBenefitSource(
         source_name=SOURCE_NAME,
         source_type="official_campaign",
