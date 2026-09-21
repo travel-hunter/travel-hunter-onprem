@@ -15,6 +15,7 @@ from app.services import stay_discount_aliases
 from app.services import digital_tourism_policy_aliases
 from app.services import digital_tourism_resident_card as dgtour_identity
 from app.services import local_half_trip_display
+from app.services.policy_card_quality import card_copy_for_record
 from app.services.policy_semantics import (
     api_policy_source_type,
     api_policy_source_type_for_policy,
@@ -240,9 +241,10 @@ def external_source_record_to_policy_api(
     photos: RegionPhotoIndex | None = None,
     islands: EligibleIslandSummary | None = None,
 ) -> dict[str, object]:
-    amount = record.benefit_value_text or record.benefit_text or "혜택 확인 필요"
+    card_copy = card_copy_for_record(record)
+    amount = card_copy.display_text
     category = _external_policy_category(record)
-    tag = record.benefit_value_text or record.benefit_text or category
+    tag = card_copy.summary or category
     summary_parts = [
         value
         for value in [record.benefit_text, record.raw_detail_text]

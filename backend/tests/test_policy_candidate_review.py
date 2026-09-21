@@ -177,6 +177,30 @@ def test_reintroduced_evidence_creates_a_new_pending_candidate(db: Session) -> N
     assert restored.change_kind == "material_change"
 
 
+def test_manual_approval_publishes_safe_card_fallback(db: Session) -> None:
+    record = make_record()
+    record.benefit_value_text = "할인혜택 보러가기"
+    record.raw_payload = {
+        "cardCopy": {
+            "version": 1,
+            "summary": "할인혜택 보러가기",
+            "evidence": "공식 본문",
+            "issues": [],
+        }
+    }
+    admin = User(id=10, email="admin@example.com", nickname="admin", role="admin")
+    db.add_all([record, admin])
+    db.flush()
+    candidate = classify_candidate(db, record=record)
+
+    approved = approve_candidate(db, candidate=candidate, record=record, admin=admin)
+
+    policy = db.get(Policy, approved.published_policy_id)
+    assert policy is not None
+    assert policy.benefit_detail == "혜택 상세 확인"
+    assert record.benefit_value_text == "할인혜택 보러가기"
+
+
 def test_approval_publishes_only_the_reviewed_candidate(db: Session) -> None:
     record = make_record()
     admin = User(id=10, email="admin@example.com", nickname="admin", role="admin")

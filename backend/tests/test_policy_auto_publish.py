@@ -172,7 +172,7 @@ def test_unsafe_card_copy_is_held_for_review(db: Session) -> None:
     record = make_record(benefit_value_text="최대 1만원 할인")
     db.add(record)
     db.flush()
-    human_baseline(db, record)
+    baseline = human_baseline(db, record)
     set_source(db, last_parsed=10)
     record.benefit_value_text = "할인혜택 보러가기"
     record.raw_payload = {
@@ -191,6 +191,7 @@ def test_unsafe_card_copy_is_held_for_review(db: Session) -> None:
         "pending",
         "card_quality_review",
     )
+    assert db.get(Policy, baseline.published_policy_id).benefit_detail == "최대 1만원 할인"
 
 
 # --- 5. identity change / new policy wait -----------------------------------------------------

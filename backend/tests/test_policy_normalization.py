@@ -1336,7 +1336,7 @@ def test_promotion_derives_missing_percent_value_from_title(db: Session) -> None
 
     policy = get_policy_by_slug(db, f"travelmonth-{rows[0].id}")
     assert policy is not None
-    assert policy.benefit_detail == "최대 30%"
+    assert policy.benefit_detail == "혜택 상세 확인"
     assert policy.benefit_amount is None
     assert policy.policy_comment == "행사 기간 중 온라인 체험상품 예약 결제 후 사용 완료 참여자 26년 4월 중순부터 5월 말"
 
