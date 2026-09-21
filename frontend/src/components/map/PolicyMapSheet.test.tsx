@@ -1,15 +1,21 @@
+// @ts-expect-error Vitest runs this assertion in Node, but this project does not install Node type declarations.
+import { readFileSync } from "node:fs";
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { Policy } from "../../api";
 import { examplePolicyDetail } from "../../test/fixtures";
-import { PolicyMapSheet } from "./PolicyMapSheet";
+import { PolicyMapSheet, WHEEL_DAMP } from "./PolicyMapSheet";
 
 /* 올라온 정도(0=지도, 1=한 페이지). 시트·딤·탭바가 전부 이 값 하나를 읽는다 -
    매 프레임 문서 전체가 다시 계산되지 않게 body 가 아니라 읽는 요소에 직접 쓴다 */
 const progress = () =>
   Number((document.querySelector(".thmap-sheet") as HTMLElement).style.getPropertyValue("--thmap-progress"));
+
+/* 휠 입력을 '페이지가 움직일 px' 로 준다. 감도(WHEEL_DAMP)가 바뀌어도 아래 계산이 그대로 맞는다.
+   음수 = 아래로 끌어내림, 양수 = 위로 되올림 */
+const wheelBy = (px: number) => fireEvent.wheel(document.body, { deltaY: px / WHEEL_DAMP });
 
 /* <b> 로 쪼개진 글자가 접근성 이름으로 합쳐질 때 공백이 들쭉날쭉하다 - 공백을 빼고 견준다 */
 const named = (expected: string) => (name: string) => name.replace(/\s+/g, "") === expected.replace(/\s+/g, "");
@@ -141,7 +147,7 @@ describe("PolicyMapSheet", () => {
       // 트랙패드처럼 한 번에 20px 씩, 천천히(50ms 간격) 끌어내린다
       const slowPull = (times: number) => {
         for (let i = 0; i < times; i += 1) {
-          fireEvent.wheel(document.body, { deltaY: -25 });
+          wheelBy(-20);
           vi.advanceTimersByTime(50);
         }
       };
@@ -161,7 +167,7 @@ describe("PolicyMapSheet", () => {
     }
   });
 
-  it("stays where it was left when the pull stops short of the middle", () => {
+  it("rests where it was left, then returns to the nearer end on its own", () => {
     vi.useFakeTimers();
     const tall = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(400);
     try {
@@ -170,21 +176,37 @@ describe("PolicyMapSheet", () => {
       fireEvent.click(screen.getByRole("button", { name: named("정책 3건 · 시도 2곳") }));
 
       // 두 칸(160px)은 중간(190)에 못 미친다 - 도로 올라가지 않고 그 자리에 선다
-      fireEvent.wheel(document.body, { deltaY: -100 });
-      fireEvent.wheel(document.body, { deltaY: -100 });
+      wheelBy(-80);
+      wheelBy(-80);
       expect(sheet.classList.contains("thmap-open")).toBe(true);
       expect(progress()).toBeCloseTo(1 - 160 / 380, 2);
 
-      // 손을 뗀 뒤에도 그대로 - 뒤로 지도가 보이는 채로 멈춰 있는다
-      vi.advanceTimersByTime(600);
+      // 손을 뗀 직후에는 그대로다(굴림이 멎었다고 보는 140ms + 머무는 300ms 가 아직 안 찼다)
+      vi.advanceTimersByTime(300);
       expect(progress()).toBeCloseTo(1 - 160 / 380, 2);
       expect(sheet.classList.contains("thmap-open")).toBe(true);
+
+      // 머무는 동안 다시 만지면 자동 복귀는 그 시점부터 다시 센다
+      wheelBy(20);
+      const nudged = 1 - 160 / 380 + 20 / 380;
+      vi.advanceTimersByTime(300);
+      expect(progress()).toBeCloseTo(nudged, 2);
+
+      // 그대로 두면 중간보다 위였으니 스스로 올라붙는다 - 다시 올리는 수고가 없다
+      vi.advanceTimersByTime(200);
+      expect(progress()).toBe(1);
+      expect(sheet.classList.contains("thmap-open")).toBe(true);
+
+      // 다시 끌어내려 아래 단계로 이어 간다
+      wheelBy(-80);
+      wheelBy(-80);
+      expect(progress()).toBeCloseTo(1 - 160 / 380, 2);
 
       // 멈춘 자리에서 도로 올려도 중간을 건너가지 않으니 또 그 자리에 선다
-      fireEvent.wheel(document.body, { deltaY: 100 });
+      wheelBy(80);
       expect(progress()).toBeCloseTo(1 - 80 / 380, 2);
       // 끝 언저리(8%)까지 올리면 그때 검색창 밑에 붙는다
-      fireEvent.wheel(document.body, { deltaY: 100 });
+      wheelBy(80);
       expect(progress()).toBe(1);
     } finally {
       tall.mockRestore();
@@ -297,6 +319,63 @@ describe("PolicyMapSheet", () => {
     fireEvent.click(fab() as HTMLElement);
     expect(document.querySelector(".thmap-sheet")?.classList.contains("thmap-open")).toBe(false);
     expect(fab()).toBeNull();
+  });
+
+  it("drops back to the map when it was left resting below the middle", () => {
+    vi.useFakeTimers();
+    const tall = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(400);
+    try {
+      mount();
+      const sheet = document.querySelector(".thmap-sheet") as HTMLElement;
+      const grab = screen.getByRole("button", { name: named("정책 3건 · 시도 2곳") });
+      const pointer = (type: string, clientY: number) => {
+        const event = new Event(type, { bubbles: true });
+        Object.defineProperties(event, { clientY: { value: clientY }, pointerId: { value: 1 } });
+        fireEvent(grab, event);
+      };
+
+      // 닫힌 데서 114px(30%)만 끌어올리고 놓는다 - 중간을 못 건넜으니 그 자리에 선다
+      pointer("pointerdown", 300);
+      pointer("pointermove", 186);
+      pointer("pointerup", 186);
+      expect(progress()).toBeCloseTo(114 / 380, 2);
+
+      // 위쪽과 같은 규칙 - 잠깐 뒤 가까운 끝(지도)으로 돌아간다. 밑에서만 영영 서 있지 않는다
+      vi.advanceTimersByTime(200);
+      expect(progress()).toBeCloseTo(114 / 380, 2);
+      vi.advanceTimersByTime(200);
+      expect(progress()).toBe(0);
+      expect(sheet.classList.contains("thmap-open")).toBe(false);
+    } finally {
+      tall.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not flash the mobile tap highlight over map regions and labels", () => {
+    // 지역과 이름표는 누를 수 있는 SVG 그룹이다. 모바일 브라우저는 탭 하이라이트를 요소의 외곽
+    // 사각형으로 칠하므로, 지역 모양과 상관없는 네모 박스가 번쩍였다가 사라졌다.
+    const mapCss = readFileSync("src/styles/policy-map.css", "utf8");
+    expect(mapCss).toMatch(/\.thmap-host,\s*\.thmap-host \*\s*\{[^}]*-webkit-tap-highlight-color:\s*transparent/s);
+  });
+
+  it("keeps the app tab bar above the resting policy page", () => {
+    // 페이지는 바닥(bottom: 0)까지 내려가 있어, 닫혀 있을 때도 아랫부분이 탭바 자리와 겹친다.
+    // 페이지가 탭바보다 위 레이어면 올리기도 전에 탭바가 가려진다(모바일에서 하단 메뉴가 사라졌던 원인).
+    const zIndexOf = (css: string, selector: string) => {
+      const block = new RegExp(`(?:^|\\n)${selector.replace(/[.]/g, "\\.")}\\s*\\{([^}]*)\\}`).exec(css);
+      const value = /z-index:\s*(\d+)/.exec(block?.[1] ?? "");
+      return value ? Number(value[1]) : Number.NaN;
+    };
+    const mapCss = readFileSync("src/styles/policy-map.css", "utf8");
+    const appCss = readFileSync("src/styles/app.css", "utf8");
+    const tabBar = zIndexOf(appCss, ".bottom-tabs");
+
+    expect(tabBar).toBeGreaterThan(0);
+    expect(zIndexOf(mapCss, ".thmap-sheet")).toBeLessThan(tabBar);
+    expect(zIndexOf(mapCss, ".thmap-dim")).toBeLessThan(tabBar);
+    // 떠 있는 뒤로가기는 페이지가 다 올라왔을 때만 뜬다 - 그때는 탭바 위여야 눌린다
+    expect(zIndexOf(mapCss, ".thmap-fab")).toBeGreaterThan(tabBar);
   });
 
   it("does not listen to the wheel when disabled", () => {

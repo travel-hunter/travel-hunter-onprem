@@ -93,6 +93,10 @@
 .thmap-ripple path {
   animation: thmap-wave var(--thmap-wave-dur, 6s) linear var(--thmap-wave-delay, 0s) infinite;
 }
+/* 모바일 탭 하이라이트를 끈다. 지역과 이름표는 누를 수 있는 SVG 그룹인데, 브라우저는 하이라이트를
+   요소의 외곽 사각형으로 칠한다 - 지역 모양과 상관없는 네모 박스가 번쩍였다가 사라진다.
+   눌린 표시는 지역이 솟는 것으로 이미 충분하고, 키보드 포커스는 아래 focus-visible 이 따로 그린다. */
+.thmap-host, .thmap-host * { -webkit-tap-highlight-color: transparent; }
 .thmap-rg { cursor: pointer; }
 .thmap-lift, .thmap-wall { transition: transform 0.42s var(--thmap-pop); }
 /* 고른 지역은 액센트 빛무리로 알린다. 시안 CSS 는 회색 그림자 규칙 뒤에 이 규칙이 한 번 더 있어
@@ -233,11 +237,13 @@
 body.thmap-map-view .app-container { overflow: hidden; }
 
 /* ── 지도 위로 붙어 올라오는 정책 페이지 ───────────────────────
-   서브창이 아니다. 탭바(fixed, 72px, z 90)보다 위에 두고 바닥까지 내려가, 올라오는 만큼
-   탭바를 제 위쪽 모서리 뒤로 덮는다. 다만 닫혀 있을 때(p=0)는 손잡이 20px 이 탭바 위에
-   남아야 하므로 내려가는 거리(--thmap-closed-y)에서 탭바 높이를 뺀다. */
+   서브창이 아니다. 바닥(bottom: 0)까지 내려가고, 닫혀 있을 때(p=0)는 손잡이 20px 만 탭바 위로
+   내민다(--thmap-closed-y 에서 탭바 높이를 뺀다). 그래서 닫힌 페이지의 아랫부분은 늘 탭바 자리와
+   겹친다 - **레이어는 탭바(z 90) 아래여야 한다.** 위에 두면 불투명한 페이지가 올리기도 전에 탭바를
+   가려 모바일에서 하단 메뉴가 통째로 사라진다(#76 에서 95 로 올렸다가 생긴 회귀, 768px 이상은
+   탭바가 없어 안 보였다). 탭바는 제 transform·opacity 로 아래로 빠지며 옅어지므로 덮어 줄 필요가 없다. */
 .thmap-dim {
-  position: fixed; left: 0; right: 0; top: 0; bottom: 0; z-index: 94;
+  position: fixed; left: 0; right: 0; top: 0; bottom: 0; z-index: 69;
   background: rgba(23, 23, 40, 0.28);
   /* 지도(0)에서도 한 페이지(1)에서도 없다 - 옮겨 가는 동안만 지도를 아주 살짝 눌러 준다.
      중간에 멈춰 세워 둘 수 있게 되면서(2026-09-20) 그 자리에서도 지도가 보여야 한다:
@@ -268,7 +274,7 @@ body.thmap-up .thmap-pill {
   position: fixed;
   left: 50%;
   bottom: 0;
-  z-index: 95;
+  z-index: 70;
   width: var(--thmap-sheet-width);
   height: calc(100dvh - var(--thmap-sheet-top));
   /* 닫힌 자리 - 손잡이 20px 만 탭바 위로 내민다. JS 의 travelOf() 와 같은 식이어야 한다. */
@@ -308,8 +314,8 @@ body.thmap-dragging .bottom-tabs { transition: none; }
   /* 시트가 열렸을 때만 뜨고 그때는 페이지가 탭바를 덮은 뒤다 - 화면 바닥에서 16px.
      진행도를 섞으면 위치가 배치 계산이라 매 프레임 레이아웃이 다시 돈다. */
   bottom: 16px;
-  /* 올라온 페이지(95) 위. 시트를 탭바 위로 올릴 때 같이 올려야 한다 - 안 그러면 페이지 뒤로 숨는다. */
-  z-index: 96;
+  /* 페이지(70)와 탭바(90) 둘 다의 위. 페이지가 다 올라왔을 때만 뜨는 버튼이다. */
+  z-index: 91;
   width: 52px; height: 52px; border-radius: 50%;
   display: grid; place-items: center;
   /* 흰 버튼이라 흰 시트 위에서 묻히지 않게 옅은 테두리와 그림자로 띄운다 */
