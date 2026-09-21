@@ -10,6 +10,7 @@ from app.core import security
 from app.models import ExternalSourceRecord, Policy, PolicyReviewCandidate, User
 from app.repositories import admin as admin_repository
 from app.services import policy_normalization, policy_semantic_mapping
+from app.services.policy_card_quality import card_copy_for_record
 
 
 def evidence_fingerprint(record: ExternalSourceRecord) -> str:
@@ -25,6 +26,12 @@ def evidence_fingerprint(record: ExternalSourceRecord) -> str:
         "status": record.status,
     }
     raw_payload = record.raw_payload if isinstance(record.raw_payload, dict) else {}
+    card_copy = card_copy_for_record(record)
+    payload["benefitValueText"] = record.benefit_value_text
+    payload["cardCopy"] = {
+        "summary": card_copy.summary,
+        "issues": list(card_copy.issues),
+    }
     # Only records that carry a procedure hash it, so every other record keeps its existing fingerprint.
     if isinstance(raw_payload.get("procedure"), dict):
         payload["procedure"] = raw_payload["procedure"]
@@ -303,6 +310,8 @@ def _hold_reason(db: Session, *, candidate: PolicyReviewCandidate, record: Exter
         return "source_mode_review"
     if record.source_category in _MANUAL_SOURCE_CATEGORIES:
         return "stay_discount_manual"
+    if card_copy_for_record(record).issues:
+        return "card_quality_review"
     if human_baseline_admin_id(db, source_category=record.source_category or "") is None:
         return "first_baseline"
     if not _source_run_is_normal(source, source_result):

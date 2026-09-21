@@ -46,6 +46,7 @@ def make_record() -> ExternalSourceRecord:
         is_nationwide=False,
         status="active",
         benefit_text="Example benefit",
+        benefit_value_text="Example benefit",
         benefit_value_type="mixed",
         tags=["travel"],
         inferred_travel_styles=[],
@@ -76,6 +77,65 @@ def test_same_evidence_does_not_create_a_second_candidate(db: Session) -> None:
     db.flush()
 
     first = classify_candidate(db, record=record)
+    second = classify_candidate(db, record=record)
+
+    assert first.id == second.id
+
+
+def test_card_summary_change_creates_a_new_pending_candidate(db: Session) -> None:
+    record = make_record()
+    record.benefit_value_text = "최대 1만원 할인"
+    record.raw_payload = {
+        "cardCopy": {
+            "version": 1,
+            "summary": "최대 1만원 할인",
+            "evidence": "공식 본문",
+            "issues": [],
+        }
+    }
+    db.add(record)
+    db.flush()
+
+    first = classify_candidate(db, record=record)
+    record.benefit_value_text = "최대 2만원 할인"
+    record.raw_payload = {
+        "cardCopy": {
+            "version": 1,
+            "summary": "최대 2만원 할인",
+            "evidence": "공식 본문",
+            "issues": [],
+        }
+    }
+    second = classify_candidate(db, record=record)
+
+    assert first.id != second.id
+    assert first.review_status == "superseded"
+    assert second.review_status == "pending"
+
+
+def test_card_evidence_only_change_does_not_create_candidate(db: Session) -> None:
+    record = make_record()
+    record.benefit_value_text = "최대 1만원 할인"
+    record.raw_payload = {
+        "cardCopy": {
+            "version": 1,
+            "summary": "최대 1만원 할인",
+            "evidence": "첫 원문",
+            "issues": [],
+        }
+    }
+    db.add(record)
+    db.flush()
+
+    first = classify_candidate(db, record=record)
+    record.raw_payload = {
+        "cardCopy": {
+            "version": 1,
+            "summary": "최대 1만원 할인",
+            "evidence": "푸터만 달라진 원문",
+            "issues": [],
+        }
+    }
     second = classify_candidate(db, record=record)
 
     assert first.id == second.id

@@ -57,6 +57,7 @@ def make_record(record_id: int = 1, **overrides) -> ExternalSourceRecord:
         is_nationwide=False,
         status="active",
         benefit_text="Example benefit",
+        benefit_value_text="Example benefit",
         benefit_value_type="mixed",
         tags=["travel"],
         inferred_travel_styles=[],
@@ -148,6 +149,7 @@ def test_benefit_update_after_baseline_is_auto_approved_and_audited(db: Session)
     baseline = human_baseline(db, record)
     set_source(db, last_parsed=10)
     record.benefit_text = "Bigger benefit"
+    record.benefit_value_text = "Bigger benefit"
 
     run_collection_queue(db, [record], [success(parsed=9)])
 
@@ -163,7 +165,35 @@ def test_benefit_update_after_baseline_is_auto_approved_and_audited(db: Session)
     assert log.after_json["actor"] == "system"
 
 
-# --- 4. identity change / new policy wait -----------------------------------------------------
+# --- 4. unsafe card copy waits for review ----------------------------------------------------
+
+
+def test_unsafe_card_copy_is_held_for_review(db: Session) -> None:
+    record = make_record(benefit_value_text="최대 1만원 할인")
+    db.add(record)
+    db.flush()
+    human_baseline(db, record)
+    set_source(db, last_parsed=10)
+    record.benefit_value_text = "할인혜택 보러가기"
+    record.raw_payload = {
+        "cardCopy": {
+            "version": 1,
+            "summary": "할인혜택 보러가기",
+            "evidence": "공식 본문",
+            "issues": [],
+        }
+    }
+
+    run_collection_queue(db, [record], [success(parsed=10)])
+
+    candidate = latest_candidate(db, record)
+    assert (candidate.review_status, candidate.review_reason) == (
+        "pending",
+        "card_quality_review",
+    )
+
+
+# --- 5. identity change / new policy wait -----------------------------------------------------
 
 
 def test_title_change_is_held_as_identity_changed(db: Session) -> None:
