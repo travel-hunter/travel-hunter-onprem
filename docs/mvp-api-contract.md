@@ -950,7 +950,8 @@ Whole-trip edit. Owner/editor only. This updates trip title, travel area, and/or
   "travelAreaId": "jeju-west",
   "startDate": "2026-07-12",
   "endDate": "2026-07-18",
-  "overflowPlaceStrategy": "moveToLastDay"
+  "overflowPlaceStrategy": "moveToLastDay",
+  "mismatchedPolicyStrategy": "reject"
 }
 ```
 
@@ -960,7 +961,24 @@ Whole-trip edit. Owner/editor only. This updates trip title, travel area, and/or
 - `startDate`/`endDate`: optional pair. If provided, `endDate` must be on or after `startDate`; one-day and 7+ day ranges are valid.
 - `overflowPlaceStrategy`: required when shortening could leave places outside the new date range. `moveToLastDay` moves overflow places to the final remaining day; `delete` removes overflow-day places.
 
-Changing the travel area does not move, delete, or reorder places, days, or linked policies. Id validation runs before the revision bump, so a rejected request leaves `revision` unchanged.
+- `mismatchedPolicyStrategy`: optional, `reject` (default) or `remove`. Only consulted when `travelAreaId` actually changes the stored area. Linked policies are judged with the same rule as `POST /api/trips/{trip_id}/policies/{policy_slug}`: nationwide policies always stay, regional policies must match the new area.
+  - `reject`: if any linked policy would no longer match, return **409** with an object detail and change nothing:
+    ```json
+    {
+      "detail": {
+        "code": "trip_policies_outside_travel_area",
+        "message": "Trip has policies outside the new travel area",
+        "policies": [
+          { "slug": "goseong-stay", "title": "[고성] 숙박 할인", "hasApplicationProgress": false }
+        ]
+      }
+    }
+    ```
+    `hasApplicationProgress` is true when the link carries user-recorded application status or checklist items, which would be deleted with it. The client shows the list and asks before resending.
+  - `remove`: delete those links and change the area in one transaction. Matching and nationwide policies are kept.
+  - A stale `expectedRevision` wins over this check and returns the usual `Trip has changed` 409, because the client's policy list is stale too.
+
+Changing the travel area does not move, delete, or reorder places or days. Linked policies are kept unless the caller confirms removal as above. Sending the same `travelAreaId`, or omitting it, never triggers the check, so existing links cannot block a title or date edit. Id validation and the policy check run before the revision bump, so a rejected request leaves `revision` unchanged.
 
 **Response 200** → `Trip`
 
@@ -1021,6 +1039,7 @@ Changing the travel area does not move, delete, or reorder places, days, or link
 **Errors**
 - 403: viewer는 추가 불가
 - 404: 일정 또는 정책 없음
+- 409: `Policy does not match trip travel area` — 지역 정책은 일정의 `travelAreaId`에 포함된 시/군과 일치해야 한다. 전국 정책은 연결할 수 있다. 이미 같은 정책이 연결된 재시도는 기존처럼 성공한다.
 
 ---
 
@@ -1509,6 +1528,8 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | region | string | 적용 지역 |
 | status | `"active" \| "hidden"` | 정책 노출 상태. 사용자에게 제공 가능한 정책은 `active`이며, 연결 기록만 보존하고 공개하지 않는 정책은 `hidden`이다. |
 | deadline | string \| null | 정책 카드 마감일(ISO 날짜). 없으면 `null` |
+| officialUrl | string \| null | 공식 안내 페이지. 일정 화면의 "혜택 안내 보기"가 앱 안 정책 상세를 거치지 않고 이 주소로 바로 나간다. 없으면 `null` |
+| applyUrl | string \| null | 공식 신청 페이지. 있으면 버튼이 "신청하러 가기"로 바뀌고 이 주소가 우선한다. 없으면 `null` |
 | application | TripPolicyApplication \| null | `island_visit` 정책에만 존재. 일정(팀) 단위 신청 진행. 카드 마감이 지나도 서류 제출 기한이 남은 회차가 있으면 연결 정책에 계속 표시된다 |
 
 ### TripPolicyApplication
@@ -1653,6 +1674,8 @@ Rules:
 | `travelAreaId` present and valid | Resolve backend travel-area catalog, including dynamic `policy-region:{urlencoded-sido}:{urlencoded-city}` ids, store `trips.travel_area_id`, and use the travel-area display name as `trips.region`. |
 | `travelAreaId` present and invalid | Return 400 with `Travel area not found`. |
 | `travelAreaId` absent and `region` present | Preserve legacy region-only trip creation behavior. |
+| `policySlug` is a regional policy but `travelAreaId` is absent or does not contain its city/county | Return 409 `Policy does not match trip travel area` before creating a trip, trip days, invite, or policy link. |
+| `policySlug` is nationwide | Allow attachment with or without `travelAreaId`. |
 
 Trip response includes:
 

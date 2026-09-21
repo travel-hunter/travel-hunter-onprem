@@ -15,7 +15,7 @@ from app.core import security
 from app.data import seed
 
 DEFAULT_TRIP_REGION = "제주"
-from app.models import ExternalSourceRecord, Policy, Trip, TripDay, TripInvite, TripPlace, User
+from app.models import ExternalSourceRecord, Policy, Trip, TripDay, TripInvite, TripPlace, TripPolicy, User
 from app.models.policy_status import is_policy_deadline_current
 from app.repositories import external_sources as external_source_repository
 from app.repositories import policies as policy_repository
@@ -165,10 +165,11 @@ def _build_external_place_provider() -> KakaoItineraryPlaceProvider | None:
 
 
 class TripServiceError(Exception):
-    def __init__(self, status_code: int, detail: str) -> None:
+    # detail 은 대개 문장이지만, 화면이 목록을 보여 줘야 하는 거부는 객체로 낸다
+    def __init__(self, status_code: int, detail: str | dict[str, object]) -> None:
         self.status_code = status_code
         self.detail = detail
-        super().__init__(detail)
+        super().__init__(detail if isinstance(detail, str) else str(detail.get("message") or ""))
 
 
 def _parse_time(value: str) -> time:
@@ -274,6 +275,8 @@ def _linked_policies(
             "region": region,
             "status": policy_status(policy),
             "deadline": policy.end_date.isoformat() if policy.end_date else None,
+            "officialUrl": policy.official_url or None,
+            "applyUrl": policy.apply_url or None,
         }
         if guide is not None:
             item["application"] = island_application.application_view(
@@ -289,7 +292,9 @@ def _policy_to_trip_policy_candidate(
 ) -> dict[str, object]:
     slug = policy.slug or str(policy.id)
     amount = _trip_policy_amount(policy)
-    city = external_record.city if external_record is not None else None
+    # 붙이기 경로는 외부 기록을 넘기지 않는다. 그때는 정책 자신의 city 가 시군을 말해 준다 -
+    # 안 보면 제목에 지명이 없는 정책은 시도만 같은 아무 일정에나 붙는다.
+    city = (external_record.city if external_record is not None else None) or policy.city
     title = local_half_trip_display.policy_title(policy.title, policy.source_category, city)
     local_terms = _candidate_local_terms(
         title=title,
@@ -345,6 +350,15 @@ def _stay_alias_to_trip_policy_candidate(
         "externalSourceRecordId": policy.external_source_record_id,
         "sortId": policy.id or 0,
     }
+
+
+def _policy_attachment_candidate(
+    policy: Policy,
+    alias_area: stay_discount_aliases.StayDiscountAliasArea | None,
+) -> dict[str, object]:
+    if alias_area is not None:
+        return _stay_alias_to_trip_policy_candidate(policy, alias_area)
+    return _policy_to_trip_policy_candidate(policy)
 
 
 def _external_source_record_to_trip_policy_candidate(record: ExternalSourceRecord) -> dict[str, object]:
@@ -432,9 +446,12 @@ def _candidate_local_terms(
         values.extend(_term_variants(local_half_trip_display.city_from_title(title)))
     if title.startswith("[") and "]" in title:
         values.extend(_term_variants(title[1 : title.index("]")]))
-    title_text = _normalized_text(title)
+    # 낱말 머리에서만 찾는다. 공백을 지운 제목에서 부분 문자열로 찾으면 "디지털관광주민증" 안의
+    # "광주"가 지명으로 잡혀, 경기 광주시 일정에 연천 정책이 붙었다. "광주 비엔날레"·"여수에서"는 그대로 잡힌다.
+    title_words = [_normalized_text(word) for word in re.split(r"[^0-9A-Za-z가-힣]+", title) if word]
     for term in _known_municipal_terms():
-        if _normalized_text(term) in title_text:
+        key = _normalized_text(term)
+        if any(word.startswith(key) for word in title_words):
             values.extend(_term_variants(term))
     region_terms = _split_region_terms(region)
     if len(region_terms) >= 2:
@@ -520,6 +537,25 @@ def _candidate_matches_trip_locality(candidate: dict[str, object], trip: Trip) -
     if normalized_area_sido and candidate_sido and candidate_sido != normalized_area_sido:
         return False
     return bool(candidate_local_terms & normalized_local_terms)
+
+
+def _policy_is_attachable_to_trip(
+    policy: Policy,
+    trip: Trip,
+    alias_area: stay_discount_aliases.StayDiscountAliasArea | None,
+) -> bool:
+    candidate = _policy_attachment_candidate(policy, alias_area)
+    if not _candidate_has_explicit_locality(candidate):
+        candidate_sido = _candidate_sido(candidate)
+        if not candidate_sido:
+            return _normalized_text(candidate.get("region")) == _normalized_text(NATIONWIDE_REGION)
+        # 시군 단서 없이 시도만 있는 정책("강원 전역 …")은 그 시도 안의 일정이면 붙는다.
+        # 이 갈래가 없으면 시도 단위 정책은 어떤 일정에도 붙일 수 없다.
+        area = get_travel_area(trip.travel_area_id)
+        return area is not None and _normalized_text(area.sido) == _normalized_text(candidate_sido)
+    if not trip.travel_area_id:
+        return False
+    return _candidate_matches_trip_locality(candidate, trip)
 
 
 def _known_destination_terms() -> list[str]:
@@ -1115,6 +1151,19 @@ def create_trip(
         end_date = start_date + timedelta(days=duration_days - 1)
     title = str(payload.get("title") or f"{region} {duration_days}일 여행")
     participant_count = int(payload.get("participantCount") or 1)
+    policy_slug = str(payload["policySlug"]) if payload.get("policySlug") else None
+    policy = None
+    alias_area = None
+    if policy_slug:
+        policy, alias_area = _resolve_policy_for_request_slug(db, policy_slug)
+        if policy is None:
+            raise TripServiceError(404, "Policy not found")
+        prospective_trip = Trip(
+            region=region,
+            travel_area_id=travel_area.id if travel_area else None,
+        )
+        if not _policy_is_attachable_to_trip(policy, prospective_trip, alias_area):
+            raise TripServiceError(409, "Policy does not match trip travel area")
 
     trip = trip_repository.create_trip(
         db,
@@ -1139,15 +1188,8 @@ def create_trip(
         )
 
     _ensure_invite(db, trip, user)
-    if payload.get("policySlug"):
-        policy_slug = str(payload["policySlug"])
-        policy, alias_area = _resolve_policy_for_request_slug(db, policy_slug)
-        if policy is None:
-            raise TripServiceError(404, "Policy not found")
+    if policy is not None:
         trip_repository.add_trip_policy(db, trip_id=trip.id, policy_id=policy.id)
-    else:
-        alias_area = None
-        policy = None
     db.commit()
 
     created = trip_repository.get_accessible_trip_by_id(db, trip.id, user.id)
@@ -1177,6 +1219,8 @@ def add_policy_to_trip(
     trip_repository.lock_trip_row(db, trip_id=trip.id)
     existing = trip_repository.get_trip_policy(db, trip_id=trip.id, policy_id=policy.id)
     if existing is None:
+        if not _policy_is_attachable_to_trip(policy, trip, _alias_area):
+            raise TripServiceError(409, "Policy does not match trip travel area")
         # 숙박세일 페스타는 지역마다 정책 행이 따로 있어 policy_id 중복 검사를
         # 통과한다. 일정 하나에는 지역 하나만 붙는다. 같은 지역을 다시 누르면
         # existing이 있어 여기까지 오지 않으므로 기존처럼 조용히 성공한다.
@@ -1281,6 +1325,23 @@ def update_trip_status(
     return _refresh_trip_payload(db, trip.id, user)
 
 
+def _links_outside_travel_area(db: Session, trip: Trip, travel_area) -> list[TripPolicy]:
+    """지역이 실제로 바뀔 때, 새 지역에 붙일 수 없게 되는 연결들.
+    붙일 때와 같은 판정을 쓴다 - 기준이 둘이면 붙였다 뺐다를 되풀이하게 된다.
+    지역을 안 바꾸는 요청(제목·날짜만)은 옛 연결이 어떻든 막지 않는다."""
+    if travel_area is None or travel_area.id == trip.travel_area_id:
+        return []
+    prospective_trip = Trip(region=travel_area.name, travel_area_id=travel_area.id)
+    # 관계 컬렉션이 아니라 DB 에서 읽는다 - 같은 세션에서 방금 붙인 연결이 컬렉션에 없을 수 있다
+    links = db.query(TripPolicy).filter(TripPolicy.trip_id == trip.id).order_by(TripPolicy.id).all()
+    return [
+        link
+        for link in links
+        if link.policy is not None
+        and not _policy_is_attachable_to_trip(link.policy, prospective_trip, None)
+    ]
+
+
 def update_trip_settings(
     db: Session,
     user: User,
@@ -1294,7 +1355,33 @@ def update_trip_settings(
         travel_area = resolve_travel_area(payload.travelAreaId.strip())
         if travel_area is None:
             raise TripServiceError(400, "Travel area not found")
+    # 리비전을 올리기 전에 본다 - 거부된 요청은 revision 을 건드리지 않는다.
+    stranded_links = _links_outside_travel_area(db, trip, travel_area)
+    # 낡은 요청이면 아래 리비전 검사가 먼저 거절하게 둔다 - 화면이 낡았으면 정책 목록도 낡았다
+    is_current = payload.expectedRevision == trip.revision
+    if stranded_links and is_current and payload.mismatchedPolicyStrategy != "remove":
+        raise TripServiceError(
+            409,
+            {
+                "code": "trip_policies_outside_travel_area",
+                "message": "Trip has policies outside the new travel area",
+                "policies": [
+                    {
+                        "slug": link.policy.slug or str(link.policy.id),
+                        "title": link.policy.title,
+                        "hasApplicationProgress": bool(
+                            link.application_status or link.application_checklist
+                        ),
+                    }
+                    for link in stranded_links
+                ],
+            },
+        )
     _bump_trip_revision_or_conflict(db, trip, payload.expectedRevision)
+    for link in stranded_links:
+        trip_repository.remove_trip_policy(db, link)
+        if link in trip.policies:
+            trip.policies.remove(link)
 
     if payload.title is not None:
         title = payload.title.strip()

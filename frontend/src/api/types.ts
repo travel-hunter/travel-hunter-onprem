@@ -183,6 +183,9 @@ export type LinkedTripPolicy = {
   category?: PolicyCategory;
   tag?: string;
   deadline?: string | null;
+  /** 공식 안내·신청 페이지. 일정 화면의 버튼이 정책 상세를 거치지 않고 바로 나간다 */
+  officialUrl?: string | null;
+  applyUrl?: string | null;
   application?: TripPolicyApplication | null;
 };
 

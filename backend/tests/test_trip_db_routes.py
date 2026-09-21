@@ -116,7 +116,8 @@ def seed_trip_for_region_update(sqlite_db_session, *, viewer: bool = False) -> t
         slug="fixture-policy",
         title="Fixture policy",
         benefit_amount=300000,
-        region="Jeju",
+        # 제주 어느 일정에나 붙는 시도 단위 정책. 지역을 제주 안에서 바꿔도 남아야 한다
+        region="제주",
         status="active",
     )
     trip = Trip(
@@ -684,6 +685,39 @@ def test_db_trip_settings_rejects_viewer_region_update(sqlite_db_session) -> Non
 
     assert response.status_code == 403
     assert response.json() == {"detail": "Trip edit permission required"}
+
+
+def test_db_trip_settings_lists_policies_a_region_change_would_strand(sqlite_db_session) -> None:
+    # 제주 정책이 붙은 일정을 강원으로 옮긴다 - 화면이 확인 창에 쓸 목록을 객체로 받는다
+    user, trip_id = seed_trip_for_region_update(sqlite_db_session)
+    install_db_route_dependencies(None, sqlite_db_session, user)
+
+    try:
+        rejected = client.patch(
+            f"/api/trips/{trip_id}/settings",
+            json={"expectedRevision": 1, "travelAreaId": "gangwon-sokcho-goseong-yangyang"},
+        )
+        confirmed = client.patch(
+            f"/api/trips/{trip_id}/settings",
+            json={
+                "expectedRevision": 1,
+                "travelAreaId": "gangwon-sokcho-goseong-yangyang",
+                "mismatchedPolicyStrategy": "remove",
+            },
+        )
+    finally:
+        clear_overrides()
+
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"] == {
+        "code": "trip_policies_outside_travel_area",
+        "message": "Trip has policies outside the new travel area",
+        "policies": [{"slug": "fixture-policy", "title": "Fixture policy", "hasApplicationProgress": False}],
+    }
+    # 거부는 리비전을 안 올렸으므로 같은 expectedRevision 으로 확정할 수 있다
+    assert confirmed.status_code == 200
+    assert confirmed.json()["travelAreaId"] == "gangwon-sokcho-goseong-yangyang"
+    assert confirmed.json()["linkedPolicies"] == []
 
 
 def test_db_trip_settings_rejects_stale_region_update(sqlite_db_session) -> None:

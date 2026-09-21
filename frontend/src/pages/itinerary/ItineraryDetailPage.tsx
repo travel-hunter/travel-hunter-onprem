@@ -200,8 +200,12 @@ function linkedTripPoliciesForDisplay(
     policies.push(policy);
   };
 
-  if (!routePolicy || !hiddenRoutePolicySlugs.has(routePolicy.slug))
-    append(routePolicy);
+  /* 방금 담은 정책은 라우터 state 로 먼저 도착해 맨 위 자리를 잡는다. 다만 서버 응답에 같은 정책이
+     있으면 그쪽을 쓴다 - state 는 제목·금액만 든 요약이라 공식 주소·신청 진행이 없다.
+     요약이 서버 것을 밀어내면 "혜택 안내 보기"가 공식 사이트로 못 나간다. */
+  const fromApi = new Map((apiPolicies ?? []).map((policy) => [policy.slug, policy]));
+  if (routePolicy && !hiddenRoutePolicySlugs.has(routePolicy.slug))
+    append(fromApi.get(routePolicy.slug) ?? routePolicy);
   for (const policy of apiPolicies ?? []) append(policy);
   return policies;
 }
@@ -3741,6 +3745,9 @@ export function ItineraryDetailPage() {
     }
   };
 
+  /* × 를 누르면 바로 지우지 않고 이 정책을 확인 창에 올린다 */
+  const [removeCandidatePolicy, setRemoveCandidatePolicy] = useState<LinkedTripPolicy | null>(null);
+
   const removeLinkedPolicy = async (policy: LinkedTripPolicy) => {
     if (!trip || removingPolicySlug) return;
     if (!canEditTrip) {
@@ -3768,6 +3775,7 @@ export function ItineraryDetailPage() {
           nextLinkedPolicies.length === 0 ? "0원" : trip.expectedSaving,
         linkedPolicies: nextLinkedPolicies,
       });
+      setRemoveCandidatePolicy(null);
       setNotice("정책 연결을 해제했어요.");
       window.setTimeout(() => setNotice(null), 1800);
     } catch {
@@ -4007,7 +4015,15 @@ export function ItineraryDetailPage() {
         className="prototype-linked-policy-section"
         aria-label="연결된 정책"
       >
-        <h2>🎯 연결된 정책</h2>
+        <div className="linked-policy-head">
+          <h2>🎯 연결된 정책</h2>
+          {linkedPolicies.length > 0 && (
+            <span className="linked-policy-summary">
+              {linkedPolicies.length}건
+              {hasPolicySaving(trip?.expectedSaving) ? ` · 예상 절약 ${trip?.expectedSaving}` : ""}
+            </span>
+          )}
+        </div>
         {linkedPolicies.length > 0 ? (
           linkedPolicies.map((policy) => {
             const isHiddenPolicy = policy.status === "hidden";
@@ -4043,20 +4059,46 @@ export function ItineraryDetailPage() {
                     </span>
                     <div>
                       <strong>{policy.title}</strong>
-                      <div className="meta">{`${policy.amount || "혜택 확인"} · ${policy.region || "전국"}`}</div>
+                      <div className="meta">{`📍 ${policy.region || "전국"}`}</div>
                     </div>
                   </Link>
                 )}
+                {/* 빼기는 조용한 × 하나. 카드에서 제일 눈에 띄는 것이 제일 덜 쓰는 버튼이면 안 된다.
+                    바로 지우지 않고 확인 창을 거친다 - 연결에는 신청 진행 기록이 같이 들어 있다. */}
                 {canEditTrip && (
                   <button
                     aria-label={`${policy.title} 연결 삭제`}
                     className="linked-policy-remove"
                     disabled={removingPolicySlug === policy.slug}
-                    onClick={() => void removeLinkedPolicy(policy)}
+                    onClick={() => {
+                      setPolicyRemoveError("");
+                      setRemoveCandidatePolicy(policy);
+                    }}
                     type="button"
                   >
-                    {removingPolicySlug === policy.slug ? "삭제 중" : "삭제"}
+                    <span aria-hidden="true">×</span>
                   </button>
+                )}
+                {!isHiddenPolicy && (
+                  <div className="linked-policy-foot">
+                    <em className="linked-policy-amount">{policy.amount || "혜택 확인"}</em>
+                    {/* 앱 안 정책 상세(카드 본문이 그리로 간다)를 거치지 않고 공식 사이트로 바로 나간다.
+                        주소가 없는 정책만 상세로 보낸다. 문구 규칙은 정책 상세의 버튼과 같다. */}
+                    {policy.applyUrl || policy.officialUrl ? (
+                      <a
+                        className="linked-policy-guide"
+                        href={policy.applyUrl || policy.officialUrl || undefined}
+                        rel="noopener noreferrer"
+                        target="_blank"
+                      >
+                        {policy.applyUrl ? "신청하러 가기 ↗" : "혜택 안내 보기 ↗"}
+                      </a>
+                    ) : (
+                      <Link className="linked-policy-guide" to={`/policies/${policy.slug}`}>
+                        정책 상세 보기 ›
+                      </Link>
+                    )}
+                  </div>
                 )}
               </div>
               {policy.application && !isHiddenPolicy && (
@@ -4553,6 +4595,21 @@ export function ItineraryDetailPage() {
           </section>
         </div>
       )}
+      <ConfirmDialog
+        open={Boolean(removeCandidatePolicy)}
+        title="이 정책을 일정에서 뺄까요?"
+        body={
+          `${removeCandidatePolicy?.title ?? "선택한 정책"} 연결만 풀려요. 정책은 정책 탭에 그대로 있어 다시 담을 수 있어요.` +
+          (removeCandidatePolicy?.application ? " 기록해 둔 신청 진행은 함께 지워져요." : "")
+        }
+        error={policyRemoveError}
+        confirmLabel="빼기"
+        isSubmitting={Boolean(removingPolicySlug)}
+        onCancel={() => setRemoveCandidatePolicy(null)}
+        onConfirm={() => {
+          if (removeCandidatePolicy) void removeLinkedPolicy(removeCandidatePolicy);
+        }}
+      />
       <ConfirmDialog
         open={Boolean(deleteCandidatePlace)}
         title="장소를 삭제할까요?"

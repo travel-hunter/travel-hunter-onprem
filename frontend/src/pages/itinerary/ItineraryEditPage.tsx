@@ -1,6 +1,13 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { appDataApi, isApiError, type TravelAreaOption, type Trip } from "../../api";
+import {
+  appDataApi,
+  isApiError,
+  strandedTripPoliciesFromError,
+  type StrandedTripPolicy,
+  type TravelAreaOption,
+  type Trip,
+} from "../../api";
 import { useAsyncResource } from "../../api/useAsyncResource";
 import { Button, ErrorState, LoadingState, TopBar } from "../../components/ui";
 import {
@@ -41,6 +48,9 @@ export function ItineraryEditPage() {
   const [regionTouched, setRegionTouched] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  /* 지역을 바꾸면 빠지게 되는 연결 정책. 백엔드가 거부하며 알려 준 목록을 확인 상자에 띄운다.
+     말없이 빼지 않는다 - 연결에는 사용자가 기록한 신청 진행이 같이 들어 있다. */
+  const [strandedPolicies, setStrandedPolicies] = useState<StrandedTripPolicy[] | null>(null);
 
   useEffect(() => {
     if (!loadedTrip) return;
@@ -99,6 +109,10 @@ export function ItineraryEditPage() {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    await save(false);
+  };
+
+  const save = async (removeStrandedPolicies: boolean) => {
     const trimmedTitle = title.trim();
     const dayCount = dayCountFromDateInputs(
       normalizedStartDate,
@@ -126,12 +140,19 @@ export function ItineraryEditPage() {
         startDate: normalizedStartDate,
         endDate: normalizedEndDate,
         overflowPlaceStrategy,
+        ...(removeStrandedPolicies ? { mismatchedPolicyStrategy: "remove" as const } : {}),
       });
       navigate(`/trips/${encodeURIComponent(updatedTrip.id)}`, {
         replace: true,
         state: { notice: "일정을 수정했어요." },
       });
     } catch (nextError) {
+      const stranded = isApiError(nextError) ? strandedTripPoliciesFromError(nextError.detail) : null;
+      if (stranded) {
+        setStrandedPolicies(stranded);
+        setIsSaving(false);
+        return;
+      }
       setFormError(
         isApiError(nextError)
           ? nextError.message
@@ -154,6 +175,7 @@ export function ItineraryEditPage() {
           onChange={(area) => {
             setSelectedArea(area);
             setRegionTouched(true);
+            setStrandedPolicies(null);
           }}
           onRestore={setSelectedArea}
           onSidoChange={(sido) => {
@@ -200,6 +222,27 @@ export function ItineraryEditPage() {
               제외되는 장소 삭제
             </label>
           </fieldset>
+        )}
+        {strandedPolicies && (
+          <div className="trip-edit-stranded" role="alertdialog" aria-label="지역과 맞지 않는 정책">
+            <strong>지역을 바꾸면 맞지 않는 정책 {strandedPolicies.length}건이 일정에서 빠져요</strong>
+            <ul>
+              {strandedPolicies.map((policy) => (
+                <li key={policy.slug}>
+                  {policy.title}
+                  {policy.hasApplicationProgress && <em> · 신청 진행 기록도 함께 지워져요</em>}
+                </li>
+              ))}
+            </ul>
+            <div className="trip-edit-stranded-actions">
+              <button className="btn line" disabled={isSaving} onClick={() => setStrandedPolicies(null)} type="button">
+                지역 다시 고르기
+              </button>
+              <button className="btn" disabled={isSaving} onClick={() => void save(true)} type="button">
+                정책 빼고 저장
+              </button>
+            </div>
+          </div>
         )}
         {formError && <p className="form-error">{formError}</p>}
         <div className="trip-edit-actions">

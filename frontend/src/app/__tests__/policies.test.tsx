@@ -55,6 +55,12 @@ describe("Travel Hunter app — policies & trip picker", () => {
     );
   });
 
+  it("explains when a policy does not match the trip travel area", () => {
+    expect(policyTripErrorMessage(new Error("Policy does not match trip travel area"))).toBe(
+      "선택한 일정의 여행 지역과 맞지 않아 연결할 수 없어요. 일정 지역을 변경하거나 다른 일정을 선택해 주세요.",
+    );
+  });
+
   it("keeps the existing policy link error messages", () => {
     expect(policyTripErrorMessage(new Error("Policy not found"))).toBe(
       "정책 정보를 찾을 수 없어요. 다시 확인해 주세요.",
