@@ -1,7 +1,7 @@
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { appDataApi, type Trip } from "../../api";
+import { ApiError, appDataApi, type Trip } from "../../api";
 import { getPreviewTrip } from "../../test/fixtures";
 import { login, renderAppRoute } from "../../test/renderAppRoute";
 
@@ -205,6 +205,73 @@ describe("Travel Hunter app trip edit", () => {
           overflowPlaceStrategy: "moveToLastDay",
         }),
       );
+    } finally {
+      getTripSpy.mockRestore();
+      catalogSpy.mockRestore();
+      updateSettingsSpy.mockRestore();
+    }
+  });
+
+  it("asks before dropping linked policies that do not fit the new travel area", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "94",
+      title: "제주 동부 여행",
+      revision: 5,
+      region: "제주 동부",
+      travelAreaId: "jeju-east",
+      startDate: "2026-06-01",
+      endDate: "2026-06-03",
+      days: { 1: [], 2: [], 3: [] },
+      currentUserRole: "owner",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const catalogSpy = vi.spyOn(appDataApi, "getTravelAreaCatalog").mockResolvedValue(jejuCatalog);
+    const rejection = new ApiError("Request failed", {
+      status: 409,
+      statusText: "Conflict",
+      detail: {
+        code: "trip_policies_outside_travel_area",
+        message: "Trip has policies outside the new travel area",
+        policies: [
+          { slug: "seogwipo-stay", title: "[서귀포] 숙박 할인", hasApplicationProgress: false },
+          { slug: "island-support", title: "섬 방문 지원", hasApplicationProgress: true },
+        ],
+      },
+    });
+    const updateSettingsSpy = vi
+      .spyOn(appDataApi, "updateTripSettings")
+      .mockRejectedValueOnce(rejection)
+      .mockResolvedValueOnce({ ...trip, revision: 6 });
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/94/edit");
+      const user = userEvent.setup();
+
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: /제주 동부/ })).toHaveAttribute("aria-pressed", "true"),
+      );
+      await user.click(screen.getByRole("button", { name: /제주 서부/ }));
+      await user.click(document.querySelector('button[type="submit"]') as HTMLButtonElement);
+
+      // 말없이 빼지 않는다 - 무엇이 빠지는지, 신청 기록이 같이 지워지는지 먼저 알린다
+      const dialog = await screen.findByRole("alertdialog", { name: "지역과 맞지 않는 정책" });
+      expect(dialog).toHaveTextContent("맞지 않는 정책 2건");
+      expect(dialog).toHaveTextContent("[서귀포] 숙박 할인");
+      expect(dialog).toHaveTextContent("섬 방문 지원 · 신청 진행 기록도 함께 지워져요");
+      expect(updateSettingsSpy).toHaveBeenCalledTimes(1);
+      expect(updateSettingsSpy.mock.calls[0][1]).not.toHaveProperty("mismatchedPolicyStrategy");
+
+      await user.click(screen.getByRole("button", { name: "정책 빼고 저장" }));
+
+      await waitFor(() => expect(updateSettingsSpy).toHaveBeenCalledTimes(2));
+      expect(updateSettingsSpy.mock.calls[1][1]).toMatchObject({
+        expectedRevision: 5,
+        travelAreaId: "jeju-west",
+        mismatchedPolicyStrategy: "remove",
+      });
     } finally {
       getTripSpy.mockRestore();
       catalogSpy.mockRestore();

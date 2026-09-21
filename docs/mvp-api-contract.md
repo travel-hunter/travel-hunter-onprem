@@ -950,7 +950,8 @@ Whole-trip edit. Owner/editor only. This updates trip title, travel area, and/or
   "travelAreaId": "jeju-west",
   "startDate": "2026-07-12",
   "endDate": "2026-07-18",
-  "overflowPlaceStrategy": "moveToLastDay"
+  "overflowPlaceStrategy": "moveToLastDay",
+  "mismatchedPolicyStrategy": "reject"
 }
 ```
 
@@ -960,7 +961,24 @@ Whole-trip edit. Owner/editor only. This updates trip title, travel area, and/or
 - `startDate`/`endDate`: optional pair. If provided, `endDate` must be on or after `startDate`; one-day and 7+ day ranges are valid.
 - `overflowPlaceStrategy`: required when shortening could leave places outside the new date range. `moveToLastDay` moves overflow places to the final remaining day; `delete` removes overflow-day places.
 
-Changing the travel area does not move, delete, or reorder places, days, or linked policies. Id validation runs before the revision bump, so a rejected request leaves `revision` unchanged.
+- `mismatchedPolicyStrategy`: optional, `reject` (default) or `remove`. Only consulted when `travelAreaId` actually changes the stored area. Linked policies are judged with the same rule as `POST /api/trips/{trip_id}/policies/{policy_slug}`: nationwide policies always stay, regional policies must match the new area.
+  - `reject`: if any linked policy would no longer match, return **409** with an object detail and change nothing:
+    ```json
+    {
+      "detail": {
+        "code": "trip_policies_outside_travel_area",
+        "message": "Trip has policies outside the new travel area",
+        "policies": [
+          { "slug": "goseong-stay", "title": "[고성] 숙박 할인", "hasApplicationProgress": false }
+        ]
+      }
+    }
+    ```
+    `hasApplicationProgress` is true when the link carries user-recorded application status or checklist items, which would be deleted with it. The client shows the list and asks before resending.
+  - `remove`: delete those links and change the area in one transaction. Matching and nationwide policies are kept.
+  - A stale `expectedRevision` wins over this check and returns the usual `Trip has changed` 409, because the client's policy list is stale too.
+
+Changing the travel area does not move, delete, or reorder places or days. Linked policies are kept unless the caller confirms removal as above. Sending the same `travelAreaId`, or omitting it, never triggers the check, so existing links cannot block a title or date edit. Id validation and the policy check run before the revision bump, so a rejected request leaves `revision` unchanged.
 
 **Response 200** → `Trip`
 

@@ -258,6 +258,9 @@ class UpdateTripSettingsRequest(BaseModel):
     startDate: date | None = None
     endDate: date | None = None
     overflowPlaceStrategy: TripDateOverflowStrategy = "moveToLastDay"
+    # 지역을 바꾸면 새 지역과 안 맞는 연결 정책이 생긴다. 기본은 거부하고 목록을 돌려준다 -
+    # 사용자가 확인한 뒤 "remove" 로 다시 보내면 지역 변경과 함께 뺀다.
+    mismatchedPolicyStrategy: Literal["reject", "remove"] = "reject"
 
     @model_validator(mode="after")
     def validate_date_range(self) -> "UpdateTripSettingsRequest":

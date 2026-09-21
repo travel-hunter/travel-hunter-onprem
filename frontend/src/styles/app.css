@@ -11845,6 +11845,34 @@ a.prototype-stat-card:active {
   font-size: 20px;
 }
 
+/* 지역을 바꾸면 빠지는 정책을 알리는 확인 상자 - 저장 전에 한 번 멈춰 세운다 */
+.trip-edit-stranded {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid #f5c2c0;
+  border-radius: 14px;
+  background: #fff5f4;
+  color: #7a271a;
+  font-size: 14px;
+}
+.trip-edit-stranded ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+.trip-edit-stranded em {
+  font-style: normal;
+  font-weight: 800;
+}
+.trip-edit-stranded-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .trip-date-overflow-options {
   display: grid;
   gap: 10px;

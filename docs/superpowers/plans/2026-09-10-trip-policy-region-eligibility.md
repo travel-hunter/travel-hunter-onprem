@@ -402,3 +402,28 @@ If no regression adjustment is needed, do not create an empty commit. At branch-
   비대칭은 남는다 - `서귀포시` 일정에는 제주시 정책이 안 붙는다. 실해가 없어 손대지 않는다.
 - 운영 영향: `travel_area_id` 없는 일정(로컬 15건 중 3건)은 지역 정책을 못 붙인다. 안내 문구가
   "일정 지역을 변경"하도록 이끈다. 이미 연결된 정책은 소급해서 끊지 않는다.
+
+## 2026-09-21 추가 — 일정 지역을 바꿀 때 안 맞는 정책을 확인받고 뺀다
+
+**왜.** 붙일 때만 검사하면 규칙이 반쪽이다. 속초 일정에 `[고성]` 정책을 붙인 뒤 지역을 제주로 바꾸면
+강원 정책이 제주 일정에 남는다. 계약(`mvp-api-contract.md`)이 "지역을 바꿔도 연결된 정책은 그대로"라고
+못박고 있어서다.
+
+**사용자 결정(2026-09-21):** 조용한 자동 삭제가 아니라 **확인 후 제거**, 같은 브랜치에서.
+자동 삭제를 안 하는 이유 - 연결 행(`trip_policies`)에 사용자가 직접 기록한 신청 진행 상태
+(`application_status`·체크리스트)가 같이 있어, 지역을 잘못 눌렀다 되돌리기만 해도 복구 없이 사라진다.
+
+**설계 - 같은 요청에 이미 있는 `overflowPlaceStrategy` 선례를 그대로 따른다.**
+
+- `PATCH /api/trips/{id}/settings` 에 `mismatchedPolicyStrategy: "reject" | "remove"`(기본 `reject`).
+- 지역이 **실제로 바뀔 때만** 본다(같은 id 를 다시 보내거나 제목·날짜만 고치면 검사하지 않는다 -
+  옛 연결 때문에 제목 수정이 막히면 안 된다).
+- 새 지역과 안 맞는 연결이 있는데 `reject` 면 **409**, `detail` 은 객체:
+  `{ code: "trip_policies_outside_travel_area", message, policies: [{ slug, title, hasApplicationProgress }] }`.
+  판정은 리비전을 올리기 **전에** 한다 - 거부된 요청은 `revision` 을 안 건드린다는 기존 계약을 지킨다.
+- `remove` 면 지역 변경과 연결 삭제를 **한 트랜잭션**으로. 맞는 정책과 전국 정책은 남는다.
+- 판정 함수는 `_policy_is_attachable_to_trip` 그대로(붙일 때와 뺄 때의 기준이 같아야 한다).
+- `TripServiceError.detail` 을 문자열뿐 아니라 객체도 받게 한다. 프런트 `ApiError` 는 이미 `detail: unknown` 을 들고 있다.
+- 프런트: 지역을 바꾸는 곳은 `ItineraryEditPage` 하나다. 409 + 위 code 면 폼 안에 확인 상자를 띄운다 -
+  빠질 정책 이름, 신청 기록이 있으면 "진행 기록도 함께 지워져요". `정책 빼고 저장` / `취소`.
+- 이미 잘못 붙어 있는 옛 연결은 일괄 삭제하지 않는다. 지역을 바꾸는 순간에만 정리된다.

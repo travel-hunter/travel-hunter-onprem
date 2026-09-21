@@ -15,7 +15,7 @@ from app.core import security
 from app.data import seed
 
 DEFAULT_TRIP_REGION = "제주"
-from app.models import ExternalSourceRecord, Policy, Trip, TripDay, TripInvite, TripPlace, User
+from app.models import ExternalSourceRecord, Policy, Trip, TripDay, TripInvite, TripPlace, TripPolicy, User
 from app.models.policy_status import is_policy_deadline_current
 from app.repositories import external_sources as external_source_repository
 from app.repositories import policies as policy_repository
@@ -165,10 +165,11 @@ def _build_external_place_provider() -> KakaoItineraryPlaceProvider | None:
 
 
 class TripServiceError(Exception):
-    def __init__(self, status_code: int, detail: str) -> None:
+    # detail 은 대개 문장이지만, 화면이 목록을 보여 줘야 하는 거부는 객체로 낸다
+    def __init__(self, status_code: int, detail: str | dict[str, object]) -> None:
         self.status_code = status_code
         self.detail = detail
-        super().__init__(detail)
+        super().__init__(detail if isinstance(detail, str) else str(detail.get("message") or ""))
 
 
 def _parse_time(value: str) -> time:
@@ -1322,6 +1323,23 @@ def update_trip_status(
     return _refresh_trip_payload(db, trip.id, user)
 
 
+def _links_outside_travel_area(db: Session, trip: Trip, travel_area) -> list[TripPolicy]:
+    """지역이 실제로 바뀔 때, 새 지역에 붙일 수 없게 되는 연결들.
+    붙일 때와 같은 판정을 쓴다 - 기준이 둘이면 붙였다 뺐다를 되풀이하게 된다.
+    지역을 안 바꾸는 요청(제목·날짜만)은 옛 연결이 어떻든 막지 않는다."""
+    if travel_area is None or travel_area.id == trip.travel_area_id:
+        return []
+    prospective_trip = Trip(region=travel_area.name, travel_area_id=travel_area.id)
+    # 관계 컬렉션이 아니라 DB 에서 읽는다 - 같은 세션에서 방금 붙인 연결이 컬렉션에 없을 수 있다
+    links = db.query(TripPolicy).filter(TripPolicy.trip_id == trip.id).order_by(TripPolicy.id).all()
+    return [
+        link
+        for link in links
+        if link.policy is not None
+        and not _policy_is_attachable_to_trip(link.policy, prospective_trip, None)
+    ]
+
+
 def update_trip_settings(
     db: Session,
     user: User,
@@ -1335,7 +1353,33 @@ def update_trip_settings(
         travel_area = resolve_travel_area(payload.travelAreaId.strip())
         if travel_area is None:
             raise TripServiceError(400, "Travel area not found")
+    # 리비전을 올리기 전에 본다 - 거부된 요청은 revision 을 건드리지 않는다.
+    stranded_links = _links_outside_travel_area(db, trip, travel_area)
+    # 낡은 요청이면 아래 리비전 검사가 먼저 거절하게 둔다 - 화면이 낡았으면 정책 목록도 낡았다
+    is_current = payload.expectedRevision == trip.revision
+    if stranded_links and is_current and payload.mismatchedPolicyStrategy != "remove":
+        raise TripServiceError(
+            409,
+            {
+                "code": "trip_policies_outside_travel_area",
+                "message": "Trip has policies outside the new travel area",
+                "policies": [
+                    {
+                        "slug": link.policy.slug or str(link.policy.id),
+                        "title": link.policy.title,
+                        "hasApplicationProgress": bool(
+                            link.application_status or link.application_checklist
+                        ),
+                    }
+                    for link in stranded_links
+                ],
+            },
+        )
     _bump_trip_revision_or_conflict(db, trip, payload.expectedRevision)
+    for link in stranded_links:
+        trip_repository.remove_trip_policy(db, link)
+        if link in trip.policies:
+            trip.policies.remove(link)
 
     if payload.title is not None:
         title = payload.title.strip()

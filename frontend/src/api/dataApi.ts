@@ -238,7 +238,23 @@ export type TripSettingsUpdateRequest = {
   endDate?: string;
   travelAreaId?: string;
   overflowPlaceStrategy?: "moveToLastDay" | "delete";
+  /** 지역을 바꾸면 새 지역과 안 맞는 연결 정책이 생긴다. 기본은 거부(409 + 목록), 확인받은 뒤 "remove". */
+  mismatchedPolicyStrategy?: "reject" | "remove";
 };
+
+/** 지역 변경이 거부됐을 때 백엔드가 돌려주는 목록 - 확인 상자가 이름을 보여 준다 */
+export type StrandedTripPolicy = {
+  slug: string;
+  title: string;
+  hasApplicationProgress: boolean;
+};
+
+export function strandedTripPoliciesFromError(detail: unknown): StrandedTripPolicy[] | null {
+  if (!detail || typeof detail !== "object") return null;
+  const { code, policies } = detail as { code?: unknown; policies?: unknown };
+  if (code !== "trip_policies_outside_travel_area" || !Array.isArray(policies)) return null;
+  return policies as StrandedTripPolicy[];
+}
 
 export type SendInviteEmailRequest = {
   email: string;
