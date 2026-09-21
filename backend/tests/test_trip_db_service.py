@@ -869,6 +869,57 @@ def test_policy_is_attachable_to_trip_requires_matching_locality() -> None:
     ) is False
 
 
+def test_candidate_local_terms_ignore_place_names_buried_inside_words() -> None:
+    # "디지털관광주민증" 안의 "광주"는 지명이 아니다 - 경기 광주시 일정에 연천 정책이 붙던 원인
+    terms = trip_service._candidate_local_terms(
+        title="[연천] 디지털관광주민증 혜택", region="경기", city=None, source_category=None
+    )
+    assert "연천" in terms
+    assert "광주" not in terms
+
+    # 낱말 머리에 온 지명은 그대로 잡는다 - 띄어 썼든 조사가 붙었든
+    assert "광주" in trip_service._candidate_local_terms(
+        title="광주 비엔날레 입장 할인", region="광주", city=None, source_category=None
+    )
+    assert "여수" in trip_service._candidate_local_terms(
+        title="여수에서 쓰는 숙박 할인", region="전남", city=None, source_category=None
+    )
+
+
+def test_policy_is_attachable_to_trip_accepts_province_wide_policies_in_the_same_province() -> None:
+    trip = make_trip()
+    trip.travel_area_id = "gangwon-sokcho-goseong-yangyang"
+    trip.region = "속초·고성·양양"
+
+    # 시군 단서 없이 시도만 있는 정책 - 그 시도 안의 일정이면 붙는다
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=11, slug="gangwon-wide", title="강원 전역 숙박 할인", region="강원"), trip, None
+    ) is True
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=12, slug="gyeongbuk-wide", title="경북 전역 숙박 할인", region="경북"), trip, None
+    ) is False
+
+    # 여행 지역이 없는 일정은 시도를 알 수 없다
+    trip.travel_area_id = None
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=11, slug="gangwon-wide", title="강원 전역 숙박 할인", region="강원"), trip, None
+    ) is False
+
+
+def test_policy_is_attachable_to_trip_reads_the_policy_city_when_the_title_names_no_place() -> None:
+    trip = make_trip()
+    trip.travel_area_id = "gangwon-sokcho-goseong-yangyang"
+    trip.region = "속초·고성·양양"
+
+    # 제목에 지명이 없어도 city 가 시군을 말해 준다 - 시도만 같다고 붙으면 안 된다
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=21, slug="samcheok-by-city", title="Local benefit", region="강원", city="삼척"), trip, None
+    ) is False
+    assert trip_service._policy_is_attachable_to_trip(
+        Policy(id=22, slug="goseong-by-city", title="Local benefit", region="강원", city="고성"), trip, None
+    ) is True
+
+
 def test_add_policy_to_trip_rejects_hidden_policy_slug_in_db_path(sqlite_db_session) -> None:
     user = make_user(70, "Hidden Slug User")
     hidden_policy = Policy(

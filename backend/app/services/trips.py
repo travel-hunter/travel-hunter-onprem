@@ -289,7 +289,9 @@ def _policy_to_trip_policy_candidate(
 ) -> dict[str, object]:
     slug = policy.slug or str(policy.id)
     amount = _trip_policy_amount(policy)
-    city = external_record.city if external_record is not None else None
+    # 붙이기 경로는 외부 기록을 넘기지 않는다. 그때는 정책 자신의 city 가 시군을 말해 준다 -
+    # 안 보면 제목에 지명이 없는 정책은 시도만 같은 아무 일정에나 붙는다.
+    city = (external_record.city if external_record is not None else None) or policy.city
     title = local_half_trip_display.policy_title(policy.title, policy.source_category, city)
     local_terms = _candidate_local_terms(
         title=title,
@@ -441,9 +443,12 @@ def _candidate_local_terms(
         values.extend(_term_variants(local_half_trip_display.city_from_title(title)))
     if title.startswith("[") and "]" in title:
         values.extend(_term_variants(title[1 : title.index("]")]))
-    title_text = _normalized_text(title)
+    # 낱말 머리에서만 찾는다. 공백을 지운 제목에서 부분 문자열로 찾으면 "디지털관광주민증" 안의
+    # "광주"가 지명으로 잡혀, 경기 광주시 일정에 연천 정책이 붙었다. "광주 비엔날레"·"여수에서"는 그대로 잡힌다.
+    title_words = [_normalized_text(word) for word in re.split(r"[^0-9A-Za-z가-힣]+", title) if word]
     for term in _known_municipal_terms():
-        if _normalized_text(term) in title_text:
+        key = _normalized_text(term)
+        if any(word.startswith(key) for word in title_words):
             values.extend(_term_variants(term))
     region_terms = _split_region_terms(region)
     if len(region_terms) >= 2:
@@ -538,10 +543,13 @@ def _policy_is_attachable_to_trip(
 ) -> bool:
     candidate = _policy_attachment_candidate(policy, alias_area)
     if not _candidate_has_explicit_locality(candidate):
-        return (
-            not _candidate_sido(candidate)
-            and _normalized_text(candidate.get("region")) == _normalized_text(NATIONWIDE_REGION)
-        )
+        candidate_sido = _candidate_sido(candidate)
+        if not candidate_sido:
+            return _normalized_text(candidate.get("region")) == _normalized_text(NATIONWIDE_REGION)
+        # 시군 단서 없이 시도만 있는 정책("강원 전역 …")은 그 시도 안의 일정이면 붙는다.
+        # 이 갈래가 없으면 시도 단위 정책은 어떤 일정에도 붙일 수 없다.
+        area = get_travel_area(trip.travel_area_id)
+        return area is not None and _normalized_text(area.sido) == _normalized_text(candidate_sido)
     if not trip.travel_area_id:
         return False
     return _candidate_matches_trip_locality(candidate, trip)

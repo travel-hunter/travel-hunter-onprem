@@ -379,3 +379,26 @@ If no regression adjustment is needed, do not create an empty commit. At branch-
 **Placeholder scan:** The plan has no deferred implementation markers or unspecified error/testing steps. The one literal `<only-files-changed-by-the-regression-fix>` is a Git staging safety instruction, not an implementation dependency; it intentionally prevents staging unrelated worktree files.
 
 **Type consistency:** All tasks use the same `Policy`, `Trip`, `StayDiscountAliasArea`, `_policy_attachment_candidate`, `_policy_is_attachable_to_trip`, and `TripServiceError(409, "Policy does not match trip travel area")` names.
+
+## 2026-09-21 재개 — develop 리베이스와 실데이터 검증에서 나온 보강
+
+9/15 에 멈춘 브랜치를 `origin/develop`(5eb23ec) 위로 리베이스했다(충돌 없음, e325af4 → 53a3002).
+개발서버 복사본 정책 108건을 카탈로그 여행 지역 273곳에 전부 대입해 판정 함수를 검증했다.
+
+- 전국 12건 전부 허용. `[시군]` 정책 96건은 제 시군 일정에 못 붙는 경우 0건.
+- **오탐 1 — "디지털관광주민증" 안의 "광주".** `_candidate_local_terms` 가 제목을 공백 없이 이어 붙인 뒤
+  지명을 부분 문자열로 찾는다. 경기 `광주시` 일정에 `[연천]`·`[가평]` 디지털관광주민증이 붙었다.
+  develop 에 원래 있던 버그지만 추천에서는 점수에 섞이는 정도였고, 여기서는 허용/거부를 가른다.
+  → 제목을 낱말로 쪼개 **낱말 머리에서만** 지명을 찾는다("광주 비엔날레", "여수에서" 는 그대로 잡힌다).
+- **잠재 위험 — 시군 단서 없는 시도 단위 정책은 어떤 일정에도 못 붙는다.** 지금은 0건이지만
+  섬·지자체 수집원을 늘리면 나온다. → 단서가 없고 시도만 있으면 **일정의 시도가 같을 때** 허용.
+- **같이 고쳐야 하는 것 — 붙이기 판정이 `Policy.city` 를 안 본다.** 후보를 만들 때 시군을
+  `ExternalSourceRecord.city` 에서만 가져오는데 붙이기 경로는 그 기록을 넘기지 않는다.
+  활성 정책 113건 중 69건이 `city` 를 갖고 있다. 시도 규칙만 넣으면 "제목에 지명이 없고 city 만 있는
+  정책"이 같은 시도 아무 일정에나 붙는다(기존 테스트 `Samcheok local benefit` 이 정확히 그 모양이고,
+  지금은 '단서 없음 → 거부'라는 엉뚱한 이유로 통과하고 있다). → 외부 기록이 없으면 `policy.city` 를 쓴다.
+- **제주** — `제주시` 는 정규화하면 시도명과 같아 "제주 전체" 일정으로 판정되고 `[서귀포]` 정책이 붙는다.
+  사용자 결정(2026-09-21): 제주는 하나의 생활권으로 보고 **그대로 둔다.**
+  비대칭은 남는다 - `서귀포시` 일정에는 제주시 정책이 안 붙는다. 실해가 없어 손대지 않는다.
+- 운영 영향: `travel_area_id` 없는 일정(로컬 15건 중 3건)은 지역 정책을 못 붙인다. 안내 문구가
+  "일정 지역을 변경"하도록 이끈다. 이미 연결된 정책은 소급해서 끊지 않는다.
