@@ -8,13 +8,20 @@ import { REGION_NAMES } from "./regionMapEngine";
 import { REGION_PHOTOS } from "./regionPhotos";
 
 const PEEK = 20; /* 닫힌 시트가 내미는 높이 - 손잡이 줄까지만 */
-/* 휠 한 칸(보통 deltaY 100)에 시트가 내려가는 거리. 1 이면 한두 번에 닫혀 손이 미끄러진다. */
-const WHEEL_DAMP = 0.8;
+/* 휠 한 칸(보통 deltaY 100)에 페이지가 움직이는 거리의 배율. 0.8 일 때는 페이지를 내리려면 휠을 여러 번
+   굴려야 했다(사용자 확인) - 두 배로 올렸다. 한 칸에 160px 이라 두 칸이면 중간을 건너가 지도로 내려간다.
+   테스트가 같은 값을 읽도록 내보낸다 - 감도를 다시 만져도 테스트의 px 계산이 따라온다. */
+export const WHEEL_DAMP = 1.6;
 /* 휠은 손을 떼는 순간이 없다 - 이만큼 조용하면 한 동작이 끝난 것으로 본다(ms).
    이제는 제자리로 되돌리는 데 쓰지 않는다. 전환을 도로 켜 주기만 한다. */
 const WHEEL_QUIET = 140;
 /* 끌어 올리고 내리는 도중 이 선을 건너가면 그 순간 끝까지 붙는다. 건너기 전에는 그 자리에 멈춘다. */
 const MIDDLE = 0.5;
+/* 어중간한 자리에 세워 둔 페이지가 가까운 끝으로 스스로 돌아가기까지 머무는 시간(ms).
+   마지막으로 만진 때부터 센다 - 머무는 동안 다시 만지면 처음부터 다시 센다.
+   영영 서 있으면 매번 손으로 다시 올려야 하고, 손을 떼자마자 튕기면 끌던 손과 부딪힌다.
+   0.3초는 손을 뗀 것이 확실해질 만큼만 기다리는 값이다(사용자 확인 뒤 1.2초에서 줄였다). */
+const AUTO_SETTLE_DELAY = 300;
 /* 양 끝 여유. 중간을 이미 지난 쪽에서 더 밀면 선을 건널 일이 없어 끝 언저리에 어중간하게
    멈춘다 - 이만큼 가까우면 끝으로 붙여 준다. */
 const EDGE = 0.08;
@@ -57,8 +64,11 @@ export function PolicyMapSheet({
     const text = value.toFixed(3);
     for (const node of progressTargets()) node?.style.setProperty("--thmap-progress", text);
   };
+  const autoSettleTimerRef = useRef(0);
+  const cancelAutoSettle = () => window.clearTimeout(autoSettleTimerRef.current);
   /* 양 끝으로 붙인다 - 전환을 도로 켜고 열림 상태까지 맞춘다. */
   const settleTo = (target: 0 | 1) => {
+    cancelAutoSettle();
     setDragging(false);
     writeProgress(target);
     setOpen(target === 1);
@@ -68,6 +78,17 @@ export function PolicyMapSheet({
      멈춘다 - 손을 떼면 도로 올라가던 것을 없앴다(2026-09-20). 중간 아래에서 조금 더 내리는
      동안에도 멈춤이 유지되어야 하므로 "지금 어느 쪽인가"가 아니라 "건너갔는가"로 본다.
      확정했으면 true - 부르는 쪽은 이번 끌기를 거기서 끝낸다. */
+  /* 끌기가 끝났다 - 어중간한 자리에 서 있으면 잠깐 뒤 가까운 끝으로 돌아간다.
+     중간보다 위면 도로 올라붙고(다시 올리는 수고를 던다), 아래면 지도로 내려간다. */
+  const scheduleAutoSettle = () => {
+    cancelAutoSettle();
+    const value = progressRef.current;
+    if (value <= 0 || value >= 1) return;
+    autoSettleTimerRef.current = window.setTimeout(
+      () => settleTo(progressRef.current > MIDDLE ? 1 : 0),
+      AUTO_SETTLE_DELAY,
+    );
+  };
   const moveTo = (next: number) => {
     const prev = progressRef.current;
     const value = Math.max(0, Math.min(1, next));
@@ -150,6 +171,7 @@ export function PolicyMapSheet({
     return () => {
       tabsRef.current?.style.removeProperty("--thmap-progress");
       document.body.classList.remove("thmap-up");
+      cancelAutoSettle();
       setDragging(false);
     };
   }, [enabled, open]);
@@ -173,11 +195,16 @@ export function PolicyMapSheet({
       if (event.deltaY >= 0 && progressRef.current >= 1) return;
       if (!sheet) return;
       event.preventDefault();
+      cancelAutoSettle();
       setDragging(true);
-      moveTo(progressRef.current + (event.deltaY * WHEEL_DAMP) / travelOf(sheet));
+      const settled = moveTo(progressRef.current + (event.deltaY * WHEEL_DAMP) / travelOf(sheet));
       clearTimeout(timer);
-      /* 굴림이 멎으면 전환만 도로 켠다 - 자리는 그대로 둔다 */
-      timer = setTimeout(() => setDragging(false), WHEEL_QUIET);
+      if (settled) return;
+      /* 굴림이 멎으면 전환을 도로 켜고, 그 자리에 잠깐 세워 뒀다가 가까운 끝으로 돌려보낸다 */
+      timer = setTimeout(() => {
+        setDragging(false);
+        scheduleAutoSettle();
+      }, WHEEL_QUIET);
     };
     document.addEventListener("wheel", onWheel, { passive: false });
     return () => {
@@ -194,6 +221,7 @@ export function PolicyMapSheet({
     let startY: number | null = null, startP = 1, active = false, done = false;
     const start = (event: TouchEvent) => {
       if (body.scrollTop > 0) { startY = null; return; }
+      cancelAutoSettle();
       startY = event.touches[0].clientY; startP = progressRef.current;
       active = false; done = false;
     };
@@ -209,6 +237,7 @@ export function PolicyMapSheet({
     };
     const end = () => {
       if (active) setDragging(false);
+      if (!done) scheduleAutoSettle();
       startY = null; active = false;
     };
     body.addEventListener("touchstart", start, { passive: true });
@@ -236,6 +265,7 @@ export function PolicyMapSheet({
     const grab = grabRef.current, sheet = sheetRef.current;
     if (!grab || !sheet) return;
     const down = (event: PointerEvent) => {
+      cancelAutoSettle();
       grabDragRef.current = { y: event.clientY, from: progressRef.current, moved: false, done: false };
       setDragging(true);
       try { grab.setPointerCapture(event.pointerId); } catch { /* 지원 안 하는 브라우저 */ }
@@ -253,6 +283,7 @@ export function PolicyMapSheet({
       if (!drag) return;
       grabDragRef.current = null;
       setDragging(false);
+      if (!drag.done) scheduleAutoSettle();
       if (!drag.moved) return; /* 그냥 클릭이면 click 이 처리 */
       /* pointerup 뒤에 합성되는 click 이 드래그 결과를 다시 뒤집지 못하게 한 번만 막는다. */
       suppressGrabClickRef.current = event.type === "pointerup";
