@@ -127,9 +127,11 @@ def parse_traffic_benefits(
         start_date, end_date = _parse_period_with_year(period_text, fetched_at.year)
         status = normalize_status(None, start_date, end_date, today)
         benefit_value = _traffic_benefit_value(benefit_text)
+        card_summary, card_issues = _traffic_card_summary(benefit_text, benefit_value)
         card_copy = evaluate_card_copy(
-            summary=_traffic_card_summary(benefit_text, benefit_value),
+            summary=card_summary,
             evidence=benefit_text,
+            issues=card_issues,
         )
         _, _, period_evidence_payload = period_payload(
             [
@@ -139,7 +141,7 @@ def parse_traffic_benefits(
             default_year=fetched_at.year,
             source="travelmonth-traffic",
         )
-        canonical_text = "|".join([SOURCE_CATEGORY, title, period_text, benefit_text])
+        canonical_text = f"{SOURCE_CATEGORY}|{title}|{period_text}|{benefit_text}"
         field_completeness = calculate_field_completeness(
             {
                 "title": title,
@@ -219,12 +221,48 @@ def _record_score(record: dict[str, object]) -> tuple[int, int]:
     return typed_periods, len(str(record.get("raw", "")))
 
 
-def _traffic_card_summary(benefit_text: str, benefit_value: BenefitValue) -> str | None:
+def _traffic_card_summary(
+    benefit_text: str, benefit_value: BenefitValue
+) -> tuple[str | None, tuple[str, ...]]:
     text = normalize_text(benefit_text)
-    qualified_maximum = re.search(r"왕복\s*기준\s*최대\s*\d+\s*만\s*포인트", text)
-    if qualified_maximum:
-        return normalize_text(qualified_maximum.group(0))
-    return benefit_value.value_text
+    qualified_maxima = list(
+        re.finditer(r"왕복\s*기준\s*[,，]?\s*최대\s*\d+\s*만\s*포인트", text)
+    )
+    maxima = list(re.finditer(r"최대\s*\d+\s*만\s*포인트", text))
+    if maxima and len(qualified_maxima) == len(maxima):
+        return normalize_text(qualified_maxima[0].group(0)), ()
+    if maxima:
+        return None, ("benefit_unit_ambiguous",)
+
+    fare_coupon = re.search(r"승차권\s*운임의?\s*100\s*%\s*상당", text)
+    if fare_coupon and "할인쿠폰" in text:
+        return "승차권 운임 100% 상당 쿠폰", ()
+
+    person_points = re.search(
+        r"(?:1\s*인\s*당|인\s*당)\s*(\d+\s*(?:만|천)?\s*포인트)", text
+    )
+    if person_points:
+        return f"인당 {normalize_text(person_points.group(1))}", ()
+
+    person_amount = re.search(
+        r"1\s*인\s*당\s*(\d[\d,]*\s*(?:만\s*원|천\s*원|원))", text
+    )
+    if person_amount:
+        reward_unit = " 상품권" if "상품권" in text else ""
+        return f"1인당 {normalize_text(person_amount.group(1))}{reward_unit}", ()
+
+    fixed_discount = re.search(r"\d+\s*만원\s*정액\s*할인", text)
+    if fixed_discount:
+        return normalize_text(fixed_discount.group(0)), ()
+
+    fare_discount = re.search(r"운임료\s*(\d{1,3}\s*%\s*할인)", text)
+    if fare_discount:
+        return f"운임료 {normalize_text(fare_discount.group(1))}", ()
+
+    discount = re.search(r"\d{1,3}\s*%\s*할인", text)
+    if discount:
+        return normalize_text(discount.group(0)), ()
+    return benefit_value.value_text, ()
 
 
 def _parse_period_with_year(period_text: str, year: int) -> tuple[date | None, date | None]:
