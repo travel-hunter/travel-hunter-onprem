@@ -1,5 +1,7 @@
 import { DependencyList, useEffect, useState } from "react";
 
+import { withInquiryCode } from "./client";
+
 export type AsyncResource<T> = {
   data: T | null;
   error: string | null;
@@ -21,8 +23,14 @@ export function useAsyncResource<T>(loader: () => Promise<T>, deps: DependencyLi
       .then((data) => {
         if (isCurrent) setState({ data, error: null, isLoading: false });
       })
-      .catch(() => {
-        if (isCurrent) setState({ data: null, error: "정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.", isLoading: false });
+      .catch((error: unknown) => {
+        if (isCurrent) {
+          setState({
+            data: null,
+            error: withInquiryCode("정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.", error),
+            isLoading: false,
+          });
+        }
       });
 
     return () => {

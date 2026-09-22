@@ -6,6 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.api.routes.health import router as health_router
 from app.core.config import settings
+from app.core.debug_capture import build_debug_capture
+from app.core.logging import configure_logging
+from app.core.request_context import RequestContextMiddleware
+from app.db.session import get_session_factory
 from app.services.external_collection_scheduler import (
     start_external_collection_scheduler,
     stop_external_collection_scheduler,
@@ -16,6 +20,7 @@ from app.services.notification_scheduler import (
 )
 
 settings.validate_runtime()
+configure_logging(settings.log_level)
 
 
 @asynccontextmanager
@@ -35,12 +40,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# add_middleware 는 마지막 등록이 바깥이다. RequestContext 를 먼저 등록해 CORS 가 바깥에 서게 한다 -
+# 그래야 미들웨어가 만든 500 응답에도 CORS 헤더가 붙는다.
+app.add_middleware(
+    RequestContextMiddleware,
+    trusted_proxy_cidrs=settings.trusted_proxy_cidrs,
+    exclude_paths=settings.access_log_exclude_paths,
+    admin_domain=settings.admin_domain,
+    # 잠긴 디버그 스위치 - 설정이 전부 있어야 켜진다. 없으면 None.
+    debug_capture=build_debug_capture(settings, session_factory=get_session_factory if settings.database_url else None),
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-Id"],
 )
 
 app.include_router(health_router)

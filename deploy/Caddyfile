@@ -1,4 +1,56 @@
+# 접근 로그 - docs/superpowers/plans/2026-09-22-caddy-service-status-log.md
+# 모든 요청을 stdout 에 JSON 으로 남기되 필드는 화이트리스트다: 경로(쿼리 제거)·상태·소요시간·마스킹 IP.
+# 헤더는 요청·응답 모두 통째로 버린다 - Referer 와 응답 Location 에 토큰이 실린다.
+# 목적은 백엔드가 죽었을 때의 502 가 어딘가엔 남게 하는 것. 역추적은 백엔드 로그(request_id)가 맡는다.
+{
+  servers {
+    trusted_proxies static 172.16.0.0/12
+    client_ip_headers Cf-Connecting-Ip
+  }
+  # 기본 로거(http.log.error 등)도 요청을 통째로 찍는다 - 502 오류 줄에 쿼리·Referer 가 실린다. 같은 필터를 건다.
+  # 접근 로그는 사이트 블록의 log 가 따로 내므로 여기서 제외해 두 번 찍히지 않게 한다.
+  log default {
+    output stdout
+    exclude http.log.access
+    format filter {
+      wrap json
+      fields {
+        request>uri regexp \?.*$ ""
+        request>headers delete
+        resp_headers delete
+        request>remote_ip delete
+        request>remote_port delete
+        request>client_ip ip_mask {
+          ipv4 24
+          ipv6 48
+        }
+      }
+    }
+  }
+}
+
+(accesslog) {
+  log {
+    output stdout
+    format filter {
+      wrap json
+      fields {
+        request>uri regexp \?.*$ ""
+        request>headers delete
+        resp_headers delete
+        request>remote_ip delete
+        request>remote_port delete
+        request>client_ip ip_mask {
+          ipv4 24
+          ipv6 48
+        }
+      }
+    }
+  }
+}
+
 http://{$STAGING_DOMAIN} {
+  import accesslog
   encode gzip zstd
 
   @admin_path path /admin /admin/*
@@ -22,6 +74,7 @@ http://{$STAGING_DOMAIN} {
 }
 
 http://{$ADMIN_DOMAIN} {
+  import accesslog
   encode gzip zstd
 
   @admin_root path /

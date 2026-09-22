@@ -17,7 +17,8 @@ def require_database_url() -> str:
 
 @lru_cache
 def get_engine() -> Engine:
-    return create_engine(require_database_url(), pool_pre_ping=True)
+    # hide_parameters: 예외 메시지에 바인딩 값(이메일·토큰)이 실리지 않게. 로그로 새는 길을 막는다.
+    return create_engine(require_database_url(), pool_pre_ping=True, hide_parameters=True)
 
 
 @lru_cache

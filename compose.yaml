@@ -16,6 +16,8 @@ services:
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:-}
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      # caddy 컨테이너가 보내는 연결만 프록시 헤더를 믿는다. compose 기본 네트워크는 172.16.0.0/12 안에 생긴다.
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-172.16.0.0/12}
       
   frontend:
     build:
@@ -43,6 +45,11 @@ services:
         condition: service_healthy
       frontend:
         condition: service_started
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -51,3 +58,8 @@ services:
       caddy:
         condition: service_started
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"

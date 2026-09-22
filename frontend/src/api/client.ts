@@ -56,19 +56,30 @@ export class ApiError extends Error {
   statusText: string;
   detail: unknown;
   body: unknown;
+  /** 백엔드가 응답 헤더 X-Request-Id 로 준 요청 ID. 문의 코드로 보여 주면 서버 로그를 바로 찾을 수 있다. */
+  requestId: string | null;
 
-  constructor(message: string, options: { status: number; statusText: string; detail?: unknown; body?: unknown }) {
+  constructor(
+    message: string,
+    options: { status: number; statusText: string; detail?: unknown; body?: unknown; requestId?: string | null },
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = options.status;
     this.statusText = options.statusText;
     this.detail = options.detail;
     this.body = options.body;
+    this.requestId = options.requestId ?? null;
   }
 }
 
 export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
+}
+
+/** 오류 문구 뒤에 문의 코드를 붙인다. 응답이 없던 오류(네트워크 단절)는 코드가 없다. */
+export function withInquiryCode(message: string, error: unknown): string {
+  return isApiError(error) && error.requestId ? `${message} (문의 코드: ${error.requestId})` : message;
 }
 
 export function setApiAccessToken(token: string | null) {
@@ -125,6 +136,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       statusText: response.statusText,
       detail,
       body,
+      requestId: response.headers.get("X-Request-Id"),
     });
   }
 
