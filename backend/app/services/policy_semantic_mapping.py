@@ -13,6 +13,7 @@ from app.services.policy_periods import (
     structured_period_items,
 )
 from app.services.local_half_trip_corrections import correction_for_record
+from app.services.travelmonth_traffic_detail import structured_detail_for_traffic
 
 
 StructuredDetail = dict[str, list[dict[str, object]]]
@@ -590,7 +591,13 @@ def _island_visit(record: ExternalSourceRecord) -> ExternalSourceSemanticMapping
     return ExternalSourceSemanticMapping(None, detail, "mapped")
 
 
+def _traffic_benefit(record: ExternalSourceRecord) -> ExternalSourceSemanticMapping:
+    """교통 혜택의 상세는 정리된 문구 표(travelmonth_traffic_detail)와 파싱된 기간을 합쳐 만든다."""
+    return ExternalSourceSemanticMapping(None, structured_detail_for_traffic(record), "mapped")
+
+
 _MAPPERS: dict[str, Callable[[ExternalSourceRecord], ExternalSourceSemanticMapping]] = {
+    "traffic_benefit": _traffic_benefit,
     "island_visit": _island_visit,
     "local_half_trip": _local_half_trip,
     dgtour_identity.SOURCE_CATEGORY: _digital_tourism_resident_card,

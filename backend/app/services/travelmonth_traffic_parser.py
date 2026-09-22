@@ -81,8 +81,11 @@ class _TrafficBenefitHtmlParser(HTMLParser):
         if tag == "a":
             # 링크 글자("할인혜택 보러가기")는 혜택이 아니다 - 주소만 받고 글자는 원문에 넣지 않는다
             self._in_anchor = True
-            if attr_map.get("href") and not self._current.get("detail_url"):
-                self._current["detail_url"] = attr_map["href"]
+            href = normalize_text(attr_map.get("href") or "")
+            # "#" 은 아직 열리지 않은 바로가기다(onclick 으로 안내만 띄운다). 링크가 없는 것으로 본다 -
+            # 그래야 공식 URL 이 수집 출처 페이지로 떨어진다.
+            if href and href != "#" and not self._current.get("detail_url"):
+                self._current["detail_url"] = href
 
     def handle_endtag(self, tag: str) -> None:
         if tag in {"script", "style", "nav", "footer", "aside"} and self._ignored_depth:
@@ -356,7 +359,7 @@ def _traffic_card_summary(
         and "인당 1만 포인트" in context
         and "왕복 기준" in context
     ):
-        return "대상 국내선 왕복 최대 4만 포인트(4인)", ()
+        return "대상 국내선 왕복 최대 4만 포인트", ()
     if (
         "인구감소지역 자동차 여행 할인" in title
         and "30km" in text
