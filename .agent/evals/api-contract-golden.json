@@ -534,6 +534,7 @@
         "startDate": "string|null",
         "deadline": "string",
         "amount": "string",
+        "cardSummary": "string|null",
         "structuredDetail": "object|null",
         "officialUrl": "string|null",
         "applyUrl": "string|null",

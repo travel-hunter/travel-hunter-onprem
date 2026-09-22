@@ -44,7 +44,8 @@ def _date_iso(value: date | None) -> str | None:
 def build_candidate_card_preview(record: Any) -> dict[str, object]:
     card_copy = card_copy_for_record(record)
     return {
-        "amount": card_copy.display_text,
+        # 승인하면 public cardSummary 에 그대로 실릴 값. 판정 미통과면 카드가 비므로 미리보기도 비운다.
+        "amount": card_copy.summary or "",
         "evidence": card_copy.evidence[:2000],
         "issues": list(card_copy.issues),
     }

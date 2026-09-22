@@ -637,6 +637,7 @@ const REVIEW_REASON_LABEL: Record<string, string> = {
   would_publish_hidden: "비공개 예정",
   low_confidence: "신뢰도 낮음",
   stay_discount_manual: "숙박세일 수동",
+  card_copy_changed: "카드 문구 변경",
   procedure_changed: "신청 절차 변경",
   card_quality_review: "카드 문구 확인 필요",
 };
@@ -699,8 +700,11 @@ export function AdminPolicyReviewPage() {
   const decide = async (candidate: AdminPolicyReviewCandidate, decision: "approve" | "reject") => {
     const note = decision === "reject" ? window.prompt("반려 사유를 입력하세요.") : undefined;
     if (decision === "reject" && !note?.trim()) return;
-    if (decision === "approve" && candidate.cardPreview?.issues.length) {
-      const message = "카드에 표시될 문구: " + candidate.cardPreview.amount + "\n원문과 확인 사항을 살펴본 뒤 승인해 주세요. 계속할까요?";
+    if (decision === "approve" && candidate.reviewScope === "card_copy_only") {
+      const message = "카드 문구만 바꿉니다: " + (candidate.cardPreview?.amount || "(비움)") + "\n정책 상세·금액·연결은 그대로입니다. 계속할까요?";
+      if (!window.confirm(message)) return;
+    } else if (decision === "approve" && candidate.cardPreview?.issues.length) {
+      const message = "카드에 표시될 문구: " + (candidate.cardPreview.amount || "(비움 - 판정 미통과)") + "\n원문과 확인 사항을 살펴본 뒤 승인해 주세요. 계속할까요?";
       if (!window.confirm(message)) return;
     }
     setWorkingId(candidate.id);
@@ -793,6 +797,10 @@ export function AdminPolicyReviewPage() {
             <div>
               <input aria-label={`${candidate.title} 선택`} checked={selectedIds.includes(candidate.id)} onChange={() => toggleSelected(candidate.id)} type="checkbox" />
               <span className="admin-source-label">{candidate.changeKind === "new" ? "신규" : "변경"}</span>
+              {/* 두 종류 후보가 한 목록에 섞인다 - 무엇이 바뀌는지 먼저 보이게 */}
+              <span className={candidate.reviewScope === "card_copy_only" ? "admin-source-label admin-scope-card" : "admin-source-label admin-scope-full"}>
+                {candidate.reviewScope === "card_copy_only" ? "카드 문구만" : "전체 정책 변경"}
+              </span>
               {candidate.reviewReason && REVIEW_REASON_LABEL[candidate.reviewReason] && (
                 <span className="admin-source-label">{REVIEW_REASON_LABEL[candidate.reviewReason]}</span>
               )}
@@ -809,7 +817,7 @@ export function AdminPolicyReviewPage() {
               </section>
             )}
             <p><a href={candidate.officialUrl} target="_blank" rel="noreferrer">공식 원문 보기</a></p>
-            <div className="admin-section-actions"><button className="btn secondary" type="button" disabled={workingId === candidate.id} onClick={() => decide(candidate, "reject")}>반려</button><button className="btn primary" type="button" disabled={workingId === candidate.id} onClick={() => decide(candidate, "approve")}>승인하고 공개</button></div>
+            <div className="admin-section-actions"><button className="btn secondary" type="button" disabled={workingId === candidate.id} onClick={() => decide(candidate, "reject")}>반려</button><button className="btn primary" type="button" disabled={workingId === candidate.id} onClick={() => decide(candidate, "approve")}>{candidate.reviewScope === "card_copy_only" ? "카드 문구 승인" : "정책 승인"}</button></div>
           </article>
         ))}{candidates.length === 0 && <p className="admin-empty">검토 대기 정책이 없습니다.</p>}</div>
         <div className="admin-pagination" aria-label="검토 대기 정책 페이지 이동">

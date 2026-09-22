@@ -16,6 +16,7 @@ export const examplePolicyDetail: Policy = {
   region: "전남",
   deadline: "2026-08-31",
   amount: "혜택 제공",
+  cardSummary: "혜택 제공",
   summary: "디지털관광주민증 또는 대한민국 반값여행을 통해 신청 가능한 영광 방문 혜택을 확인할 수 있습니다.",
   match: 75,
   category: "지역할인",

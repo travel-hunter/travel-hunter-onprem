@@ -408,7 +408,7 @@ describe("admin pages", () => {
     const approveSpy = vi.spyOn(appDataApi as any, "approveAdminPolicyReviewCandidate").mockResolvedValue({});
     const confirmSpy = vi.spyOn(window, "confirm").mockReset().mockReturnValueOnce(false).mockReturnValueOnce(true);
     const sourcesSpy = vi.spyOn(appDataApi as any, "listAdminCollectionSources").mockResolvedValue({ items: [{ key: "island_visit", displayName: "Island Visit support", officialUrl: "https://www.visitisland.kr/promotion2", sourceCategory: "island_visit", enabled: false, publicationMode: "review", lastOutcome: null, lastCollectedAt: null, lastError: null }] });
-    vi.spyOn(appDataApi as any, "listAdminPolicyReviewCandidates").mockResolvedValue({ items: [{ id: "candidate-1", externalSourceRecordId: "record-1", reviewStatus: "pending", changeKind: "new", title: "Island travel support", sourceCategory: "island_visit", officialUrl: "https://www.visitisland.kr/promotion2", benefitText: "travel support", region: null, city: null, status: "scheduled", startDate: "2026-10-01", endDate: "2026-10-31", createdAt: "2026-09-13T00:00:00", reviewReason: "card_quality_review", cardPreview: { amount: "혜택 상세 확인", evidence: "신청하러 가기", issues: ["benefit_navigation_text"] } }] });
+    vi.spyOn(appDataApi as any, "listAdminPolicyReviewCandidates").mockResolvedValue({ items: [{ id: "candidate-1", externalSourceRecordId: "record-1", reviewStatus: "pending", changeKind: "new", title: "Island travel support", sourceCategory: "island_visit", officialUrl: "https://www.visitisland.kr/promotion2", benefitText: "travel support", region: null, city: null, status: "scheduled", startDate: "2026-10-01", endDate: "2026-10-31", createdAt: "2026-09-13T00:00:00", reviewReason: "card_quality_review", cardPreview: { amount: "", evidence: "신청하러 가기", issues: ["benefit_navigation_text"] } }] });
     const updateSpy = vi.spyOn(appDataApi as any, "updateAdminCollectionSource").mockResolvedValue({ key: "island_visit", displayName: "Island Visit support", officialUrl: "https://www.visitisland.kr/promotion2", sourceCategory: "island_visit", enabled: true, publicationMode: "review", lastOutcome: null, lastCollectedAt: null, lastError: null });
 
     renderAppRoute("/admin/policy-review");
@@ -416,15 +416,17 @@ describe("admin pages", () => {
     await waitFor(() => expect(document.body).toHaveTextContent("Island Visit support"));
     expect(document.body).toHaveTextContent("Island travel support");
     expect(screen.getByLabelText("카드 표시 예정")).toBeTruthy();
-    expect(document.body).toHaveTextContent("혜택 상세 확인");
+    // 판정 미통과 - 카드가 비므로 미리보기도 비고, 고정 문구는 없다
+    expect(document.body).not.toHaveTextContent("혜택 상세 확인");
+    expect(document.body).toHaveTextContent("전체 정책 변경");
     expect(document.body).toHaveTextContent("원문 일부");
     expect(document.body).toHaveTextContent("버튼 문구가 포함되어 있어요");
-    await userEvent.click(screen.getByRole("button", { name: "\uC2B9\uC778\uD558\uACE0 \uACF5\uAC1C" }));
+    await userEvent.click(screen.getByRole("button", { name: "정책 승인" }));
     expect(approveSpy).not.toHaveBeenCalled();
-    expect(confirmSpy.mock.calls[0][0]).toContain("혜택 상세 확인");
-    await userEvent.click(screen.getByRole("button", { name: "\uC2B9\uC778\uD558\uACE0 \uACF5\uAC1C" }));
+    expect(confirmSpy.mock.calls[0][0]).toContain("비움 - 판정 미통과");
+    await userEvent.click(screen.getByRole("button", { name: "정책 승인" }));
     await waitFor(() => expect(approveSpy).toHaveBeenCalledWith("candidate-1"));
-    expect(confirmSpy.mock.calls[1][0]).toContain("혜택 상세 확인");
+    expect(confirmSpy.mock.calls[1][0]).toContain("비움 - 판정 미통과");
     await userEvent.click(screen.getByRole("button", { name: "\uC218\uC9D1 \uD65C\uC131\uD654" }));
     await waitFor(() => expect(updateSpy).toHaveBeenCalledWith("island_visit", { enabled: true }));
     expect(sourcesSpy).toHaveBeenCalledTimes(2);

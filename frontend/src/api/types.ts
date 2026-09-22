@@ -97,6 +97,8 @@ export type Policy = {
   startDate?: string | null;
   deadline: string;
   amount: string;
+  /** 카드에만 쓰는 짧은 혜택 문구. 승인값이거나 품질 검사를 통과한 amount. null 이면 카드가 알약을 비운다. */
+  cardSummary?: string | null;
   summary: string;
   match: number;
   category: PolicyCategory;
@@ -481,6 +483,8 @@ export type AdminPolicyReviewCandidate = {
   endDate: string | null;
   createdAt: string;
   reviewReason?: string | null;
+  /** card_copy_only: 카드 문구만 바뀐 후보. 승인해도 상세는 그대로고 card_summary 만 바뀐다. */
+  reviewScope?: "full_policy" | "card_copy_only";
   cardPreview?: { amount: string; evidence: string; issues: string[] };
 };
 

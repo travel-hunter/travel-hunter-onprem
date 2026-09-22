@@ -482,9 +482,9 @@ function PrototypePolicyCard({ policy }: { policy: Policy }) {
 
         <strong>{policy.title}</strong>
 
-        <span className="prototype-home-policy-benefit">
-          {policy.amount}
-        </span>
+        {policy.cardSummary ? (
+          <span className="prototype-home-policy-benefit">{policy.cardSummary}</span>
+        ) : null}
       </div>
 
       <div className="prototype-home-policy-card-meta">

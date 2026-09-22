@@ -79,7 +79,8 @@ def test_candidate_card_preview_uses_safe_copy_and_bounds_evidence() -> None:
 
     preview = admin_service.build_candidate_card_preview(record)
 
-    assert preview["amount"] == "혜택 상세 확인"
+    # 판정 미통과 - 승인해도 카드가 비므로 미리보기도 비운다(고정 문구를 보여 주면 승인 뒤 화면과 다르다)
+    assert preview["amount"] == ""
     assert len(preview["evidence"]) == 2000
     assert preview["issues"] == ["benefit_navigation_text"]
 

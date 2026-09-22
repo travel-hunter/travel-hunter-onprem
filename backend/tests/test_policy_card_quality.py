@@ -4,7 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.policy_card_quality import card_copy_for_record, evaluate_card_copy
+from app.services.policy_card_quality import (
+    card_copy_for_record,
+    evaluate_card_copy,
+    public_card_summary_for_policy,
+)
 
 
 @pytest.mark.parametrize(
@@ -110,3 +114,40 @@ def test_legacy_record_uses_only_benefit_value_text() -> None:
     assert result.summary is None
     assert result.evidence == "원문 전체 문장은 카드 요약으로 사용하지 않는다"
     assert result.issues == ("benefit_missing",)
+
+
+def _policy(**fields):
+    base = {"card_summary": None, "benefit_detail": None, "benefit_amount": None}
+    return SimpleNamespace(**{**base, **fields})
+
+
+def test_public_card_summary_prefers_the_approved_value() -> None:
+    policy = _policy(card_summary="최대 2만원 렌터카 할인", benefit_detail="할인혜택 보러가기")
+    assert public_card_summary_for_policy(policy) == "최대 2만원 렌터카 할인"
+
+
+def test_public_card_summary_keeps_a_clean_legacy_amount_when_nothing_is_stored() -> None:
+    # 마이그레이션 직후 - 저장값은 없지만 기존 amount 가 깨끗하면 카드 혜택이 사라지지 않는다
+    assert public_card_summary_for_policy(_policy(benefit_detail="최대 30%")) == "최대 30%"
+    assert public_card_summary_for_policy(_policy(benefit_amount=50000)) == "최대 5만원"
+
+
+@pytest.mark.parametrize(
+    "legacy_amount",
+    [
+        "할인혜택 보러가기",
+        "할인혜택 보러가기 한국관광공사 : [26464] 강원특별자치도 원주시 세계로 10 TEL : 033-738-3000 통신판매업신고",
+        "연안지역 기초 지자체 상품 구매자 대상 저공해 렌터카 * 할인쿠폰 제공",
+        "및 금액",
+        "",
+    ],
+)
+def test_public_card_summary_hides_a_polluted_legacy_amount(legacy_amount: str) -> None:
+    # 오염된 amount 는 카드에서만 사라진다. amount 자체(상세·일정)는 이 함수가 건드리지 않는다.
+    assert public_card_summary_for_policy(_policy(benefit_detail=legacy_amount)) is None
+
+
+def test_public_card_summary_revalidates_a_stored_value_with_current_rules() -> None:
+    # 예전 규칙으로 승인된 값이 지금 규칙에 걸리면 저장값을 믿지 않고 amount 로 내려간다
+    policy = _policy(card_summary="및 금액", benefit_detail="최대 30%")
+    assert public_card_summary_for_policy(policy) == "최대 30%"

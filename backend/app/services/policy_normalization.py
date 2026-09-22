@@ -22,6 +22,7 @@ from app.services.policy_periods import (
     evidence_from_payload,
     select_representative_deadline,
 )
+from app.services.policy_card_quality import card_copy_for_record
 from app.services.policy_semantic_mapping import map_external_source_semantics
 from app.services.travelmonth_normalizer import extract_benefit_value
 
@@ -285,6 +286,8 @@ def _assign_policy_from_external_record(
     )
     policy.benefit_amount = record.extracted_amount_krw or benefit_value.amount_krw
     policy.benefit_detail = benefit_detail
+    # 카드용 문구는 여기 한 곳에만. 판정을 통과한 요약이 없으면 None - 카드는 읽기 시점에 깨끗한 amount 로 대신한다.
+    policy.card_summary = card_copy_for_record(record).summary
     policy.target_condition = semantic_mapping.target_condition
     policy.region = record.region or "전국"
     policy.city = record.city
@@ -352,6 +355,8 @@ def _assign_stay_discount_area_policy(
     policy.description = record.raw_detail_text or record.benefit_text
     policy.benefit_amount = record.extracted_amount_krw or benefit_value.amount_krw
     policy.benefit_detail = benefit_detail
+    # 카드용 문구는 여기 한 곳에만. 판정을 통과한 요약이 없으면 None - 카드는 읽기 시점에 깨끗한 amount 로 대신한다.
+    policy.card_summary = card_copy_for_record(record).summary
     policy.target_condition = semantic_mapping.target_condition
     policy.region = alias_area.sido
     # alias 정책은 시도 단위 노출이다. Policy 행이 재사용되므로 명시적으로 지운다.

@@ -1483,7 +1483,8 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | org | string | 주관 기관 |
 | region | string | 적용 지역 |
 | deadline | string | 대표 마감일. ISO 날짜 문자열은 안전한 대표 마감일, 빈 문자열(`""`)은 안전한 대표 마감일 없음/확인 필요 |
-| amount | string | 혜택 금액 표시 |
+| amount | string | 혜택 금액 표시. `benefit_detail` 우선 파생값이며 상세·일정이 그대로 쓴다 |
+| cardSummary | string \| null | 카드(홈·목록·지도 시트)에만 쓰는 짧은 혜택 문구. 관리자가 승인한 값이 있으면 그것, 없으면 `amount`가 카드 품질 검사를 통과할 때만 같은 값. CTA·기관 주소·제목 조각 같은 오염 문구면 `null` - 클라이언트는 알약을 그리지 않고 다른 필드로 대체하지 않는다 |
 | summary | string | 요약 |
 | match | number | 매칭 점수 (0~100) |
 | category | string | `"교통" \| "숙박" \| "여행상품" \| "지역할인" \| "이벤트" \| "기타"` |

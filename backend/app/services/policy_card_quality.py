@@ -78,6 +78,28 @@ def _is_condition_sentence(text: str) -> bool:
     return marker is not None and (benefit is None or marker.start() < benefit.start())
 
 
+def public_card_summary_for_policy(policy: Any) -> str | None:
+    """카드(홈·정책 목록·지도 시트)에 내보낼 짧은 혜택 문구.
+
+    1. 관리자가 승인해 저장한 card_summary 가 있고 지금 규칙으로도 안전하면 그것.
+    2. 없으면 기존 amount(= benefit_detail 파생값)가 같은 검사를 통과할 때만 그 값 - 마이그레이션 직후
+       모든 카드의 혜택이 사라지는 중간 상태를 막는다. 깨끗한 기존 값은 그대로 살아남는다.
+    3. 둘 다 아니면 None - 카드는 혜택 알약을 그리지 않는다. description·원문·미승인 기록으로 떨어지지 않는다.
+
+    amount 자체는 건드리지 않는다. 상세·일정은 계속 amount 를 쓴다."""
+    stored = getattr(policy, "card_summary", None)
+    if stored:
+        checked = evaluate_card_copy(summary=stored, evidence=stored)
+        if checked.summary is not None:
+            return checked.summary
+    from app.services.policy_semantics import benefit_display_amount_for_policy
+
+    legacy_amount = benefit_display_amount_for_policy(policy)
+    if not legacy_amount:
+        return None
+    return evaluate_card_copy(summary=legacy_amount, evidence=legacy_amount).summary
+
+
 def evaluate_card_copy(
     *,
     summary: str | None,
