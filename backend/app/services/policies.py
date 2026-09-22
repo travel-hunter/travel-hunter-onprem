@@ -15,6 +15,7 @@ from app.services import stay_discount_aliases
 from app.services import digital_tourism_policy_aliases
 from app.services import digital_tourism_resident_card as dgtour_identity
 from app.services import local_half_trip_display
+from app.services.policy_card_quality import card_copy_for_record, public_card_summary_for_policy
 from app.services.policy_semantics import (
     api_policy_source_type,
     api_policy_source_type_for_policy,
@@ -119,6 +120,8 @@ def policy_to_api(
     display = DISPLAY_OVERRIDES.get(slug, {})
     benefit_prefix = format_benefit_amount(policy.benefit_amount)
     amount = benefit_display_amount_for_policy(policy)
+    # 카드용 짧은 문구. amount 와 별개의 값이다 - amount 는 상세·일정이 그대로 쓴다.
+    card_summary = public_card_summary_for_policy(policy)
     category = _normalize_policy_category(policy.policy_type)
     source_type = api_policy_source_type_for_policy(policy)
 
@@ -139,6 +142,7 @@ def policy_to_api(
         "startDate": policy.start_date.isoformat() if policy.start_date else None,
         "deadline": policy.end_date.isoformat() if policy.end_date else "",
         "amount": amount,
+        "cardSummary": card_summary,
         "summary": policy.policy_comment or policy.description or "",
         "match": int(display.get("match", 90)),
         "category": category,
@@ -240,9 +244,12 @@ def external_source_record_to_policy_api(
     photos: RegionPhotoIndex | None = None,
     islands: EligibleIslandSummary | None = None,
 ) -> dict[str, object]:
+    card_copy = card_copy_for_record(record)
+    # amount 는 develop 과 같은 계약(원문 값)을 유지한다 - 상세 화면이 읽는 값이다.
+    # 카드에는 판정을 통과한 요약만 내보내고, 없으면 null 로 알약을 비운다.
     amount = record.benefit_value_text or record.benefit_text or "혜택 확인 필요"
     category = _external_policy_category(record)
-    tag = record.benefit_value_text or record.benefit_text or category
+    tag = card_copy.summary or category
     summary_parts = [
         value
         for value in [record.benefit_text, record.raw_detail_text]
@@ -291,6 +298,7 @@ def external_source_record_to_policy_api(
         if representative_deadline.deadline
         else "",
         "amount": amount,
+        "cardSummary": card_copy.summary,
         "summary": summary,
         "match": 80,
         "category": category,

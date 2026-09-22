@@ -46,6 +46,8 @@ def test_parse_island_visit_support_builds_one_campaign_candidate() -> None:
     assert record.status == "scheduled"
     assert record.extracted_amount_krw == 100_000
     assert record.is_nationwide is True
+    assert record.raw_payload["cardCopy"]["summary"] == record.benefit_value_text
+    assert "procedure" in record.raw_payload
 
 
 def test_parse_island_visit_support_raises_when_required_fields_disappear() -> None:

@@ -132,7 +132,7 @@ def classify_period_label(label: str) -> PeriodType:
     compact = normalize_text(label).replace(" ", "")
     if any(token in compact for token in ("신청기간", "신청접수", "접수기간", "접수마감", "모집기간")):
         return APPLICATION
-    if any(token in compact for token in ("쿠폰발급", "발급기간", "쿠폰기간", "할인권발급", "판매기간")):
+    if any(token in compact for token in ("쿠폰발급", "발급기간", "쿠폰기간", "할인권발급", "판매기간", "예약기간")):
         return ISSUE
     if any(token in compact for token in ("여행기간", "여행일정", "사용기간", "이용기간", "입실기간", "숙박기간", "투숙기간", "운영기간")):
         return USAGE

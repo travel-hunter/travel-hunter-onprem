@@ -1336,9 +1336,52 @@ def test_promotion_derives_missing_percent_value_from_title(db: Session) -> None
 
     policy = get_policy_by_slug(db, f"travelmonth-{rows[0].id}")
     assert policy is not None
+    # 제목에서 끌어낸 30% 가 상세 금액이다. 카드 문구 판정이 요약을 못 만들어도
+    # 상세에 카드용 고정 문구("혜택 상세 확인")를 박으면 안 된다 - amount 가 여기서 파생된다.
     assert policy.benefit_detail == "최대 30%"
     assert policy.benefit_amount is None
     assert policy.policy_comment == "행사 기간 중 온라인 체험상품 예약 결제 후 사용 완료 참여자 26년 4월 중순부터 5월 말"
+
+
+def test_promotion_keeps_detail_mapping_when_card_copy_has_no_safe_summary(db: Session) -> None:
+    # 카드 문구 판정이 요약을 보류(issues)해도 상세 금액은 기존 매핑 그대로여야 한다.
+    # public DTO 의 amount 와 일정의 금액이 benefit_detail 에서 파생되기 때문이다.
+    from app.services.policy_card_quality import FALLBACK_CARD_COPY
+
+    rows = upsert_external_source_records(
+        db,
+        [
+            make_source(
+                canonical_key="chrome-only-benefit",
+                external_id="chrome-only-benefit",
+                title="지역 체험 할인",
+                benefit_text="할인혜택 보러가기",
+                benefit_value_text="최대 2만원 체험 할인",
+                extracted_amount_krw=20000,
+                raw_payload={
+                    "cardCopy": {
+                        "version": 1,
+                        "summary": None,
+                        "evidence": "할인혜택 보러가기",
+                        "issues": ["benefit_site_chrome"],
+                    }
+                },
+            )
+        ],
+    )
+
+    from app.services.policy_normalization import promote_external_benefits_to_policies
+
+    promote_external_benefits_to_policies(db)
+
+    policy = get_policy_by_slug(db, f"travelmonth-{rows[0].id}")
+    assert policy is not None
+    assert policy.benefit_detail == "최대 2만원 체험 할인"
+    assert policy.benefit_detail != FALLBACK_CARD_COPY
+    # 원문 세 필드는 손대지 않는다
+    assert rows[0].benefit_text == "할인혜택 보러가기"
+    assert rows[0].benefit_value_text == "최대 2만원 체험 할인"
+    assert rows[0].raw_detail_text == "Official benefit detail"
 
 
 def test_promotes_active_fresh_stay_discount_as_area_policy_rows(db: Session) -> None:

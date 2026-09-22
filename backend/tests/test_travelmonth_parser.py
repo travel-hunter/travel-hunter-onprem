@@ -31,6 +31,7 @@ def test_parse_regional_benefits_extracts_expected_records() -> None:
     assert first.inferred_travel_styles == ["체험", "사진"]
     assert first.detail_url == "https://www.yw.go.kr"
     assert first.last_verified_at == FETCHED_AT
+    assert first.raw_payload["cardCopy"]["summary"] == first.benefit_value_text
 
 
 def test_parse_regional_benefits_records_new_vacation_source_url() -> None:

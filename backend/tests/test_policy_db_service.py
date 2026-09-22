@@ -39,6 +39,7 @@ def test_policy_to_api_preserves_contract_shape() -> None:
     payload = policy_service.policy_to_api(make_policy())
 
     assert set(payload) == {
+        "cardSummary",
         "id",
         "slug",
         "label",
@@ -571,6 +572,21 @@ def test_external_policy_category_scores_text_before_regional_default() -> None:
     assert payload["category"] == "교통"
 
 
+def test_external_policy_rejects_unsafe_legacy_card_value() -> None:
+    record = make_external_record()
+    record.benefit_value_text = "할인혜택 보러가기"
+    record.benefit_text = "공식 본문에 적힌 설명"
+    record.raw_payload = {}
+
+    payload = policy_service.external_source_record_to_policy_api(record)
+
+    # amount 는 상세가 읽는 원문 계약 그대로다. 오염 문구는 카드용 cardSummary 에서만 걸러진다.
+    assert payload["amount"] == "할인혜택 보러가기"
+    assert payload["cardSummary"] is None
+    assert payload["tag"] != "할인혜택 보러가기"
+    assert payload["summary"] == "공식 본문에 적힌 설명"
+
+
 def test_external_policy_fallback_copy_uses_official_benefit_wording() -> None:
     record = make_external_record()
     record.benefit_value_text = None
@@ -579,6 +595,7 @@ def test_external_policy_fallback_copy_uses_official_benefit_wording() -> None:
     payload = policy_service.external_source_record_to_policy_api(record)
 
     assert payload["amount"] == "혜택 확인 필요"
+    assert payload["cardSummary"] is None
     assert payload["tag"] == "여행상품"
     assert payload["summary"] == "공식 혜택 안내를 확인해 주세요."
     assert payload["documents"] == []

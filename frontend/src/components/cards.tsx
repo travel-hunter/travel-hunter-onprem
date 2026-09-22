@@ -67,7 +67,8 @@ export function PolicyListCard({
         </div>
         <div className="policy-list-copy">
           <div className="policy-list-badges">
-            <span>{policy.amount}</span>
+            {/* 카드에는 승인·검증된 문구만. 없으면 알약을 그리지 않는다 - amount 로 되돌아가면 오염 문장이 다시 뜬다 */}
+            {policy.cardSummary ? <span>{policy.cardSummary}</span> : null}
             <em>{formatPolicyDeadlineTag(policy)}</em>
           </div>
           <h3>{policy.title}</h3>

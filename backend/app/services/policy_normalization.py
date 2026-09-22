@@ -22,6 +22,7 @@ from app.services.policy_periods import (
     evidence_from_payload,
     select_representative_deadline,
 )
+from app.services.policy_card_quality import card_copy_for_record
 from app.services.policy_semantic_mapping import map_external_source_semantics
 from app.services.travelmonth_normalizer import extract_benefit_value
 
@@ -266,6 +267,8 @@ def _assign_policy_from_external_record(
         return policy
 
     benefit_value = extract_benefit_value(record.benefit_text or "", title=record.title)
+    # 카드 문구(cardCopy)는 여기 쓰지 않는다. benefit_detail 은 public DTO 의 amount 와 일정 금액의
+    # 원천이라, 요약이 없을 때 카드용 고정 문구를 박으면 상세·일정까지 같이 오염된다.
     benefit_detail = record.benefit_value_text or benefit_value.value_text or record.benefit_text
     if record.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY:
         benefit_detail = dgtour_identity.DEFAULT_BENEFIT_VALUE_TEXT
@@ -283,6 +286,8 @@ def _assign_policy_from_external_record(
     )
     policy.benefit_amount = record.extracted_amount_krw or benefit_value.amount_krw
     policy.benefit_detail = benefit_detail
+    # 카드용 문구는 여기 한 곳에만. 판정을 통과한 요약이 없으면 None - 카드는 읽기 시점에 깨끗한 amount 로 대신한다.
+    policy.card_summary = card_copy_for_record(record).summary
     policy.target_condition = semantic_mapping.target_condition
     policy.region = record.region or "전국"
     policy.city = record.city
@@ -332,6 +337,8 @@ def _assign_stay_discount_area_policy(
 ) -> Policy:
     semantic_mapping = map_external_source_semantics(record)
     benefit_value = extract_benefit_value(record.benefit_text or "", title=record.title)
+    # 카드 문구(cardCopy)는 여기 쓰지 않는다. benefit_detail 은 public DTO 의 amount 와 일정 금액의
+    # 원천이라, 요약이 없을 때 카드용 고정 문구를 박으면 상세·일정까지 같이 오염된다.
     benefit_detail = record.benefit_value_text or benefit_value.value_text or record.benefit_text
     representative_deadline = _representative_deadline_for_record(record)
     structured_payload: dict[str, object] = {
@@ -348,6 +355,8 @@ def _assign_stay_discount_area_policy(
     policy.description = record.raw_detail_text or record.benefit_text
     policy.benefit_amount = record.extracted_amount_krw or benefit_value.amount_krw
     policy.benefit_detail = benefit_detail
+    # 카드용 문구는 여기 한 곳에만. 판정을 통과한 요약이 없으면 None - 카드는 읽기 시점에 깨끗한 amount 로 대신한다.
+    policy.card_summary = card_copy_for_record(record).summary
     policy.target_condition = semantic_mapping.target_condition
     policy.region = alias_area.sido
     # alias 정책은 시도 단위 노출이다. Policy 행이 재사용되므로 명시적으로 지운다.

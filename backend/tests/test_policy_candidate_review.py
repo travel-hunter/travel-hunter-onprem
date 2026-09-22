@@ -46,6 +46,7 @@ def make_record() -> ExternalSourceRecord:
         is_nationwide=False,
         status="active",
         benefit_text="Example benefit",
+        benefit_value_text="Example benefit",
         benefit_value_type="mixed",
         tags=["travel"],
         inferred_travel_styles=[],
@@ -76,6 +77,65 @@ def test_same_evidence_does_not_create_a_second_candidate(db: Session) -> None:
     db.flush()
 
     first = classify_candidate(db, record=record)
+    second = classify_candidate(db, record=record)
+
+    assert first.id == second.id
+
+
+def test_card_summary_change_creates_a_new_pending_candidate(db: Session) -> None:
+    record = make_record()
+    record.benefit_value_text = "최대 1만원 할인"
+    record.raw_payload = {
+        "cardCopy": {
+            "version": 1,
+            "summary": "최대 1만원 할인",
+            "evidence": "공식 본문",
+            "issues": [],
+        }
+    }
+    db.add(record)
+    db.flush()
+
+    first = classify_candidate(db, record=record)
+    record.benefit_value_text = "최대 2만원 할인"
+    record.raw_payload = {
+        "cardCopy": {
+            "version": 1,
+            "summary": "최대 2만원 할인",
+            "evidence": "공식 본문",
+            "issues": [],
+        }
+    }
+    second = classify_candidate(db, record=record)
+
+    assert first.id != second.id
+    assert first.review_status == "superseded"
+    assert second.review_status == "pending"
+
+
+def test_card_evidence_only_change_does_not_create_candidate(db: Session) -> None:
+    record = make_record()
+    record.benefit_value_text = "최대 1만원 할인"
+    record.raw_payload = {
+        "cardCopy": {
+            "version": 1,
+            "summary": "최대 1만원 할인",
+            "evidence": "첫 원문",
+            "issues": [],
+        }
+    }
+    db.add(record)
+    db.flush()
+
+    first = classify_candidate(db, record=record)
+    record.raw_payload = {
+        "cardCopy": {
+            "version": 1,
+            "summary": "최대 1만원 할인",
+            "evidence": "푸터만 달라진 원문",
+            "issues": [],
+        }
+    }
     second = classify_candidate(db, record=record)
 
     assert first.id == second.id
@@ -115,6 +175,33 @@ def test_reintroduced_evidence_creates_a_new_pending_candidate(db: Session) -> N
     assert restored.id not in {original.id, changed.id}
     assert restored.review_status == "pending"
     assert restored.change_kind == "material_change"
+
+
+def test_manual_approval_keeps_detail_mapping_and_source_text(db: Session) -> None:
+    # 카드 문구가 오염(CTA)이라도 상세(benefit_detail)에 카드용 고정 문구를 박지 않는다 -
+    # amount 와 일정 금액이 거기서 파생된다. 오염 문구를 카드에서 걸러내는 일은 카드 계층(cardSummary)의 몫이다.
+    record = make_record()
+    record.benefit_value_text = "할인혜택 보러가기"
+    record.raw_payload = {
+        "cardCopy": {
+            "version": 1,
+            "summary": "할인혜택 보러가기",
+            "evidence": "공식 본문",
+            "issues": [],
+        }
+    }
+    admin = User(id=10, email="admin@example.com", nickname="admin", role="admin")
+    db.add_all([record, admin])
+    db.flush()
+    candidate = classify_candidate(db, record=record)
+
+    approved = approve_candidate(db, candidate=candidate, record=record, admin=admin)
+
+    policy = db.get(Policy, approved.published_policy_id)
+    assert policy is not None
+    assert policy.benefit_detail == "할인혜택 보러가기"
+    assert policy.benefit_detail != "혜택 상세 확인"
+    assert record.benefit_value_text == "할인혜택 보러가기"
 
 
 def test_approval_publishes_only_the_reviewed_candidate(db: Session) -> None:
@@ -176,3 +263,106 @@ def test_decision_candidate_lookup_requests_a_row_lock() -> None:
     get_candidate_with_record(RecordingSession(), candidate_id=1, lock=True)
 
     assert "FOR UPDATE" in str(captured[0].compile(dialect=postgresql.dialect()))
+
+
+# --- 카드 문구만 바뀐 후보(card_copy_only) ------------------------------------------------------
+
+
+def _publish_baseline(db: Session, admin: User, *, benefit_value_text: str = "최대 2만원 체험 할인"):
+    """승인돼 공개된 정책 하나를 만든다. 이후 재수집 후보가 이 정책에 매칭된다."""
+    record = make_record()
+    record.benefit_value_text = benefit_value_text
+    record.raw_payload = {"cardCopy": {"version": 1, "summary": benefit_value_text, "evidence": "본문", "issues": []}}
+    db.add_all([record, admin])
+    db.flush()
+    candidate = classify_candidate(db, record=record)
+    approved = approve_candidate(db, candidate=candidate, record=record, admin=admin)
+    policy = db.get(Policy, approved.published_policy_id)
+    assert policy is not None
+    return record, policy
+
+
+def _policy_snapshot(db: Session, policy: Policy) -> tuple:
+    from app.services.policy_semantics import benefit_display_amount_for_policy
+
+    db.refresh(policy)
+    return (
+        benefit_display_amount_for_policy(policy),
+        policy.benefit_detail,
+        policy.benefit_amount,
+        policy.description,
+        policy.structured_detail,
+        policy.title,
+        policy.slug,
+        policy.id,
+    )
+
+
+def test_recollection_that_only_changes_card_copy_is_a_card_copy_only_candidate(db: Session) -> None:
+    admin = User(id=10, email="admin@example.com", nickname="admin", role="admin")
+    record, _policy = _publish_baseline(db, admin)
+
+    # 같은 원문·같은 상세, 카드 요약만 더 짧게 다듬어진 재수집
+    record.raw_payload = {"cardCopy": {"version": 1, "summary": "최대 2만원 할인", "evidence": "본문", "issues": []}}
+    db.flush()
+    candidate = classify_candidate(db, record=record)
+
+    assert candidate.review_status == "pending"
+    assert candidate.review_scope == "card_copy_only"
+    assert candidate.review_reason == "card_copy_changed"
+    # 같은 evidence 를 다시 수집하면 후보가 늘지 않는다
+    assert classify_candidate(db, record=record).id == candidate.id
+
+
+def test_recollection_that_changes_the_detail_is_a_full_policy_candidate(db: Session) -> None:
+    admin = User(id=10, email="admin@example.com", nickname="admin", role="admin")
+    record, _policy = _publish_baseline(db, admin)
+
+    record.benefit_value_text = "최대 3만원 체험 할인"  # 상세 금액이 달라졌다
+    record.raw_payload = {"cardCopy": {"version": 1, "summary": "최대 3만원 할인", "evidence": "본문", "issues": []}}
+    db.flush()
+    candidate = classify_candidate(db, record=record)
+
+    assert candidate.review_scope == "full_policy"
+
+
+def test_first_candidate_for_a_record_is_always_full_policy(db: Session) -> None:
+    record = make_record()
+    record.raw_payload = {"cardCopy": {"version": 1, "summary": "최대 2만원 할인", "evidence": "본문", "issues": []}}
+    db.add(record)
+    db.flush()
+
+    assert classify_candidate(db, record=record).review_scope == "full_policy"
+
+
+def test_approving_a_card_copy_only_candidate_changes_nothing_but_card_summary(db: Session) -> None:
+    admin = User(id=10, email="admin@example.com", nickname="admin", role="admin")
+    record, policy = _publish_baseline(db, admin)
+    before = _policy_snapshot(db, policy)
+    assert policy.card_summary == "최대 2만원 체험 할인"
+
+    record.raw_payload = {"cardCopy": {"version": 1, "summary": "최대 2만원 할인", "evidence": "본문", "issues": []}}
+    db.flush()
+    candidate = classify_candidate(db, record=record)
+    approved = approve_candidate(db, candidate=candidate, record=record, admin=admin)
+
+    assert approved.review_status == "approved"
+    assert approved.published_policy_id == policy.id
+    assert _policy_snapshot(db, policy) == before
+    assert policy.card_summary == "최대 2만원 할인"
+
+
+def test_card_copy_only_approval_refuses_an_unsafe_summary(db: Session) -> None:
+    # 판정을 통과 못 한 요약은 카드 문구로 저장할 수 없다 - 후보는 대기 상태로 남는다
+    admin = User(id=10, email="admin@example.com", nickname="admin", role="admin")
+    record, policy = _publish_baseline(db, admin)
+
+    record.raw_payload = {"cardCopy": {"version": 1, "summary": "할인혜택 보러가기", "evidence": "본문", "issues": []}}
+    db.flush()
+    candidate = classify_candidate(db, record=record)
+    assert candidate.review_scope == "card_copy_only"
+
+    with pytest.raises(ValueError):
+        approve_candidate(db, candidate=candidate, record=record, admin=admin)
+    db.refresh(policy)
+    assert policy.card_summary == "최대 2만원 체험 할인"

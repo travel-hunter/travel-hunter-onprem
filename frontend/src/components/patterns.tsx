@@ -52,7 +52,7 @@ export function FavoritePolicyCard({
         </span>
         <span className="ds-favorite-policy-copy">
           <strong>{policy.title}</strong>
-          <small>{policy.amount}</small>
+          {policy.cardSummary ? <small>{policy.cardSummary}</small> : null}
         </span>
       </Link>
       <button

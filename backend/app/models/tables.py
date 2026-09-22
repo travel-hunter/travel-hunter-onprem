@@ -195,6 +195,10 @@ class Policy(Base):
     description: Mapped[str | None] = mapped_column(Text)
     benefit_amount: Mapped[int | None] = mapped_column(Integer)
     benefit_detail: Mapped[str | None] = mapped_column(Text)
+    # 카드에만 쓰는 짧은 혜택 문구. 관리자가 승인한 값만 들어간다. benefit_detail 은 상세·일정 금액의
+    # 원천이라 카드 때문에 손대지 않는다 - 그래서 필드를 따로 둔다. null 이면 읽기 시점에
+    # 깨끗한 amount 를 대신 쓴다(policy_card_quality.public_card_summary_for_policy).
+    card_summary: Mapped[str | None] = mapped_column(Text)
     structured_detail: Mapped[dict[str, Any] | None] = mapped_column(postgres_json)
     target_condition: Mapped[str | None] = mapped_column(Text)
     region: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -355,6 +359,11 @@ class PolicyReviewCandidate(Base):
     review_note: Mapped[str | None] = mapped_column(Text)
     # Why the candidate is waiting for a human ('auto' when the gate published it).
     review_reason: Mapped[str | None] = mapped_column(String(40))
+    # full_policy: 승인하면 일반 승격(상세까지). card_copy_only: 기존 공개 정책의 카드 문구만 바뀐 후보 -
+    # 승인해도 card_summary 만 갱신한다. 둘이 같은 목록에 섞이므로 화면이 구분해 보여 준다.
+    review_scope: Mapped[str] = mapped_column(String(24), nullable=False, server_default="full_policy")
+    # 카드 문구를 뺀 나머지의 해시. 다음 후보가 '상세는 그대로, 카드 문구만' 바뀐 것인지 여기와 비교한다.
+    detail_fingerprint: Mapped[str | None] = mapped_column(String(64))
     published_policy_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("policies.id", ondelete="SET NULL"), index=True
     )

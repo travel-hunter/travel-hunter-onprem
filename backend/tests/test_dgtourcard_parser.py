@@ -83,6 +83,7 @@ def test_parse_dgtourcard_benefits_reads_official_data_attributes() -> None:
     assert records[1].benefit_value_text == "최대 20만원 환급"
     assert records[1].detail_url == "https://hadongtrip.kr/index.php"
     assert records[2].detail_url == "https://www.yeonggwang.go.kr/travel/"
+    assert records[1].raw_payload["cardCopy"]["summary"] == "최대 20만원 환급"
 
 
 def test_parse_dgtourcard_benefits_falls_back_to_section_markup() -> None:

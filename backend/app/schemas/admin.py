@@ -169,6 +169,12 @@ class AdminExternalSourceSummaryResponse(BaseModel):
     latestFetchedAt: str | None = None
 
 
+class AdminPolicyCardPreview(BaseModel):
+    amount: str
+    evidence: str
+    issues: list[str] = Field(default_factory=list)
+
+
 class AdminPolicyReviewCandidateItem(BaseModel):
     id: str
     externalSourceRecordId: str
@@ -185,6 +191,9 @@ class AdminPolicyReviewCandidateItem(BaseModel):
     endDate: date | None = None
     createdAt: str
     reviewReason: str | None = None
+    # full_policy: 승인하면 정책 전체가 승격된다. card_copy_only: 카드 문구만 바뀐 후보 - 승인해도 card_summary 만 바뀐다.
+    reviewScope: Literal["full_policy", "card_copy_only"] = "full_policy"
+    cardPreview: AdminPolicyCardPreview
 
 
 class AdminPolicyReviewCandidateListResponse(BaseModel):

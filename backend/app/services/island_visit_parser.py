@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
 from app.schemas.external_sources import ExternalBenefitSource
+from app.services.policy_card_quality import evaluate_card_copy
 from app.services.travelmonth_normalizer import extract_benefit_value, normalize_status, normalize_text
 
 SOURCE_CATEGORY = "island_visit"
@@ -72,7 +73,8 @@ def parse_island_visit_support(html: str, *, fetched_at: datetime, today: date) 
     start, end = period
     amount = extract_benefit_value(benefit)
     eligible_islands_url = _eligible_islands_url(html)
-    return [ExternalBenefitSource(source_name=SOURCE_NAME, source_type="official_campaign", source_url=SOURCE_URL, source_category=SOURCE_CATEGORY, external_id=CANONICAL_KEY, canonical_key=CANONICAL_KEY, logical_key=CANONICAL_KEY, collected_page_url=SOURCE_URL, title="2026 섬 여행비 지원", organizer_text="섬 방문의 해 추진위원회", organizers=["섬 방문의 해 추진위원회"], region="전국", is_nationwide=True, status_text=travel, status=normalize_status(None, start, end, today), start_date=start, end_date=end, benefit_text=benefit, benefit_value_text=amount.value_text, extracted_amount_krw=amount.amount_krw, extracted_discount_percent=amount.discount_percent, benefit_value_type=amount.value_type, tags=["섬여행", "여행비지원"], inferred_travel_styles=[], confidence=95, field_completeness=90, raw_list_text=text, raw_detail_text=text, raw_payload={"applicationPeriod": application, "eligibleIslandsUrl": eligible_islands_url, "procedure": procedure}, last_fetched_at=fetched_at, last_verified_at=fetched_at, freshness_status="fresh")]
+    card_copy = evaluate_card_copy(summary=amount.value_text, evidence=benefit)
+    return [ExternalBenefitSource(source_name=SOURCE_NAME, source_type="official_campaign", source_url=SOURCE_URL, source_category=SOURCE_CATEGORY, external_id=CANONICAL_KEY, canonical_key=CANONICAL_KEY, logical_key=CANONICAL_KEY, collected_page_url=SOURCE_URL, title="2026 섬 여행비 지원", organizer_text="섬 방문의 해 추진위원회", organizers=["섬 방문의 해 추진위원회"], region="전국", is_nationwide=True, status_text=travel, status=normalize_status(None, start, end, today), start_date=start, end_date=end, benefit_text=benefit, benefit_value_text=amount.value_text, extracted_amount_krw=amount.amount_krw, extracted_discount_percent=amount.discount_percent, benefit_value_type=amount.value_type, tags=["섬여행", "여행비지원"], inferred_travel_styles=[], confidence=95, field_completeness=90, raw_list_text=text, raw_detail_text=text, raw_payload={"applicationPeriod": application, "eligibleIslandsUrl": eligible_islands_url, "procedure": procedure, "cardCopy": card_copy.to_payload()}, last_fetched_at=fetched_at, last_verified_at=fetched_at, freshness_status="fresh")]
 
 
 # --- rounds ---------------------------------------------------------------------------------------

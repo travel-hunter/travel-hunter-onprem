@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from app.models import ExternalSourceRecord, Policy
+from app.services.policy_card_quality import card_copy_for_record
 
 FIXTURE = Path(__file__).parent / "fixtures" / "island_visit_promotion2_2026-09-14.html"
 ROUND2_APPLY_FORM = "https://forms.gle/HWrxX3iwEUrciZey6"
@@ -208,7 +209,8 @@ def test_fingerprint_is_unchanged_for_records_without_a_procedure() -> None:
     from app.services.policy_candidate_review import evidence_fingerprint
 
     record = island_record(raw_payload={"applicationPeriod": "x"})
-    legacy_payload = {
+    card_copy = card_copy_for_record(record)
+    expected_payload = {
         "title": record.title,
         "organizer": record.organizer_text,
         "benefit": record.benefit_text,
@@ -218,9 +220,13 @@ def test_fingerprint_is_unchanged_for_records_without_a_procedure() -> None:
         "city": record.city,
         "officialUrl": record.detail_url or record.source_url,
         "status": record.status,
+        "benefitValueText": record.benefit_value_text,
+        "cardCopy": {"summary": card_copy.summary, "issues": list(card_copy.issues)},
     }
-    encoded = json.dumps(legacy_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    encoded = json.dumps(expected_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     assert evidence_fingerprint(record) == hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    without_procedure = island_record(raw_payload={"applicationPeriod": "different"})
+    assert evidence_fingerprint(record) == evidence_fingerprint(without_procedure)
 
 
 def test_fingerprint_changes_when_only_the_procedure_changes() -> None:

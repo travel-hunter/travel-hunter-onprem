@@ -1483,7 +1483,8 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | org | string | 주관 기관 |
 | region | string | 적용 지역 |
 | deadline | string | 대표 마감일. ISO 날짜 문자열은 안전한 대표 마감일, 빈 문자열(`""`)은 안전한 대표 마감일 없음/확인 필요 |
-| amount | string | 혜택 금액 표시 |
+| amount | string | 혜택 금액 표시. `benefit_detail` 우선 파생값이며 상세·일정이 그대로 쓴다 |
+| cardSummary | string \| null | 카드(홈·목록·지도 시트)에만 쓰는 짧은 혜택 문구. 관리자가 승인한 값이 있으면 그것, 없으면 `amount`가 카드 품질 검사를 통과할 때만 같은 값. CTA·기관 주소·제목 조각 같은 오염 문구면 `null` - 클라이언트는 알약을 그리지 않고 다른 필드로 대체하지 않는다 |
 | summary | string | 요약 |
 | match | number | 매칭 점수 (0~100) |
 | category | string | `"교통" \| "숙박" \| "여행상품" \| "지역할인" \| "이벤트" \| "기타"` |
@@ -1842,7 +1843,7 @@ All endpoints below require bearer authentication and the admin role. Collection
 - `GET /api/admin/policy-collection-sources` returns configured sources, their enabled state, and most recent collection health.
 - `PATCH /api/admin/policy-collection-sources/{sourceKey}` accepts any of `{ "enabled": boolean, "publicationMode": "review" | "auto_after_reviewed_baseline", "expectedMinRecords": number ≥ 0 }`; omitted fields are untouched. It cannot create an arbitrary URL or parser. Switching to `auto_after_reviewed_baseline` requires at least one candidate of that source approved by a human, otherwise `409 baseline_required`.
 - Source items also carry `expectedMinRecords`, `lastParsedCount` (last successful run), and `autoApprovedLast24h`.
-- `GET /api/admin/policy-review-candidates?limit=&offset=` returns pending source evidence only, windowed with `limit` (1-100) and `offset` (0+). These records are not public policy cards. Each item has `reviewReason: string | null` — why the auto-publish gate left it for a human: `source_mode_review` | `first_baseline` | `new_policy` | `identity_changed` | `source_anomaly` | `would_publish_hidden` | `low_confidence` | `stay_discount_manual` (`auto` on candidates the gate published itself).
+- `GET /api/admin/policy-review-candidates?limit=&offset=` returns pending source evidence only, windowed with `limit` (1-100) and `offset` (0+). These records are not public policy cards. Each item has `reviewReason: string | null` — why the auto-publish gate left it for a human: `source_mode_review` | `first_baseline` | `new_policy` | `identity_changed` | `source_anomaly` | `would_publish_hidden` | `low_confidence` | `stay_discount_manual` | `card_quality_review` (`auto` on candidates the gate published itself). Each admin-only item also has `cardPreview: { amount: string, evidence: string, issues: string[] }`; `amount` is the safe card text, `evidence` is clipped to 2,000 characters, and `issues` contains extraction/period warnings. This preview does not change the public DTO or expose the full raw payload.
 - `POST /api/admin/policy-review-candidates/approve-batch` accepts `{ "approveAll": boolean, "candidateIds": string[], "note": string | null }`. `approveAll: true` approves the current pending set; otherwise `candidateIds` selects up to 100 pending candidates. The operation is atomic: a missing, already-decided, or concurrently rejected candidate returns `409` and approves none.
 - `POST /api/admin/policy-review-candidates/{candidateId}/approve` accepts optional `{ "note": string | null }` and publishes only that candidate's source record through the existing policy normalization mapping.
 - `POST /api/admin/policy-review-candidates/{candidateId}/reject` requires `{ "note": string }`; a later material evidence change creates a fresh pending candidate.

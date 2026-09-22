@@ -10,9 +10,12 @@ from app.core import security
 from app.models import ExternalSourceRecord, Policy, PolicyReviewCandidate, User
 from app.repositories import admin as admin_repository
 from app.services import policy_normalization, policy_semantic_mapping
+from app.services.policy_card_quality import card_copy_for_record
 
 
-def evidence_fingerprint(record: ExternalSourceRecord) -> str:
+def _detail_fingerprint_payload(record: ExternalSourceRecord) -> dict:
+    """카드 문구를 뺀 나머지 - 제목·기관·혜택 원문·기간·지역·주소·상태·절차. 이 부분이 같으면
+    상세는 안 바뀐 것이고, 그때 카드 요약만 달라진 후보는 card_copy_only 다."""
     payload = {
         "title": record.title,
         "organizer": record.organizer_text,
@@ -25,11 +28,54 @@ def evidence_fingerprint(record: ExternalSourceRecord) -> str:
         "status": record.status,
     }
     raw_payload = record.raw_payload if isinstance(record.raw_payload, dict) else {}
+    payload["benefitValueText"] = record.benefit_value_text
     # Only records that carry a procedure hash it, so every other record keeps its existing fingerprint.
     if isinstance(raw_payload.get("procedure"), dict):
         payload["procedure"] = raw_payload["procedure"]
+    return payload
+
+
+def _hash(payload: dict) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def detail_fingerprint(record: ExternalSourceRecord) -> str:
+    return _hash(_detail_fingerprint_payload(record))
+
+
+def evidence_fingerprint(record: ExternalSourceRecord) -> str:
+    payload = _detail_fingerprint_payload(record)
+    card_copy = card_copy_for_record(record)
+    payload["cardCopy"] = {
+        "summary": card_copy.summary,
+        "issues": list(card_copy.issues),
+    }
+    return _hash(payload)
+
+
+REVIEW_SCOPE_FULL = "full_policy"
+REVIEW_SCOPE_CARD_COPY = "card_copy_only"
+REVIEW_REASON_CARD_COPY = "card_copy_changed"
+
+
+def classify_review_scope(db: Session, *, record: ExternalSourceRecord, previous: PolicyReviewCandidate | None) -> str:
+    """이미 공개된 정책이 있고, 카드 문구를 뺀 나머지가 마지막 승인본과 같으면 card_copy_only.
+    첫 후보이거나 상세가 하나라도 달라졌으면 full_policy(일반 승격)."""
+    if previous is None or _published_policy_for_record(db, record) is None:
+        return REVIEW_SCOPE_FULL
+    approved = db.scalar(
+        select(PolicyReviewCandidate)
+        .where(
+            PolicyReviewCandidate.external_source_record_id == record.id,
+            PolicyReviewCandidate.review_status == "approved",
+        )
+        .order_by(PolicyReviewCandidate.id.desc())
+        .limit(1)
+    )
+    if approved is None or approved.detail_fingerprint != detail_fingerprint(record):
+        return REVIEW_SCOPE_FULL
+    return REVIEW_SCOPE_CARD_COPY
 
 
 def classify_candidate(
@@ -59,11 +105,16 @@ def classify_candidate(
         latest.review_status = "superseded"
         db.add(latest)
 
+    scope = classify_review_scope(db, record=locked_record, previous=latest)
     candidate = PolicyReviewCandidate(
         external_source_record_id=locked_record.id,
         review_status="pending",
         change_kind="material_change" if latest is not None else "new",
         evidence_fingerprint=fingerprint,
+        detail_fingerprint=detail_fingerprint(locked_record),
+        review_scope=scope,
+        # 카드 문구만 바뀐 후보는 자동 공개 대상이 아니다 - 사람이 문구를 보고 승인한다
+        review_reason=REVIEW_REASON_CARD_COPY if scope == REVIEW_SCOPE_CARD_COPY else None,
     )
     db.add(candidate)
     db.flush()
@@ -205,7 +256,10 @@ def approve_candidate(
     candidate, record = resolved
     if candidate.review_status != "pending":
         raise ValueError("Only pending candidates can be approved")
-    policy = _publish_candidate(db, candidate=candidate, record=record)
+    if candidate.review_scope == REVIEW_SCOPE_CARD_COPY:
+        policy = approve_card_copy_candidate(db, candidate=candidate, record=record)
+    else:
+        policy = _publish_candidate(db, candidate=candidate, record=record)
     candidate.review_note = note.strip() if note and note.strip() else None
     candidate.reviewed_by_user_id = admin.id
     db.add(candidate)
@@ -221,6 +275,26 @@ def approve_candidate(
         after_json={"reviewStatus": "approved", "policyId": str(policy.id)},
     )
     return candidate
+
+
+def approve_card_copy_candidate(db: Session, *, candidate: PolicyReviewCandidate, record: ExternalSourceRecord) -> Policy:
+    """카드 문구만 바뀐 후보의 승인. 공개 정책 행을 잠그고 card_summary 만 바꾼다 -
+    상세·금액·제목·slug·ID·사용자 링크는 그대로다. 일반 승격(_publish_candidate)을 타지 않는다."""
+    policy = _published_policy_for_record(db, record)
+    if policy is None:
+        raise ValueError("Card copy candidate has no published policy to update")
+    locked = db.scalar(select(Policy).where(Policy.id == policy.id).with_for_update())
+    if locked is None:
+        raise ValueError("Card copy candidate has no published policy to update")
+    summary = card_copy_for_record(record).summary
+    if summary is None:
+        raise ValueError("Card copy did not pass the quality check and cannot be approved")
+    locked.card_summary = summary
+    db.add(locked)
+    candidate.review_status = "approved"
+    candidate.reviewed_at = security.utc_now_naive()
+    candidate.published_policy_id = locked.id
+    return locked
 
 
 def _publish_candidate(db: Session, *, candidate: PolicyReviewCandidate, record: ExternalSourceRecord):
@@ -303,6 +377,8 @@ def _hold_reason(db: Session, *, candidate: PolicyReviewCandidate, record: Exter
         return "source_mode_review"
     if record.source_category in _MANUAL_SOURCE_CATEGORIES:
         return "stay_discount_manual"
+    if card_copy_for_record(record).issues:
+        return "card_quality_review"
     if human_baseline_admin_id(db, source_category=record.source_category or "") is None:
         return "first_baseline"
     if not _source_run_is_normal(source, source_result):

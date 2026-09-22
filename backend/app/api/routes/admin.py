@@ -221,6 +221,8 @@ def _candidate_item(candidate, record) -> AdminPolicyReviewCandidateItem:
         endDate=record.end_date,
         createdAt=candidate.created_at.isoformat(),
         reviewReason=getattr(candidate, "review_reason", None),
+        reviewScope=getattr(candidate, "review_scope", None) or "full_policy",
+        cardPreview=admin_service.build_candidate_card_preview(record),
     )
 
 

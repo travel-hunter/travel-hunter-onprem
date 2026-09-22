@@ -534,6 +534,7 @@
         "startDate": "string|null",
         "deadline": "string",
         "amount": "string",
+        "cardSummary": "string|null",
         "structuredDetail": "object|null",
         "officialUrl": "string|null",
         "applyUrl": "string|null",
@@ -1211,6 +1212,122 @@
         "latestVerifiedAt": "string|null"
       },
       "dbModeBehavior": "Admin-only read endpoint. Summarizes external_source_records and promoted policies by generic source category without starting collection jobs or exposing source-specific controls."
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/policy-review-candidates",
+      "status": 200,
+      "authRequired": true,
+      "adminRequired": true,
+      "queryFields": {
+        "limit": "number 1..100",
+        "offset": "number >=0"
+      },
+      "requiredFields": {
+        "items": "array of AdminPolicyReviewCandidateItem",
+        "total": "number",
+        "limit": "number",
+        "offset": "number"
+      },
+      "itemFields": {
+        "id": "string",
+        "externalSourceRecordId": "string",
+        "reviewStatus": "string enum(pending|approved|rejected|superseded)",
+        "changeKind": "string enum(new|material_change)",
+        "title": "string",
+        "sourceCategory": "string",
+        "officialUrl": "string",
+        "benefitText": "string",
+        "region": "string|null",
+        "city": "string|null",
+        "status": "string",
+        "startDate": "string|null",
+        "endDate": "string|null",
+        "createdAt": "string",
+        "reviewReason": "string|null",
+        "cardPreview": "AdminPolicyCardPreview"
+      },
+      "cardPreviewFields": {
+        "amount": "string (safe public card text)",
+        "evidence": "string (max 2000 characters)",
+        "issues": "string[]"
+      },
+      "dbModeBehavior": "Admin-only pending-candidate read. The bounded evidence excerpt and card preview are not added to public policy DTOs; full raw payload remains admin-internal."
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/policy-review-candidates/approve-batch",
+      "status": 200,
+      "authRequired": true,
+      "adminRequired": true,
+      "optionalRequestFields": {
+        "candidateIds": "string[] (max 100)",
+        "approveAll": "boolean",
+        "note": "string|null (max 2000)"
+      },
+      "requiredFields": {
+        "approvedCount": "number",
+        "approvedCandidateIds": "string[]"
+      },
+      "dbModeBehavior": "Atomic approval of selected pending candidates or all pending candidates; conflicts approve none."
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/policy-review-candidates/{candidateId}/approve",
+      "status": 200,
+      "authRequired": true,
+      "adminRequired": true,
+      "optionalRequestFields": {
+        "note": "string|null (max 2000)"
+      },
+      "requiredFields": {
+        "id": "string",
+        "externalSourceRecordId": "string",
+        "reviewStatus": "string enum(pending|approved|rejected|superseded)",
+        "changeKind": "string enum(new|material_change)",
+        "title": "string",
+        "sourceCategory": "string",
+        "officialUrl": "string",
+        "benefitText": "string",
+        "region": "string|null",
+        "city": "string|null",
+        "status": "string",
+        "startDate": "string|null",
+        "endDate": "string|null",
+        "createdAt": "string",
+        "reviewReason": "string|null",
+        "cardPreview": "AdminPolicyCardPreview"
+      },
+      "dbModeBehavior": "Approves one pending candidate and returns the admin-only candidate item, including bounded cardPreview evidence."
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/policy-review-candidates/{candidateId}/reject",
+      "status": 200,
+      "authRequired": true,
+      "adminRequired": true,
+      "requiredRequestFields": {
+        "note": "string (1..2000)"
+      },
+      "requiredFields": {
+        "id": "string",
+        "externalSourceRecordId": "string",
+        "reviewStatus": "string enum(pending|approved|rejected|superseded)",
+        "changeKind": "string enum(new|material_change)",
+        "title": "string",
+        "sourceCategory": "string",
+        "officialUrl": "string",
+        "benefitText": "string",
+        "region": "string|null",
+        "city": "string|null",
+        "status": "string",
+        "startDate": "string|null",
+        "endDate": "string|null",
+        "createdAt": "string",
+        "reviewReason": "string|null",
+        "cardPreview": "AdminPolicyCardPreview"
+      },
+      "dbModeBehavior": "Rejects one pending candidate and returns the admin-only candidate item, including bounded cardPreview evidence."
     }
   ]
 }

@@ -619,6 +619,15 @@ export function AdminAuditLogsPage() {
 const REVIEW_PAGE_SIZE = 50;
 
 /** Why the auto-publish gate left a candidate for a human (backend review_reason). */
+const CARD_QUALITY_LABEL: Record<string, string> = {
+  benefit_missing: "혜택 추출 실패",
+  benefit_not_summary: "요약이 불명확해요",
+  benefit_navigation_text: "버튼 문구가 포함되어 있어요",
+  benefit_site_chrome: "사이트 공통 문구가 포함되어 있어요",
+  benefit_unit_ambiguous: "혜택 단위나 조건을 확인해야 해요",
+  period_ambiguous: "기간 구분을 확인해야 해요",
+};
+
 const REVIEW_REASON_LABEL: Record<string, string> = {
   source_mode_review: "전건 검토 소스",
   first_baseline: "첫 기준선",
@@ -628,7 +637,9 @@ const REVIEW_REASON_LABEL: Record<string, string> = {
   would_publish_hidden: "비공개 예정",
   low_confidence: "신뢰도 낮음",
   stay_discount_manual: "숙박세일 수동",
+  card_copy_changed: "카드 문구 변경",
   procedure_changed: "신청 절차 변경",
+  card_quality_review: "카드 문구 확인 필요",
 };
 
 export function AdminPolicyReviewPage() {
@@ -669,7 +680,8 @@ export function AdminPolicyReviewPage() {
     const message = mode === "all"
       ? `검토 대기 정책 전체 ${total}건을 승인하고 공개합니다. 되돌릴 수 없습니다. 계속할까요?`
       : `선택한 ${selectedIds.length}건을 승인하고 공개합니다. 계속할까요?`;
-    if (!window.confirm(message)) return;
+    const copyWarning = "\n카드 문구 검토가 필요한 후보는 ‘혜택 상세 확인’으로 공개됩니다.";
+    if (!window.confirm(message + copyWarning)) return;
     setWorkingId("batch");
     setError("");
     try {
@@ -688,6 +700,13 @@ export function AdminPolicyReviewPage() {
   const decide = async (candidate: AdminPolicyReviewCandidate, decision: "approve" | "reject") => {
     const note = decision === "reject" ? window.prompt("반려 사유를 입력하세요.") : undefined;
     if (decision === "reject" && !note?.trim()) return;
+    if (decision === "approve" && candidate.reviewScope === "card_copy_only") {
+      const message = "카드 문구만 바꿉니다: " + (candidate.cardPreview?.amount || "(비움)") + "\n정책 상세·금액·연결은 그대로입니다. 계속할까요?";
+      if (!window.confirm(message)) return;
+    } else if (decision === "approve" && candidate.cardPreview?.issues.length) {
+      const message = "카드에 표시될 문구: " + (candidate.cardPreview.amount || "(비움 - 판정 미통과)") + "\n원문과 확인 사항을 살펴본 뒤 승인해 주세요. 계속할까요?";
+      if (!window.confirm(message)) return;
+    }
     setWorkingId(candidate.id);
     setError("");
     try {
@@ -778,14 +797,27 @@ export function AdminPolicyReviewPage() {
             <div>
               <input aria-label={`${candidate.title} 선택`} checked={selectedIds.includes(candidate.id)} onChange={() => toggleSelected(candidate.id)} type="checkbox" />
               <span className="admin-source-label">{candidate.changeKind === "new" ? "신규" : "변경"}</span>
+              {/* 두 종류 후보가 한 목록에 섞인다 - 무엇이 바뀌는지 먼저 보이게 */}
+              <span className={candidate.reviewScope === "card_copy_only" ? "admin-source-label admin-scope-card" : "admin-source-label admin-scope-full"}>
+                {candidate.reviewScope === "card_copy_only" ? "카드 문구만" : "전체 정책 변경"}
+              </span>
               {candidate.reviewReason && REVIEW_REASON_LABEL[candidate.reviewReason] && (
                 <span className="admin-source-label">{REVIEW_REASON_LABEL[candidate.reviewReason]}</span>
               )}
               <strong>{candidate.title}</strong>
             </div>
             <p>{candidate.region ?? "전국"} · {candidate.benefitText}</p>
+            {candidate.cardPreview && (
+              <section aria-label="카드 표시 예정">
+                <strong>{candidate.cardPreview.amount}</strong>
+                <details><summary>원문 일부</summary><p>{candidate.cardPreview.evidence}</p></details>
+                <ul>{candidate.cardPreview.issues.map((issue) => (
+                  <li key={issue}>{CARD_QUALITY_LABEL[issue] ?? "원문 확인이 필요해요"}</li>
+                ))}</ul>
+              </section>
+            )}
             <p><a href={candidate.officialUrl} target="_blank" rel="noreferrer">공식 원문 보기</a></p>
-            <div className="admin-section-actions"><button className="btn secondary" type="button" disabled={workingId === candidate.id} onClick={() => decide(candidate, "reject")}>반려</button><button className="btn primary" type="button" disabled={workingId === candidate.id} onClick={() => decide(candidate, "approve")}>승인하고 공개</button></div>
+            <div className="admin-section-actions"><button className="btn secondary" type="button" disabled={workingId === candidate.id} onClick={() => decide(candidate, "reject")}>반려</button><button className="btn primary" type="button" disabled={workingId === candidate.id} onClick={() => decide(candidate, "approve")}>{candidate.reviewScope === "card_copy_only" ? "카드 문구 승인" : "정책 승인"}</button></div>
           </article>
         ))}{candidates.length === 0 && <p className="admin-empty">검토 대기 정책이 없습니다.</p>}</div>
         <div className="admin-pagination" aria-label="검토 대기 정책 페이지 이동">

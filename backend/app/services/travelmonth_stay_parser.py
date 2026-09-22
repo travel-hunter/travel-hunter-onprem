@@ -7,6 +7,7 @@ from urllib.parse import urljoin, urlparse
 
 from app.data.source_provenance import CANONICAL_KEY_VERSION, logical_key_for_source
 from app.schemas.external_sources import ExternalBenefitSource
+from app.services.policy_card_quality import evaluate_card_copy
 from app.services.travelmonth_normalizer import (
     calculate_field_completeness,
     extract_benefit_value,
@@ -284,6 +285,11 @@ def _build_record(
     tags = _unique(["숙박", "숙박세일", "여행가는 달", *_conditional_tags(raw_text)])
     canonical_text = "|".join([SOURCE_CATEGORY, title, issue_period_text or "", stay_period_text or benefit_text])
     eligible_areas = _eligible_areas(raw_record.get("eligible_areas"))
+    benefit_value_text = _benefit_value_text(
+        raw_text,
+        benefit_value.value_text,
+        discount_tiers=discount_tiers,
+    )
     raw_payload: dict[str, object] = {
         "issuePeriod": issue_period_text,
         "stayPeriod": stay_period_text,
@@ -296,6 +302,10 @@ def _build_record(
         "eligibleAreas": eligible_areas,
         "eligibleAreaCount": sum(len(group["cities"]) for group in eligible_areas),
         "earlyCloseWarning": any(token in raw_text for token in ("예산 소진", "조기 종료", "조기종료", "소진 시")),
+        "cardCopy": evaluate_card_copy(
+            summary=benefit_value_text,
+            evidence=benefit_text,
+        ).to_payload(),
     }
     return ExternalBenefitSource(
         source_name=SOURCE_NAME,
@@ -324,7 +334,7 @@ def _build_record(
         start_date=start_date,
         end_date=end_date,
         benefit_text=_truncate_text(benefit_text, 200),
-        benefit_value_text=_benefit_value_text(raw_text, benefit_value.value_text, discount_tiers=discount_tiers),
+        benefit_value_text=benefit_value_text,
         extracted_amount_krw=discount_amount_krw or benefit_value.amount_krw,
         extracted_discount_percent=benefit_value.discount_percent,
         benefit_value_type=benefit_value.value_type,

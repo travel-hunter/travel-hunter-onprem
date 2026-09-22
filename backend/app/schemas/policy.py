@@ -65,6 +65,8 @@ class Policy(BaseModel):
     startDate: str | None = None
     deadline: str
     amount: str
+    # 카드에만 쓰는 짧은 혜택 문구. 승인값 또는 품질 검사를 통과한 amount. 없으면 null - 카드는 알약을 비운다.
+    cardSummary: str | None = None
     summary: str
     match: int
     category: PolicyCategory
