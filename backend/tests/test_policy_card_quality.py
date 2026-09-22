@@ -24,6 +24,27 @@ def test_unsafe_summary_is_held(summary: str | None, code: str) -> None:
     assert result.display_text == "혜택 상세 확인"
 
 
+@pytest.mark.parametrize(
+    ("summary", "code"),
+    [
+        # 2026-09-16 개발서버 조사에서 실제 카드에 들어갔던 값들 - 어느 것도 요약으로 살아남으면 안 된다
+        ("할인혜택 보러가기", "benefit_navigation_text"),  # 173·175·177 링크 글자
+        (
+            "할인혜택 보러가기 한국관광공사 : [26464] 강원특별자치도 원주시 세계로 10 TEL : 033-738-3000 통신판매업신고",
+            "benefit_site_chrome",
+        ),  # 179 기관 주소·전화·신고번호
+        ("연안지역 기초 지자체 상품 구매자 대상 저공해 렌터카 * 할인쿠폰 제공", "benefit_not_summary"),  # 178 문장 통째
+        ("및 금액", "benefit_not_summary"),  # 202 제목 "지원 내용 및 금액" 의 뒷조각
+        ("지원 내용 및 금액", "benefit_not_summary"),  # 섹션 배너
+    ],
+)
+def test_real_world_contamination_never_becomes_card_copy(summary: str, code: str) -> None:
+    result = evaluate_card_copy(summary=summary, evidence=summary)
+
+    assert result.summary is None
+    assert code in result.issues
+
+
 @pytest.mark.parametrize("summary", ["최대 3만 포인트", "무료 입장", "가맹점별 할인"])
 def test_non_cash_and_non_numeric_benefits_survive(summary: str) -> None:
     result = evaluate_card_copy(summary=summary, evidence=summary)

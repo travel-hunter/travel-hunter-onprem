@@ -24,7 +24,6 @@ from app.services.policy_periods import (
 )
 from app.services.policy_semantic_mapping import map_external_source_semantics
 from app.services.travelmonth_normalizer import extract_benefit_value
-from app.services.policy_card_quality import card_copy_for_record
 
 
 logger = logging.getLogger(__name__)
@@ -267,7 +266,9 @@ def _assign_policy_from_external_record(
         return policy
 
     benefit_value = extract_benefit_value(record.benefit_text or "", title=record.title)
-    benefit_detail = card_copy_for_record(record).display_text
+    # 카드 문구(cardCopy)는 여기 쓰지 않는다. benefit_detail 은 public DTO 의 amount 와 일정 금액의
+    # 원천이라, 요약이 없을 때 카드용 고정 문구를 박으면 상세·일정까지 같이 오염된다.
+    benefit_detail = record.benefit_value_text or benefit_value.value_text or record.benefit_text
     if record.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY:
         benefit_detail = dgtour_identity.DEFAULT_BENEFIT_VALUE_TEXT
     if record.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY:
@@ -333,7 +334,9 @@ def _assign_stay_discount_area_policy(
 ) -> Policy:
     semantic_mapping = map_external_source_semantics(record)
     benefit_value = extract_benefit_value(record.benefit_text or "", title=record.title)
-    benefit_detail = card_copy_for_record(record).display_text
+    # 카드 문구(cardCopy)는 여기 쓰지 않는다. benefit_detail 은 public DTO 의 amount 와 일정 금액의
+    # 원천이라, 요약이 없을 때 카드용 고정 문구를 박으면 상세·일정까지 같이 오염된다.
+    benefit_detail = record.benefit_value_text or benefit_value.value_text or record.benefit_text
     representative_deadline = _representative_deadline_for_record(record)
     structured_payload: dict[str, object] = {
         "structuredDetail": deepcopy(semantic_mapping.structured_detail)

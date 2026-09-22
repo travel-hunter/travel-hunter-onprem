@@ -177,7 +177,9 @@ def test_reintroduced_evidence_creates_a_new_pending_candidate(db: Session) -> N
     assert restored.change_kind == "material_change"
 
 
-def test_manual_approval_publishes_safe_card_fallback(db: Session) -> None:
+def test_manual_approval_keeps_detail_mapping_and_source_text(db: Session) -> None:
+    # 카드 문구가 오염(CTA)이라도 상세(benefit_detail)에 카드용 고정 문구를 박지 않는다 -
+    # amount 와 일정 금액이 거기서 파생된다. 오염 문구를 카드에서 걸러내는 일은 카드 계층(cardSummary)의 몫이다.
     record = make_record()
     record.benefit_value_text = "할인혜택 보러가기"
     record.raw_payload = {
@@ -197,7 +199,8 @@ def test_manual_approval_publishes_safe_card_fallback(db: Session) -> None:
 
     policy = db.get(Policy, approved.published_policy_id)
     assert policy is not None
-    assert policy.benefit_detail == "혜택 상세 확인"
+    assert policy.benefit_detail == "할인혜택 보러가기"
+    assert policy.benefit_detail != "혜택 상세 확인"
     assert record.benefit_value_text == "할인혜택 보러가기"
 
 
