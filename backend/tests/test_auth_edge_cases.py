@@ -513,6 +513,7 @@ def test_get_current_user_rejects_withdrawn_user(monkeypatch) -> None:
 
     with pytest.raises(HTTPException) as error:
         dependencies.get_current_user(
+            request=SimpleNamespace(state=SimpleNamespace()),  # 로그 컨텍스트 없는 요청 - 의존성은 그래도 동작해야 한다
             credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials="access-token"),
             db=FakeDb(),
         )

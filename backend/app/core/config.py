@@ -138,6 +138,23 @@ class Settings:
     oauth_state_cookie_name: str = os.getenv(
         "OAUTH_STATE_COOKIE_NAME", "travel_hunter_oauth_state"
     )
+    # 구조화 로그 - docs/superpowers/plans/2026-09-22-caddy-service-status-log.md
+    log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    access_log_exclude_paths: tuple[str, ...] = split_csv(
+        os.getenv("ACCESS_LOG_EXCLUDE_PATHS", "/api/health,/health")
+    )
+    # 이 대역에서 온 연결일 때만 Cf-Connecting-Ip / X-Forwarded-For / X-Request-Id 를 믿는다
+    trusted_proxy_cidrs: tuple[str, ...] = split_csv(os.getenv("TRUSTED_PROXY_CIDRS", ""))
+    # 잠긴 디버그 스위치 - 전부 있어야 켜진다 (app/core/debug_capture.py)
+    log_debug_bodies: bool = os.getenv("LOG_DEBUG_BODIES", "false").strip().lower() in {"1", "true", "yes", "on"}
+    log_debug_body_paths: tuple[str, ...] = split_csv(os.getenv("LOG_DEBUG_BODY_PATHS", ""))
+    log_debug_body_fields: tuple[str, ...] = split_csv(os.getenv("LOG_DEBUG_BODY_FIELDS", ""))
+    log_debug_body_user: str = os.getenv("LOG_DEBUG_BODY_USER", "").strip()
+    log_debug_body_until: str = os.getenv("LOG_DEBUG_BODY_UNTIL", "").strip()
+    log_debug_bodies_allow_protected: bool = os.getenv(
+        "LOG_DEBUG_BODIES_ALLOW_PROTECTED", "false"
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    log_debug_operator_user_id: str = os.getenv("LOG_DEBUG_OPERATOR_USER_ID", "").strip()
 
     @property
     def is_protected_env(self) -> bool:

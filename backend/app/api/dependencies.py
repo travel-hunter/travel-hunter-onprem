@@ -1,8 +1,9 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core import security
+from app.core.request_context import note_current_user
 from app.db.session import get_optional_db
 from app.models import User
 from app.repositories import users as user_repository
@@ -12,6 +13,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session | None = Depends(get_optional_db),
 ) -> User | None:
@@ -42,6 +44,7 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
         )
+    note_current_user(request, user)  # 이 요청의 모든 로그 줄에 user_id 가 붙는다
     return user
 
 
