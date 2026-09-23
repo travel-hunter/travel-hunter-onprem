@@ -5,6 +5,7 @@
 
   python scripts/trace.py 413dba2b-14a2-4ac5-8f4c-5bda8b037af3
   python scripts/trace.py user:42 --since 48h
+  python scripts/trace.py --recent --since 24h       # 기간 내 활동 전체를 시간순으로
   python scripts/trace.py <id> --server dev          # 개발서버 (SSH 너머 docker)
   python scripts/trace.py --summary --since 24h      # 시간대x상태군, 5xx 상위 경로
   python scripts/trace.py --tail                     # 실시간 따라가기
@@ -180,6 +181,7 @@ def main() -> int:
     parser.add_argument("--app-only", action="store_true")
     parser.add_argument("--edge-only", action="store_true")
     parser.add_argument("--sensitive", action="store_true", help="kind=debug 줄까지 (출력 편의일 뿐 접근 통제가 아니다)")
+    parser.add_argument("--recent", action="store_true", help="기간 내 전체 활동을 시간순으로 (엣지+앱, 출력 후 종료)")
     parser.add_argument("--summary", action="store_true", help="기간 요약 (앱 로그 기준)")
     parser.add_argument("--tail", action="store_true", help="실시간 따라가기")
     parser.add_argument("--out", help="결과를 파일로 저장")
@@ -202,12 +204,17 @@ def main() -> int:
                     pass
         return 0
     else:
-        if not args.key:
-            parser.error("request_id 또는 user:<id> 가 필요하다 (--summary / --tail 은 예외)")
-        if args.key.startswith("user:"):
+        edge_key: str | None
+        if args.recent:
+            # 기간 내 전체. 키 기반 경로를 그대로 쓰되 선택자를 열어 둔다.
+            app_selector = lambda r: True  # noqa: E731
+            edge_key = None  # edge_rows 는 None 을 "전체" 로 본다
+        elif not args.key:
+            parser.error("request_id 또는 user:<id> 가 필요하다 (--recent / --summary / --tail 은 예외)")
+        elif args.key.startswith("user:"):
             user_id = args.key[5:]
             app_selector = lambda r: str(r.get("user_id")) == user_id  # noqa: E731
-            edge_key: str | None = "\0"  # 엣지 로그에는 사용자 정보가 없다 - 매칭되지 않는 값
+            edge_key = "\0"  # 엣지 로그에는 사용자 정보가 없다 - 매칭되지 않는 값
         else:
             app_selector = lambda r: r.get("request_id") == args.key  # noqa: E731
             edge_key = args.key
