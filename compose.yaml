@@ -51,6 +51,30 @@ services:
         max-size: "20m"
         max-file: "10"
 
+  # 로그 뷰어 - 개발서버에서 브라우저로 훑어볼 때만. 계획 rev9 참고.
+  # profiles 덕분에 기본 `up -d` 에서는 뜨지 않는다(Jenkins 배포가 건드리지 않는다).
+  #   띄우기: docker compose ... --profile logs up -d dozzle
+  #   접속:   ssh -L 8888:127.0.0.1:8888 dev-server  후 http://127.0.0.1:8888
+  # 로그를 저장하지 않는다. Docker 가 이미 가진 것을 읽어 보여 줄 뿐이다.
+  dozzle:
+    image: amir20/dozzle:latest
+    profiles: ["logs"]
+    # 우리 스택만. Jenkins 등 다른 컨테이너 로그는 보여 주지 않는다.
+    command: ["--filter", "name=travel-hunter-onprem"]
+    environment:
+      DOZZLE_NO_ANALYTICS: "true"
+    ports:
+      # 루프백 전용 - 터널 없이는 외부에서 도달할 수 없다. 공개 면을 만들지 않는다.
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN}

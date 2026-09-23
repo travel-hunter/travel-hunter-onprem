@@ -449,3 +449,87 @@ python scripts/trace.py <id> --app-only | --edge-only | --sensitive
 | 예외 렌더링 | `↳ 예외타입: 메시지` · 프레임 목록 · `↳ cause ...` · `body_shape` |
 
 삭제: `scripts/trace-request.sh`, `scripts/access-log-summary.sh`.
+
+---
+
+## rev9 — 개발서버 로그 뷰어 (Dozzle) (2026-09-23)
+
+SSH·grep 없이 브라우저로 훑을 창구. 사용자 결정(2026-09-23): **A안 — 개발서버에 두되 `127.0.0.1` 에만 바인딩하고 SSH 터널로 접속.**
+
+역할 분담: **Dozzle 은 훑어보기, `trace.py` 는 특정 요청 파고들기.** 서로 대체하지 않는다.
+
+### 왜 앱이 아니라 별도 뷰어인가
+
+관리자 페이지에 로그 뷰어를 직접 만들려면 백엔드가 자기 로그 파일을 읽어야 하는데, 그러려면 `docker.sock` 마운트
+(앱에 서버 root 권한)나 호스트 로그 디렉터리 마운트가 필요하다. **앱 컨테이너에 줄 권한이 아니다.**
+게다가 앱이 죽으면 정작 필요한 순간에 로그를 못 본다. 업계에서도 자사 관리자 화면에 로그 뷰어를 직접 만드는 경우는 드물다.
+
+### 실측 (amir20/dozzle:latest)
+
+| 확인 | 결과 |
+|---|---|
+| 이미지 크기 | **20.0 MB** |
+| 기동·응답 | 읽기 전용 소켓 마운트로 HTTP 200, 권한 오류 없음 |
+| 로그 저장 | **하지 않는다** — Docker 가 이미 가진 것을 읽어 보여 줄 뿐 |
+| `--filter` | 컨테이너를 Docker 문법으로 제한 가능 |
+| `--auth-provider` | none / simple / oidc / forward-proxy |
+| compose `profiles` | **기본 `up -d` 에서 제외됨**(실측: `always` 만 뜨고 `optional` 은 안 뜸) |
+
+### Task D1 — `compose.yaml` 에 프로필로 추가
+
+```yaml
+  dozzle:
+    image: amir20/dozzle:latest
+    profiles: ["logs"]                     # 기본 up 에서 제외 - Jenkins 배포가 건드리지 않는다
+    command: ["--filter", "name=travel-hunter-onprem"]
+    environment:
+      DOZZLE_NO_ANALYTICS: "true"
+    ports:
+      - "127.0.0.1:8888:8080"              # 루프백 전용. 공개 면을 만들지 않는다
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "10" } }
+```
+
+- **프로필**: Jenkins 의 `docker compose up -d --wait` 는 프로필 서비스를 올리지 않는다(실측). 운영 서버에 저절로 생기지 않는다.
+- **`127.0.0.1` 바인딩**: Cloudflare 터널·Caddy 어디에도 걸리지 않는다. 외부에서 도달 불가.
+- **`--filter`**: 우리 스택 컨테이너만 보인다. Jenkins 등 다른 컨테이너 로그는 안 보여 준다.
+- **읽기 전용 소켓**: `:ro`. 다만 Docker API 자체가 강력하므로 루프백 바인딩이 실질적 방어다.
+- 인증을 걸지 않는 이유: 도달하려면 개발서버 SSH 접근이 필요하고, 그 사람은 `docker logs` 를 이미 쓸 수 있다. 권한이 늘지 않는다.
+
+### 사용법
+
+```
+ssh -L 8888:127.0.0.1:8888 dev-server      # 터널을 연 채로 두고
+# 브라우저에서 http://127.0.0.1:8888
+```
+
+기동/정지(개발서버에서 한 번):
+```
+docker compose -p travel-hunter-onprem --env-file <env> -f compose.yaml --profile logs up -d dozzle
+docker compose -p travel-hunter-onprem --profile logs stop dozzle
+```
+
+### 하지 않는 것
+
+- 운영 서버 적용(별도 승인). 공개 도메인 노출. 인증 연동(OIDC 등).
+- 로그 저장·수집. Dozzle 은 저장하지 않는다 — 보존은 Docker 회전 설정이 계속 맡는다.
+- 로컬 PC 스택에는 넣지 않는다. Docker Desktop 에 이미 로그 화면이 있다.
+
+### AWS 이전 시
+
+Dozzle 은 삭제한다. CloudWatch Logs Insights 가 같은 역할을 한다.
+
+### rev9 구현·검증 (2026-09-23)
+
+| 검증 | 결과 |
+|---|---|
+| `compose config --services` | 기본: db·backend·frontend·caddy·cloudflared (**dozzle 없음**) |
+| `--profile logs` | 위 5개 + **dozzle** |
+| 기동 | 읽기 전용 소켓으로 HTTP 200, 로그에 오류 0 |
+| **`--filter` 실효** | 필터 없음 **13개** → 필터 있음 **3개**(우리 스택만). `tosstock-bot`·`travel-hunter-region-photos-*` 등은 보이지 않는다 |
+| 포트 바인딩 | `8080/tcp -> 127.0.0.1:18101` — 루프백 전용 확인 |
+| 이미지 | 20.0 MB, 로그 저장 없음 |
+
+`--filter name=travel-hunter-onprem` 은 부분 일치다. `travel-hunter-region-photos-*` 는 문자열이 달라 제외된다(실측 확인).
