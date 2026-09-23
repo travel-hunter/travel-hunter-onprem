@@ -416,15 +416,33 @@ def test_untrusted_peer_headers_are_ignored(log_lines):
     assert access["request_id"] != "attacker-chosen-id" and len(access["request_id"]) == 16
 
 
-def test_trusted_peer_gives_masked_net_and_upstream_id(log_lines):
+def test_trusted_edge_request_id_is_adopted_so_both_logs_share_one_id(log_lines):
+    # Caddy 가 만든 UUID 를 그대로 쓴다 - 문의 코드 하나로 엣지·백엔드 로그가 같이 검색된다.
+    # Caddy 가 클라이언트 값을 덮어쓰므로(실측 확인) 위조 값은 여기까지 오지 못한다.
+    edge_id = "ab829b1e-5163-4b25-ad9f-25bc542b3c05"
     test_app = build_app(trusted_proxy_cidrs=("172.20.0.0/16",))
-    _line_for(test_app, client=("172.20.0.5", 1), headers=[("cf-connecting-ip", "198.51.100.77"), ("x-request-id", "caddy-abc-123"), ("x-amzn-trace-id", "Root=1-67891233-abcdef012345678912345678;Parent=x")])
+    _line_for(test_app, client=("172.20.0.5", 1), headers=[("cf-connecting-ip", "198.51.100.77"), ("x-request-id", edge_id), ("x-amzn-trace-id", "Root=1-67891233-abcdef012345678912345678;Parent=x")])
     (access,) = access_lines(log_lines())
+    assert access["request_id"] == edge_id
     assert access["client_net"] == "198.51.100.0/24"
-    assert access["request_id"] != "caddy-abc-123", "request_id 는 항상 서버가 만든다"
     assert access["trace_id"] == "1-67891233-abcdef012345678912345678"
     _line_for(test_app, client=("172.20.0.5", 1), headers=[("x-forwarded-for", "2001:db8:abcd:1234::1, 10.0.0.1")])
     assert access_lines(log_lines())[-1]["client_net"] == "2001:db8:abcd::/48"
+
+
+@pytest.mark.parametrize("bad", ["short", "has space", "x" * 65, "sql'injection"])
+def test_malformed_edge_id_falls_back_to_a_generated_one(bad, log_lines):
+    _line_for(build_app(trusted_proxy_cidrs=("172.20.0.0/16",)), client=("172.20.0.5", 1), headers=[("x-request-id", bad)])
+    (access,) = access_lines(log_lines())
+    assert access["request_id"] != bad and len(access["request_id"]) == 16
+
+
+def test_without_an_edge_the_backend_generates_its_own_id(log_lines):
+    # AWS 경로: ALB 는 X-Request-Id 를 붙이지 않는다. 코드 분기 없이 자체 생성으로 돈다.
+    _line_for(build_app(trusted_proxy_cidrs=("172.20.0.0/16",)), client=("172.20.0.5", 1), headers=[("x-amzn-trace-id", "Root=1-67891233-abcdef012345678912345678")])
+    (access,) = access_lines(log_lines())
+    assert len(access["request_id"]) == 16
+    assert access["trace_id"] == "1-67891233-abcdef012345678912345678"
 
 
 # ----------------------------------------------------------------------------- 7. 제외 경로 · 접근 줄 1개

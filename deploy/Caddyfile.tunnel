@@ -51,6 +51,18 @@
 
 http://{$STAGING_DOMAIN} {
   import accesslog
+  # 요청마다 ID 를 만들어 백엔드로 넘긴다. 백엔드는 이 값을 자기 request_id 로 채택하므로
+  # 문의 코드 하나로 Caddy 로그와 백엔드 로그가 같이 검색된다.
+  # request_header 는 클라이언트가 보낸 값을 덮어쓰므로 위조 값이 뒤로 가지 못한다.
+  request_header X-Request-Id {http.request.uuid}
+  header ?X-Request-Id {http.request.uuid}
+  handle_errors {
+    # 백엔드가 죽으면 502 가 여기로 온다. 백엔드의 500 과 같은 형태로 코드를 돌려줘야
+    # 프런트가 문의 코드를 표시할 수 있다(header ? 는 오류 응답에 붙지 않는다).
+    header X-Request-Id {http.request.uuid}
+    respond `{"detail":"Service Unavailable","requestId":"{http.request.uuid}"}` {err.status_code}
+  }
+
   encode gzip zstd
 
   @admin_path path /admin /admin/*
@@ -75,6 +87,18 @@ http://{$STAGING_DOMAIN} {
 
 http://{$ADMIN_DOMAIN} {
   import accesslog
+  # 요청마다 ID 를 만들어 백엔드로 넘긴다. 백엔드는 이 값을 자기 request_id 로 채택하므로
+  # 문의 코드 하나로 Caddy 로그와 백엔드 로그가 같이 검색된다.
+  # request_header 는 클라이언트가 보낸 값을 덮어쓰므로 위조 값이 뒤로 가지 못한다.
+  request_header X-Request-Id {http.request.uuid}
+  header ?X-Request-Id {http.request.uuid}
+  handle_errors {
+    # 백엔드가 죽으면 502 가 여기로 온다. 백엔드의 500 과 같은 형태로 코드를 돌려줘야
+    # 프런트가 문의 코드를 표시할 수 있다(header ? 는 오류 응답에 붙지 않는다).
+    header X-Request-Id {http.request.uuid}
+    respond `{"detail":"Service Unavailable","requestId":"{http.request.uuid}"}` {err.status_code}
+  }
+
   encode gzip zstd
 
   @admin_root path /

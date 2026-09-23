@@ -242,3 +242,84 @@ rev5 계획대로 Task 1~7 구현. 계획을 쓸 때 몰랐던 것들을 구현 
 
 `travel-hunter-onprem-backend-1` 을 이 워크트리에서 재빌드해 올려 두었다(8000). 프런트는 변경이 작아 기존 4173 빌드 그대로도
 동작하지만, "문의 코드" 표시를 보려면 프런트도 재빌드해야 한다.
+
+---
+
+## rev6 — 온프레미스 상시 운영 반영 (2026-09-23)
+
+계획 변경: **온프레미스 환경도 계속 구성·운영한다.** rev3~5는 Caddy 를 "AWS 이전 시 사라질 것"으로 보고 최소 로그만 두었다.
+온프레가 1급 환경이면 Caddy 로그는 임시방편이 아니라 **엣지 기록**이고, 백엔드 로그와 **같은 ID 로 이어져야** 쓸모가 있다.
+
+사용자 결정(2026-09-23): ID 는 **채택(하나의 ID)**, Caddy 로그는 **전체 기록 유지**.
+
+### Caddy 능력 실측 (caddy:2-alpine)
+
+| 확인 | 결과 |
+|---|---|
+| `{http.request.uuid}` | 요청마다 UUID. 접근 로그 최상위 `uuid` 필드에 **필터 없이** 포함된다 |
+| `request_header X-Request-Id {http.request.uuid}` | 업스트림이 그대로 받는다 |
+| 클라이언트가 보낸 `X-Request-Id` | **덮어쓴다** — 위조 불가 |
+| `header ?X-Request-Id` | 정상 응답은 백엔드 값 유지. **502 에는 붙지 않는다** |
+| `handle_errors` | 502 에도 헤더 + 본문(`{"detail":…,"requestId":…}`) 을 줄 수 있다 |
+
+### 무엇이 좋아지나
+
+```
+rev5:  Caddy(ID 없음) → 백엔드가 자체 생성
+       → Caddy 로그와 백엔드 로그를 잇는 값이 없다. 백엔드가 죽으면 사용자는 코드도 못 받는다.
+
+rev6:  Caddy(UUID 생성·기록·전달) → 백엔드가 그 값을 채택
+       → 문의 코드 하나로 엣지·백엔드 로그가 동시에 검색된다
+       → 백엔드가 죽어도 Caddy 가 같은 형태의 코드를 준다
+```
+
+### 변경 (커밋 f380c05 대비 델타)
+
+**Task R1 — `deploy/Caddyfile`, `deploy/Caddyfile.tunnel` (두 사이트 블록 공통)**
+```
+  request_header X-Request-Id {http.request.uuid}
+  header ?X-Request-Id {http.request.uuid}
+  handle_errors {
+    header X-Request-Id {http.request.uuid}
+    respond `{"detail":"Service Unavailable","requestId":"{http.request.uuid}"}` {err.status_code}
+  }
+```
+- `handle_errors` 의 본문은 백엔드의 500 응답과 **같은 형태**다. 프런트 `ApiError` 가 그대로 문의 코드를 집는다.
+- 접근 로그는 rev5 그대로(전체 기록 + 필드 화이트리스트). `uuid` 는 기본 포함이라 추가 설정이 없다.
+
+**Task R2 — `app/core/request_context.py`**
+- 신뢰 프록시에서 온 `X-Request-Id` 가 형식(`^[A-Za-z0-9._-]{8,64}$`)에 맞으면 **`request_id` 로 채택**한다(rev5 는 `upstream_id` 에만 보관했다).
+- 비신뢰 피어의 값은 여전히 무시하고 자체 생성한다. AWS 에서는 ALB 가 이 헤더를 안 붙이므로 자체 생성 경로를 탄다 — **코드 분기 없이 양쪽이 동작한다.**
+- 부작용: ID 형식이 환경마다 다르다(온프레 UUID 36자 / 직접·AWS 16진수 16자). 검색에는 영향 없다.
+
+**Task R3 — 테스트**
+- 신뢰 피어의 `X-Request-Id` 채택, 비신뢰 피어 무시(기존 유지), 형식 위반 시 자체 생성.
+- Caddy 실측: 업스트림 전달, 클라이언트 값 덮어쓰기, 502 의 헤더·본문.
+
+### 온프레 로그의 역할 (rev6 확정)
+
+| 로그 | 무엇을 아는가 |
+|---|---|
+| Caddy | **모든 요청** — 프런트 자산 포함(백엔드를 안 거친다). 백엔드 사망 시의 502 |
+| 백엔드 | 요청의 내부 — 사용자, 예외, 스택, 소요시간 |
+
+둘이 같은 `request_id` 로 묶이므로 "자산은 느린데 API 는 빠르다" 같은 판단이 가능해진다.
+
+### AWS 이전 시 (변함없음)
+
+Caddy 블록은 사라지고 백엔드는 자체 생성 경로로 돈다. `awslogs` 드라이버 교체만 남는다.
+
+### rev6 구현·검증 (2026-09-23)
+
+| 검증 | 결과 |
+|---|---|
+| `pytest backend/tests` | **1,074 passed** / 19 skipped |
+| `caddy validate` (실제 Caddyfile.tunnel) | 통과 |
+| **ID 일치 (실측)** | 응답 헤더 · 백엔드 로그 `request_id` · Caddy 로그 `uuid` 가 모두 `915cb0d0-…` 로 같다 |
+| **백엔드 사망 시 (실측)** | 502 응답에 `X-Request-Id` + `{"detail":"Service Unavailable","requestId":"54255b66-…"}`, 같은 uuid 가 Caddy 로그에 502 로 기록됨 |
+
+구현 중 확인한 것:
+- 로컬 스택(`compose.local.yaml`)은 `TRUSTED_PROXY_CIDRS` 기본값이 비어 있다. Caddy 없이 직결하는 구성이라 맞는 기본값이고,
+  이때는 채택 없이 자체 생성한다. **로컬에서 Caddy 를 끼워 확인할 때는 `TRUSTED_PROXY_CIDRS=172.16.0.0/12` 를 준다**(`.env.example` 에 주석).
+  배포 스택(`compose.yaml`)은 이 값을 기본으로 넣는다.
+- `handle_errors` 없이 `header ?X-Request-Id` 만 두면 502 에는 헤더가 붙지 않는다(실측). 오류 경로를 따로 잡아야 한다.

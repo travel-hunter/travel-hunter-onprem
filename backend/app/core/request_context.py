@@ -44,7 +44,6 @@ _TRACE_ROOT_PATTERN = re.compile(r"(?:^|;)Root=([A-Za-z0-9-]{1,64})(?:;|$)")
 class RequestLogContext:
     request_id: str
     trace_id: str | None = None
-    upstream_id: str | None = None
     user_id: int | None = None
 
 
@@ -213,10 +212,12 @@ class RequestContextMiddleware:
 
         headers = _headers(scope)
         trusted = self._from_trusted_proxy(scope)
-        context = RequestLogContext(request_id=new_request_id())
+        # 엣지(Caddy)가 만든 ID 를 그대로 쓴다 - 하나의 ID 로 엣지·백엔드 로그가 같이 검색된다.
+        # Caddy 는 클라이언트가 보낸 X-Request-Id 를 덮어쓰므로 위조 값이 여기까지 오지 못한다.
+        # 신뢰 프록시가 아니거나 형식이 틀리면 자체 생성한다(직접 접근·AWS ALB 경로).
         incoming = headers.get(REQUEST_ID_HEADER, "")
-        if trusted and _UPSTREAM_ID_PATTERN.match(incoming):
-            context.upstream_id = incoming
+        adopted = incoming if trusted and _UPSTREAM_ID_PATTERN.match(incoming) else None
+        context = RequestLogContext(request_id=adopted or new_request_id())
         trace_match = _TRACE_ROOT_PATTERN.search(headers.get("x-amzn-trace-id", ""))
         if trace_match:
             context.trace_id = trace_match.group(1)
