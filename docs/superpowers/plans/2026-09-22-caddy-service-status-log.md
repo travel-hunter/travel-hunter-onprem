@@ -323,3 +323,129 @@ Caddy 블록은 사라지고 백엔드는 자체 생성 경로로 돈다. `awslo
   이때는 채택 없이 자체 생성한다. **로컬에서 Caddy 를 끼워 확인할 때는 `TRUSTED_PROXY_CIDRS=172.16.0.0/12` 를 준다**(`.env.example` 에 주석).
   배포 스택(`compose.yaml`)은 이 값을 기본으로 넣는다.
 - `handle_errors` 없이 `header ?X-Request-Id` 만 두면 502 에는 헤더가 붙지 않는다(실측). 오류 경로를 따로 잡아야 한다.
+
+---
+
+## rev7 — 엣지·앱 로그 합쳐 보기 (2026-09-23)
+
+온프레를 계속 운영하면 로그가 두 컨테이너(`caddy-1`, `backend-1`)에 나뉜다. 분리 자체는 옳다 —
+엣지는 프런트 자산 요청과 백엔드 사망 구간을 알고, 앱은 요청 내부를 안다. 불편한 건 **한 요청을 볼 때 두 번 쳐야 하고
+시간순으로 섞어 보려면 손으로 맞춰야** 하는 점이다.
+
+사용자 결정(2026-09-23): **A안 — 스크립트가 두 로그를 합쳐 시간순으로 보여 준다.** 수집기 컨테이너는 만들지 않는다.
+
+### 왜 합쳐 보는 게 필요한가
+
+- 프런트 자산 요청은 백엔드 로그에 **아예 없다**. 엣지만 안다.
+- 백엔드가 죽은 구간은 **엣지에만** 502 로 남는다.
+- "느리다" 신고는 엣지 시간과 앱 시간을 비교해야 원인 구간(프록시냐 앱이냐)이 나온다.
+
+```
+12:47:36.180  [edge] GET /api/policies 200  42ms
+12:47:36.201  [app]  INFO  app.services.policies  listing 108 policies
+12:47:36.233  [app]  ACCESS GET /api/policies 200  31ms  user=42
+            → 엣지 42ms, 앱 31ms. 11ms 가 프록시·네트워크 구간.
+```
+
+### 왜 수집기 컨테이너를 만들지 않나
+
+Loki 등을 붙이면 컨테이너가 늘고 운영 부담이 생기는데, **AWS 에서는 CloudWatch 가 두 로그를 한 곳에 모으므로
+이전 때 통째로 버린다.** 스크립트는 버려도 20줄이고, 합쳐 보는 **조건 자체는 Insights 쿼리로 그대로 옮겨간다**
+(로그 그룹 여러 개를 한 쿼리로 조회하는 것은 Insights 기본 기능이다).
+
+### Task S1 — `scripts/trace-request.sh` 확장
+
+- 백엔드 컨테이너와 Caddy 컨테이너의 `docker logs` 를 모아 **`ts` 기준 시간순**으로 출력한다.
+- 출처를 `[edge]` / `[app]` 로 표시한다.
+- 매칭 기준
+  - 앱 줄: `.request_id`
+  - 엣지 줄: Caddy 접근 로그의 최상위 `.uuid` (rev6 에서 백엔드가 채택하는 바로 그 값)
+- `--app-only` / `--edge-only` 로 한쪽만 볼 수 있다. 기본은 합침.
+- Caddy 컨테이너가 없으면(로컬 직결 구성) 조용히 앱 줄만 보여 준다 — 오류가 아니다.
+- 컨테이너 이름은 `--container` / `--edge-container` 또는 `TRACE_CONTAINER` / `TRACE_EDGE_CONTAINER` 로 바꾼다.
+
+### Task S2 — `scripts/access-log-summary.sh` 는 그대로
+
+요약은 앱 로그만 본다. 엣지 요약이 필요해지면 그때 더한다.
+
+### 하지 않는 것
+
+- 수집기 컨테이너(Loki·Fluentd 등). 백엔드·Caddy 설정 변경(이번엔 스크립트만 고친다).
+
+### rev7 구현·검증 (2026-09-23)
+
+| 검증 | 결과 |
+|---|---|
+| 합쳐 보기 | 한 요청의 `[edge]` 줄과 `[app]` 줄이 **시간순으로 함께** 출력됨 |
+| `--edge-only` / `--app-only` | 각각 한쪽만. 종료 코드 0 |
+| 엣지 컨테이너 없음 | 앱 줄만 조용히 출력. 오류 아님 |
+| 백엔드를 안 거친 요청 | `/nope-asset.js` → **엣지 줄만** 나옴(백엔드 로그에 없는 요청) |
+
+구현 중 고친 것:
+- **엣지 시각이 UTC 로 나왔다.** Caddy 의 `ts` 는 epoch 이고 컨테이너 TZ 는 UTC 다. 앱 로그가 KST 로 찍으므로
+  `+32400` 후 포맷해 같은 축에 올렸다. **정렬 키도 KST ISO 로 맞춰야 한다** — UTC 키와 KST 키를 섞으면 순서가 뒤집힌다.
+- `--app-only` 일 때 종료 코드 1. `[ ... ] && 함수` 형태가 `pipefail` 로 새어 나갔다. `if` 문으로 바꿨다.
+- 정렬 키 구분자를 원시 제어문자(`\x01`)로 두면 편집기·git 에서 깨진다. **탭으로 바꿨다**(`cut` 의 기본 구분자).
+
+---
+
+## rev8 — 조회 스크립트를 Python 한 파일로 (2026-09-23)
+
+rev4~7 의 조회 스크립트는 bash + jq 였다. **jq 가 실행 환경 어디에도 없다**는 것을 확인하고 Python 으로 옮긴다.
+
+### 실측 근거
+
+| 확인 | PC | 개발서버 |
+|---|---|---|
+| `jq` | **없음** | **없음** |
+| `python3` | 3.12.10 | 3.12.3 |
+| `DOCKER_HOST=ssh://dev-server docker logs` | 실제 로그 읽힘 | — |
+| 한글 왕복(`docker logs` → Python) | `encoding="utf-8"` 명시 시 무손실, 깨짐 0 | — |
+
+지금 스크립트는 로컬에서도 개발서버에서도 그냥 돌지 않는다(검증할 때마다 jq 가 든 리눅스 컨테이너를 거쳤다).
+`scripts/oauth_local_smoke.py` 가 이미 있어 Python 스크립트는 저장소 관례에도 맞는다.
+
+### Task P1 — `scripts/trace.py` (신규, 기존 bash 2개 대체)
+
+```
+python scripts/trace.py <request_id | user:42>     # 엣지+앱 합쳐 시간순
+python scripts/trace.py <id> --server dev          # 개발서버 (DOCKER_HOST=ssh://dev-server)
+python scripts/trace.py --summary --since 24h      # 시간대×상태군, 5xx 상위 경로
+python scripts/trace.py --tail                     # 실시간 따라가기
+python scripts/trace.py <id> --out trace.txt       # 텍스트로 저장
+python scripts/trace.py <id> --app-only | --edge-only | --sensitive
+```
+
+- 엣지 줄(Caddy `uuid`)과 앱 줄(`request_id`)을 같은 시간축에 놓는다. Caddy `ts` 는 epoch UTC 이므로 KST 로 맞춘다(rev7 과 동일).
+- `--server` 없으면 로컬. `dev` 는 `ssh://dev-server`.
+- `subprocess` 인코딩을 `utf-8` 로 명시한다 — Windows 기본(cp949)으로 읽으면 한글이 깨진다.
+
+### 안전 규율 (리뷰 포인트)
+
+- `DOCKER_HOST` 는 **하위 프로세스 env 로만** 넘긴다. 셸에 export 하지 않는다 — 다른 docker 명령이 실수로 원격을 향하면 안 된다.
+- 스크립트가 부르는 docker 명령은 **`logs` 와 `inspect` 뿐이다.** `DOCKER_HOST=ssh` 는 원격 Docker API 전체 권한이므로, 조회 계열로 한정하는 것이 유일한 방어다.
+- 새 권한을 만들지 않는다. 이미 가진 SSH 접근을 쓸 뿐이고 `docker.sock` 을 어디에도 마운트하지 않는다.
+
+### 삭제
+
+`scripts/trace-request.sh`, `scripts/access-log-summary.sh` — jq 의존이라 실행 불가. 미머지 브랜치라 이력 부담이 없다.
+
+### 그대로
+
+백엔드·Caddy·compose 는 손대지 않는다. **로그 형식은 바뀌지 않는다.**
+
+### rev8 구현·검증 (2026-09-23)
+
+| 검증 | 결과 |
+|---|---|
+| 합쳐 보기 | 한 요청의 `[edge]` 423ms / `[app]` 417ms 가 시간순으로 — 프록시 구간 6ms 가 드러난다 |
+| `--edge-only` / `--app-only` | 각각 한쪽만 |
+| 백엔드를 안 거친 요청 | `/asset-only.js` → **엣지 줄만** |
+| `--summary` | 시간대×상태군 표 + 5xx 상위 경로 |
+| `--out` | 파일 저장 |
+| `--tail` | 실시간 출력 |
+| **`--server dev`** | 개발서버 컨테이너 조회됨(현재는 브랜치 미배포라 구조화 줄이 없어 "접근 줄 없음") |
+| 없는 컨테이너 | 명확한 메시지 + 종료 코드 2 |
+| 예외 렌더링 | `↳ 예외타입: 메시지` · 프레임 목록 · `↳ cause ...` · `body_shape` |
+
+삭제: `scripts/trace-request.sh`, `scripts/access-log-summary.sh`.
