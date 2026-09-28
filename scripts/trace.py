@@ -22,6 +22,7 @@
 --since 는 레코드의 ts 로 직접 거른다(기본 48h). 오래된 이력을 보려면 --since 30d 처럼 늘린다.
 한 번에 읽는 양은 --max-mb 로 제한한다(기본 64MB, 초과 시 최근 쪽만 읽고 알림).
 실시간(--tail)만 컨테이너 로그를 쓴다. --source 로 바꿀 수 있다.
+--dir 은 scripts/pull_logs.py 가 빼 둔 장기 보관본(달별, 지난달은 .gz)을 읽는다 - 볼륨에서 회전돼 지워진 기록도 본다.
 읽기에 실패하면 빈 결과가 아니라 stderr 에 원인을 내고 종료 코드 3 으로 끝난다.
 
 엣지 줄과 앱 줄은 같은 ID 로 묶인다 - Caddy 가 만든 uuid 를 백엔드가 request_id 로 채택하기 때문이다.
@@ -37,6 +38,7 @@ AWS 이전 후에는 같은 조건을 CloudWatch Logs Insights 로: filter reque
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import os
 import re
@@ -220,6 +222,46 @@ def read_volume_file(stem: str, env: dict[str, str], containers: list[str], max_
     raise LogReadError("볼륨 로그를 읽지 못했다 (컨테이너 접근 실패):\n  " + "\n  ".join(problems or ["대상 컨테이너 없음"]))
 
 
+def read_local_file(stem: str, directory: str, max_bytes: int, cutoff: datetime | None = None):
+    """scripts/pull_logs.py 가 빼 둔 보관본을 시간순으로 읽는다. 서버 접속이 필요 없다.
+
+    이름: <stem>-YYYY-MM.pNN-<해시>.log.gz(지난달 조각, 번호순) → <stem>-YYYY-MM.log(이번 달·늦게 온 줄).
+    --since 이전 달은 열지 않고, 최근 파일부터 거꾸로 --max-mb 만큼만 읽는다. 깨진 압축본은 알리고 건너뛴다.
+    """
+    if not os.path.isdir(directory):
+        raise LogReadError(f"보관 폴더가 없다: {directory}")
+    pattern = re.compile(rf"^{re.escape(stem)}-(\d{{4}}-\d{{2}})(?:\.p(\d+)-[0-9a-f]{{12}})?\.log(\.gz)?$")
+    first_month = cutoff.astimezone(KST).strftime("%Y-%m") if cutoff else ""
+    files = sorted(
+        # 한 달 안에서는 조각(번호순) → 번호 없는 압축본 → 평문 .log 순서
+        (match.group(1), 2 if not match.group(3) else (0 if match.group(2) else 1), int(match.group(2) or 0), name)
+        for name in os.listdir(directory)
+        if (match := pattern.match(name)) and match.group(1) >= first_month
+    )
+    chunks: list[bytes] = []
+    total = 0
+    for *_key, name in reversed(files):
+        if total >= max_bytes:
+            break
+        path = os.path.join(directory, name)
+        try:
+            with (gzip.open if name.endswith(".gz") else open)(path, "rb") as handle:
+                chunks.append(handle.read())
+        except (OSError, EOFError) as error:
+            print(f"[알림] {name} 을 읽지 못해 건너뛴다: {type(error).__name__}", file=sys.stderr)
+            continue
+        total += len(chunks[-1])
+    data = b"".join(reversed(chunks))
+    lines = _lines(data[-max_bytes:].decode("utf-8", "replace"))
+    if total > max_bytes and lines:
+        lines = lines[1:]  # 앞이 잘렸다 - 깨진 첫 줄을 버린다
+        print(f"[알림] {stem}: 최근 {max_bytes // 1024 // 1024}MB 만 읽었다. --max-mb 로 늘릴 수 있다.", file=sys.stderr)
+    for line in lines:
+        record = parse(line)
+        if record is not None:
+            yield record
+
+
 def read_logs(name: str, since: str, env: dict[str, str], follow: bool = False):
     """docker logs 를 JSON 줄로 읽는다. Windows 기본 인코딩으로 읽으면 한글이 깨지므로 utf-8 을 명시한다."""
     cmd = ["docker", "logs", "--since", since] + (["--follow"] if follow else []) + [name]
@@ -396,16 +438,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source", default="volume", choices=("volume", "docker"),
                         help="volume=볼륨의 로그 파일(재배포를 넘어선 이력, 기본) / docker=컨테이너 로그(최근 것만, "
                              "Caddy 접근 줄은 볼륨에만 있어 앱 줄만 나온다)")
+    parser.add_argument("--dir", help="pull_logs.py 보관 폴더(예: /mnt/d/travel-hunter-logs/dev). Docker 없이 파일을 읽는다")
     return parser
 
 
 def main() -> int:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
 
     server = args.server or DEFAULT_SERVER
     set_color_mode("never" if args.out else args.color)
     env = docker_env(server)
-    if not container_exists(args.container, env):
+    if args.dir and (args.tail or args.source == "docker"):
+        parser.error("--dir 은 받아 둔 파일을 읽는다 - --tail / --source docker 와 함께 쓸 수 없다")
+    if not args.dir and not container_exists(args.container, env):
         where = f"{server} 서버의 " if server != "local" else ""
         print(f"컨테이너를 찾지 못했다: {where}{args.container}", file=sys.stderr)
         return 2
@@ -416,11 +462,15 @@ def main() -> int:
     cutoff = parse_since(args.since) if args.source == "volume" else None
 
     def app_source():
+        if args.dir:
+            return read_local_file(APP_STEM, args.dir, max_bytes, cutoff)
         if args.source == "volume":
             return read_volume_file(APP_STEM, env, containers, max_bytes)
         return read_logs(args.container, args.since, env)
 
     def edge_source():
+        if args.dir:
+            return read_local_file(EDGE_STEM, args.dir, max_bytes, cutoff)
         if args.source == "volume":
             return read_volume_file(EDGE_STEM, env, containers, max_bytes)
         return read_logs(args.edge_container, args.since, env)
