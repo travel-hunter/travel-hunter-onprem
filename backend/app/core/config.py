@@ -140,6 +140,12 @@ class Settings:
     )
     # 구조화 로그 - docs/superpowers/plans/2026-09-22-caddy-service-status-log.md
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    # 컨테이너 수명과 무관하게 남는 사본. 볼륨에 쓴다. 비우면 stdout 만.
+    # 기본값을 비워 둔다 - 호스트(Windows)에서 백엔드·테스트를 돌리면 /var/log/... 가 C 드라이브 루트 아래로 풀려
+    # 원치 않는 폴더가 생긴다. 경로는 compose 가 컨테이너에만 넘긴다.
+    log_file_path: str = os.getenv("LOG_FILE_PATH", "")
+    log_file_max_mb: int = int(os.getenv("LOG_FILE_MAX_MB", "20"))
+    log_file_backups: int = int(os.getenv("LOG_FILE_BACKUPS", "10"))
     access_log_exclude_paths: tuple[str, ...] = split_csv(
         os.getenv("ACCESS_LOG_EXCLUDE_PATHS", "/api/health,/health")
     )

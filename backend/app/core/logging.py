@@ -2,6 +2,8 @@
 
 - 예외는 타입·메시지(앞 500자, 마스킹)·app/ 아래 프레임 위치만. 지역 변수·소스 줄은 남기지 않는다.
 - uvicorn.access 는 끈다 - 쿼리스트링을 그대로 찍어 토큰이 샌다. 접근 줄은 request_context 가 만든다.
+- stdout 과 파일에 함께 쓴다. docker logs 가 읽는 파일은 컨테이너 ID 에 묶여 있어 재배포하면 사라지지만,
+  파일 쪽은 이름 있는 볼륨이라 컨테이너 수명과 무관하게 남는다.
 - sqlalchemy.engine·httpx 는 WARNING - 파라미터·URL 을 INFO 로 흘리지 않게.
 """
 
@@ -10,8 +12,11 @@ from __future__ import annotations
 import json
 import logging
 import logging.config
+import os
 import re
+import sys
 import traceback
+from logging.handlers import RotatingFileHandler  # noqa: F401  (dictConfig 가 문자열로 참조한다)
 from datetime import datetime, timedelta, timezone
 from types import TracebackType
 from typing import Any
@@ -92,24 +97,64 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, default=str)
 
 
-def logging_config(level: str = "INFO") -> dict[str, Any]:
+def file_handler_config(path: str, max_bytes: int, backups: int) -> dict[str, Any] | None:
+    """로그 파일 핸들러. 디렉터리를 만들 수 없으면 None - 로깅 설정 때문에 앱이 못 뜨면 안 된다."""
+    if not path:
+        return None
+    try:
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(path, "a", encoding="utf-8"):
+            pass
+    except OSError as error:
+        # 조용히 넘어가면 "항상 남는다"는 약속이 깨진 걸 아무도 모른다. stdout 에 경고를 남긴다.
+        print(
+            json.dumps({"kind": "app", "level": "WARNING", "logger": "app.core.logging",
+                        "msg": f"로그 파일을 열지 못했다. stdout 에만 기록한다: {path} ({error})"},
+                       ensure_ascii=False),
+            file=sys.stdout, flush=True,
+        )
+        return None
+    return {
+        "class": "logging.handlers.RotatingFileHandler",
+        "filename": path,
+        "maxBytes": max_bytes,
+        "backupCount": backups,
+        "encoding": "utf-8",
+        "formatter": "json",
+        "filters": ["request_context"],
+    }
+
+
+def logging_config(
+    level: str = "INFO",
+    file_path: str = "",
+    file_max_bytes: int = 20 * 1024 * 1024,
+    file_backups: int = 10,
+) -> dict[str, Any]:
+    handlers: dict[str, Any] = {
+        "stdout": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+            "formatter": "json",
+            "filters": ["request_context"],
+        }
+    }
+    file_config = file_handler_config(file_path, file_max_bytes, file_backups)
+    if file_config is not None:
+        handlers["file"] = file_config
+    targets = list(handlers)
     return {
         "version": 1,
         "disable_existing_loggers": False,
         "filters": {"request_context": {"()": "app.core.logging.RequestContextFilter"}},
         "formatters": {"json": {"()": "app.core.logging.JsonFormatter"}},
-        "handlers": {
-            "stdout": {
-                "class": "logging.StreamHandler",
-                "stream": "ext://sys.stdout",
-                "formatter": "json",
-                "filters": ["request_context"],
-            }
-        },
-        "root": {"level": level.upper(), "handlers": ["stdout"]},
+        "handlers": handlers,
+        "root": {"level": level.upper(), "handlers": targets},
         "loggers": {
-            "uvicorn": {"level": "INFO", "handlers": ["stdout"], "propagate": False},
-            "uvicorn.error": {"level": "INFO", "handlers": ["stdout"], "propagate": False},
+            "uvicorn": {"level": "INFO", "handlers": targets, "propagate": False},
+            "uvicorn.error": {"level": "INFO", "handlers": targets, "propagate": False},
             # 끈다 - 요청 줄(쿼리 포함)을 그대로 찍는다. 접근 줄은 request_context 가 담당한다.
             "uvicorn.access": {"level": "CRITICAL", "handlers": [], "propagate": False},
             "sqlalchemy.engine": {"level": "WARNING"},
@@ -119,5 +164,10 @@ def logging_config(level: str = "INFO") -> dict[str, Any]:
     }
 
 
-def configure_logging(level: str = "INFO") -> None:
-    logging.config.dictConfig(logging_config(level))
+def configure_logging(
+    level: str = "INFO",
+    file_path: str = "",
+    file_max_bytes: int = 20 * 1024 * 1024,
+    file_backups: int = 10,
+) -> None:
+    logging.config.dictConfig(logging_config(level, file_path, file_max_bytes, file_backups))

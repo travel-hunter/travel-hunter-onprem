@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# scripts/trace.py 짧은 호출. 인자를 그대로 넘긴다.
+# Windows 에는 python3 가 스토어 스텁(WindowsApps)뿐인 경우가 있어, 실제로 돌아가는 쪽을 고른다.
+here="$(dirname "$0")"
+for py in python3 python; do
+  if "$py" -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >/dev/null 2>&1; then
+    exec "$py" "$here/trace.py" "$@"
+  fi
+done
+echo "Python 3.10 이상이 필요하다 (python3 / python 을 찾지 못했다)" >&2
+exit 127

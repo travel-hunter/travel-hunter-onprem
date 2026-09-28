@@ -20,7 +20,12 @@ from app.services.notification_scheduler import (
 )
 
 settings.validate_runtime()
-configure_logging(settings.log_level)
+configure_logging(
+    settings.log_level,
+    file_path=settings.log_file_path,
+    file_max_bytes=settings.log_file_max_mb * 1024 * 1024,
+    file_backups=settings.log_file_backups,
+)
 
 
 @asynccontextmanager

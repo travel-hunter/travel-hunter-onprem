@@ -453,3 +453,18 @@ def test_health_is_excluded_and_each_request_logs_exactly_one_access_line(client
     access = access_lines(log_lines())
     assert [line["path"] for line in access] == ["/api/policies", "/api/policies"]
     assert len({line["request_id"] for line in access}) == 2
+
+
+def test_file_log_is_off_unless_a_path_is_given(monkeypatch):
+    """코드 기본값은 비활성이다. 호스트(Windows)에서 백엔드·테스트를 돌릴 때 /var/log 가 C 드라이브 루트로
+    풀려 폴더가 생기지 않게 한다. 경로는 compose 가 컨테이너에만 넘긴다."""
+    import dataclasses
+    import os
+
+    from app.core.config import Settings
+
+    if os.environ.get("LOG_FILE_PATH"):
+        pytest.skip("LOG_FILE_PATH 가 설정된 환경")
+    default = next(f.default for f in dataclasses.fields(Settings) if f.name == "log_file_path")
+    assert default == ""
+    assert "file" not in logging_config(file_path="")["handlers"]

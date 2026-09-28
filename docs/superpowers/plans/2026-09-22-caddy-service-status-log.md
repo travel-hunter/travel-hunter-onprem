@@ -577,3 +577,389 @@ Dozzle 은 삭제한다. CloudWatch Logs Insights 가 같은 역할을 한다.
 | 키 없이 실행 | 안내 문구에 `--recent` 포함 |
 
 구현은 키 기반 경로를 재사용한다 — 선택자를 항상 참, 엣지 키를 `None`(전체)으로 둔다. 새 읽기 경로를 만들지 않았다.
+
+---
+
+## rev11 — 로그를 컨테이너 수명에서 분리 (2026-09-23)
+
+**문제**: 배포할 때마다 로그가 사라진다. `docker logs` 가 읽는 파일은 `/var/lib/docker/containers/<컨테이너ID>/…` 에 있고
+**컨테이너 ID 가 경로의 일부**라, `docker compose up -d` 로 컨테이너가 재생성되면 이전 파일이 함께 삭제된다.
+개발서버는 배포가 잦아 실질 보존 기간이 "마지막 배포 이후"다 — 200MB 한도보다 이게 먼저 걸린다.
+
+사용자 결정(2026-09-23): **항상 남아야 한다.**
+
+### 실측
+
+| 확인 | 결과 |
+|---|---|
+| 로그 드라이버를 `local` 로 바꾸면? | **소용없다.** 재생성 전 줄이 사라진다(`BEFORE-RECREATE` 소실 확인). 드라이버와 무관하게 컨테이너 ID 에 묶인다 |
+| 이름 있는 볼륨은 재생성을 견디나 | **견딘다.** 컨테이너를 지우고 새로 만들어도 파일이 그대로 |
+| Caddy 가 stdout 과 파일에 동시에? | **불가.** 이름 있는 `log` 두 개를 둬도 **파일에만** 기록된다(stdout 0건) |
+
+### 설계
+
+앱이 **직접 파일로도 쓴다.** 저장 위치는 이름 있는 볼륨이라 컨테이너 수명과 무관하다.
+
+```
+backend ─┬─ stdout ──→ docker json-file (최근 것, docker logs·Dozzle 용)
+         └─ 파일   ──→ 볼륨 travelhunter-logs/backend.log   (영구 이력)
+caddy   ─── 파일   ──→ 볼륨 travelhunter-logs/caddy-access.log
+```
+
+- 백엔드는 **둘 다** 쓴다(Python 은 핸들러를 두 개 붙이면 된다). `docker logs`·Dozzle 의 편의를 잃지 않는다.
+- Caddy 는 동시 출력이 안 되므로 **파일만** 쓴다. Caddy 의 기동·오류 줄은 기본 로거를 통해 stdout 에 계속 남는다.
+- 회전은 앱이 한다: Python `RotatingFileHandler`(20MB × 10), Caddy `roll_size`/`roll_keep`.
+- **읽기는 `docker exec <컨테이너> cat`** 으로 한다. `DOCKER_HOST=ssh` 를 그대로 타므로 로컬·개발서버가 같은 방식이고,
+  호스트 파일 권한(root 소유)을 건드릴 필요가 없다.
+
+### Task L1 — 백엔드 파일 핸들러
+
+`app/core/logging.py` 에 `RotatingFileHandler` 추가. 경로·용량은 설정으로(`LOG_FILE_PATH`, 기본 `/var/log/travelhunter/backend.log`).
+경로가 비었거나 쓸 수 없으면 **stdout 만 쓰고 조용히 넘어간다** — 로깅 설정 실패로 앱이 못 뜨면 안 된다.
+
+### Task L2 — Caddy 파일 출력
+
+`deploy/Caddyfile` ×2 의 `accesslog` snippet 을 `output stdout` → `output file /var/log/travelhunter/caddy-access.log { roll_size 20mb  roll_keep 10  roll_uncompressed }` 로.
+필터(쿼리 제거·헤더 삭제·IP 마스킹)는 그대로 둔다.
+
+### Task L3 — compose
+
+이름 있는 볼륨 `travelhunter-logs` 를 backend(rw)·caddy(rw) 에 `/var/log/travelhunter` 로 마운트.
+
+### Task L4 — `scripts/trace.py` 가 파일을 읽는다
+
+- 기본 조회(`<코드>`·`--recent`·`--summary`)는 **볼륨 파일**을 읽는다 — 배포를 넘어선 이력이 나온다.
+- `docker exec` 로 읽되 backend → caddy 순으로 시도한다(백엔드가 죽어 있으면 caddy 로).
+- `--tail` 은 지금처럼 `docker logs --follow` 를 쓴다(실시간).
+- `--source docker` 로 예전 방식(컨테이너 로그)을 강제할 수 있게 둔다.
+- 안전 규율 갱신: 부르는 docker 명령에 **`exec … cat <고정 경로>`** 가 추가된다. 인자가 고정이고 읽기 전용이다.
+
+### 하지 않는 것
+
+- 호스트 디렉터리 바인드 마운트(권한·플랫폼 문제). 로그 수집기 컨테이너. syslog 드라이버.
+- `docker logs` 경로 제거 — 최근 것은 계속 그쪽이 빠르다.
+
+### rev11 구현·검증 (2026-09-23)
+
+**재배포 생존 실측** — 마커 요청을 남기고 `up -d --force-recreate` 로 컨테이너를 재생성했다.
+
+| | 재생성 전 | 재생성 후 |
+|---|---|---|
+| `docker logs` 에 마커 | 1건 | **0건 (사라짐)** |
+| 볼륨 파일에 마커 | 1건 | **1건 (남음)** |
+| 볼륨 파일 줄 수 | 13 | **21 (누적)** |
+
+| 검증 | 결과 |
+|---|---|
+| `trace.py --recent` 기본 | 재배포 **이전** 줄(16:28~16:45)부터 출력 |
+| `--source docker` | 재생성 **이후**(16:46~)만 출력 — 두 조회원이 실제로 다르다 |
+| 재배포 전 요청을 코드로 조회 | 나온다 |
+| 백엔드 stdout 병행 | 마커가 파일·컨테이너 로그 양쪽에 있었다(재생성 전) |
+| `pytest backend/tests` | 1,074 passed / 19 skipped |
+| `caddy validate` · `compose config` | 통과 |
+
+**환경 문제 하나(코드와 무관)**: 검증 중 호스트에서 `127.0.0.1:8000` 이 응답하지 않았다.
+VS Code(PID 56984)가 그 주소를 선점해 Docker 는 `::`(IPv6)에만 바인딩된 상태였다. `http://[::1]:8000` 으로는 정상이다.
+컨테이너 내부 헬스체크는 계속 통과했다.
+
+---
+
+## rev12 — 코덱스 리뷰 반영 (2026-09-28)
+
+재부팅으로 스택이 내려갔다가 복구했다. **볼륨 로그는 재부팅을 넘어 살아남았다** — 9/23 마커가 파일에 그대로 있고
+`docker logs` 에는 없다(31줄, 9/23~9/28). rev11 의 목적이 재배포뿐 아니라 전원 차단에도 성립한다.
+
+코덱스가 실제 코드에서 찾은 결함 3건과 보완 5건을 반영한다.
+
+### 결함 3건
+
+**① `--since` 가 볼륨 조회에 적용되지 않았다.** 파일 전체가 출력됐다.
+→ `parse_since()` 로 기준 시각을 만들고 레코드의 `ts` 로 거른다. `--recent` · `--summary` · 키 조회 모두 같은 기준.
+앱 줄은 ISO 문자열, 엣지 줄은 epoch 초라 `record_time()` 이 둘을 흡수한다.
+
+**② Caddy 회전 파일을 못 읽었다.** 코드는 `caddy-access.log.*` 를 찾았지만 실제 이름은 다르다.
+실측으로 확인한 형식: `caddy-access-2026-09-28T03-56-10.890-size.log` (lumberjack: `<이름>-<UTC 타임스탬프>-<사유>.<확장자>`).
+→ 디렉터리를 훑어 `backend.log.N` 과 `caddy-access-*.log[.gz]` 를 모두 잡고, `.gz` 는 `gzip -dc` 로 읽는다.
+정렬은 `_rotation_order()` 가 맡는다 — 백엔드는 **숫자 역순**(`.10` 이 `.1` 보다 오래됐다. 문자열 정렬이면 `.10` 이 `.2` 앞에 온다),
+Caddy 는 이름의 타임스탬프순, 현재 파일이 마지막.
+
+**③ `docker exec` 가 실패해도 빈 결과로 exit 0 이었다.** 권한 오류·컨테이너 정지를 "로그 없음"으로 오해한다.
+→ 모든 컨테이너에서 실패하면 `LogReadError` 로 stderr 에 원인을 내고 **종료 코드 3**.
+"파일이 없다"(정상 0건)와 "읽지 못했다"(오류)를 구분한다.
+
+### 보완 5건
+
+- **읽기 상한**: `--max-mb`(기본 64MB). 넘으면 `tail -c` 로 최근 쪽만 읽고 잘린 첫 줄을 버린 뒤 알림을 낸다.
+- **`down -v` 경고**: 아래 운영 규칙 절에 기록.
+- **파일 쓰기 실패 경고**: 파일을 열 수 없으면 stdout 에 `WARNING` 한 줄을 내고 stdout 전용으로 계속한다. 조용히 넘어가지 않는다.
+- **`.10` 이상 정렬**: 위 `_rotation_order()`.
+- **Dozzle 한계**: 아래 운영 규칙 절에 기록.
+
+### 운영 규칙 (중요)
+
+| 항목 | 내용 |
+|---|---|
+| **`docker compose down -v` 금지** | `-v` 는 `travelhunter-logs` 볼륨을 DB 볼륨과 함께 지운다. **로그 이력이 사라진다.** 운영·개발서버에서는 `down` 만 쓴다. 볼륨을 정말 지워야 하면 `docker volume rm` 으로 대상을 명시한다 |
+| **Caddy 접근 로그는 `docker logs` 에 없다** | Caddy 는 접근 로그를 한 곳에만 쓸 수 있어(실측) 파일로 보낸다. 따라서 **Dozzle 과 `docker logs caddy` 에는 기동·오류 줄만 보인다.** 엣지 접근 기록은 `trace.py` 로 본다 |
+| **파일 열기 실패(기동 시)** | `WARNING` 한 줄을 남기고 stdout 전용으로 계속한다. 이 경고가 보이면 볼륨 마운트·권한을 확인한다 |
+| **실행 중 쓰기 실패(디스크 참 등)** | Python 표준 `--- Logging error ---` 가 stderr 로 나온다. stdout 핸들러는 별개라 계속 기록된다. 자동 전환은 없다 |
+| **기본 조회 기간** | `--since` 기본 48h. 오래된 이력은 `--since 30d` 처럼 늘린다 |
+
+### rev12 검증 (2026-09-28)
+
+| 항목 | 결과 |
+|---|---|
+| 재부팅 후 볼륨 로그 보존 | **통과** — 9/23 마커가 파일에 1건, `docker logs` 에 0건 |
+| `--since` 적용 | `--since 30d` 33줄 ↔ `--since 1h` 5줄. `--summary` 도 동일 |
+| Caddy 회전 파일 읽기 | 실제 형식(`caddy-access-2026-09-28T01-00-00.000-size.log`) 1건 포함 확인 |
+| `docker exec` 실패 | **exit 3** + stderr 에 컨테이너별 원인. "파일 없음"은 여전히 정상 0건 |
+| 파일 열기 실패 | stdout 에 `WARNING` 한 줄 후 stdout 전용으로 계속 |
+| 회전 정렬 | 백엔드 `.10 → .9 → .2 → .1 → 현재`, Caddy 타임스탬프순 |
+| 로그 테스트 | 61 passed |
+| 전체 `pytest` | **1,074 passed** / 19 skipped |
+| `caddy validate` | Caddyfile · Caddyfile.tunnel 모두 통과 |
+| `compose config` | compose.yaml · compose.local.yaml 모두 통과 |
+| `git diff --check` | clean |
+
+### rev12 보강 — trace.py 자동 회귀 테스트 (2026-09-28)
+
+앞서 보고한 61건은 백엔드 로깅 테스트였고 **`trace.py` 자체에는 자동 테스트가 없었다**(코덱스 지적).
+`backend/tests/test_trace_script.py` 를 추가한다 — Docker 없이 돌도록 `subprocess.run` 을 가짜로 바꿔
+파일 목록·내용·실패를 흉내 낸다.
+
+**고정하는 동작 23건**
+
+| 묶음 | 내용 |
+|---|---|
+| `parse_since` | `90s` `30m` `2h` `7d` **`1h30m`** `48h` · ISO(오프셋 유·무) · 잘못된 입력은 `LogReadError` · 빈 값은 필터 없음 |
+| `record_time` | 앱 줄 ISO 문자열 · 엣지 줄 epoch · 깨진 값은 None |
+| 회전 정렬 | 백엔드 `.10 → .9 → .2 → .1 → 현재`(문자열 정렬이면 틀린다) · Caddy 타임스탬프순, 현재 파일 마지막 |
+| 파일 탐색 | **실제 Caddy 회전 파일명**과 `.gz` 인식 · 다른 stem·비로그 파일 배제 · 실패를 빈 목록이 아니라 사유로 |
+| 읽기 | `.gz` 는 `gzip -dc` · 오래된 것부터 · 전 컨테이너 실패 시 예외(컨테이너별 사유 포함) · 두 번째 컨테이너로 폴백 · **파일 없음은 오류 아님** |
+| 읽기 상한 | `tail -c` 적용 · **잘린 첫 줄 폐기** · 알림 출력 |
+| `--since` | 앱·엣지 행 모두 거름 · 없으면 전부 통과 · `--summary` 도 같은 기준 |
+| 민감 | `kind=debug` 는 `--sensitive` 없이는 안 나온다 |
+
+**변이 테스트로 실효성 확인** — 고친 결함 3건을 하나씩 코드에 다시 심어 해당 테스트가 실패하는지 봤다.
+
+| 되돌린 결함 | 실패한 테스트 |
+|---|---|
+| `--since` 무시 | `test_cutoff_filters_app_and_edge_rows` |
+| Caddy 회전 패턴을 `.log.*` 로 | `test_list_rotated_matches_real_caddy_names_and_gz` |
+| 전부 실패해도 조용히 빈 결과 | `test_read_volume_file_raises_when_every_container_fails` |
+
+셋 다 잡았고, 원복 후 23건 전부 통과한다.
+
+### rev12 최종 검증 (2026-09-28)
+
+| 항목 | 결과 |
+|---|---|
+| `trace.py` 테스트 | **23 passed** (신규) |
+| 전체 `pytest` | **1,097 passed** / 19 skipped |
+| `caddy validate` | Caddyfile · Caddyfile.tunnel 통과 |
+| `compose config` | compose.yaml · compose.local.yaml 통과 |
+| `git diff --check` | clean |
+
+---
+
+## rev13 — 훑어볼 때의 가독성 (색·정렬) (2026-09-28)
+
+적재 형식은 JSON 한 줄이다. 기계가 검색·필터하기 위한 형식이고(CloudWatch 가 필드를 자동 인식하는 이유도 이것),
+**사람이 읽기 좋게 만드는 일은 도구가 맡는다.** 지금 `trace.py` 출력은 정상 요청과 오류가 같은 밀도로 흘러
+눈에 띄지 않는다. 색과 정렬만 손본다(요청 묶기·필터링은 하지 않는다).
+
+### Task V1 — 색
+
+- 상태코드: 5xx 빨강 · 4xx 노랑 · 2xx/3xx 기본 · `ERROR` 줄 빨강 · `WARNING` 노랑
+- 출처 표시: `[edge]` 와 `[app]` 을 다른 색으로
+- 시각·`rid` 는 흐리게(dim) — 본문이 먼저 읽히게
+- **터미널이 아닐 때(파이프·`--out`)는 색을 끈다.** `--color always|auto|never` 로 강제할 수 있다.
+  `NO_COLOR` 환경변수도 존중한다.
+
+### Task V2 — 정렬
+
+- 열 폭을 맞춰 표처럼 읽히게: 시각 · 출처 · 종류 · 상태 · 소요시간 · 경로 순
+- **UUID 는 앞 8자만** 보여 준다(전체는 `--full-id`). 36자 UUID 가 줄의 절반을 먹고 있었다
+- 소요시간은 오른쪽 정렬(`tabular` 느낌)로 크기 비교가 되게
+
+### 하지 않는 것
+
+요청 묶기(같은 request_id 들여쓰기) · `--errors-only` · Dozzle 출력 가공. 별도 작업으로 남긴다.
+
+### rev13 구현·검증 (2026-09-28)
+
+**전**
+```
+14:00:42      [edge] GET /api/policies 200  423ms  net=172.19.0.0
+14:02:11.412  [app]  ACCESS POST /api/trips/17/policies 500  1312ms  user=42  rid=1652b049-...-4c8f
+```
+**후**
+```
+14:02:11      [edge]          200   423ms  GET /api/policies  net=172.19.0.0
+14:02:11.412  [app]  ACCESS   200   417ms  GET /api/policies  user=42 rid=cc772b50
+14:02:11.412  [app]  ACCESS   404    33ms  GET /api/policies/nope  user=- rid=7374694c
+14:02:11.412  [app]  ACCESS   500  1312ms  POST /api/trips/17/policies  user=42 rid=1652b049
+                   body_shape={"policyId": "int"}
+14:02:11.412  [app]  ERROR  app.services.trips  정책 연결 실패
+                   ↳ IntegrityError: UNIQUE constraint failed
+                     app/services/trips.py:210:link_policy
+```
+
+상태·소요시간이 고정 열에 오고 소요시간은 오른쪽 정렬이라 `1312ms` 가 눈에 띈다. UUID 는 앞 8자만(`--full-id` 로 전체).
+
+| 검증 | 결과 |
+|---|---|
+| 열 정렬 | 엣지·앱 줄의 상태 열이 같은 자리, 소요시간은 끝나는 열이 같다(테스트로 고정) |
+| 색 | 5xx 빨강+굵게 · 4xx 노랑 · ERROR 빨강 · WARNING 노랑 · 시각/rid 흐리게 |
+| 색 끄기 | 파이프·`--out` 에서 ANSI **0건**. `NO_COLOR` 가 `--color always` 보다 우선 |
+| `trace.py` 테스트 | **38 passed** (23 + 색·정렬 15) |
+| 전체 `pytest` | **1,112 passed** / 19 skipped |
+| `caddy validate` · `compose config` · `git diff --check` | 모두 통과 |
+
+색 코드가 들어가면 `len()` 이 늘어 열이 어긋나므로, `_source_tag()` 가 **폭을 먼저 맞추고 칠한다**.
+
+---
+
+## rev14 — 명령 짧게 (래퍼 + 기본값) (2026-09-28)
+
+`python scripts/trace.py --recent --since 7d --server dev` 는 길다. 거슬리는 건 `python scripts/` 반복과
+`--server dev` 반복이다. 하위 명령 구조(`trace recent`)로 재편하는 방법도 있지만 이득이 작고 문서·안내문을 전부 고쳐야 해서
+**래퍼와 기본값만** 손본다.
+
+### Task C1 — 래퍼
+
+`scripts/trace.cmd`(Windows) · `scripts/trace`(bash) 두 줄짜리. 인자를 그대로 `python scripts/trace.py` 로 넘긴다.
+저장소 안에 있으므로 `cd` 는 남는다 — PATH 등록은 각자 PC 설정이라 안내문에 적는다.
+
+### Task C2 — 짧은 형태
+
+- `--dev` / `--prod` : `--server dev|prod` 의 짧은 형태
+- `--stats` : `--summary` 의 별칭(기존 이름도 계속 받는다)
+- **`TRACE_SERVER` 환경변수**: 기본 대상 서버. 옵션이 있으면 옵션이 이긴다
+
+```
+trace 413dba2b               # 문의 코드
+trace --recent --since 7d    # 활동 전체
+trace --stats                # 요약
+trace --dev --recent         # 개발서버
+```
+
+### 하지 않는 것
+
+하위 명령 구조 재편. PATH 자동 등록.
+
+### rev14 구현·검증 (2026-09-28)
+
+```
+전: python scripts/trace.py --recent --since 7d --server dev
+후: trace --recent --since 7d --dev        (TRACE_SERVER=dev 면 --dev 도 생략)
+```
+
+| 검증 | 결과 |
+|---|---|
+| `--dev` / `--prod` | `--server dev|prod` 와 같은 결과 |
+| `--stats` | `--summary` 별칭. 기존 이름도 계속 받는다 |
+| `TRACE_SERVER` | 기본 대상으로 쓰이고, 옵션이 있으면 **옵션이 이긴다** |
+| bash 래퍼 | 인자·`--help` 를 그대로 넘긴다. 실행 권한 `100755` 로 기록 |
+| cmd 래퍼 | 동작 확인 |
+| `trace.py` 테스트 | **42 passed** (38 + 짧은 형태 4) |
+| 전체 `pytest` | **1,116 passed** / 19 skipped |
+| `caddy validate` · `compose config` · `git diff --check` | 통과 |
+
+구현 중 걸린 것:
+- **`.cmd` 는 CRLF 가 아니면 `REM` 줄이 명령으로 샌다.** LF 로 저장했더니 `'짧은'은(는) 내부 또는 외부 명령...` 오류가 먼저 났다.
+  CRLF + ASCII 주석으로 다시 쓰고, git 이 정규화하지 못하게 `.gitattributes` 에 `*.cmd text eol=crlf` 를 넣었다.
+- 인자 해석을 테스트하려고 `build_parser()` 를 `main()` 에서 분리했다.
+
+**개발서버 조회는 이번에 확인하지 못했다** — `ssh dev-server` 가 네트워크에서 응답하지 않는다(연결 시간 초과).
+`--dev` 플래그가 대상을 dev 로 바꾸는 것까지는 확인했다(오류 메시지에 "dev 서버의" 표시). 네트워크 복구 후 재확인이 필요하다.
+
+---
+
+## rev15 — 재검토 결함 수정 (2026-09-28)
+
+커밋(`22551ed`) 후 푸시 전에 다시 검토했다. 푸시 전 필수 3건, AGENTS.md 위반 2건, 개선 3건을 고치고 커밋을 보정한다.
+
+### 필수
+
+| 결함 | 실증 | 수정 |
+|---|---|---|
+| `trace.py` 가 Python 3.11 에서 파싱 불가 | `SyntaxError: f-string: expecting '}'` (python:3.11) — f-string 안에서 바깥과 같은 따옴표 재사용은 3.12 전용(PEP 701) | 값을 먼저 만들고 `rjust`. 3.11 에서 `--help` 실행 확인 |
+| 호스트 실행 시 `C:\var\log\travelhunter\` 생성 | Windows 에서 `/var/log/...` 가 C 드라이브 루트로 풀린다(실측). e2e 러너·호스트 pytest 가 `app.main` 을 import 하면 생긴다 | 코드 기본값을 빈 값(비활성)으로. 경로는 compose 가 컨테이너에만 준다(배포 스택 전달 확인) |
+| 회전 파일명 정규식이 따옴표를 받음 | `caddy-access-x'; rm -rf / #.log` 매치 → `sh -c '…'` 인용이 깨진다 | 허용 문자를 `[A-Za-z0-9._-]` 로. **`ls` 출력을 `split()` 이 아니라 `splitlines()` 로** 읽는다 — 공백 분리가 이상한 이름을 우연히 쪼개 걸러 주고 있어 정규식이 방어선 역할을 못 하고 있었다 |
+
+### AGENTS.md
+
+- `.env.example` 에 `LOG_FILE_PATH` · `LOG_FILE_MAX_MB` · `LOG_FILE_BACKUPS` 를 설명과 함께 추가했다.
+- `CHECKLIST.md` 의 현재 상태·검증·위험을 이 브랜치 기준으로 교체했다. PR #81·#82 도 갱신하지 않았던 기존 누락을 함께 메운다.
+  교체 구간에 있던 제어문자 손상(`\a` 가 `admin` 의 `a` 를, 탭이 `test` 의 `t` 를 먹은 것)도 사라졌다.
+
+### 개선
+
+- bash 래퍼: `python3` 만 부르면 Windows 스토어 스텁(WindowsApps)에 걸릴 수 있다. `python3`·`python` 중 3.10 이상으로 실제 돌아가는 쪽을 고른다.
+- `parse_since` 의 이중 컴프리헨션을 `timedelta` 합으로.
+- 테스트 헬퍼의 안 쓰는 인자 제거.
+
+### 문서 정정
+
+rev12 에 "파일 쓰기·회전 실패 시 stdout fallback 및 경고"라고 적은 것은 과장이었다. 내가 만든 `WARNING` 은 **기동 시 열기 실패**만이다.
+실행 중 쓰기 실패는 Python 표준 `--- Logging error ---` 가 stderr 로 나오고 stdout 핸들러는 계속 동작한다. 운영 규칙 표를 고쳤다.
+
+### 가드 테스트와 변이 확인
+
+| 가드 | 변이(옛 코드 재주입) 시 |
+|---|---|
+| 3.12 전용 f-string 검사(토큰 단위) | 실패 — `ast.parse(feature_version=(3, 11))` 로는 못 잡아서(실측) 토크나이저로 직접 본다 |
+| 셸 문자 파일명 4종 | **4건 모두 실패** (`splitlines` 전환 전에는 2건만 실패했다) |
+| 파일 로그 기본 비활성 | `Settings` 기본값과 빈 경로의 핸들러 구성 확인 |
+
+### 검증
+
+| 항목 | 결과 |
+|---|---|
+| 전체 `pytest` | **1,122 passed** / 19 skipped |
+| 로그 관련 | 109 passed (trace.py 47 · 요청 로그 35 · 디버그 캡처 27) |
+| Python 3.11 | 파싱·`--help` 실행 OK |
+| `caddy validate` ×2 · `compose config` ×2 | 통과 |
+| 래퍼 bash·cmd | 동작 |
+| 변경 파일 U+FFFD·제어문자 | 0건 |
+| `git diff --check` | clean |
+
+### 남은 위험
+
+- `RotatingFileHandler` 는 다중 프로세스 안전하지 않다(현재 워커 1개).
+- 개발서버 `--dev` 실동작 미확인(SSH 시간 초과).
+- 프런트 vitest 2건은 develop 기존 실패.
+
+---
+
+## rev16 — 최종 HEAD 리뷰 결함 수정 (2026-09-28)
+
+PR 전 게이트에서 최종 HEAD(`942c3a9`)를 독립 리뷰했다. HIGH 는 없고 MEDIUM 2건이 나왔다.
+1번은 "읽기 실패는 종료 코드 3" 약속을 깨므로 PR 전에 고친다.
+
+| # | 결함 | 수정 | 가드 테스트 |
+|---|---|---|---|
+| M1 | `ls -1 … 2>/dev/null` 이 실패 메시지를 버려, 종료 코드가 0 이 아니어도 오류 문자열이 비어 "로그 없음"으로 끝났다. 두 번째 컨테이너도 시도하지 않았다. 볼륨이 없는 옛 배포본에서 그대로 재현된다 | 리다이렉트 제거. 메시지가 비면 `exit <코드>` 를 원인으로 쓴다(본문 읽기도 같게) | 종료 코드 2 + 빈 stderr → 다음 컨테이너 시도, 전부 실패 시 `LogReadError` |
+| M2 | `splitlines()` 는 U+2028·U+2029·U+0085 에서도 줄을 나눈다. `json.dumps(ensure_ascii=False)` 는 이 문자를 이스케이프하지 않고, `path` 는 퍼센트 디코딩된 값이라 `/%E2%80%A8x` 요청이 두 조각으로 쪼개져 조회에서 사라진다(파일 원본은 온전) | 로그 본문은 `split("\n")`. `ls` 목록도 같게 | U+2028 이 든 줄이 한 레코드로 남는다 |
+| L3 | `--source docker` 도움말이 엣지 줄도 나오는 것처럼 읽힌다 | Caddy 접근 줄은 볼륨에만 있다고 명시 | — |
+| L5 | 정규식은 `strip()` 한 이름을 검사하고 경로에는 원래 이름을 썼다 | 공백 뗀 이름 하나로 통일 | — |
+| L6 | `--stats` 만 `ts` 를 못 읽은 레코드를 기간 안으로 넣었다 | 다른 모드처럼 버린다 | 깨진 `ts` 레코드가 요약에서 빠진다 |
+| L8 | 잘린 첫 줄 버리기 테스트가 원래 깨진 JSON 을 써서, 버리지 않아도 통과했다 | 잘린 첫 줄을 올바른 JSON 으로 | 버리기를 되돌리면 실패 |
+
+미룬 것(남은 위험으로 기록):
+
+- L4 파이프라인에 `pipefail` 이 없어 `ls` 와 `cat` 사이에 회전이 일어나면 그 파일을 건너뛰거나 두 번 읽을 수 있다. 백엔드 이미지의 `sh`(dash)는 `pipefail` 을 지원하지 않아 방식을 따로 설계해야 하고 증상이 일시적이다.
+- L7 `LOG_FILE_MAX_MB=0` 이면 회전하지 않는다(`maxBytes=0`). 운영자 설정 실수에만 해당한다.
+
+순서: 수정 → 변이 확인 → 전체 게이트 → 커밋 보정 → 새 HEAD 로 재리뷰 → 푸시·Draft PR.
+
+### 결과
+
+| 항목 | 결과 |
+|---|---|
+| 변이: 빈 실패 메시지 / `splitlines` 복귀 / 요약 `or cutoff` / 첫 줄 버리기 제거 | 4건 모두 해당 테스트 실패 |
+| 전체 `pytest`(Linux 백엔드 이미지) | 1,125 passed / 19 skipped |
+| 로그 관련 | 112 passed (trace.py 50 · 요청 로그 35 · 디버그 캡처 27) |
+| Windows 호스트 venv | 스냅숏 권한 테스트 1건 실패 — develop 에서도 동일(임시 폴더 ACL) |
+| Python 3.11 `--help` · bash 래퍼 · `git diff --check` · UTF-8 | 통과 |
