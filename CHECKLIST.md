@@ -2,27 +2,32 @@
 
 ## Current Status
 
-- Merge-ready: 역추적용 구조화 로그의 영구 보존. 로그를 컨테이너 수명에서 분리해 재배포·재부팅 후에도 남긴다(`feature/durable-logs`).
-- Scope: 백엔드 로깅 설정(파일 핸들러 병행), Caddy 접근 로그 파일 출력, compose 로그 볼륨 `travelhunter-logs`, 조회 스크립트 `scripts/trace.py`·래퍼. API 계약·DB 스키마 변경 없음.
+- Merge-ready: 로그 장기 보관. 볼륨(단기, 회전·삭제)의 로그를 텍스트로 빼서 개발서버 PC 의 D: 드라이브에 달별로 보관한다(`feature/log-stack`). 계획: `docs/superpowers/plans/2026-09-28-pull-logs-to-local.md` (rev4).
+- Scope: `scripts/pull_logs.py`(신규, 증분 복사·달별 파일·지난달 gzip·보존 12개월), `scripts/trace.py` `--dir`(보관본 조회)·키 없이 실행 시 `NameError` 수정. 앱·compose·Caddy·API·DB 변경 없음.
+- 직전 머지: PR #83 볼륨 로그·`scripts/trace`. 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
 
 ## Recent Validation
 
-- PASS: backend full suite 1,125 passed, 19 skipped(Linux 백엔드 이미지). 로그 관련 112 passed(trace.py 50, 요청 로그 35, 디버그 캡처 27).
-- BASELINE: Windows 호스트 venv 에서는 `test_stay_discount_semantics_snapshot.py::test_restricted_atomic_artifact_and_sidecar_round_trip` 1건이 임시 폴더 ACL 검사로 실패한다. 손대지 않은 develop 에서도 동일.
-- PASS: 결함 되돌리기(변이) 확인 — `--since` 무시, Caddy 회전 파일명, 읽기 실패의 빈 결과, 3.12 전용 f-string, 셸 문자 파일명, 메시지 없는 목록 실패, U+2028 줄 분리, 요약의 시각 없는 레코드, 잘린 첫 줄 버리기를 각각 다시 심으면 해당 테스트가 실패한다.
-- PASS: `trace.py` Python 3.11 파싱(python:3.11 컨테이너), Caddy validate(두 파일), compose config(두 파일), `git diff --check`, 변경 파일 U+FFFD·제어문자 0건.
-- PASS: 재부팅 후 볼륨 로그 보존 — 9/23 기록이 9/28 재기동 후에도 조회됨. `docker logs` 에는 없음.
-- BASELINE: frontend vitest 2건(`home.test.tsx`, `trip-create.test.tsx`)은 손대지 않은 develop 에서도 동일하게 실패. 이 브랜치는 프런트 변경 없음.
-- NOT RUN: 개발서버 `--dev` 조회 — SSH 연결 시간 초과로 미확인.
+- PASS: backend full suite 1,163 passed, 19 skipped(Linux 백엔드 이미지). 신규 pull 27건, trace `--dir`·결함 수정 테스트 포함.
+- PASS: 변이 27개 — 반쪽 줄, 받은 위치, 회전 정렬, 파일명 정규식, inode 재사용, 잠금, 컨테이너 전환, 줄 시각·KST 달 나누기, 압축·보존, 가져오는 중 회전(inode 재확인), 미확정 꼬리 되돌리기, 상태 유실 시 보관본 보호, 압축 조각 해시 중복 방지, 대상 이름 한정, `--since` 이전 달, 조각 번호 순서, 필요한 만큼만 읽기, 폴더 없음·깨진 압축본, `parser` 결함을 각각 되돌리면 테스트가 실패한다.
+- PASS: Python 3.10·3.11 두 스크립트 `--help`, 가져오기 셸 명령을 dash·busybox 에서 실행, `git diff --check`, 변경 파일 U+FFFD·제어문자 0건.
+- PASS: 로컬 스택 실제 실행(`--label dev`) — 달별 파일 생성, 두 번째 실행은 새 줄만, `trace --dir --recent`·`--stats` 조회. 개발서버 `--dev`(읽기 전용) 증분 수신 확인.
+- BASELINE: Windows 호스트 venv 의 `test_stay_discount_semantics_snapshot.py` 1건(임시 폴더 ACL), frontend vitest 2건(`home.test.tsx`, `trip-create.test.tsx`) — develop 동일. 이 브랜치는 프런트 변경 없음.
+- NOT RUN: 개발서버 `/mnt/d`(9p)에서 실행·cron 등록 — 서버 쓰기라 배포 후 승인 받아 진행.
 
 ## Active Risks
 
-### 역추적 로그(`feature/durable-logs`)
+### 로그 장기 보관(`feature/log-stack`)
+
+- 보관본은 같은 PC 의 다른 디스크(D:)다. WSL·Docker 고장은 견디지만 PC 다운·D: 고장은 못 막는다. 다음 단계는 다른 기계(NAS)나 S3 로 한 번 더 복사.
+- cron 이 5분마다 돈다. 볼륨 보관 한도(스트림당 200MB)를 넘길 만큼 멈춰 있으면 그 사이는 잃는다. `pull.log` 로 실행 기록을 본다.
+- AWS 로 옮기면 빼 오는 곳이 CloudWatch 로 바뀐다(ASG·private subnet 이라 `docker exec` 불가). 보관 형식은 그대로 둔다.
+
+### 역추적 로그(PR #83)
 
 - **`docker compose down -v` 금지.** `-v` 가 `travelhunter-logs` 볼륨을 DB 와 함께 지워 로그 이력이 사라진다. 운영·개발서버에서는 `down` 만 쓴다.
 - Caddy 접근 로그는 파일로만 간다(Caddy 는 한 곳에만 쓸 수 있다). Dozzle·`docker logs caddy` 에는 기동·오류 줄만 보인다. 엣지 기록은 `scripts/trace.py` 로 본다.
 - `RotatingFileHandler` 는 다중 프로세스 안전하지 않다. 지금은 uvicorn 워커 1개다. 워커를 늘리면 회전이 경합하므로 그때 핸들러를 바꿔야 한다.
-- 개발서버에서 `trace.py --dev` 실동작을 확인하지 못했다(SSH 시간 초과). 배포 후 재확인 필요.
 - 회전본 읽기 파이프라인에 `pipefail` 이 없다(백엔드 `sh` 는 dash). 목록 조회와 읽기 사이에 회전이 일어나면 그 파일을 건너뛰거나 두 번 읽을 수 있다. 일시적이다.
 - `LOG_FILE_MAX_MB=0` 이면 백엔드 로그 파일이 회전하지 않고 커진다. 값 검증이 없다.
 

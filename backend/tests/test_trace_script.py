@@ -416,3 +416,109 @@ def test_rotated_names_with_shell_characters_are_ignored(name, monkeypatch):
     monkeypatch.setattr(subprocess, "run", FakeDocker(listing={"c": ["caddy-access.log", name]}))
     files, _ = trace.list_rotated("c", "caddy-access", {})
     assert [Path(f).name for f in files] == ["caddy-access.log"]
+
+
+# ----------------------------------------------------------------- 장기 보관본(--dir)
+def test_archive_is_read_without_docker(tmp_path, monkeypatch):
+    """scripts/pull_logs.py 가 빼 둔 달별 파일을 읽는다. docker 를 부르면 실패한다."""
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("--dir 은 서버에 접속하지 않는다"))
+    (tmp_path / "backend-2026-09.log").write_bytes((app_line("2026-09-28T10:00:00+09:00") + "\n").encode())
+    records = list(trace.read_local_file("backend", str(tmp_path), 1024 * 1024))
+    assert [r["ts"] for r in records] == ["2026-09-28T10:00:00+09:00"]
+    assert list(trace.read_local_file("caddy-access", str(tmp_path), 1024)) == [], "아직 없는 스트림은 비어 있음"
+
+
+def test_archive_reads_months_in_order_including_gzip(tmp_path):
+    import gzip
+
+    (tmp_path / "backend-2026-08.log.gz").write_bytes(
+        gzip.compress((app_line("2026-08-10T10:00:00+09:00") + "\n").encode())
+        + gzip.compress((app_line("2026-08-31T23:00:00+09:00") + "\n").encode())  # 늦게 붙은 멤버
+    )
+    (tmp_path / "backend-2026-08.log").write_bytes((app_line("2026-08-31T23:30:00+09:00") + "\n").encode())
+    (tmp_path / "backend-2026-09.log").write_bytes((app_line("2026-09-01T09:00:00+09:00") + "\n").encode())
+    (tmp_path / "backend-notes.txt").write_text("무시", "utf-8")
+    records = list(trace.read_local_file("backend", str(tmp_path), 1024 * 1024))
+    assert [r["ts"][:16] for r in records] == ["2026-08-10T10:00", "2026-08-31T23:00", "2026-08-31T23:30", "2026-09-01T09:00"]
+
+
+def test_archive_skips_months_before_since(tmp_path, capsys):
+    (tmp_path / "backend-2026-07.log.gz").write_bytes(b"not gzip - opening this would fail")
+    (tmp_path / "backend-2026-09.log").write_bytes((app_line("2026-09-28T10:00:00+09:00") + "\n").encode())
+    cutoff = datetime(2026, 9, 1, tzinfo=KST)
+    assert len(list(trace.read_local_file("backend", str(tmp_path), 1024 * 1024, cutoff))) == 1
+    assert "읽지 못해" not in capsys.readouterr().err, "--since 이전 달은 열지도 않는다"
+
+
+def test_archive_over_the_cap_drops_the_cut_line(tmp_path, capsys):
+    # 잘린 조각이 그 자체로 올바른 JSON 이 되게 만든다 - 버리지 않으면 가짜 레코드가 하나 더 나온다.
+    tail_of_first = app_line("2026-09-28T09:00:00+09:00")
+    first = "잘린앞부분" + tail_of_first
+    second = app_line("2026-09-28T10:00:00+09:00")
+    # 바이트로 쓴다 - Windows 의 write_text 는 \n 을 \r\n 으로 바꿔 자르는 위치가 어긋난다.
+    (tmp_path / "backend-2026-09.log").write_bytes((first + "\n" + second + "\n").encode("utf-8"))
+    cap = len((tail_of_first + "\n" + second + "\n").encode())
+    records = list(trace.read_local_file("backend", str(tmp_path), cap))
+    assert [r["ts"] for r in records] == ["2026-09-28T10:00:00+09:00"]
+    assert "MB 만 읽었다" in capsys.readouterr().err
+
+
+def test_dir_mode_end_to_end(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("--dir 은 서버에 접속하지 않는다"))
+    (tmp_path / "backend-2026-09.log").write_bytes((app_line("2026-09-28T10:00:00+09:00") + "\n").encode())
+    monkeypatch.setattr("sys.argv", ["trace", "--dir", str(tmp_path), "r1", "--since", "", "--color", "never"])
+    assert trace.main() == 0
+    assert "/api/x" in capsys.readouterr().out
+
+
+def test_missing_key_prints_usage_instead_of_crashing(tmp_path, monkeypatch, capsys):
+    # build_parser() 로 나눈 뒤 main() 이 없는 parser 를 불러 NameError 로 죽었다.
+    monkeypatch.setattr("sys.argv", ["trace", "--dir", str(tmp_path)])
+    with pytest.raises(SystemExit) as exit_info:
+        trace.main()
+    assert exit_info.value.code == 2
+    assert "request_id 또는 user:<id> 가 필요하다" in capsys.readouterr().err
+
+
+def test_dir_rejects_tail(tmp_path, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["trace", "--dir", str(tmp_path), "--tail"])
+    with pytest.raises(SystemExit):
+        trace.main()
+
+
+def test_archive_parts_are_read_in_number_order_before_the_plain_file(tmp_path):
+    import gzip
+
+    def line(ts):
+        return (app_line(ts) + "\n").encode()
+
+    # 해시는 무작위 순서가 되게 고른다 - 번호로만 정렬돼야 한다
+    (tmp_path / "backend-2026-08.p99-000000000000.log.gz").write_bytes(gzip.compress(line("2026-08-20T10:00:00+09:00")))
+    (tmp_path / "backend-2026-08.p01-ffffffffffff.log.gz").write_bytes(gzip.compress(line("2026-08-10T10:00:00+09:00")))
+    (tmp_path / "backend-2026-08.p100-aaaaaaaaaaaa.log.gz").write_bytes(gzip.compress(line("2026-08-30T10:00:00+09:00")))
+    (tmp_path / "backend-2026-08.log").write_bytes(line("2026-08-31T23:00:00+09:00"))
+    records = list(trace.read_local_file("backend", str(tmp_path), 1024 * 1024))
+    assert [r["ts"][:10] for r in records] == ["2026-08-10", "2026-08-20", "2026-08-30", "2026-08-31"]
+
+
+def test_archive_reads_only_the_newest_files_it_needs(tmp_path, capsys):
+    """최근 파일부터 거꾸로 --max-mb 만큼만 읽는다. 오래된 달은 열지도 않는다."""
+    (tmp_path / "backend-2026-07.p01-000000000000.log.gz").write_bytes(b"not gzip - opening this would warn")
+    recent = (app_line("2026-09-28T10:00:00+09:00") + "\n").encode()
+    (tmp_path / "backend-2026-09.log").write_bytes(recent * 3)
+    records = list(trace.read_local_file("backend", str(tmp_path), len(recent) * 2))
+    assert len(records) >= 1
+    assert "읽지 못해" not in capsys.readouterr().err, "필요 없는 오래된 파일은 열지 않는다"
+
+
+def test_a_broken_archive_file_is_skipped_with_a_notice(tmp_path, capsys):
+    (tmp_path / "backend-2026-08.p01-000000000000.log.gz").write_bytes(b"not gzip")
+    (tmp_path / "backend-2026-09.log").write_bytes((app_line("2026-09-28T10:00:00+09:00") + "\n").encode())
+    records = list(trace.read_local_file("backend", str(tmp_path), 1024 * 1024))
+    assert len(records) == 1
+    assert "읽지 못해 건너뛴다" in capsys.readouterr().err
+
+
+def test_a_missing_archive_folder_is_an_error_not_empty(tmp_path):
+    with pytest.raises(trace.LogReadError):
+        list(trace.read_local_file("backend", str(tmp_path / "typo"), 1024))
