@@ -73,6 +73,9 @@ services:
       OAUTH_STATE_COOKIE_NAME: ${OAUTH_STATE_COOKIE_NAME:-travel_hunter_oauth_state}
       # 구조화 로그 - docs/superpowers/plans/2026-09-22-caddy-service-status-log.md
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FILE_PATH: ${LOG_FILE_PATH:-/var/log/travelhunter/backend.log}
+      LOG_FILE_MAX_MB: ${LOG_FILE_MAX_MB:-20}
+      LOG_FILE_BACKUPS: ${LOG_FILE_BACKUPS:-10}
       ACCESS_LOG_EXCLUDE_PATHS: ${ACCESS_LOG_EXCLUDE_PATHS:-/api/health,/health}
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       LOG_DEBUG_BODIES: ${LOG_DEBUG_BODIES:-false}
@@ -82,6 +85,9 @@ services:
       LOG_DEBUG_BODY_UNTIL: ${LOG_DEBUG_BODY_UNTIL:-}
       LOG_DEBUG_BODIES_ALLOW_PROTECTED: ${LOG_DEBUG_BODIES_ALLOW_PROTECTED:-false}
       LOG_DEBUG_OPERATOR_USER_ID: ${LOG_DEBUG_OPERATOR_USER_ID:-}
+    volumes:
+      # 컨테이너를 재생성해도 남는 로그 사본
+      - travelhunter-logs:/var/log/travelhunter
     ports:
       - "8000:8000"
     depends_on:
@@ -118,3 +124,4 @@ services:
 
 volumes:
   travelhunter-db:
+  travelhunter-logs:

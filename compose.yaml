@@ -40,6 +40,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./deploy/Caddyfile.tunnel:/etc/caddy/Caddyfile:ro
+      - travelhunter-logs:/var/log/travelhunter
     depends_on:
       backend:
         condition: service_healthy

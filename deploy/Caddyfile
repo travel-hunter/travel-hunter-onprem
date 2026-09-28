@@ -31,7 +31,13 @@
 
 (accesslog) {
   log {
-    output stdout
+    # 볼륨의 파일에 쓴다. docker 가 관리하는 컨테이너 로그는 재배포 때 사라지므로 이력이 남지 않는다.
+    # Caddy 는 접근 로그를 한 곳에만 쓸 수 있어(실측) stdout 과 병행하지 못한다. 기동·오류 줄은 기본 로거로 stdout 에 계속 남는다.
+    output file /var/log/travelhunter/caddy-access.log {
+      roll_size 20mb
+      roll_keep 10
+      roll_uncompressed
+    }
     format filter {
       wrap json
       fields {
