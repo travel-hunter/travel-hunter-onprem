@@ -2,26 +2,34 @@
 
 ## Current Status
 
-- Merge-ready: 로그 장기 보관. 볼륨(단기, 회전·삭제)의 로그를 텍스트로 빼서 개발서버 PC 의 D: 드라이브에 달별로 보관한다(`feature/log-stack`). 계획: `docs/superpowers/plans/2026-09-28-pull-logs-to-local.md` (rev4).
-- Scope: `scripts/pull_logs.py`(신규, 증분 복사·달별 파일·지난달 gzip·보존 12개월), `scripts/trace.py` `--dir`(보관본 조회)·키 없이 실행 시 `NameError` 수정. 앱·compose·Caddy·API·DB 변경 없음.
-- 직전 머지: PR #83 볼륨 로그·`scripts/trace`. 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
+- Merge-ready: 로그 장기 보관을 cron 대신 compose 컨테이너(`logarchive`)로 옮긴다(`feature/log-archive-container`). 설정이 저장소에 있어 팀이 보고, 배포하면 함께 뜬다. 보관 위치(개발서버 D:)·형식·`trace --dir` 조회는 그대로. 계획: `docs/superpowers/plans/2026-09-28-pull-logs-to-local.md` (rev7).
+- Scope: `compose.yaml` 에 profile `logarchive` 서비스(개발서버에서만 켬), `scripts/pull_logs.py` 에 볼륨 직접 읽기(`--source-dir`)와 스트리밍 압축, `.env.example`, 운영 문서 `docs/deployment-cicd/log-archive-runbook.md`. 앱·Caddy·API·DB 변경 없음.
+- 개발서버는 지금 cron 으로 돌고 있다(2026-09-29 등록). 이 PR 머지·배포 후 컨테이너로 넘기고 crontab 을 지운다.
+- 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
 
 ## Recent Validation
 
-- PASS: backend full suite 1,163 passed, 19 skipped(Linux 백엔드 이미지). 신규 pull 27건, trace `--dir`·결함 수정 테스트 포함.
-- PASS: 변이 27개 — 반쪽 줄, 받은 위치, 회전 정렬, 파일명 정규식, inode 재사용, 잠금, 컨테이너 전환, 줄 시각·KST 달 나누기, 압축·보존, 가져오는 중 회전(inode 재확인), 미확정 꼬리 되돌리기, 상태 유실 시 보관본 보호, 압축 조각 해시 중복 방지, 대상 이름 한정, `--since` 이전 달, 조각 번호 순서, 필요한 만큼만 읽기, 폴더 없음·깨진 압축본, `parser` 결함을 각각 되돌리면 테스트가 실패한다.
-- PASS: Python 3.10·3.11 두 스크립트 `--help`, 가져오기 셸 명령을 dash·busybox 에서 실행, `git diff --check`, 변경 파일 U+FFFD·제어문자 0건.
-- PASS: 로컬 스택 실제 실행(`--label dev`) — 달별 파일 생성, 두 번째 실행은 새 줄만, `trace --dir --recent`·`--stats` 조회. 개발서버 `--dev`(읽기 전용) 증분 수신 확인.
+- PASS: backend full suite 1,171 passed, 19 skipped(Linux 백엔드 이미지). 볼륨 직접 읽기 테스트는 실제 파일로(이름 바꾸기 회전, 목록과 읽기 사이 회전, 사라진 파일, 링크·줄바꿈 이름, cron 상태 이어받기).
+- PASS: 변이 — 기존 27개 + 직접 읽기 7개(inode 재확인, 사라진 이름, 링크, fullmatch, 목록 중 사라짐, `--source-dir` 전환, 볼륨 없음)를 각각 되돌리면 테스트가 실패한다. 링크·특수 이름은 Linux 이미지에서 확인.
+- PASS: `docker compose config` — profile 끔(서비스 없음)·켬(서비스 있음)·`COMPOSE_PROFILES=` 빈 값(끔), `compose.local.yaml`. 환경값은 출력하지 않았다.
+- PASS: 로컬 실제 실행 — 로컬 볼륨을 붙여 첫 회차, 재생성 후 새 줄만(0.3KB), `stop` 1초(TERM 처리로 잠금이 남지 않음), `--profile logarchive rm -sf` 로 제거.
+- PASS: 권한 줄이기(rev8) 로컬 확인 — 네트워크 장치 `lo` 뿐·외부 접속 `Network unreachable`, `CapEff` 0, `NoNewPrivs` 1, 루트 파일시스템 쓰기 거부, `/archive` 쓰기 가능. 이 상태에서 0600 Caddy 로그 읽기, 지난달 조각 압축, `stop` 2초, 재생성 후 중복 없음, 제거까지 정상. 진짜 `.env` 는 쓰지 않았다(가짜 값 임시 env, 확인 후 삭제).
+- PASS: 개발서버 사전 확인(읽기 전용) — Compose v5.1.4/Jenkins v5.3.1, 배포는 호스트 에이전트에서 `/home/deploy/travel-hunter-onprem` 기준, 컨테이너에 `/mnt/d` 바인드 가능.
+- PASS: Python 3.10·3.11 두 스크립트 `--help`, `git diff --check`, 변경 파일 U+FFFD·제어문자 0건.
 - BASELINE: Windows 호스트 venv 의 `test_stay_discount_semantics_snapshot.py` 1건(임시 폴더 ACL), frontend vitest 2건(`home.test.tsx`, `trip-create.test.tsx`) — develop 동일. 이 브랜치는 프런트 변경 없음.
-- NOT RUN: 개발서버 `/mnt/d`(9p)에서 실행·cron 등록 — 서버 쓰기라 배포 후 승인 받아 진행.
+- NOT RUN: 개발서버 컨테이너 전환 — `.env.dev` 수정·crontab 삭제는 서버 쓰기라 머지 후 승인 받아 진행.
 
 ## Active Risks
 
-### 로그 장기 보관(`feature/log-stack`)
+### 로그 장기 보관(PR #84 + `logarchive` 컨테이너)
 
 - 보관본은 같은 PC 의 다른 디스크(D:)다. WSL·Docker 고장은 견디지만 PC 다운·D: 고장은 못 막는다. 다음 단계는 다른 기계(NAS)나 S3 로 한 번 더 복사.
-- cron 이 5분마다 돈다. 볼륨 보관 한도(스트림당 200MB)를 넘길 만큼 멈춰 있으면 그 사이는 잃는다. `pull.log` 로 실행 기록을 본다.
-- AWS 로 옮기면 빼 오는 곳이 CloudWatch 로 바뀐다(ASG·private subnet 이라 `docker exec` 불가). 보관 형식은 그대로 둔다.
+- 개발 배포가 D: 에 의존한다. `/mnt/d` 가 없으면 `logarchive` 가 못 떠 `up --wait` 가 실패한다.
+- `logarchive` 는 root 로 돈다(Caddy 접근 로그가 0600). 대신 네트워크 없음·특수 권한 없음·권한 상승 금지·읽기 전용으로 묶었다. 개발서버 D: 는 drvfs 라 소유자를 저장하지 않는다.
+- 보관본(사용자 ID·IP 앞자리·경로)은 그 PC 에 로그인하는 누구나 읽을 수 있다. 보관 기간(12개월)과 열람 범위는 팀이 정한다.
+- profile 로 꺼진 서비스는 `--remove-orphans` 로 안 지워진다. 끌 때는 `--profile logarchive rm -sf logarchive`.
+- 5분 주기다. 볼륨 보관 한도(스트림당 200MB)를 넘길 만큼 멈춰 있으면 그 사이는 잃는다. `docker logs` 로 회차 기록을 본다.
+- AWS 로 옮기면 빼 오는 곳이 CloudWatch 로 바뀐다(ASG·private subnet). 보관 형식은 그대로 둔다.
 
 ### 역추적 로그(PR #83)
 

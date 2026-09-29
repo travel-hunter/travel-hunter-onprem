@@ -32,11 +32,15 @@ import importlib.util
 import json
 import os
 import re
+import shutil
+import stat as statmod
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 
 def _load_trace():
@@ -79,14 +83,19 @@ def remote_files(container: str, stem: str, env: dict[str, str]) -> list[tuple[s
         if "'*'" in (done.stderr or "") or "*: No such file" in (done.stderr or ""):
             return []
         raise PullError(f"{container}: {trace._failure(done)}")
-    pattern = re.compile(rf"^{re.escape(stem)}(\.log(\.\d+)?|-[A-Za-z0-9._-]+\.log)$")
+    pattern = _name_pattern(stem)
     files = []
     for line in trace._lines(done.stdout):
         parts = line.strip().split(" ", 2)
-        if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit() and pattern.match(parts[2]):
+        if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit() and pattern.fullmatch(parts[2]):
             files.append((parts[0], int(parts[1]), parts[2]))
     files.sort(key=lambda item: trace._rotation_order(item[2], stem))
     return files
+
+
+def _name_pattern(stem: str) -> re.Pattern:
+    # 이름에 셸 문자가 섞이면 받지 않는다(docker exec 모드는 이름이 sh -c 인용 안에 들어간다).
+    return re.compile(rf"^{re.escape(stem)}(\.log(\.\d+)?|-[A-Za-z0-9._-]+\.log)$")
 
 
 def fetch(container: str, name: str, inode: str, offset: int, length: int, env: dict[str, str]) -> bytes | None:
@@ -105,6 +114,49 @@ def fetch(container: str, name: str, inode: str, offset: int, length: int, env: 
     if done.returncode != 0:
         raise PullError(f"{container}: {done.stderr.decode('utf-8', 'replace').strip() or f'exit {done.returncode}'}")
     return done.stdout
+
+
+def local_files(directory: str, stem: str) -> list[tuple[str, int, str]]:
+    """볼륨을 직접 붙인 경우(logarchive 컨테이너). (inode, 크기, 이름) 을 오래된 것부터."""
+    pattern = _name_pattern(stem)
+    try:
+        names = os.listdir(directory)
+    except OSError as error:
+        raise PullError(f"{directory}: {type(error).__name__}: {error.strerror}") from None
+    files = []
+    for name in names:
+        if not pattern.fullmatch(name):  # $ 는 이름 끝의 줄바꿈 앞에서도 맞는다 - fullmatch
+            continue
+        try:
+            info = os.stat(os.path.join(directory, name), follow_symlinks=False)
+        except FileNotFoundError:
+            continue  # 목록을 읽은 사이 회전으로 사라졌다
+        if statmod.S_ISREG(info.st_mode):  # 링크·특수 파일은 받지 않는다
+            files.append((str(info.st_ino), info.st_size, name))
+    files.sort(key=lambda item: trace._rotation_order(item[2], stem))
+    return files
+
+
+def local_fetch(directory: str, name: str, inode: str, offset: int, length: int) -> bytes | None:
+    """fetch() 와 같은 약속을 파일로 직접: 연 뒤 inode 를 다시 확인해, 그 사이 회전됐으면 None."""
+    try:
+        fd = os.open(os.path.join(directory, name), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        return None  # 회전 직후 이름이 잠깐 없다
+    except OSError as error:
+        raise PullError(f"{directory}/{name}: {type(error).__name__}: {error.strerror}") from None
+    with os.fdopen(fd, "rb") as handle:
+        if str(os.fstat(handle.fileno()).st_ino) != inode:
+            return None
+        handle.seek(offset)
+        chunks, left = [], length
+        while left > 0:  # 짧은 읽기는 이어서 - 쓰는 중인 파일이면 있는 만큼만
+            block = handle.read(left)
+            if not block:
+                break
+            chunks.append(block)
+            left -= len(block)
+        return b"".join(chunks)
 
 
 def line_month(line: bytes, fallback: str) -> str:
@@ -161,15 +213,20 @@ def archive(folder: Path, current: str, keep_months: int, committed: dict[str, i
             committed.pop(name, None)
             save()
         elif match["month"] < current and not match["gz"]:
-            data = path.read_bytes()
-            digest = hashlib.sha256(data).hexdigest()[:12]
+            # 한 달치를 메모리에 올리지 않는다 - 컨테이너 메모리 상한 안에서 돈다(조각씩 해시·압축).
+            hasher = hashlib.sha256()
+            with open(path, "rb") as source:
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    hasher.update(block)
+            digest = hasher.hexdigest()[:12]
             prefix = f"{match['stem']}-{match['month']}.p"
             existing = [n for n in names if n.startswith(prefix)]
             if not any(n.endswith(f"-{digest}.log.gz") for n in existing):
                 number = 1 + max((int(ARCHIVE_FILE.match(n)["part"]) for n in existing), default=0)
                 target = folder / f"{prefix}{number:02d}-{digest}.log.gz"
                 temp = target.with_name(target.name + ".tmp")
-                temp.write_bytes(gzip.compress(data))
+                with open(path, "rb") as source, gzip.open(temp, "wb") as packed:
+                    shutil.copyfileobj(source, packed, 1024 * 1024)
                 temp.replace(target)
                 names.append(target.name)
             path.unlink()  # 여기서 멈춰도 다음 실행이 같은 해시를 찾고 지우기만 한다
@@ -177,11 +234,28 @@ def archive(folder: Path, current: str, keep_months: int, committed: dict[str, i
             save()
 
 
-def pull_stream(stem: str, container: str, env: dict[str, str], state: dict[str, int], write,
-                budget: int, save) -> tuple[int, int]:
+class Source(NamedTuple):
+    """볼륨을 읽는 한 가지 방법. 원격(docker exec)이든 직접 마운트든 같은 약속을 지킨다."""
+
+    name: str
+    files: Callable[[str], list[tuple[str, int, str]]]  # stem → (inode, 크기, 이름) 오래된 것부터
+    read: Callable[[str, str, int, int], bytes | None]  # (이름, inode, offset, length) → 바이트, 회전됐으면 None
+
+
+def docker_source(container: str, env: dict[str, str]) -> Source:
+    return Source(container, lambda stem: remote_files(container, stem, env),
+                  lambda name, inode, offset, length: fetch(container, name, inode, offset, length, env))
+
+
+def directory_source(directory: str) -> Source:
+    return Source(directory, lambda stem: local_files(directory, stem),
+                  lambda name, inode, offset, length: local_fetch(directory, name, inode, offset, length))
+
+
+def pull_stream(stem: str, source: Source, state: dict[str, int], write, budget: int, save) -> tuple[int, int]:
     """한 스트림을 따라잡는다. (받은 바이트, 남은 예산)."""
     received = 0
-    files = remote_files(container, stem, env)
+    files = source.files(stem)
     alive = {inode for inode, _, _ in files}
     for inode in list(state):
         if inode not in alive:
@@ -195,7 +269,7 @@ def pull_stream(stem: str, container: str, env: dict[str, str], state: dict[str,
         if size == offset or budget <= 0:
             state[inode] = offset
             continue
-        data = fetch(container, name, inode, offset, min(size - offset, budget), env)
+        data = source.read(name, inode, offset, min(size - offset, budget))
         if data is None:
             continue  # 그 사이 회전됐다 - 위치를 그대로 두고 다음 실행에서 받는다
         complete = data[: data.rfind(b"\n") + 1]  # 반쪽 줄은 다음에
@@ -231,8 +305,13 @@ class Lock:
 
 
 def pull(server: str, dest: Path, max_bytes: int, containers: list[str], *, label: str | None = None,
-         keep_months: int = DEFAULT_KEEP_MONTHS, now: datetime | None = None) -> dict[str, int]:
-    env = trace.docker_env(server)
+         keep_months: int = DEFAULT_KEEP_MONTHS, now: datetime | None = None,
+         source_dir: str | None = None) -> dict[str, int]:
+    if source_dir:
+        sources = [directory_source(source_dir)]  # 볼륨을 직접 붙인 logarchive 컨테이너 - docker 가 필요 없다
+    else:
+        env = trace.docker_env(server)
+        sources = [docker_source(container, env) for container in containers]
     folder = dest / (label or server)
     folder.mkdir(parents=True, exist_ok=True)
     current = (now or datetime.now(trace.KST)).astimezone(trace.KST).strftime("%Y-%m")
@@ -255,13 +334,13 @@ def pull(server: str, dest: Path, max_bytes: int, containers: list[str], *, labe
         roll_back_uncommitted(folder, committed)
         archive(folder, current, keep_months, committed, save)  # 멈췄던 압축을 새 줄이 섞이기 전에 마무리
         problems = []
-        for container in containers:
+        for source in sources:
             try:
                 budget = max_bytes
                 result = {}
                 for stem in STEMS:
                     got, budget = pull_stream(
-                        stem, container, env, state.setdefault(stem, {}),
+                        stem, source, state.setdefault(stem, {}),
                         lambda data, stem=stem: append_by_month(folder, stem, data, current, committed),
                         budget, save)
                     result[stem] = got
@@ -288,6 +367,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-mb", type=int, default=DEFAULT_MAX_MB, help="한 번에 받을 최대 크기")
     parser.add_argument("--container", default=trace.APP_CONTAINER)
     parser.add_argument("--edge-container", default=trace.EDGE_CONTAINER)
+    parser.add_argument("--source-dir", help="볼륨을 직접 붙인 경로(logarchive 컨테이너: /var/log/travelhunter). 주면 docker 를 쓰지 않는다")
     return parser
 
 
@@ -301,7 +381,7 @@ def main() -> int:
     server = args.server or trace.DEFAULT_SERVER
     # 백엔드가 죽어 있어도 Caddy 로 읽는다 - 장애 때 로그가 가장 필요하다.
     result = pull(server, Path(args.dest), max(1, args.max_mb) * 1024 * 1024, [args.edge_container, args.container],
-                  label=args.label, keep_months=args.keep_months)
+                  label=args.label, keep_months=args.keep_months, source_dir=args.source_dir)
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     print(f"{stamp} {args.label or server}: " + ", ".join(f"{stem} +{size / 1024:.1f}KB" for stem, size in result.items()))
     return 0
