@@ -394,3 +394,123 @@ def test_only_log_stems_are_archived_or_deleted(remote, tmp_path):
     (folder / "notes-2024-01.log").write_text("mine", "utf-8")
     run(tmp_path)
     assert (folder / "notes-2024-01.log").exists()
+
+
+# ----------------------------------------------------------------------------- 볼륨 직접 읽기 (logarchive 컨테이너, rev7)
+@pytest.fixture
+def volume(tmp_path, monkeypatch):
+    """실제 파일로 된 볼륨. docker 를 부르면 실패한다."""
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("--source-dir 은 docker 를 쓰지 않는다"))
+    folder = tmp_path / "volume"
+    folder.mkdir()
+    return folder
+
+
+def append(path: Path, text: str) -> None:
+    with open(path, "ab") as handle:
+        handle.write(text.encode())
+
+
+def rotate(folder: Path) -> None:
+    """RotatingFileHandler 처럼: .N → .N+1, 현재 → .1, 새 현재 파일."""
+    numbered = sorted((p for p in folder.glob("backend.log.*")), key=lambda p: int(p.name.rsplit(".", 1)[1]), reverse=True)
+    for path in numbered:
+        os.replace(path, folder / f"backend.log.{int(path.name.rsplit('.', 1)[1]) + 1}")
+    os.replace(folder / "backend.log", folder / "backend.log.1")
+    (folder / "backend.log").touch()
+
+
+def run_dir(volume: Path, dest: Path, **kwargs):
+    kwargs.setdefault("now", NOW)
+    return pull_logs.pull("local", dest, 1024 * 1024, [], label="dev", source_dir=str(volume), **kwargs)
+
+
+def test_directory_source_takes_only_new_lines(volume, tmp_path):
+    append(volume / "caddy-access.log", "a\n")
+    run_dir(volume, tmp_path)
+    append(volume / "caddy-access.log", "b\npart")
+    run_dir(volume, tmp_path)
+    assert local(tmp_path, "caddy-access") == "a\nb\n", "반쪽 줄은 다음 회차로"
+
+
+def test_directory_source_follows_real_rotation(volume, tmp_path):
+    append(volume / "backend.log", "a\nb\n")
+    run_dir(volume, tmp_path)
+    append(volume / "backend.log", "c\n")
+    rotate(volume)
+    append(volume / "backend.log", "d\n")
+    run_dir(volume, tmp_path)
+    assert local(tmp_path, "backend") == "a\nb\nc\nd\n"
+
+
+def test_directory_source_skips_a_file_rotated_between_listing_and_read(volume, tmp_path, monkeypatch):
+    append(volume / "backend.log", "a\n")
+    run_dir(volume, tmp_path)
+    append(volume / "backend.log", "b\n")
+    original = pull_logs.local_fetch
+    calls = []
+
+    def rotate_first(*args):
+        if not calls:
+            append(volume / "backend.log", "c\n")
+            rotate(volume)  # 목록은 옛 inode 를 backend.log 로 봤는데 이제 다른 파일이다
+        calls.append(args)
+        return original(*args)
+
+    monkeypatch.setattr(pull_logs, "local_fetch", rotate_first)
+    run_dir(volume, tmp_path)
+    monkeypatch.setattr(pull_logs, "local_fetch", original)
+    run_dir(volume, tmp_path)
+    assert local(tmp_path, "backend") == "a\nb\nc\n"
+
+
+def test_directory_source_state_continues_from_docker_mode_inodes(volume, tmp_path):
+    """cron(docker exec)에서 컨테이너(직접 읽기)로 바꿔도 같은 inode 라 이어받는다."""
+    append(volume / "caddy-access.log", "old\n")
+    inode = str(os.stat(volume / "caddy-access.log").st_ino)
+    folder = tmp_path / "dev"
+    folder.mkdir()
+    (folder / "caddy-access-2026-09.log").write_bytes(b"old\n")
+    (folder / ".state.json").write_text(json.dumps({"_files": {"caddy-access-2026-09.log": 4},
+                                                     "caddy-access": {inode: 4}}), "utf-8")
+    append(volume / "caddy-access.log", "new\n")
+    run_dir(volume, tmp_path)
+    assert local(tmp_path, "caddy-access") == "old\nnew\n"
+
+
+def test_directory_source_ignores_links_and_odd_names(volume, tmp_path):
+    append(volume / "caddy-access.log", "ok\n")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("do not copy\n", "utf-8")
+    try:
+        os.symlink(secret, volume / "caddy-access-2026-01-01T00-00-00.000-size.log")
+    except (OSError, NotImplementedError):
+        pass  # Windows 에서 링크를 못 만들면 이름 규칙만 본다
+    try:
+        (volume / "caddy-access.log\n").write_bytes(b"evil\n")  # 줄바꿈이 끝에 붙은 이름(Linux 에서만 만들어진다)
+    except OSError:
+        pass
+    run_dir(volume, tmp_path)
+    assert local(tmp_path, "caddy-access") == "ok\n"
+    assert pull_logs._name_pattern("backend").fullmatch("backend.log\n") is None
+
+
+def test_directory_source_missing_volume_is_an_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("docker 를 쓰지 않는다"))
+    with pytest.raises(pull_logs.PullError):
+        run_dir(tmp_path / "no-volume", tmp_path)
+
+
+def test_local_fetch_returns_what_exists_on_a_short_file(volume):
+    append(volume / "backend.log", "abc\n")
+    inode = str(os.stat(volume / "backend.log").st_ino)
+    assert pull_logs.local_fetch(str(volume), "backend.log", inode, 1, 100) == b"bc\n"
+    assert pull_logs.local_fetch(str(volume), "backend.log", "0", 0, 10) is None, "다른 inode 면 읽지 않는다"
+    assert pull_logs.local_fetch(str(volume), "gone.log", inode, 0, 10) is None, "사라진 이름은 건너뛴다"
+
+
+def test_a_file_that_vanishes_after_listing_is_skipped(volume, monkeypatch):
+    append(volume / "backend.log", "a\n")
+    real = os.listdir
+    monkeypatch.setattr(pull_logs.os, "listdir", lambda path: real(path) + ["backend.log.1"])  # 목록엔 있고 실제론 없다
+    assert [name for _, _, name in pull_logs.local_files(str(volume), "backend")] == ["backend.log"]

@@ -76,6 +76,59 @@ services:
         max-size: "20m"
         max-file: "10"
 
+  # 로그 장기 보관 - 볼륨(단기, 회전·삭제)의 새 줄을 5분마다 보관 폴더에 달별로 이어 붙인다.
+  # docs/deployment-cicd/log-archive-runbook.md · 계획 docs/superpowers/plans/2026-09-28-pull-logs-to-local.md (rev7)
+  # profiles 라 기본 `up -d` 에서는 뜨지 않는다. 켜는 곳(개발서버)만 env 에 COMPOSE_PROFILES=logarchive 와
+  # LOG_ARCHIVE_DIR 를 둔다. 운영·로컬은 설정하지 않는다.
+  logarchive:
+    image: python:3.12-alpine3.20
+    profiles: ["logarchive"]
+    # root 로 돈다. Caddy 는 접근 로그를 0600(root 전용)으로 만들어 다른 계정은 못 읽는다(2026-09-29 확인).
+    # 보관 폴더(개발서버 D:)는 drvfs 라 소유자를 저장하지 않아, 누가 써도 uid 1000·전체 권한으로 보인다.
+    environment:
+      LOG_ARCHIVE_LABEL: ${LOG_ARCHIVE_LABEL:-dev}
+      PYTHONDONTWRITEBYTECODE: "1"
+    # 셸이 PID 1 이라 TERM 을 직접 받는다. 잠자는 중이면 바로, 실행 중이면 그 회차가 끝난 뒤 멈춘다 -
+    # 도중에 죽으면 잠금 파일이 남아 한 시간 동안 막힌다. python 은 TERM 을 받지 않는다.
+    command:
+      - sh
+      - -c
+      - |
+        trap 'exit 0' TERM
+        while :; do
+          python /app/scripts/pull_logs.py --source-dir /var/log/travelhunter --label "$$LOG_ARCHIVE_LABEL" --dest /archive --max-mb 8 || true
+          sleep 300 & wait $$!
+        done
+    stop_grace_period: 2m
+    # 할 일은 "볼륨에서 읽어 /archive 에 쓰기" 하나다. 그 밖의 능력은 모두 뺀다(rev8).
+    network_mode: none                      # 네트워크 없음 - 로그를 밖으로 보낼 길 자체가 없다
+    cap_drop: [ALL]                         # root 특수 권한 없음 - Caddy 로그는 주인(root) 권한으로 읽힌다
+    security_opt: ["no-new-privileges:true"] # 실행 중 권한 상승 금지
+    read_only: true                         # 컨테이너 자체는 읽기 전용 - 쓸 곳은 /archive 뿐
+    volumes:
+      - type: volume
+        source: travelhunter-logs
+        target: /var/log/travelhunter
+        read_only: true
+      # 경로가 없으면 만들지 않고 기동을 실패시킨다 - 비었거나 틀린 경로에 몰래 쌓이지 않게.
+      - type: bind
+        source: ${LOG_ARCHIVE_DIR:-/nonexistent/log-archive}
+        target: /archive
+        bind:
+          create_host_path: false
+      # 배포의 git pull 이 바꾼 스크립트를 다음 회차부터 쓴다.
+      - type: bind
+        source: ./scripts
+        target: /app/scripts
+        read_only: true
+    mem_limit: 256m
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN}
