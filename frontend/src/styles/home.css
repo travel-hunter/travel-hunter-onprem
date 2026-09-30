@@ -1,0 +1,335 @@
+/* 홈 (시안 v40). 가로 줄은 폰에서 옆으로 넘긴다. 768px 부터는 줄을 접어 격자로 펼친다 -
+   마우스로는 가로 스크롤을 찾기 어렵다. 색은 앱 토큰만 쓴다(지도 단계 색만 예외 - 아래 .home-map-card). */
+.prototype-home-greeting b {
+  color: var(--primary-700);
+  font-variant-numeric: tabular-nums;
+}
+
+.prototype-home-greeting .home-urgent {
+  color: var(--status-danger-text);
+}
+
+.home-banner {
+  display: flex;
+  align-items: center;
+  margin: 0 var(--app-page-gutter) 18px;
+  border: 1px solid var(--primary-100);
+  border-radius: 14px;
+  background: var(--primary-50);
+}
+
+.home-banner-go {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px 2px 8px 16px;
+  font-size: 14px;
+}
+
+.home-banner-go b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.home-banner-go span {
+  flex: none;
+  color: var(--primary-700);
+  font-weight: 700;
+}
+
+.home-banner-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  color: var(--gray-500);
+}
+
+.home-section {
+  margin-bottom: 22px;
+}
+
+.home-row {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  padding: 4px var(--app-page-gutter) 6px;
+  overflow-x: auto;
+  list-style: none;
+  scroll-padding-inline: var(--app-page-gutter);
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.home-row::-webkit-scrollbar {
+  display: none;
+}
+
+.home-row > li {
+  display: flex;
+  flex: none;
+  scroll-snap-align: start;
+}
+
+.home-empty {
+  margin: 0 var(--app-page-gutter);
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--gray-50);
+  color: var(--gray-600);
+  font-size: 14px;
+}
+
+/* 마감이 가까운 혜택: 그림 칸 · 마감 · 사업 이름 · 받는 것 · 어디 */
+.home-deadline-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto 1fr;
+  gap: 4px 8px;
+  width: 232px;
+  min-height: 152px;
+  padding: 14px;
+  border: 1px solid var(--gray-200);
+  border-radius: 16px;
+  background: var(--white);
+  color: var(--ink);
+}
+
+.home-deadline-badge {
+  align-self: start;
+  justify-self: end;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.home-deadline-badge.urgent {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+}
+
+.home-deadline-badge.soon {
+  background: var(--status-draft-bg);
+  color: var(--status-draft-text);
+}
+
+.home-deadline-badge.later {
+  background: var(--gray-100);
+  color: var(--gray-700);
+  font-weight: 500;
+}
+
+.home-deadline-card strong {
+  display: -webkit-box;
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.home-deadline-summary,
+.home-deadline-where {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-deadline-summary {
+  color: var(--primary-700);
+  font-weight: 600;
+}
+
+.home-deadline-where {
+  align-self: end;
+  color: var(--gray-600);
+}
+
+/* 혜택이 많은 지역: 지도 표지 한 장 + 지역 사진 카드 */
+.home-map-card,
+.home-region-card {
+  width: 136px;
+  height: 178px;
+  border-radius: 16px;
+}
+
+/* 지도 색은 정책 탭 지도(policy-map.css)와 같은 단계다 - ColorBrewer BuGn 에서 바다와 겹치는
+   가장 옅은 칸을 뺀 다섯 단계 + 0건 회색. 두 곳 값을 같이 고칠 것(토큰 정리 때 한 곳으로 모은다). */
+.home-map-card {
+  --home-map-sea: #eef1f4;
+  --home-map-0: #e2e5ea;
+  --home-map-1: #ccece6;
+  --home-map-2: #99d8c9;
+  --home-map-3: #66c2a4;
+  --home-map-4: #2ca25f;
+  --home-map-5: #006d2c;
+
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 4px;
+  padding: 8px 10px 12px;
+  border: 1px solid var(--gray-200);
+  background: var(--home-map-sea);
+  color: var(--ink);
+}
+
+.home-map {
+  display: block;
+  width: 100%;
+  height: 120px;
+}
+
+.home-map path {
+  stroke: var(--white);
+  stroke-linejoin: round;
+  stroke-width: 0.6;
+}
+
+.home-map .lv0 {
+  fill: var(--home-map-0);
+}
+
+.home-map .lv1 {
+  fill: var(--home-map-1);
+}
+
+.home-map .lv2 {
+  fill: var(--home-map-2);
+}
+
+.home-map .lv3 {
+  fill: var(--home-map-3);
+}
+
+.home-map .lv4 {
+  fill: var(--home-map-4);
+}
+
+.home-map .lv5 {
+  fill: var(--home-map-5);
+}
+
+.home-map-card b,
+.home-region-card b {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.home-map-card i,
+.home-region-card i {
+  display: block;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.home-map-card i {
+  color: var(--gray-600);
+}
+
+.home-region-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 12px;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--gray-700);
+  color: var(--white);
+}
+
+.home-region-photo {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 아래쪽을 어둡게 눌러 흰 글자가 사진 위에서도 읽히게 한다 */
+.home-region-card::after {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0) 35%, rgba(15, 23, 42, 0.76));
+  content: "";
+}
+
+.home-region-card b {
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.home-region-card i {
+  opacity: 0.94;
+}
+
+/* 전국 공통 · 일정 만들기 한 줄 카드 */
+.home-line-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  margin: 0 var(--app-page-gutter) 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--gray-200);
+  border-radius: 16px;
+  background: var(--white);
+  color: var(--ink);
+}
+
+.home-line-copy {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.home-line-copy b {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.home-line-copy i {
+  color: var(--gray-600);
+  font-size: 13px;
+  font-style: normal;
+}
+
+.home-line-go {
+  flex: none;
+  color: var(--gray-500);
+  font-size: 22px;
+}
+
+.home-banner-go:focus-visible,
+.home-banner-close:focus-visible,
+.home-deadline-card:focus-visible,
+.home-map-card:focus-visible,
+.home-region-card:focus-visible,
+.home-line-card:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .home-row {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+}

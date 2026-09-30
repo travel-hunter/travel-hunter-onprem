@@ -20,33 +20,32 @@ import {
   AiRecommendationCard,
   type AiRecommendationCardVisual,
 } from "../components/AiRecommendationCard";
+import {
+  BENEFIT_TYPES,
+  BenefitTile,
+  benefitTypeOf,
+} from "../components/benefitTile";
+import { KOREA_REGION_SHAPES } from "../components/map/koreaRegionShapes";
+import { REGION_PHOTOS } from "../components/map/regionPhotos";
 import { HomeSectionHeader } from "../components/patterns";
 import { ErrorState, LoadingState } from "../components/ui";
 import {
   getHomeBenefitPolicies,
-  getHomePolicyIcon,
   getNationwideHomePolicies,
 } from "../data/displayConfig";
-import { NATIONWIDE_REGION } from "../utils/policyPrograms";
 import {
-  formatPolicyDeadlineTag,
-  formatPolicyPeriodSummary,
-} from "../utils";
+  NATIONWIDE_REGION,
+  cityOf,
+  programOf,
+} from "../utils/policyPrograms";
+import { daysUntilPolicyDeadline, formatPolicyDeadlineTag } from "../utils";
+import "../styles/home.css";
 
 const PROFILE_PROMPT_DISMISSAL_PREFIX =
   "travel-hunter-profile-completion-dismissed:";
 const AI_CAROUSEL_SWIPE_THRESHOLD_PX = 42;
-const HOME_POLICY_CONDITION_FALLBACK = "조건 확인 필요";
-const PHONE_ONLY_CONDITION_PATTERN = /^\s*(?:문의전화|문의|전화|tel|contact|고객센터|운영사무국)?\s*[:：-]?\s*(?:\+?\d[\d\s().-]{5,}\d)\s*$/i;
-const PHONE_IN_CONDITION_PATTERN = /(?:\+?\d[\d\s().-]{5,}\d)/;
-const CONTACT_OR_NOTICE_CONDITION_PATTERN =
-  /문의|전화|tel|contact|고객센터|운영사무국|공식|공고|안내|확인|서류|캡처|캡쳐|증빙/;
-const OFFICIAL_CONFIRMATION_ONLY_CONDITION_PATTERN =
-  /^\s*(?:공식|공고|상세)?\s*(?:혜택|정책)?\s*(?:안내|조건|내용)?\s*(?:에서)?\s*(?:확인(?:하세요|해 주세요)?|참고(?:하세요|해 주세요)?)\s*[.!。]?\s*$/;
-const CARD_SUITABLE_CONDITION_PATTERN =
-  /조건|인증|방문|결제|가맹점|지역화폐|제로페이|상품|예약|쿠폰|할인|환급|지원|사용|이용|대상|숙박|식사|체험|국내|여행자|주민|거주|청년|가족|관광객|(?:만\s*)?\d+\s*세/;
-const CONCRETE_CARD_CONDITION_PATTERN =
-  /인증|방문|결제|가맹점|지역화폐|제로페이|상품|예약|쿠폰|할인|환급|사용|이용|대상|숙박|식사|체험|국내|여행자|주민|거주|청년|가족|관광객|(?:만\s*)?\d+\s*세/;
+const DEADLINE_CARD_LIMIT = 6;
+const REGION_CARD_LIMIT = 8;
 
 export function isProfileComplete(profile: Profile) {
   const regionCount = profile.preferredRegions?.length ?? 0;
@@ -78,8 +77,36 @@ export function HomePage() {
     );
   }, [dismissalKey]);
   const name = currentUser?.nickname ?? "여행자";
-  const weeklyBenefit = getHomeBenefitPolicies(policies, 3, profile.preferredRegions);
+  /* 관심 지역 정책이 있으면 그것만, 없으면 전체 지역 정책을 마감순으로 - 전국은 아래 한 줄 카드 몫. */
+  const deadlinePick = useMemo(
+    () =>
+      getHomeBenefitPolicies(
+        policies,
+        Number.POSITIVE_INFINITY,
+        profile.preferredRegions,
+      ),
+    [policies, profile.preferredRegions],
+  );
+  const deadlineGroups = useMemo(
+    () =>
+      groupByProgramInListOrder(deadlinePick.policies).slice(
+        0,
+        DEADLINE_CARD_LIMIT,
+      ),
+    [deadlinePick],
+  );
   const nationwidePolicies = getNationwideHomePolicies(policies);
+  const regionCounts = useMemo(
+    () => countRegionalPolicies(policies),
+    [policies],
+  );
+  const topRegions = Object.entries(regionCounts)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, REGION_CARD_LIMIT);
+  const closingThisWeek = (policies ?? []).filter((policy) => {
+    const days = daysUntilPolicyDeadline(policy.deadline);
+    return days !== null && days >= 0 && days <= 7;
+  }).length;
   const preferredAiRegions = useMemo(
     () =>
       Array.from(
@@ -112,24 +139,12 @@ export function HomePage() {
     [preferredAiRegions, profile.style, aiRegionRecommendations],
   );
   const avatarLabel = name.trim().slice(0, 1).toUpperCase() || "T";
-  const fallbackAiStyle = profile.style ?? "맞춤";
-  const aiCardTo = "/trips/new";
-  const aiCardTitle = `${fallbackAiStyle} 코스 만들기`;
   const shouldShowProfilePrompt = Boolean(
     currentUser && !isProfileComplete(profile) && !isProfilePromptDismissed,
   );
   const dismissProfilePrompt = () => {
     if (dismissalKey) window.sessionStorage.setItem(dismissalKey, "1");
     setIsProfilePromptDismissed(true);
-  };
-  const aiCardVisual: AiRecommendationCardVisual = {
-    avatar: "🤖",
-    headline: "새 일정 만들까요?",
-    subline: "혜택까지 반영해서 추천해요",
-    chips: [
-      { emoji: "🏨", label: "숙소 포함" },
-      { emoji: "🍜", label: "맛집 포함" },
-    ],
   };
 
   return (
@@ -151,129 +166,254 @@ export function HomePage() {
 
       <div className="prototype-home-greeting">
         <h2>안녕, {name}님</h2>
-        <p>이번 주 놓치면 아쉬운 혜택이 있어요</p>
+        {policies && (
+          <p>
+            지금 받을 수 있는 혜택 <b>{policies.length}건</b>
+            {closingThisWeek > 0 && (
+              <>
+                {" "}
+                · 이번 주 마감{" "}
+                <b className="home-urgent">{closingThisWeek}건</b>
+              </>
+            )}
+          </p>
+        )}
       </div>
+
+      {/* 가운데 뜨는 창은 홈을 가렸다. 닫을 수 있는 한 줄로 두고, 닫으면 이번 세션 동안 안 뜬다. */}
+      {shouldShowProfilePrompt && (
+        <section className="home-banner" aria-label="프로필 설정 안내">
+          <Link className="home-banner-go" to="/profile-setup?redirect=/home">
+            <b>관심 지역·취향·예산을 정하면 추천이 정확해져요</b>
+            <span>설정하기 ›</span>
+          </Link>
+          <button
+            aria-label="프로필 설정 안내 닫기"
+            className="home-banner-close"
+            onClick={dismissProfilePrompt}
+            type="button"
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </section>
+      )}
 
       {policiesLoading && <LoadingState label="혜택을 불러오는 중입니다" />}
       {policiesError && (
         <ErrorState title="혜택을 불러오지 못했어요" message={policiesError} />
       )}
 
-      {nationwidePolicies.length > 0 && (
-        <NationwideBenefitCard policies={nationwidePolicies} />
-      )}
-      <HomeSectionHeader
-        title={weeklyBenefit.title}
-        actionLabel="더보기"
-        to="/policies"
-      />
-      <WeeklyPolicyList policies={weeklyBenefit.policies} />
-
-      <div className="prototype-home-ai-title">AI 추천 맞춤 일정</div>
-      {aiRegionCards.length > 1 ? (
-        <PreferredAiCarousel cards={aiRegionCards} />
-      ) : aiRegionCards.length === 1 ? (
-        <div className="prototype-home-ai-single">
-          <AiRecommendationCard {...aiRegionCards[0]} />
-        </div>
-      ) : (
-        <AiRecommendationCard
-          to={aiCardTo}
-          title={aiCardTitle}
-          saving="정책과 일정을 함께 추천"
-          detail="새 일정 만들기"
-          visual={aiCardVisual}
-        />
-      )}
-
-      {shouldShowProfilePrompt && (
-        <div
-          className="profile-completion-backdrop"
-          role="presentation"
-          onMouseDown={dismissProfilePrompt}
-        >
-          <section
-            aria-describedby="profile-completion-body"
-            aria-labelledby="profile-completion-title"
-            aria-modal="true"
-            className="profile-completion-dialog"
-            onMouseDown={(event) => event.stopPropagation()}
-            role="dialog"
-          >
-            <div className="profile-completion-dialog-head">
-              <div className="profile-completion-icon" aria-hidden="true">
-                🎯
-              </div>
-              <button
-                aria-label="프로필 설정 안내 닫기"
-                className="profile-completion-close"
-                onClick={dismissProfilePrompt}
-                type="button"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="profile-completion-copy">
-              <h2 id="profile-completion-title">프로필 설정을 완료해 주세요</h2>
-              <p id="profile-completion-body">
-                관심 지역, 여행 스타일, 예산을 설정하면 홈 추천이 더 정확해져요.
-              </p>
-            </div>
-            <div className="profile-completion-actions">
-              <Link
-                className="btn primary full profile-completion-primary"
-                to="/profile-setup?redirect=/home"
-              >
-                설정하러 가기
-              </Link>
-              <button
-                className="profile-completion-later"
-                type="button"
-                onClick={dismissProfilePrompt}
-              >
-                나중에
-              </button>
-            </div>
+      {policies && (
+        <>
+          <section className="home-section" aria-label={deadlinePick.title}>
+            <HomeSectionHeader
+              title={deadlinePick.title}
+              actionLabel="전체 보기"
+              to="/policies"
+            />
+            {deadlineGroups.length > 0 ? (
+              <ul className="home-row" aria-label={`${deadlinePick.title} 목록`}>
+                {deadlineGroups.map((group) => (
+                  <li key={group.key}>
+                    <DeadlineCard group={group} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="home-empty">아직 보여 드릴 지역 혜택이 없어요.</p>
+            )}
           </section>
-        </div>
+
+          {topRegions.length > 0 && (
+            <section className="home-section" aria-label="혜택이 많은 지역">
+              <HomeSectionHeader title="혜택이 많은 지역" />
+              <ul className="home-row">
+                <li>
+                  <Link className="home-map-card" to="/policies">
+                    <HomeRegionMap counts={regionCounts} />
+                    <span>
+                      <b>
+                        지도로 보기 <span aria-hidden="true">›</span>
+                      </b>
+                      <i>17개 시도 혜택 수</i>
+                    </span>
+                  </Link>
+                </li>
+                {topRegions.map(([region, count]) => (
+                  <li key={region}>
+                    <Link
+                      className="home-region-card"
+                      to={`/policies?${new URLSearchParams({ place: region, sheet: "1" })}`}
+                    >
+                      <img
+                        alt=""
+                        className="home-region-photo"
+                        loading="lazy"
+                        src={REGION_PHOTOS[region]}
+                      />
+                      <b>{region}</b>
+                      <i>혜택 {count}건</i>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {nationwidePolicies.length > 0 && (
+            <NationwideLineCard policies={nationwidePolicies} />
+          )}
+        </>
+      )}
+
+      {/* 일정 만들기 자리. 관심 지역이 있으면 그 지역 코스 카드, 없으면 한 줄 카드 하나 -
+          예전 기본 카드의 '숙소 포함·맛집 포함' 말풍선은 근거 없는 약속이라 뺐다. */}
+      {aiRegionCards.length > 0 ? (
+        <>
+          <div className="prototype-home-ai-title">AI 추천 맞춤 일정</div>
+          {aiRegionCards.length > 1 ? (
+            <PreferredAiCarousel cards={aiRegionCards} />
+          ) : (
+            <div className="prototype-home-ai-single">
+              <AiRecommendationCard {...aiRegionCards[0]} />
+            </div>
+          )}
+        </>
+      ) : (
+        <Link className="home-line-card home-trip-line" to="/trips/new">
+          <BenefitTile kind="trip" />
+          <span className="home-line-copy">
+            <b>여행 일정 만들기</b>
+            <i>일정 지역에서 쓸 수 있는 혜택을 함께 보여 줘요</i>
+          </span>
+          <span className="home-line-go" aria-hidden="true">
+            ›
+          </span>
+        </Link>
       )}
     </section>
   );
 }
 
-/* 전국 정책은 지역이 아니라 혜택 종류가 정체성이다 - 지역 카드에 섞지 않고 홈 맨 위에 카드 한 장으로
-   둔다. 카드 안에 정책을 늘어놓지 않고, 누르면 정책 탭 목록(전국 필터)으로 간다.
-   그림 자리(.prototype-home-nationwide-visual)는 지금 이모지, 나중에 이미지로 바꾼다. */
-function NationwideBenefitCard({ policies }: { policies: Policy[] }) {
+type DeadlineGroup = { key: string; items: Policy[] };
+
+/* 지명만 다른 같은 사업([합천]·[강진] 대한민국 반값여행)은 한 장으로 묶는다. 제목이 반복되던 자리다.
+   들어온 순서(마감순)를 지키므로 묶음 순서도 가장 빠른 마감순이 된다. */
+function groupByProgramInListOrder(policies: Policy[]): DeadlineGroup[] {
+  const groups = new Map<string, Policy[]>();
+  for (const policy of policies) {
+    const key = programOf(policy).replace(/^\d{4}\s+/, "");
+    groups.set(key, [...(groups.get(key) ?? []), policy]);
+  }
+  return Array.from(groups, ([key, items]) => ({ key, items }));
+}
+
+function DeadlineCard({ group }: { group: DeadlineGroup }) {
+  const [first] = group.items;
+  const soonest = group.items.filter(
+    (policy) => policy.deadline === first.deadline,
+  );
+  const shown = soonest
+    .slice(0, 2)
+    .map((policy) => cityOf(policy) ?? policy.region);
+  const rest = group.items.length - shown.length;
+  const where = shown.join(" · ") + (rest > 0 ? ` 외 ${rest}곳` : "");
+  /* 묶음 안 문구가 모두 같을 때만 싣는다 - 첫 곳 금액이 묶음 전체 금액처럼 읽히면 안 된다. */
+  const summary = group.items.every(
+    (policy) => policy.cardSummary === first.cardSummary,
+  )
+    ? first.cardSummary
+    : null;
+  const days = daysUntilPolicyDeadline(first.deadline);
+  const tone =
+    days === null ? "later" : days <= 7 ? "urgent" : days <= 30 ? "soon" : "later";
+  // ponytail: 묶음도 마감이 가장 빠른 곳의 상세로 보낸다. 정책 탭에 사업 검색 주소가 생기면 그리로.
   return (
-    <Link
-      className="ds-card prototype-home-nationwide"
-      to={`/policies?region=${NATIONWIDE_REGION}`}
-      aria-label={`${NATIONWIDE_REGION} 혜택 ${policies.length}건 보기`}
-    >
-      <span className="prototype-home-nationwide-copy">
-        <em>추천 · 지역 상관없이</em>
-        <strong>{NATIONWIDE_REGION} 혜택</strong>
-        <span>어디서나 쓰는 정책 {policies.length}건</span>
-        <b>모아보기 ›</b>
+    <Link className="home-deadline-card" to={`/policies/${first.slug}`}>
+      <BenefitTile kind={benefitTypeOf(first)} size="sm" />
+      <span className={`home-deadline-badge ${tone}`}>
+        {formatPolicyDeadlineTag(first)}
       </span>
-      <span className="prototype-home-nationwide-visual" aria-hidden="true">✈️</span>
+      <strong>{group.key}</strong>
+      {summary && <span className="home-deadline-summary">{summary}</span>}
+      <span className="home-deadline-where">{where}</span>
     </Link>
   );
 }
 
-function WeeklyPolicyList({ policies }: { policies: Policy[] }) {
+/* 지역 사진 카드가 있는 17개 시도만 센다. 전국 정책은 모든 지역에 걸려 순위를 흐리므로 뺀다. */
+function countRegionalPolicies(
+  policies: Policy[] | null | undefined,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const policy of policies ?? []) {
+    if (!(policy.region in REGION_PHOTOS)) continue;
+    counts[policy.region] = (counts[policy.region] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/* 정책 탭 지도로 가는 표지. 입체 없이 평평하게, 정책 탭 지도와 같은 여섯 단계로 칠한다(시안 bucket).
+   viewBox 는 도안(koreaRegionShapes, 200x269 단위)에서 실제로 그려진 범위(x 60~199, y 2~245)다. */
+const HOME_MAP_REGIONS = KOREA_REGION_SHAPES.map((shape) => ({
+  name: shape.name,
+  d: shape.r
+    .map(
+      (ring) =>
+        ring.reduce(
+          (path, value, index) =>
+            path + (index % 2 ? `,${value}` : `${index ? "L" : "M"}${value}`),
+          "",
+        ) + "Z",
+    )
+    .join(""),
+}));
+
+function mapLevel(count: number) {
+  return count === 0 ? 0 : count <= 2 ? 1 : count <= 5 ? 2 : count <= 10 ? 3 : count <= 20 ? 4 : 5;
+}
+
+function HomeRegionMap({ counts }: { counts: Record<string, number> }) {
   return (
-    <div className="prototype-home-policy-list-wrap">
-      <div
-        className="prototype-home-policy-list"
-        aria-label="추천 혜택 정책 목록"
-      >
-        {policies.map((policy) => (
-          <PrototypePolicyCard key={policy.id} policy={policy} />
-        ))}
-      </div>
-    </div>
+    <svg
+      aria-hidden="true"
+      className="home-map"
+      focusable="false"
+      viewBox="58 0 143 247"
+    >
+      {HOME_MAP_REGIONS.map((region) => (
+        <path
+          className={`lv${mapLevel(counts[region.name] ?? 0)}`}
+          d={region.d}
+          key={region.name}
+        />
+      ))}
+    </svg>
+  );
+}
+
+function NationwideLineCard({ policies }: { policies: Policy[] }) {
+  const kinds = Array.from(
+    new Set(
+      policies.map((policy) => BENEFIT_TYPES[benefitTypeOf(policy)].label),
+    ),
+  )
+    .slice(0, 4)
+    .join(" · ");
+  return (
+    <Link
+      className="home-line-card"
+      to={`/policies?region=${NATIONWIDE_REGION}`}
+    >
+      <BenefitTile kind="nation" />
+      <span className="home-line-copy">
+        <b>전국 공통 혜택 {policies.length}건</b>
+        <i>어느 지역을 가도 쓸 수 있어요 · {kinds}</i>
+      </span>
+      <span className="home-line-go" aria-hidden="true">
+        ›
+      </span>
+    </Link>
   );
 }
 
@@ -448,104 +588,4 @@ function PreferredAiCarousel({ cards }: { cards: PreferredAiCard[] }) {
 
 function normalizeCarouselIndex(index: number, length: number) {
   return ((index % length) + length) % length;
-}
-
-function getHomePolicyScheduleLabel(policy: Policy) {
-  return formatPolicyPeriodSummary(policy);
-}
-
-function getHomePolicyDeadlineBadge(policy: Policy) {
-  return formatPolicyDeadlineTag(policy);
-}
-
-function PrototypePolicyCard({ policy }: { policy: Policy }) {
-  const scheduleLabel = getHomePolicyScheduleLabel(policy);
-  const deadlineBadge = getHomePolicyDeadlineBadge(policy);
-
-  return (
-    <Link
-      className="prototype-home-policy-card"
-      draggable={false}
-      to={`/policies/${policy.slug}`}
-    >
-      <div className="prototype-home-policy-visual" aria-hidden="true">
-        {getHomePolicyIcon(policy)}
-      </div>
-
-      <div className="prototype-home-policy-content">
-        <div className="prototype-home-policy-kicker-row">
-          <em className="prototype-home-policy-category">{policy.category}</em>
-          <span className="prototype-home-policy-deadline">
-            {deadlineBadge}
-          </span>
-        </div>
-
-        <strong>{policy.title}</strong>
-
-        {policy.cardSummary ? (
-          <span className="prototype-home-policy-benefit">{policy.cardSummary}</span>
-        ) : null}
-      </div>
-
-      <div className="prototype-home-policy-card-meta">
-        {scheduleLabel && (
-          <span className="prototype-home-policy-schedule">
-            {scheduleLabel}
-          </span>
-        )}
-        <span className="prototype-home-policy-condition">
-          조건: {getPolicyCardCondition(policy)}
-        </span>
-      </div>
-
-      <small>
-        <span>상세 보기</span>
-      </small>
-    </Link>
-  );
-}
-
-function getPolicyCardCondition(policy: Policy) {
-  const condition = policy.requirements
-    .map((requirement) => requirement.trim())
-    .find(isHomePolicyCardConditionCandidate);
-  if (!condition) return HOME_POLICY_CONDITION_FALLBACK;
-  return summarizeHomePolicyCondition(condition);
-}
-
-function isHomePolicyCardConditionCandidate(condition: string) {
-  if (!condition) return false;
-  if (PHONE_ONLY_CONDITION_PATTERN.test(condition)) return false;
-  if (PHONE_IN_CONDITION_PATTERN.test(condition)) return false;
-  if (OFFICIAL_CONFIRMATION_ONLY_CONDITION_PATTERN.test(condition)) return false;
-  if (CONTACT_OR_NOTICE_CONDITION_PATTERN.test(condition)) {
-    return CONCRETE_CARD_CONDITION_PATTERN.test(condition);
-  }
-  return CARD_SUITABLE_CONDITION_PATTERN.test(condition);
-}
-
-function summarizeHomePolicyCondition(condition: string) {
-  const normalized = condition.replace(/\s+/g, " ").trim();
-  const stayDiscount = normalized.match(
-    /(\d+만원\s*(?:미만|이상)).*?(\d+만원)\s*할인/,
-  );
-  if (stayDiscount) return `${stayDiscount[1]} 숙박 ${stayDiscount[2]} 할인`;
-
-  const compact = normalized
-    .replace(/국내\s*/g, "")
-    .replace(/숙박상품/g, "숙박")
-    .replace(/예약\s*시/g, "")
-    .replace(/[()]/g, "")
-    .replace(/\s*:\s*/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (compact.length <= 26) return compact;
-  return `${compact.slice(0, 25).trim()}…`;
-}
-
-function getRecommendationSaving(recommendation: RegionRecommendation) {
-  if (recommendation.endingSoonCount > 0) {
-    return `마감 임박 ${recommendation.endingSoonCount}개`;
-  }
-  return `혜택 ${recommendation.policyCount}개`;
 }
