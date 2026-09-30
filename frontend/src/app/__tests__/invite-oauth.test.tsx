@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   appDataApi,
   type InviteState,
+  type Profile,
   type Trip,
 } from "../../api";
 import {
@@ -46,10 +47,20 @@ function makeInviteState(overrides: Partial<InviteState> = {}): InviteState {
 
 describe("Travel Hunter app — profile, invites, OAuth & sharing", () => {
   it("saves profile setup choices before showing the personalized home", async () => {
+    const getProfileSpy = vi.spyOn(appDataApi, "getProfile");
     await login();
     cleanup();
+    const profileCallsBeforeRender = getProfileSpy.mock.calls.length;
     renderAppRoute("/profile-setup");
     const user = userEvent.setup();
+    /* 새로 띄운 화면은 서버 프로필을 한 번 더 받는다. 그 응답보다 먼저 고르면 늦게 온 응답이
+       고른 값을 덮는다(session.tsx applyAuth 경합, 앱 버그). 여기서는 응답을 받은 뒤에 고른다. */
+    await waitFor(() =>
+      expect(getProfileSpy.mock.calls.length).toBeGreaterThan(profileCallsBeforeRender),
+    );
+    await getProfileSpy.mock.results[getProfileSpy.mock.results.length - 1].value;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    getProfileSpy.mockRestore();
 
     await waitFor(() =>
       expect(document.querySelector(".profile-setup-preference-card")).toBeTruthy(),
@@ -79,6 +90,43 @@ describe("Travel Hunter app — profile, invites, OAuth & sharing", () => {
     expect(document.body).toHaveTextContent("AI 추천 맞춤 일정");
     expect(screen.queryByLabelText("인기 국내 여행지 목록")).toBeNull();
     expect(document.body).toHaveTextContent(/코스 만들기/);
+  });
+
+  it("keeps profile setup choices closed until the stored profile arrives", async () => {
+    await login();
+    cleanup();
+    let releaseProfile: (profile: Profile) => void = () => {};
+    const lateProfile = new Promise<Profile>((resolve) => {
+      releaseProfile = resolve;
+    });
+    const getProfileSpy = vi.spyOn(appDataApi, "getProfile").mockImplementationOnce(() => lateProfile);
+    const updateProfileSpy = vi
+      .spyOn(appDataApi, "updateProfile")
+      .mockImplementation(async (next) => ({ preferredRegions: null, style: null, budget: null, ...next }));
+    try {
+      renderAppRoute("/profile-setup");
+      const user = userEvent.setup();
+      // 서버 프로필이 오기 전에는 고를 곳이 없다 - 고른 값이 늦게 온 응답에 덮이지 않게
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(screen.queryByRole("button", { name: "부산" })).toBeNull();
+
+      releaseProfile({ preferredRegions: null, style: null, budget: null });
+      await user.click(await screen.findByRole("button", { name: "부산" }));
+      await user.click(screen.getByRole("button", { name: "다음" }));
+      await user.click(screen.getByRole("button", { name: "맛집" }));
+      await user.click(screen.getByRole("button", { name: "다음" }));
+      await user.click(screen.getByRole("button", { name: "1인 30만원 이하" }));
+      await user.click(screen.getByRole("button", { name: "추천 홈 보기" }));
+
+      await waitFor(() =>
+        expect(updateProfileSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ preferredRegions: ["부산"], style: "맛집" }),
+        ),
+      );
+    } finally {
+      getProfileSpy.mockRestore();
+      updateProfileSpy.mockRestore();
+    }
   });
 
   it("renders one editor invite link and prepares it", async () => {
