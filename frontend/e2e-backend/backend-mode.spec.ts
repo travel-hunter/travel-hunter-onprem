@@ -381,7 +381,7 @@ test("home recommendation starts a new trip and reaches policy navigation", asyn
   await firstTravelArea.click();
   await page.getByRole("button", { name: "다음" }).click();
 
-  await expect(page.getByRole("heading", { name: "여행 정보를 한 번에 확인해요" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /여행 정보를 확인해요$/ })).toBeVisible();
   await page.locator('input[name="trip-title"]').fill("홈 추천 smoke 여행");
   await page.locator('input[type="date"]').nth(0).fill("2026-07-12");
   await page.locator('input[type="date"]').nth(1).fill("2026-07-14");
@@ -420,7 +420,7 @@ test("backend data source creates a trip with selected profile values and policy
     `/trips/new?policySlug=${encodeURIComponent(examplePolicySlug)}&region=${encodeURIComponent("부산")}&travelAreaId=${encodeURIComponent(travelAreaId)}`,
   );
   await expect(page.locator("#root")).not.toBeEmpty();
-  await expect(page.getByRole("heading", { name: "여행 정보를 한 번에 확인해요" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /여행 정보를 확인해요$/ })).toBeVisible();
   await page.locator('input[name="trip-title"]').fill("부산 e2e 여행");
   await page.locator('input[type="date"]').nth(0).fill("2026-07-12");
   await page.locator('input[type="date"]').nth(1).fill("2026-07-15");

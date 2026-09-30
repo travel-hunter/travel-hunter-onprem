@@ -93,6 +93,8 @@ import {
   readDraft,
   saveDraft,
 } from "../../utils/draftStorage";
+import { REGION_NAMES } from "../../components/map/regionMapEngine";
+import { hasPolicySaving, tripStatus } from "../../utils";
 import { FriendInvitePanel } from "./FriendInvitePanel";
 import { DraftRestoreNotice } from "./_shared";
 
@@ -182,9 +184,19 @@ function formatStayLabel(dayCount: number): string {
   return `${Math.max(dayCount - 1, 0)}박 ${dayCount}일`;
 }
 
-function hasPolicySaving(expectedSaving: string | undefined): boolean {
-  const value = expectedSaving?.trim();
-  return Boolean(value && !value.startsWith("0"));
+/* 정책 탭에서 이 일정의 시도를 골라 둔 지도로 보낸다. `whole:`·`admin:` id 는 시도를 품고 있고,
+   옛 권역 id(busan-all 등)는 지역 이름 첫 낱말("부산 전체")로 읽는다. 못 읽으면 정책 탭 첫 화면. */
+function tripPoliciesPath(trip: Pick<Trip, "travelAreaId" | "region">): string {
+  let sido: string | undefined;
+  try {
+    sido = /^(?:whole|admin):([^:]+)/.exec(decodeURIComponent(trip.travelAreaId ?? ""))?.[1];
+  } catch {
+    sido = undefined;
+  }
+  sido ??= trip.region.trim().split(/\s+/)[0];
+  return sido && REGION_NAMES.includes(sido)
+    ? `/policies?${new URLSearchParams({ place: sido, sheet: "1" })}`
+    : "/policies";
 }
 
 function linkedTripPoliciesForDisplay(
@@ -238,28 +250,6 @@ function dayCountFromDateInputs(startDate: string, endDate: string): number | nu
   const end = new Date(`${endDate}T00:00:00`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
   return Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
-}
-
-function formatTripDday(dates: string): string {
-  const match = /^(\d{4})\.(\d{2})\.(\d{2})/.exec(dates);
-  if (!match) return "D-day";
-  const start = new Date(
-    Number(match[1]),
-    Number(match[2]) - 1,
-    Number(match[3]),
-  );
-  const today = new Date();
-  const todayDate = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate(),
-  );
-  const diffDays = Math.ceil(
-    (start.getTime() - todayDate.getTime()) / 86_400_000,
-  );
-  if (diffDays > 0) return `D-${diffDays}`;
-  if (diffDays === 0) return "D-day";
-  return `D+${Math.abs(diffDays)}`;
 }
 
 function getPlaceEmoji(place: ItineraryPlace): string {
@@ -2002,7 +1992,7 @@ export function ItineraryDetailPage() {
   const tripRegionEmojiLabel = trip
     ? getTripRegionEmojiFromTitle(trip.title)
     : "🧳";
-  const tripDdayLabel = trip ? formatTripDday(trip.dates) : "D-day";
+  const tripStatusChip = trip ? tripStatus(trip.startDate, trip.endDate) : null;
   const dateEditorDayCount = dateEditor
     ? dayCountFromDateInputs(dateEditor.startDate, dateEditor.endDate)
     : null;
@@ -3971,9 +3961,25 @@ export function ItineraryDetailPage() {
       />
       <div className="prototype-trip-detail-hero">
         <div className="prototype-trip-hero-copy">
-          <span className="prototype-detail-dday-chip">{tripDdayLabel}</span>
+          {tripStatusChip && (
+            <span className={`prototype-detail-dday-chip ${tripStatusChip.tone}`}>
+              {tripStatusChip.label}
+            </span>
+          )}
           <h1>{trip.title}</h1>
-          <p>📅 {trip.dates}</p>
+          <p>
+            📅 {trip.dates}
+            {/* 여행기간 수정 창은 있었는데 여는 버튼이 없었다(2026-09-04 계획서 기록). */}
+            {canEditTrip && (
+              <button
+                className="prototype-trip-hero-dates"
+                onClick={openDateEditor}
+                type="button"
+              >
+                기간 바꾸기
+              </button>
+            )}
+          </p>
         </div>
         <div className="prototype-trip-hero-icon" aria-hidden="true">
           {tripRegionEmojiLabel}
@@ -4116,7 +4122,7 @@ export function ItineraryDetailPage() {
             );
           })
         ) : (
-          <Link className="benefit-banner" to="/policies">
+          <Link className="benefit-banner" to={tripPoliciesPath(trip)}>
             <span className="benefit-banner-icon" aria-hidden="true">
               💴
             </span>
@@ -4129,7 +4135,7 @@ export function ItineraryDetailPage() {
               <div className="meta">
                 {hasLinkedPolicyFallback
                   ? `${trip?.expectedSaving ?? "혜택 확인"} · 정책 목록에서 확인`
-                  : "정책 상세에서 일정을 연결할 수 있어요"}
+                  : "정책 탭에서 혜택을 골라 이 일정에 담을 수 있어요"}
               </div>
             </div>
             <span className="benefit-banner-arrow" aria-hidden="true">
@@ -4143,27 +4149,41 @@ export function ItineraryDetailPage() {
         className="trip-benefit-grid"
         aria-label="이 일정에 어울리는 정책"
       >
-        <h2>💡 이 일정에 어울리는 정책</h2>
+        <h2>
+          💡 이 일정에 어울리는 정책
+          {recommendedPolicies.length > 0 && (
+            <span className="linked-policy-summary">{recommendedPolicies.length}건</span>
+          )}
+        </h2>
+        {/* 담기는 정책 탭에서 한다. 여기는 서버 추천(담기 규칙과 같은 판별) 몇 장과 정책 탭 길만 둔다. */}
         <div className="prototype-matching-policy-rail">
           {recommendedPolicies.length > 0 ? (
-            recommendedPolicies.map((policy) => (
+            <>
+              {recommendedPolicies.map((policy) => (
+                <Link
+                  className="prototype-matching-policy-card"
+                  key={policy.slug}
+                  to={`/policies/${policy.slug}`}
+                >
+                  <div className="matching-card-head">
+                    <span aria-hidden="true">💡</span>
+                    <em>{policy.amount || "정책 확인"}</em>
+                  </div>
+                  <strong>{policy.title}</strong>
+                </Link>
+              ))}
               <Link
-                className="prototype-matching-policy-card"
-                key={policy.slug}
-                to={`/policies/${policy.slug}`}
+                className="prototype-matching-policy-card more"
+                to={tripPoliciesPath(trip)}
               >
-                <div className="matching-card-head">
-                  <span aria-hidden="true">💡</span>
-                  <em>{policy.amount || "정책 확인"}</em>
-                </div>
-                <strong>{policy.title}</strong>
+                <strong>정책 탭에서 더 보기 ›</strong>
               </Link>
-            ))
+            </>
           ) : (
-            <Link className="prototype-matching-policy-card" to="/policies">
+            <Link className="prototype-matching-policy-card" to={tripPoliciesPath(trip)}>
               <div className="matching-card-head">
                 <span aria-hidden="true">💡</span>
-                <em>정책 확인</em>
+                <em>정책 탭에서 찾기</em>
               </div>
               <strong>이 일정에 어울리는 정책이 없어요</strong>
             </Link>
@@ -4819,7 +4839,8 @@ function PrototypeTripMap({
           <polyline
             points={routePoints}
             fill="none"
-            stroke="#ff5e5b"
+            /* 속성값에는 CSS 변수가 안 먹는 브라우저가 있어 style 로 준다 */
+            style={{ stroke: "var(--primary-500)" }}
             strokeWidth=".9"
             strokeDasharray="2.5,1.5"
             opacity=".85"

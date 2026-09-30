@@ -35,6 +35,12 @@ export function testIsoDateFromToday(daysFromToday: number) {
   return date.toISOString().slice(0, 10);
 }
 
+/* 정책 상세의 담기 창은 끝나지 않은 일정만 보여 준다. 기본 미리보기 일정(2026-06)은 이미 지났으므로
+   담기를 시험할 때는 이 일정을 쓴다. 날짜 글자(dates)는 화면 표시용이라 그대로 둔다. */
+export function getUpcomingPreviewTrip(): Trip {
+  return { ...getPreviewTrip(), startDate: "2099-06-12", endDate: "2099-06-13" };
+}
+
 export function getPreviewTrip(): Trip {
   return {
     id: "21",

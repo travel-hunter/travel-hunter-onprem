@@ -368,6 +368,13 @@
   color: var(--gray-700);
 }
 
+/* 주색이 청록이 된 뒤로 warning(accent 청록)은 급함을 못 알린다. 급한 것은 붉은 상태색으로. */
+.tag.danger {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+  border-color: transparent;
+}
+
 /* 03. Shared primitives */
 .ds-card {
   border: 1px solid var(--component-card-border);
@@ -3223,7 +3230,7 @@
 
 .benefit-package-card.primary,
 .trip-benefit-grid article:first-child {
-  border-color: rgba(255, 94, 91, 0.2);
+  border-color: rgba(var(--primary-rgb), 0.2);
   background: var(--primary-50);
 }
 
@@ -3416,12 +3423,12 @@
 
 .day-tab.drop-target {
   border-style: dashed;
-  background: #fff5f4;
+  background: var(--primary-50);
 }
 
 .day-tab.drop-target.over {
   color: var(--primary-700);
-  background: rgba(255, 94, 91, 0.08);
+  background: rgba(var(--primary-rgb), 0.08);
   border-color: var(--primary-500);
 }
 
@@ -3437,7 +3444,7 @@
   align-items: center;
   padding: 0 7px;
   border-radius: 999px;
-  background: rgba(255, 94, 91, 0.1);
+  background: rgba(var(--primary-rgb), 0.1);
   color: var(--primary-600);
   font-size: 11px;
   font-style: normal;
@@ -3482,8 +3489,8 @@
 }
 
 .prototype-trip-detail-screen .timeline-slot.moving .place-detail {
-  border-color: rgba(255, 94, 91, 0.35);
-  background: #fff5f4;
+  border-color: rgba(var(--primary-rgb), 0.35);
+  background: var(--primary-50);
 }
 
 .place-copy {
@@ -3507,7 +3514,7 @@
 }
 
 .recommendation-preview-place-select:focus-visible {
-  outline: 3px solid rgba(255, 94, 91, 0.35);
+  outline: 3px solid rgba(var(--primary-rgb), 0.35);
   outline-offset: 4px;
   border-radius: var(--radius-sm);
 }
@@ -3532,7 +3539,7 @@
 
 .drag-handle:active {
   border-color: var(--primary-500);
-  background: #fff5f4;
+  background: var(--primary-50);
   color: var(--primary-600);
   cursor: grabbing;
 }
@@ -3543,7 +3550,7 @@
 }
 
 .drag-handle:focus-visible {
-  outline: 3px solid rgba(255, 94, 91, 0.2);
+  outline: 3px solid rgba(var(--primary-rgb), 0.2);
   outline-offset: 2px;
 }
 
@@ -3566,7 +3573,7 @@
   /* 100% 프레임은 일부러 안 둔다. 두면 .place-detail 의 흰 배경으로 돌아가지
      못하고(inherit 는 부모 배경이다) 애니메이션이 끝나는 순간 튄다. */
   from {
-    box-shadow: 0 0 0 3px rgba(255, 94, 91, 0.55);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.55);
     background: var(--primary-50);
   }
 }
@@ -3574,7 +3581,7 @@
 @media (prefers-reduced-motion: reduce) {
   .timeline-slot.just-moved .place-detail {
     animation: none;
-    box-shadow: 0 0 0 3px rgba(255, 94, 91, 0.55);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.55);
   }
 }
 
@@ -3585,7 +3592,7 @@
   flex: 0 0 auto;
   padding: 0 9px;
   border-radius: 999px;
-  background: #fff5f4;
+  background: var(--primary-50);
   color: var(--primary-600);
   font-size: 12px;
   font-weight: 1000;
@@ -3634,7 +3641,7 @@
 .place-search-result:focus-visible {
   border-color: var(--primary-500);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(255, 94, 91, 0.12);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
 }
 
 .place-search-result span {
@@ -3820,7 +3827,7 @@
   background:
     radial-gradient(
       circle at 20% 30%,
-      rgba(255, 94, 91, 0.12),
+      rgba(var(--primary-rgb), 0.12),
       transparent 26%
     ),
     linear-gradient(135deg, #fff8ed, #eef7ff);
@@ -3829,7 +3836,7 @@
 
 .place-preview-fallback.has-place {
   border-style: solid;
-  border-color: rgba(255, 94, 91, 0.2);
+  border-color: rgba(var(--primary-rgb), 0.2);
 }
 
 .place-preview-fallback svg {
@@ -4459,7 +4466,7 @@
   padding: 12px;
   border: 1px solid var(--primary-100);
   border-radius: var(--radius-sm);
-  background: #fff5f4;
+  background: var(--primary-50);
   color: var(--gray-900);
 }
 
@@ -4982,7 +4989,7 @@
 
 .prototype-screen-head p {
   margin: 0 0 4px;
-  color: #ff5e5b;
+  color: var(--primary-500);
   font-size: 12px;
   font-weight: 800;
 }
@@ -6013,7 +6020,7 @@
   position: relative;
   overflow: hidden;
   border-radius: 20px;
-  background: linear-gradient(135deg, #ff5e5b 0%, #ffb35c 100%);
+  background: linear-gradient(135deg, var(--primary-500) 0%, #66c2a4 100%);
   box-shadow: none;
 }
 
@@ -6132,44 +6139,66 @@
   flex: 0 0 auto;
 }
 
-.prototype-trip-list-screen .itinerary-card-management {
-  display: grid;
-  gap: 8px;
-  justify-items: end;
+.prototype-trip-list-screen .itinerary-card-menu {
+  position: relative;
+  margin: -8px -10px -8px 0;
 }
 
-.prototype-trip-list-screen .itinerary-card-edit {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 28px;
-  border: 1px solid #d8e0ec;
+.prototype-trip-list-screen .itinerary-card-menu-toggle {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
   border-radius: 999px;
-  padding: 6px 10px;
+  background: transparent;
+  color: var(--gray-500);
+}
+
+.prototype-trip-list-screen .itinerary-card-menu-toggle[aria-expanded="true"] {
+  background: var(--gray-100);
+  color: var(--ink);
+}
+
+.prototype-trip-list-screen .itinerary-card-menu-list {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: 4px;
+  z-index: 5;
+  display: grid;
+  min-width: 128px;
+  padding: 6px;
+  border: 1px solid var(--gray-200);
+  border-radius: 14px;
   background: #fff;
-  color: #1f2a44;
-  font-size: 11px;
-  font-weight: 800;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+}
+
+.prototype-trip-list-screen .itinerary-card-menu-list > a,
+.prototype-trip-list-screen .itinerary-card-menu-list > button {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
   text-decoration: none;
 }
 
-.prototype-trip-list-screen .trip-delete-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 34px;
-  min-height: 28px;
-  margin-top: -4px;
-  border: 1px solid #ffc6c3;
-  border-radius: 999px;
-  padding: 6px 9px;
-  background: #fff3f2;
-  color: #ff5e5b;
-  font-size: 11px;
-  font-weight: 800;
+.prototype-trip-list-screen .itinerary-card-menu-list > .danger {
+  color: var(--status-danger-text);
 }
 
-.prototype-trip-list-screen .trip-delete-btn:disabled {
+.prototype-trip-list-screen .itinerary-card-menu-list > :hover {
+  background: var(--gray-50);
+}
+
+.prototype-trip-list-screen .itinerary-card-menu-list > button:disabled {
   cursor: default;
   opacity: 0.72;
 }
@@ -6190,10 +6219,10 @@
   gap: 8px;
   width: fit-content;
   max-width: 100%;
-  border: 1px solid rgba(255, 94, 91, 0.16);
+  border: 1px solid rgba(var(--primary-rgb), 0.16);
   border-radius: 16px;
   padding: 6px 8px 6px 7px;
-  background: linear-gradient(135deg, #fff7f6 0%, #fffdfb 100%);
+  background: linear-gradient(135deg, var(--primary-50) 0%, #fcfefe 100%);
 }
 
 .prototype-trip-list-screen .itinerary-participant-avatars {
@@ -6208,21 +6237,21 @@
   height: 22px;
   margin-right: -6px;
   border: 2px solid #fff;
-  box-shadow: 0 3px 8px rgba(255, 94, 91, 0.12);
+  box-shadow: 0 3px 8px rgba(var(--primary-rgb), 0.12);
   font-size: 10px;
   line-height: 1;
 }
 
 .prototype-trip-list-screen .itinerary-participant-avatars .avatar-mini:nth-child(1) {
-  background: #ff5e5b;
+  background: var(--primary-500);
 }
 
 .prototype-trip-list-screen .itinerary-participant-avatars .avatar-mini:nth-child(2) {
-  background: #ff8a65;
+  background: #2a5da8;
 }
 
 .prototype-trip-list-screen .itinerary-participant-avatars .avatar-mini:nth-child(3) {
-  background: #ffb84d;
+  background: #5a4b94;
 }
 
 .prototype-trip-list-screen .itinerary-participant-copy {
@@ -6254,19 +6283,24 @@
 .prototype-trip-list-screen .itinerary-policy-row {
   grid-column: 1;
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   align-items: center;
   justify-content: flex-start;
   align-self: start;
-  min-width: max-content;
+  min-width: 0;
   margin-top: 0;
 }
 
 .prototype-trip-list-screen .itinerary-policy-row .tag {
   border-radius: 999px;
-  background: #fff4d7;
-  color: #8a5a00;
   font-size: 12px;
   font-weight: 900;
+}
+
+.prototype-trip-list-screen .itinerary-policy-row .tag.benefit {
+  background: #fff4d7;
+  color: #8a5a00;
 }
 
 .prototype-trip-list-screen .card-arrow {
@@ -6415,8 +6449,8 @@
 }
 
 .prototype-region-grid button.active {
-  border-color: #ff5e5b;
-  color: #ff3b30;
+  border-color: var(--primary-500);
+  color: var(--primary-500);
   background: #fff1f0;
   box-shadow: none;
 }
@@ -6478,7 +6512,7 @@
 }
 
 .prototype-travel-area-card.active {
-  border-color: #ff5e5b;
+  border-color: var(--primary-500);
   background: #fff1f0;
   box-shadow: none;
 }
@@ -6635,8 +6669,8 @@
 
 .prototype-date-fields input:focus,
 .prototype-title-field input:focus {
-  border-color: #ff5e5b;
-  outline: 3px solid rgba(255, 94, 91, 0.16);
+  border-color: var(--primary-500);
+  outline: 3px solid rgba(var(--primary-rgb), 0.16);
 }
 
 .trip-date-range-card {
@@ -6654,8 +6688,8 @@
 }
 
 .trip-date-range-card:focus-visible {
-  border-color: #ff5e5b;
-  outline: 3px solid rgba(255, 94, 91, 0.16);
+  border-color: var(--primary-500);
+  outline: 3px solid rgba(var(--primary-rgb), 0.16);
 }
 
 .trip-date-range-card span {
@@ -6670,7 +6704,7 @@
 }
 
 .trip-date-range-card em {
-  color: #ff5e5b;
+  color: var(--primary-500);
   font-size: 13px;
   font-style: normal;
   font-weight: 800;
@@ -6696,7 +6730,7 @@
   border: 1px solid #ffd4d2;
   border-radius: 999px;
   padding: 7px 10px;
-  color: #ff5e5b;
+  color: var(--primary-500);
   background: #fff;
   font-size: 12px;
   font-weight: 900;
@@ -6746,7 +6780,7 @@
 }
 
 .trip-date-day.in-range {
-  background: rgba(255, 94, 91, 0.12);
+  background: rgba(var(--primary-rgb), 0.12);
 }
 
 .trip-date-day.range-start,
@@ -7004,12 +7038,18 @@
   margin: 0;
 }
 
+/* 새 일정을 만드는 동안은 탭바를 가린다. 탭바 위에 고정 버튼 줄('다음'·'일정 생성')이 얹혀
+   바닥이 두 겹이 되고, 만들다 말고 다른 탭으로 새기 쉬웠다. 나가는 길은 왼쪽 위 뒤로 버튼. */
+.service-layout:has(.prototype-trip-create-screen) .bottom-tabs {
+  display: none;
+}
+
 .prototype-create-sticky-actions {
   position: sticky;
   width: 100%;
   box-sizing: border-box;
   right: 0;
-  bottom: calc(72px + env(safe-area-inset-bottom));
+  bottom: env(safe-area-inset-bottom);
   left: 0;
   z-index: 60;
   display: flex;
@@ -7028,12 +7068,6 @@
   font-weight: 700;
   line-height: 1.35;
   text-align: center;
-}
-
-@media (min-width: 768px) {
-  .prototype-create-sticky-actions {
-    bottom: env(safe-area-inset-bottom);
-  }
 }
 
 .prototype-create-sticky-actions .btn {
@@ -7120,7 +7154,7 @@
   overflow: hidden;
   border-radius: 0;
   padding: 16px 88px 18px 72px;
-  background: linear-gradient(120deg, #ff5e5b88, #ffc93ccc);
+  background: linear-gradient(120deg, var(--primary-600) 0%, var(--primary-500) 55%, #1b8c7a 100%);
   box-shadow: var(--shadow-none);
   color: #fff;
 }
@@ -7135,8 +7169,8 @@
   min-height: 0;
   padding: 2px 8px;
   border-radius: 999px;
-  color: #ff5e5b;
-  background: #ffe5e4;
+  color: var(--primary-600);
+  background: var(--primary-100);
   font-size: 11px;
   font-weight: 700;
   line-height: normal;
@@ -7294,15 +7328,15 @@
 }
 
 .prototype-trip-detail-screen .avatar-mini:nth-child(1) {
-  background: #ff5e5b;
+  background: var(--primary-500);
 }
 
 .prototype-trip-detail-screen .avatar-mini:nth-child(2) {
-  background: #00c7ae;
+  background: #2a5da8;
 }
 
 .prototype-trip-detail-screen .avatar-mini:nth-child(3) {
-  background: #ffc93c;
+  background: #5a4b94;
 }
 
 .prototype-invite-pill {
@@ -7312,9 +7346,9 @@
   height: 30px;
   min-height: 30px;
   padding: 0 12px;
-  border: 1.5px solid #ff5e5b;
+  border: 1.5px solid var(--primary-500);
   border-radius: 8px;
-  color: #ff3b30;
+  color: var(--primary-500);
   background: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -7541,6 +7575,58 @@
   line-height: 1.3;
 }
 
+/* 제목 옆 건수. 위의 '.trip-benefit-grid span' 20px 이모지 규칙을 이겨야 한다. */
+.prototype-trip-detail-screen .trip-benefit-grid h2 .linked-policy-summary {
+  margin-left: 6px;
+  color: var(--primary-500);
+  font-size: 12px;
+}
+
+/* 레일 끝 '정책 탭에서 더 보기' - 추천 카드와 구분되게 테두리만. */
+.prototype-trip-detail-screen .trip-benefit-grid .prototype-matching-policy-card.more {
+  flex-basis: 128px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--gray-300);
+  background: var(--gray-50);
+  text-align: center;
+}
+
+.prototype-trip-detail-screen .trip-benefit-grid .prototype-matching-policy-card.more strong {
+  color: var(--gray-700);
+}
+
+/* 히어로 상태 칩: 지난 여행은 옅게, 여행 중은 초록. 다가오는 여행은 원래 주색 그대로. */
+.prototype-trip-detail-hero .prototype-detail-dday-chip.past {
+  color: var(--gray-700);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.prototype-trip-detail-hero .prototype-detail-dday-chip.now {
+  color: var(--status-confirmed-text);
+  background: var(--status-confirmed-bg);
+}
+
+.prototype-trip-detail-hero .prototype-detail-dday-chip.urgent {
+  color: var(--status-danger-text);
+  background: var(--status-danger-bg);
+}
+
+.prototype-trip-hero-dates {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  margin-left: 8px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
 .prototype-trip-detail-screen .trip-benefit-grid p {
   display: none;
 }
@@ -7693,13 +7779,13 @@
   color: var(--gray-400, #b4b4c2);
 }
 .place-day-chip.selected {
-  border-color: var(--primary-500, #ff5e5b);
-  background: #fff5f4;
-  color: var(--primary-600, #e84845);
+  border-color: var(--primary-500);
+  background: var(--primary-50);
+  color: var(--primary-600);
 }
 .place-day-chip.selected em,
 .place-day-chip.selected i {
-  color: var(--primary-600, #e84845);
+  color: var(--primary-600);
 }
 .place-day-chip:disabled {
   opacity: 0.55;
@@ -7768,14 +7854,14 @@
 }
 
 .prototype-trip-detail-screen .day-tab.active {
-  border-color: var(--primary-500, #ff5e5b);
-  background: #fff5f4;
-  color: var(--primary-600, #e84845);
+  border-color: var(--primary-500);
+  background: var(--primary-50);
+  color: var(--primary-600);
 }
 
 .prototype-trip-detail-screen .day-tab.active > span,
 .prototype-trip-detail-screen .day-tab.active > i {
-  color: var(--primary-600, #e84845);
+  color: var(--primary-600);
 }
 
 /* 드롭 대상일 때 폭이 커지면 30개 탭이 한꺼번에 밀려 가운데 정렬이 어긋난다.
@@ -7788,14 +7874,14 @@
    날짜와 장소 수 글자가 같은 붉은색이라 묻힌다. */
 .prototype-trip-detail-screen .day-tab.drop-target.over,
 .prototype-trip-detail-screen .day-tab.active.drop-target.over {
-  background: #fff5f4;
-  color: var(--primary-600, #e84845);
-  box-shadow: 0 0 0 2px rgba(255, 94, 91, 0.3);
+  background: var(--primary-50);
+  color: var(--primary-600);
+  box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.3);
 }
 
 .prototype-trip-detail-screen .day-tab.active.drop-target.over > span,
 .prototype-trip-detail-screen .day-tab.active.drop-target.over > i {
-  color: var(--primary-600, #e84845);
+  color: var(--primary-600);
 }
 
 .list-map-toggle {
@@ -7910,7 +7996,7 @@
   height: 34px;
   border-radius: 999px;
   color: #fff;
-  background: #ff5e5b;
+  background: var(--primary-500);
   box-shadow:
     0 4px 10px rgba(0, 0, 0, 0.28),
     inset 0 0 0 3px #fff;
@@ -7975,7 +8061,7 @@
   width: 48px;
   height: 48px;
   border-radius: 10px;
-  background: #fff5f4;
+  background: var(--primary-50);
   font-size: 24px;
 }
 
@@ -7999,8 +8085,8 @@
 }
 
 .place-map-sheet-tags span {
-  color: #ff5e5b;
-  background: #ffe5e4;
+  color: var(--primary-500);
+  background: var(--primary-100);
 }
 
 .place-map-sheet-tags em {
@@ -8072,7 +8158,7 @@
 .place-map-sheet-actions button {
   border: 0;
   color: #fff;
-  background: #ff5e5b;
+  background: var(--primary-500);
 }
 
 .place-sheet-detail {
@@ -8357,7 +8443,7 @@ body.itinerary-place-drag-scroll-locked,
   height: 28px;
   border-radius: 999px;
   color: #fff;
-  background: #ff7a73;
+  background: var(--primary-500);
   font-size: 12px;
   font-weight: 700;
 }
@@ -8392,7 +8478,7 @@ body.itinerary-place-drag-scroll-locked,
 }
 
 .place-prototype-meta span {
-  color: #ff5e5b;
+  color: var(--primary-500);
   font-size: 11px;
   font-weight: 700;
 }
@@ -8505,8 +8591,8 @@ body.itinerary-place-drag-scroll-locked,
 }
 
 .prototype-trip-detail-screen .place-actions .btn.ghost {
-  border: 1px solid rgba(255, 94, 91, 0.18);
-  background: #fff5f4;
+  border: 1px solid rgba(var(--primary-rgb), 0.18);
+  background: var(--primary-50);
   color: var(--primary-600);
 }
 
@@ -8526,14 +8612,14 @@ body.itinerary-place-drag-scroll-locked,
   .place-actions
   .preview-time-edit[open]
   > summary {
-  border-color: rgba(255, 94, 91, 0.24);
-  background: #fff5f4;
+  border-color: rgba(var(--primary-rgb), 0.24);
+  background: var(--primary-50);
   color: var(--primary-600);
 }
 
 .prototype-trip-detail-screen .dashed {
-  border-color: #ff5e5b;
-  color: #ff5e5b;
+  border-color: var(--primary-500);
+  color: var(--primary-500);
 }
 
 .prototype-trip-detail-screen .prototype-trip-action-row {
@@ -8570,7 +8656,7 @@ body.itinerary-place-drag-scroll-locked,
 .prototype-trip-detail-screen .prototype-trip-action-ai {
   border: 1px solid #ffc7c4;
   background: #fff1f0;
-  color: #ff5e5b;
+  color: var(--primary-500);
 }
 
 .prototype-trip-detail-screen .prototype-trip-action-ai:only-child {
@@ -10340,7 +10426,7 @@ a.prototype-stat-card:active {
       rgba(255, 255, 255, 0.42),
       transparent 26%
     ),
-    linear-gradient(120deg, #ff5e5b 0%, #ff8f70 52%, #ffc93c 100%);
+    linear-gradient(120deg, var(--primary-600) 0%, var(--primary-500) 52%, #1b8c7a 100%);
   color: #fff;
 }
 
@@ -10399,7 +10485,7 @@ a.prototype-stat-card:active {
 }
 
 .ai-section-kicker {
-  color: #ff5e5b;
+  color: var(--primary-500);
   font-size: 11px;
   font-weight: 800;
 }
@@ -10553,20 +10639,20 @@ a.prototype-stat-card:active {
 .ai-day-popover button:focus-visible,
 .ai-preview-day-selector button:focus-visible,
 .ai-inline-day-selector button:focus-visible {
-  outline: 3px solid rgba(255, 122, 115, 0.34);
+  outline: 3px solid rgba(var(--primary-rgb), 0.34);
   outline-offset: 2px;
 }
 
 .ai-candidate-card.active {
   box-shadow:
-    inset 0 0 0 2px #ff7a73,
-    0 14px 34px rgba(255, 122, 115, 0.14);
+    inset 0 0 0 2px var(--primary-500),
+    0 14px 34px rgba(var(--primary-rgb), 0.14);
 }
 
 .ai-candidate-card-picker-open {
   box-shadow:
-    inset 0 0 0 2px #ff7a73,
-    0 10px 22px rgba(255, 122, 115, 0.12);
+    inset 0 0 0 2px var(--primary-500),
+    0 10px 22px rgba(var(--primary-rgb), 0.12);
 }
 
 .ai-candidate-card strong {
@@ -10619,7 +10705,7 @@ a.prototype-stat-card:active {
   border-radius: 999px;
   padding: 6px 10px;
   color: #fff;
-  background: #ff7a73;
+  background: var(--primary-500);
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
@@ -10699,7 +10785,7 @@ a.prototype-stat-card:active {
   border: 0;
   border-radius: 999px;
   padding: 8px 12px;
-  background: #ff7a73;
+  background: var(--primary-500);
   color: #fff;
   font-size: 12px;
   font-weight: 950;
@@ -10735,7 +10821,7 @@ a.prototype-stat-card:active {
 }
 
 .ai-preview-tabs button.active {
-  background: #ff7a73;
+  background: var(--primary-500);
   color: #fff;
 }
 
@@ -10783,7 +10869,7 @@ a.prototype-stat-card:active {
   border-radius: 14px;
   padding: 9px 10px;
   background: #fff7f5;
-  box-shadow: inset 0 0 0 1px rgba(255, 122, 115, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(var(--primary-rgb), 0.22);
 }
 
 .ai-preview-candidate-pill strong {
@@ -10814,12 +10900,12 @@ a.prototype-stat-card:active {
   border: 0;
   border-radius: 999px;
   padding: 9px 13px;
-  background: #ff7a73;
+  background: var(--primary-500);
   color: #fff;
   font-size: 12px;
   font-weight: 950;
   line-height: 1;
-  box-shadow: 0 8px 18px rgba(255, 122, 115, 0.22);
+  box-shadow: 0 8px 18px rgba(var(--primary-rgb), 0.22);
 }
 
 .ai-preview-day-selector-add:disabled,
@@ -11318,7 +11404,7 @@ a.prototype-stat-card:active {
 }
 
 .ai-map-selected-link:focus-visible {
-  outline: 3px solid rgba(255, 122, 115, 0.34);
+  outline: 3px solid rgba(var(--primary-rgb), 0.34);
   outline-offset: 2px;
 }
 
@@ -11422,7 +11508,7 @@ a.prototype-stat-card:active {
 .ai-slim-day:focus-visible,
 .ai-slim-day[aria-pressed="true"],
 .ai-slim-day.active {
-  background: #ff7a73;
+  background: var(--primary-500);
   color: #fff;
 }
 
@@ -11465,8 +11551,8 @@ a.prototype-stat-card:active {
 
 .ai-candidate-card.active {
   box-shadow:
-    inset 0 0 0 2px #ff7a73,
-    0 10px 22px rgba(255, 122, 115, 0.12);
+    inset 0 0 0 2px var(--primary-500),
+    0 10px 22px rgba(var(--primary-rgb), 0.12);
 }
 
 .ai-candidate-card-added,
@@ -11551,7 +11637,7 @@ a.prototype-stat-card:active {
   padding: 10px;
   background: #fff;
   box-shadow:
-    inset 0 0 0 1px rgba(255, 122, 115, 0.22),
+    inset 0 0 0 1px rgba(var(--primary-rgb), 0.22),
     0 10px 22px rgba(17, 24, 39, 0.08);
 }
 
@@ -11606,12 +11692,12 @@ a.prototype-stat-card:active {
   border: 0;
   border-radius: 999px;
   padding: 8px 12px;
-  background: #ff7a73;
+  background: var(--primary-500);
   color: #fff;
   font-size: 12px;
   font-weight: 950;
   line-height: 1;
-  box-shadow: 0 8px 18px rgba(255, 122, 115, 0.2);
+  box-shadow: 0 8px 18px rgba(var(--primary-rgb), 0.2);
 }
 
 .ai-inline-day-selector-add:disabled,
@@ -11908,7 +11994,7 @@ a.prototype-stat-card:active {
   padding: 14px 16px;
   border: 1px solid #f5c2c0;
   border-radius: 14px;
-  background: #fff5f4;
+  background: var(--primary-50);
   color: #7a271a;
   font-size: 14px;
 }
@@ -12189,8 +12275,8 @@ a.prototype-stat-card:active {
 }
 
 .preview-time-edit[open] > summary {
-  border-color: rgba(255, 94, 91, 0.24);
-  background: #fff5f4;
+  border-color: rgba(var(--primary-rgb), 0.24);
+  background: var(--primary-50);
 }
 
 .preview-time-edit .place-time-picker {
@@ -12336,8 +12422,8 @@ a.prototype-stat-card:active {
 
 .trip-region-selector__sido.is-selected,
 .trip-region-selector__area.is-selected {
-  border-color: rgba(255, 94, 91, 0.72);
-  background: #fff5f4;
+  border-color: rgba(var(--primary-rgb), 0.72);
+  background: var(--primary-50);
   color: var(--primary);
 }
 
@@ -12399,7 +12485,7 @@ a.prototype-stat-card:active {
   padding: 10px 12px;
   border: 1px solid rgba(180, 35, 24, 0.22);
   border-radius: 8px;
-  background: #fff5f4;
+  background: var(--primary-50);
 }
 
 .trip-region-selector__error-panel button {

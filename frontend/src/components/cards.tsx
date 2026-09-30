@@ -1,16 +1,18 @@
-import { Heart } from "lucide-react";
+import { Heart, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Policy, Trip } from "../api";
 import { getPolicyMoodIcon, getPolicyMoodTone, getPolicyPhoto, getTripRegionEmojiFromTitle } from "../data/displayConfig";
 import { PolicyThumbPhoto } from "./policyPhoto";
-import { formatPolicyDeadlineTag, formatPolicyPeriodSummary } from "../utils";
+import { formatPolicyDeadlineTag, formatPolicyPeriodSummary, hasPolicySaving, tripStatus, type TripStatus } from "../utils";
 import { canUsePolicyActions } from "../utils/policyCapabilities";
 import { SurfaceCard, Tag } from "./ui";
 
 function compactPolicyPeriod(policy: Policy) {
   return formatPolicyPeriodSummary(policy);
 }
+
+const TRIP_STATUS_TONE = { past: "gray", now: "green", urgent: "danger", soon: "primary" } as const satisfies Record<TripStatus["tone"], string>;
 
 function tripRegionEmoji(trip: Trip) {
   return getTripRegionEmojiFromTitle(trip.title);
@@ -111,6 +113,10 @@ export function ItineraryCard({
   const dayCount = Object.keys(trip.days).length || 1;
   const participantNames = tripParticipantNames(trip);
   const participantCount = participantNames.length;
+  const canEdit = trip.currentUserRole !== "viewer";
+  const status = tripStatus(trip.startDate, trip.endDate);
+  const recommendedCount = trip.recommendedPolicies.length;
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
     <SurfaceCard as="article" className="itinerary-card">
@@ -124,18 +130,47 @@ export function ItineraryCard({
           <Link className="itinerary-title-link" to={detailPath}>
             <h4>{trip.title}</h4>
           </Link>
-          <div className="itinerary-actions itinerary-card-management">
-            {trip.currentUserRole !== "viewer" && (
-              <Link className="itinerary-card-edit" to={editPath} aria-label={`${trip.title} 편집`}>
-                편집
-              </Link>
-            )}
-            {onDelete && (
-              <button className="trip-delete-btn" disabled={isDeleting} onClick={() => onDelete(trip)} type="button">
-                {isDeleting ? "삭제 중" : "삭제"}
+          {/* 편집·삭제는 자주 안 쓰는데 카드마다 버튼 둘이 제일 눈에 띄었다. ⋯ 하나로 접는다.
+              밖으로 초점이 나가거나 Esc 면 닫힌다. */}
+          {(canEdit || onDelete) && (
+            <div
+              className="itinerary-actions itinerary-card-menu"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsMenuOpen(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setIsMenuOpen(false);
+              }}
+            >
+              <button
+                aria-expanded={isMenuOpen}
+                aria-label={`${trip.title} 편집·삭제`}
+                className="itinerary-card-menu-toggle"
+                onClick={() => setIsMenuOpen((open) => !open)}
+                type="button"
+              >
+                <MoreHorizontal size={20} aria-hidden="true" />
               </button>
-            )}
-          </div>
+              {isMenuOpen && (
+                <div className="itinerary-card-menu-list">
+                  {canEdit && <Link to={editPath}>일정 편집</Link>}
+                  {onDelete && (
+                    <button
+                      className="danger"
+                      disabled={isDeleting}
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        onDelete(trip);
+                      }}
+                      type="button"
+                    >
+                      {isDeleting ? "삭제 중" : "일정 삭제"}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <Link to={detailPath}>
           <div className="meta">
@@ -160,7 +195,9 @@ export function ItineraryCard({
             </div>
           </div>
           <div className="itinerary-policy-row">
-            <Tag tone="benefit">예상 혜택 {trip.expectedSaving}</Tag>
+            {status && <Tag tone={TRIP_STATUS_TONE[status.tone]}>{status.label}</Tag>}
+            {recommendedCount > 0 && <Tag tone="benefit">추천 혜택 {recommendedCount}건</Tag>}
+            {hasPolicySaving(trip.expectedSaving) && <Tag tone="benefit">예상 혜택 {trip.expectedSaving}</Tag>}
           </div>
         </Link>
       </div>
