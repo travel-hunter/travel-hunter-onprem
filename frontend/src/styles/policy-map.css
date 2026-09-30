@@ -1,78 +1,64 @@
-/* 정책 지역 지도. 전부 thmap- 접두어 - app.css 의 .card .list .grid 와 부딪히지 않는다. */
+/* 정책 지역 지도와 지도 위 목록. 전부 thmap- 접두어 - app.css 의 .card .list .grid 와 부딪히지 않는다.
+   화면 색은 토큰(tokens.css)만 쓴다. 지도 그림 색만 이 파일이 따로 갖는다(아래 .thmap-stage, .thmap-wrap). */
 :root {
   --thmap-pop: cubic-bezier(0.34, 1.55, 0.64, 1);
-  /* 시트·딤이 멈추는 자리 = 하단 탭바 높이. 탭바는 768px 부터 사라지고(app.css) 상단 내비로
+  /* 시트가 멈추는 바닥 = 하단 탭바 높이. 탭바는 768px 부터 사라지고(app.css) 상단 내비로
      바뀐다 - 그때도 72 를 남기면 시트가 화면 바닥에서 72px 떠서 목록 위에 걸린 카드처럼 보인다. */
   --thmap-tabbar: 72px;
-  /* 열린 시트 위에 남기는 여백. 시안은 폰 상단 54px. 768px 부터는 상단 내비(74px)가 fixed 로
-     덮으므로 그 밑에 손잡이 줄이 보이게 74 + 20 을 남긴다. */
-  --thmap-sheet-top: 54px;
-  /* 시트 폭 = 앱 화면 폭. .service-layout 의 단계(100vw → 760 → 820)를 그대로 따른다.
-     --app-width(390) 를 쓰면 430px 폰에서도, 데스크톱 820px 칸에서도 시트만 좁아 따로 논다. */
+  /* 시트 윗선 = 검색줄·칩 아래. PolicyMapSheet 가 재서 body 에 써 넣는다 - 이 값은 그 전 한 프레임용 */
+  --thmap-sheet-top: 118px;
+  /* 시트 폭 = 앱 화면 폭. .service-layout 의 단계(100vw → 760 → 820)를 그대로 따른다. */
   --thmap-sheet-width: 100vw;
-  /* 사진 카드 위 그늘의 진하기. 0 이면 사진 그대로, 1 이 기본. 글자가 안 읽히면 올리고
-     사진이 답답하면 내린다 - 이 한 줄만 고치면 카드 전체가 같이 바뀐다. */
-  --thmap-photo-shade: 1;
-  /* 지도 위 표시의 불투명도. 순백은 파스텔 지도 위에서 혼자 떠 보인다 - 지도를 비쳐 보이게 한다.
-     낮출수록 지도가 비친다. 0.6 이면 꽤 비치고 0.95 면 거의 불투명하다.
-     흐림을 같이 올려야 비치는 지도 위에서도 글자가 읽힌다. */
+  /* 지도 위 알약(다른 화면의 renderPill)의 불투명도. 낮출수록 지도가 비친다. */
   --thmap-pill-veil: 0.7;
-  /* 바다 진하기. 0 이면 바다가 사라지고 1 이 가장 진하다. 물판과 해안 파문이 같이 움직인다. */
-  --thmap-sea: 0.65;
-  /* 올라온 정도. 0=지도, 1=검색창 밑에 붙은 한 페이지. PolicyMapSheet 가 body 에 써 넣고
-     시트·딤·손잡이·탭바가 전부 이 값 하나만 읽는다. 정책 탭 밖에서는 변수가 없어 0 이다. */
-  --thmap-progress: 0;
-  /* 바다를 칸 아래로 더 끌고 내려가는 길이. 칸이 화면에 맞춰 끝나면 그 끝선이 시트 위에
-     가로줄로 드러나 물이 잘린 것처럼 보인다. 이만큼 시트 뒤로 밀어 넣어 감춘다. */
-  --thmap-sea-tail: 300px;
 }
 @media (min-width: 768px) {
-  :root { --thmap-tabbar: 0px; --thmap-sheet-top: 94px; --thmap-sheet-width: min(100vw, 760px); }
+  :root { --thmap-tabbar: 0px; --thmap-sheet-width: min(100vw, 760px); }
 }
 @media (min-width: 1200px) {
   :root { --thmap-sheet-width: min(100vw, 820px); }
 }
 
-/* svg 는 replaced 요소라 부모 높이를 안 따른다. 폭·높이를 둘 다 박아야 letterbox 로 맞는다.
-   높이는 PolicyRegionMap 이 화면에 맞춰 인라인으로 박는다(시안의 .mapwrap{flex:1}). 여기 값은
-   그 전 한 프레임과 스크립트가 못 도는 환경의 바닥값이다. */
-/* 안쪽 여백을 두지 않는다 - 칸과 그림의 비율이 딱 맞아야 여백 없이 채워진다.
-   높이는 PolicyRegionMap 이 폭과 그림 비율로 계산해 인라인으로 박는다. 여기 값은 그 전 한 프레임과
-   스크립트가 못 도는 환경의 바닥값이다. svg 는 overflow:visible 이라 그림자가 넘쳐도 잘리지 않는다. */
-/* 바다가 깔리는 칸. 지도와 안내문을 품고 탭바 바로 위까지 내려간다 - 높이는
-   PolicyRegionMap 이 잰다. 좌우는 화면 끝까지 꽉 채운다: SVG 안에 두면 화면이 짧을 때
-   생기는 여백 띠가 비고, 지도가 움직이면 가장자리가 드러난다. 배경이면 지도와 무관하다.
-   위 끝에서만 사라진다 - 건수 줄에 색이 닿으면 네모난 칸으로 보인다. 아래는 탭바가 받는다.
-   첫 줄은 calc 를 못 쓰는 곳을 위한 고정값이고 둘째 줄이 --thmap-sea 를 따른다. */
+/* 지도 그림 색. 건수 칸 채움(청록 5단계)은 regionMapEngine 의 FILLS 가 갖고, 나머지는 여기서.
+   지도 칸 바깥(홈 미니 지도 등)도 PolicyRegionMap(.thmap-wrap)을 거치므로 같은 값을 받는다. */
+.thmap-stage,
+.thmap-wrap {
+  --thmap-sea-color: #eef1f4;
+  --thmap-ripple: #c5dcdd;
+  --thmap-land-dim: #f6f7f8;
+  --thmap-dim-line: #dbe0e5;
+  --thmap-focus: #dcf1eb;
+  --thmap-focus-hi: #f3fbf8;
+  --thmap-focus-wall: #5aa994;
+  --thmap-dot: #0f766e;
+  --thmap-sel: #111827;
+}
+
+/* ── 지도 칸 ───────────────────────────────────────────────────
+   바다가 깔리는 칸. 지도는 목록 시트 뒤로 탭바 위까지 꽉 차 있고 목록이 비운 만큼 드러난다 -
+   높이는 PolicyRegionMap 이 잰다. 꼬리는 그림자로 - 칸이 끝나는 선이 시트 뒤에서 비치지 않게 한다. */
 .thmap-stage {
   position: relative;
   display: flex;
   flex-direction: column;
-  /* 지도를 바다 칸 한가운데 둔다. 위에 붙여 두면 기기 세로가 길수록 아래 바다만 넓어져
-     지도가 위로 쏠려 보인다 - 남는 높이를 위아래로 나눠 어느 기기에서나 같은 자리에 온다. */
   justify-content: center;
-  /* 위 끝의 옅어지는 띠는 건수 줄과 맞닿는 선만 지우면 된다. 길게 잡으면 지도를 가운데로
-     내렸을 때 그 띠가 화면에 많이 남아 바다 전체가 옅어 보인다.
-     아래로 갈수록 아주 조금 진해진다 - 위아래가 똑같으면 물이 평평한 판으로 보인다. */
-  background-image: linear-gradient(180deg,
-    rgba(81, 132, 200, 0) 0%, rgba(81, 132, 200, 0.55) 3%,
-    rgba(81, 132, 200, 0.66) 100%);
-  background-image: linear-gradient(180deg,
-    rgb(81 132 200 / 0) 0%,
-    rgb(81 132 200 / calc(0.84 * var(--thmap-sea))) 3%,
-    rgb(81 132 200 / calc(1.02 * var(--thmap-sea))) 100%);
-  /* 꼬리는 그림자로 그린다. 덧대는 칸(absolute)으로 하면 스크롤 영역이 그만큼 늘어
-     화면에 스크롤이 생기고 지도가 위로 밀린다 - 그림자는 배치에 관여하지 않는다.
-     오프셋만큼 칸을 통째로 복제하므로 원본과 이어 붙어 이음매가 없다. */
-  box-shadow: 0 var(--thmap-sea-tail) 0 rgba(81, 132, 200, 0.66);
-  box-shadow: 0 var(--thmap-sea-tail) 0 rgb(81 132 200 / calc(1.02 * var(--thmap-sea)));
+  background: var(--thmap-sea-color);
+  box-shadow: 0 300px 0 var(--thmap-sea-color);
+  /* 지도 칸 밖은 잘라 낸다 - 다가간 지도가 위 검색·칩 줄 위로 번지지 않게(예전 2.5D 지도의 옅은 막이
+     그 줄까지 덮어 흐려 보였다). clip 은 스크롤 상자를 만들지 않는다. */
+  overflow: clip;
 }
+.thmap-wrap { position: relative; background: var(--thmap-sea-color); }
 
+/* svg 는 replaced 요소라 부모 높이를 안 따른다. 폭·높이를 둘 다 박아야 맞는다.
+   높이는 PolicyRegionMap 이 화면에 맞춰 인라인으로 박는다. 여기 값은 그 전 한 프레임의 바닥값이다. */
 .thmap-host {
   width: 100%;
   height: 260px;
   box-sizing: border-box;
 }
+/* 지도 칸은 안내문 한 줄 몫만큼 칸(.thmap-stage)보다 짧게 가운데 선다. 그 위아래 띠까지 땅·물결선이
+   이어지게 넘쳐 그리고, 칸 밖은 .thmap-stage 가 자른다 - 안 넘치면 다가간 지도가 칸 윗변에서 일자로 잘린다. */
 .thmap-svg {
   display: block;
   width: 100%;
@@ -80,60 +66,69 @@
   overflow: visible;
 }
 
-.thmap-sea { opacity: var(--thmap-sea); }
-/* 물마루 - 한 방향으로 천천히 떠내려가다 물속으로 잦아든다. 양 끝에서 진하기가 0 이라
-   나타나고 사라지는 자리가 안 보인다. 주기와 시작 시점은 자국마다 인라인으로 다르게 준다.
-   되돌아오지 않으므로(alternate 아님) 물이 한 방향으로 흐르는 것처럼 읽힌다. */
-@keyframes thmap-wave {
-  0% { transform: translate(-3.5px, 0.7px); opacity: 0; }
-  22% { opacity: 0.58; }
-  70% { opacity: 0.5; }
-  100% { transform: translate(4.5px, -0.5px); opacity: 0; }
-}
-.thmap-ripple path {
-  animation: thmap-wave var(--thmap-wave-dur, 6s) linear var(--thmap-wave-delay, 0s) infinite;
-}
-/* 모바일 탭 하이라이트를 끈다. 지역과 이름표는 누를 수 있는 SVG 그룹인데, 브라우저는 하이라이트를
-   요소의 외곽 사각형으로 칠한다 - 지역 모양과 상관없는 네모 박스가 번쩍였다가 사라진다.
-   눌린 표시는 지역이 솟는 것으로 이미 충분하고, 키보드 포커스는 아래 focus-visible 이 따로 그린다. */
+/* ── 지도 그림(시안 평면 지도) ─────────────────────────────────── */
+/* 해안 물결선 - 땅 모양(defs)을 굵은 선과 바다색 덮개로 번갈아 겹쳐 해안에서 5·10·15px 떨어진
+   가는 선 세 줄을 남긴다. 굵기는 화면 px 라 다가가도 간격이 같다. */
+.thmap-land path { vector-effect: non-scaling-stroke; }
+.thmap-sea { pointer-events: none; }
+.thmap-rp { fill: none; stroke: var(--thmap-ripple); stroke-linejoin: round; stroke-linecap: round; }
+.thmap-rp.cut { stroke: var(--thmap-sea-color); }
+/* 제주 삽입 지도 틀 */
+.thmap-inset { fill: none; stroke: #9aa3ae; stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-dasharray: 4 3; }
+
+/* 모바일 탭 하이라이트를 끈다. 브라우저는 하이라이트를 요소의 외곽 사각형으로 칠해 지역 모양과
+   상관없는 네모가 번쩍인다. 키보드 포커스는 아래 focus-visible 이 따로 그린다. */
 .thmap-host, .thmap-host * { -webkit-tap-highlight-color: transparent; }
-.thmap-rg { cursor: pointer; }
-.thmap-lift, .thmap-wall { transition: transform 0.42s var(--thmap-pop); }
-/* 고른 지역은 액센트 빛무리로 알린다. 시안 CSS 는 회색 그림자 규칙 뒤에 이 규칙이 한 번 더 있어
-   실제로 보이던 건 이쪽이다 - 그대로 가져온다. */
-.thmap-top { transition: filter 0.2s ease; }
-.thmap-on .thmap-top { filter: drop-shadow(0 0 3px rgba(232, 72, 69, 0.5)); }
-
-/* SVG 그룹의 기본 포커스 링은 bbox 사각형이라 지역 모양과 안 맞는다.
-   마우스(:focus)는 끄고 키보드는 윗면 강조로 대신 알린다. */
+/* 땅: 건수 칸 색(엔진이 fill 로 칠한다), 지역 사이는 흰 선. 도를 고르면 둘레 도는 옅은 땅 */
+.thmap-rg { stroke: #fff; stroke-width: 1px; vector-effect: non-scaling-stroke; cursor: pointer; transition: fill 0.2s ease; }
+.thmap-rg:hover { filter: brightness(0.95); }
+.thmap-rg.thmap-dim { fill: var(--thmap-land-dim); stroke: var(--thmap-dim-line); }
+/* 고른 도는 위에 띄운 윗면이 테두리를 그린다 */
+.thmap-rg.thmap-on { stroke: transparent; }
+/* SVG 도형에 outline 을 그리면 지역 모양이 아니라 네모 상자가 된다 - 키보드 포커스는 지역 테두리로 */
 .thmap-rg:focus { outline: none; }
-.thmap-rg:focus-visible .thmap-top { filter: drop-shadow(0 0 3px var(--primary-500)); }
+.thmap-rg:focus-visible { stroke: var(--ink); stroke-width: 2.5px; }
+/* 고른 도를 살짝 띄운다: 흐린 그늘 → 청록 옆면 → 위가 밝은 윗면 */
+.thmap-lift { pointer-events: none; }
+.thmap-lift .shade { fill: rgba(15, 45, 40, 0.3); }
+.thmap-lift .wall { fill: var(--thmap-focus-wall); }
+.thmap-lift .top { stroke: var(--thmap-dot); stroke-width: 1.5px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+/* 작은 지역(서울·세종 등)의 보이지 않는 누르기 범위 */
+.thmap-hit { fill: transparent; cursor: pointer; }
 
-.thmap-lbl { transition: transform 0.42s var(--thmap-pop); cursor: pointer; }
-/* 상자 없이 땅 위에 바로 얹는다. 얇은 흰 헤일로가 경계선 위에서만 글씨를 떼어 준다. */
-.thmap-nm {
-  font-family: var(--font-sans);
-  font-weight: 800;
-  font-size: 7.2px;
-  letter-spacing: -0.02em;
-  text-anchor: middle;
-  dominant-baseline: middle;
-  pointer-events: none;
-  paint-order: stroke;
-  stroke: #fff;
-  stroke-width: 0.45;
-  stroke-linejoin: round;
+/* 이름표 알약 "강원 9". 누르기는 밑의 땅이 받는다 */
+.thmap-labels { pointer-events: none; }
+.thmap-bd rect { fill: var(--color-bg-card); stroke: rgba(17, 24, 39, 0.18); }
+.thmap-bd text { fill: var(--thmap-sel); font-family: var(--font-sans); font-weight: 500; }
+.thmap-bd tspan { font-weight: 700; }
+.thmap-bd.zero text { fill: var(--gray-500); }
+.thmap-bd.sel rect { fill: var(--thmap-sel); }
+.thmap-bd.sel text { fill: var(--color-bg-card); }
+/* 도를 고른 뒤 둘레 도 이름 - 옅게만 */
+.thmap-nb {
+  fill: var(--gray-500); font-family: var(--font-sans); font-weight: 500;
+  paint-order: stroke; stroke: rgba(255, 255, 255, 0.85); stroke-linejoin: round;
 }
 
-/* ── 지도 위 핀 알약 ─────────────────────────────────────────── */
-.thmap-wrap { position: relative; }
+/* 고른 도 안의 시·군 점(혜택 건수). 누르면 그 시군, 다시 누르면 도 전체 */
+.thmap-dot { cursor: pointer; }
+.thmap-dot:focus { outline: none; }
+.thmap-dot .b { fill: var(--color-bg-card); stroke: var(--thmap-dot); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.thmap-dot .c { fill: var(--thmap-dot); font-family: var(--font-sans); font-weight: 800; pointer-events: none; }
+.thmap-dot .nm {
+  fill: var(--ink); font-family: var(--font-sans); font-weight: 700; pointer-events: none;
+  paint-order: stroke; stroke: var(--color-bg-card); stroke-linejoin: round;
+}
+.thmap-dot.on .b { fill: var(--thmap-dot); }
+.thmap-dot.on .c { fill: var(--color-bg-card); }
+.thmap-dot:focus-visible .b { stroke: var(--ink); stroke-width: 3px; }
+
+/* ── 지도 위 알약(다른 화면이 renderPill 로 띄울 때) ─────────────── */
 .thmap-marks {
   position: absolute;
   z-index: 5;
   transform: translate(-50%, -100%);
 }
-/* 지시선 없이 지역 머리 위에 뜬다. 한 줄에 정책 한 종류 - 이모지, 이름, 건수.
-   이모지만 있던 때는 무슨 정책인지 알 수 없었다. 종류가 셋이면 세 줄이 된다. */
 .thmap-pill {
   display: grid;
   gap: 7px;
@@ -142,7 +137,6 @@
   padding: 11px 13px;
   border: 0;
   border-radius: 18px;
-  /* 앱 바탕과 같은 따뜻한 흰색을 반투명으로. 순백(#fff)은 색온도가 달라 더 튀었다. */
   background: rgba(255, 253, 250, var(--thmap-pill-veil));
   backdrop-filter: blur(16px) saturate(1.1);
   -webkit-backdrop-filter: blur(16px) saturate(1.1);
@@ -150,297 +144,396 @@
   cursor: pointer;
   font-family: inherit;
   text-align: left;
-  box-shadow: 0 4px 16px rgba(23, 23, 40, 0.14), 0 0 0 1px rgba(23, 23, 40, 0.05);
+  box-shadow: var(--shadow-sm);
   animation: thmap-mark-in 0.28s var(--thmap-pop) backwards;
 }
-/* 흐림이 안 되는 브라우저에서는 반투명만 남아 글자가 흐려진다 - 그때는 불투명으로 되돌린다 */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .thmap-pill { background: var(--surface-app); }
+  .thmap-pill { background: var(--color-bg-card); }
 }
-.thmap-pill-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 9px;
-}
-.thmap-pill-row i { font-style: normal; font-size: 20px; line-height: 1; }
-.thmap-pill-row em {
-  font-style: normal; font-size: 14.5px; font-weight: 900; letter-spacing: -0.035em;
-  color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.thmap-pill-row b {
-  font-size: 17px; font-weight: 900; color: var(--primary-500);
-  letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
-}
-.thmap-pill:hover { box-shadow: 0 6px 18px rgba(232, 72, 69, 0.22), 0 0 0 1.5px var(--primary-500); }
-/* 종류가 넷을 넘으면 큰 둘만 적고 나머지는 이 줄로 묶는다 - 카드가 세 줄을 안 넘는다 */
-.thmap-pill-more {
-  font-size: 12.5px; font-weight: 900; letter-spacing: -0.02em;
-  color: var(--color-text-secondary); padding-left: 29px;
-}
-.thmap-pill-more b { color: var(--primary-500); font-variant-numeric: tabular-nums; }
+.thmap-pill:hover { box-shadow: 0 6px 18px var(--primary-100), 0 0 0 1.5px var(--primary-500); }
 .thmap-pill:focus-visible { outline: 2px solid var(--primary-500); outline-offset: 2px; }
 @keyframes thmap-mark-in { from { opacity: 0; margin-top: 6px; } to { opacity: 1; margin-top: 0; } }
-
-/* 지도 아래 안내 한 줄. 바다 위에 얹히므로 글자를 한 단계 진하게 쓴다. */
-.thmap-hint {
-  margin: 0;
-  color: #33506b;
-  padding: 2px 16px 10px;
-  text-align: center;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-/* ── 지역 목록 화면 (알약을 누르면) ──────────────────────────── */
-.thmap-list-head {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 11px;
-  padding: 6px 16px 10px;
-}
-.thmap-list-head h2 { margin: 0; font-size: 22px; font-weight: 900; letter-spacing: -0.05em; }
-.thmap-list-head p { margin: 2px 0 0; font-size: 12.5px; font-weight: 800; color: var(--color-text-secondary); }
-.thmap-back {
-  width: 34px; height: 34px; display: grid; place-items: center;
-  border: 1px solid var(--color-border-default); border-radius: 11px;
-  background: var(--color-bg-card); color: var(--ink); cursor: pointer;
-  font-family: inherit; font-size: 18px; font-weight: 900; line-height: 1; padding-bottom: 2px;
-}
-.thmap-back:hover { background: var(--primary-100); color: var(--primary-600); border-color: var(--primary-500); }
-.thmap-back:focus-visible { outline: 2px solid var(--primary-500); outline-offset: 1px; }
-/* 정책 종류 머리. 옆으로 긋던 실선을 밑줄로 내렸다 - 실선이 가로를 먹어 정책 이름이
-   눌리고 잘렸다. 이름이 길면 두 줄까지 접히고, 아이콘과 글자를 같이 키웠다. */
-.thmap-grp {
-  display: grid; grid-template-columns: 42px minmax(0, 1fr) auto;
-  align-items: center; gap: 12px;
-  margin: 20px 16px 12px;
-  padding-bottom: 11px;
-  border-bottom: 1px solid var(--color-border-default);
-}
-.thmap-grp h4 { margin: 0; font-size: 18px; font-weight: 900; letter-spacing: -0.04em; line-height: 1.25; }
-.thmap-grp .thmap-gico {
-  display: grid; width: 42px; height: 42px; place-items: center;
-  border-radius: 13px; font-size: 22px; line-height: 1;
-}
-.thmap-grp em {
-  font-style: normal; font-size: 13px; font-weight: 900; color: var(--primary-500);
-  padding: 3px 10px; border-radius: 999px; background: var(--primary-100);
-  font-variant-numeric: tabular-nums; white-space: nowrap;
-}
 
 /* 지도 화면에서는 뒤 칸이 안 움직인다 - 검색줄이 밀려 올라가는 유일한 길을 막는다.
    PolicyMapSheet 가 지도 화면일 때만 body 에 표를 붙인다(다른 탭·목록 화면은 그대로 굴러간다). */
 body.thmap-map-view .app-container { overflow: hidden; }
 
-/* ── 지도 위로 붙어 올라오는 정책 페이지 ───────────────────────
-   서브창이 아니다. 바닥(bottom: 0)까지 내려가고, 닫혀 있을 때(p=0)는 손잡이 20px 만 탭바 위로
-   내민다(--thmap-closed-y 에서 탭바 높이를 뺀다). 그래서 닫힌 페이지의 아랫부분은 늘 탭바 자리와
-   겹친다 - **레이어는 탭바(z 90) 아래여야 한다.** 위에 두면 불투명한 페이지가 올리기도 전에 탭바를
-   가려 모바일에서 하단 메뉴가 통째로 사라진다(#76 에서 95 로 올렸다가 생긴 회귀, 768px 이상은
-   탭바가 없어 안 보였다). 탭바는 제 transform·opacity 로 아래로 빠지며 옅어지므로 덮어 줄 필요가 없다. */
-.thmap-dim {
-  position: fixed; left: 0; right: 0; top: 0; bottom: 0; z-index: 69;
-  background: rgba(23, 23, 40, 0.28);
-  /* 지도(0)에서도 한 페이지(1)에서도 없다 - 옮겨 가는 동안만 지도를 아주 살짝 눌러 준다.
-     중간에 멈춰 세워 둘 수 있게 되면서(2026-09-20) 그 자리에서도 지도가 보여야 한다:
-     p·(1-p) 는 가운데서 0.25 니 1.2 를 곱해 가장 진할 때가 0.3 (실효 알파 0.08). */
-  opacity: 0; pointer-events: none;
-  transition: opacity 0.3s ease;
+/* ── 지도 위 버튼·지역 카드 ───────────────────────────────────── */
+.thmap-nation {
+  position: absolute;
+  top: 12px;
+  z-index: 4;
+  height: 44px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-bg-card);
+  box-shadow: var(--shadow-sm);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: inherit;
 }
-.thmap-dim-on {
-  opacity: calc(var(--thmap-progress) * (1 - var(--thmap-progress)) * 1.2);
-  pointer-events: auto;
+.thmap-nation {
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 0 12px;
+  border-radius: 22px;
+  font-size: 14px;
+  font-weight: 700;
 }
-/* 움직이는 셋은 미리 제 레이어를 갖게 한다 - 지도 화면을 벗어나면 도로 없앤다 */
-body.thmap-map-view .thmap-dim { will-change: opacity; }
-body.thmap-map-view .bottom-tabs { will-change: transform, opacity; }
+.thmap-nation .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-brand, var(--primary-500)); }
+.thmap-nation b { font-weight: 900; font-variant-numeric: tabular-nums; }
+.thmap-nation[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--color-text-inverse); }
+.thmap-nation:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* 땅 색 범례 - 오른쪽 위(돋보기 버튼은 맨 위 검색창으로 합쳐 뺐다) */
+.thmap-legend {
+  position: absolute;
+  top: 26px;
+  right: 12px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+  box-shadow: var(--shadow-xs);
+  color: var(--gray-600);
+  font-size: 10px;
+  line-height: 1.3;
+}
+.thmap-legend span { display: flex; }
+.thmap-legend i { display: block; width: 9px; height: 6px; }
 
-/* 페이지가 움직이는 동안, 그리고 다 올라와 지도가 안 보이는 동안은 지도 쪽 비싼 그림을 멈춘다.
-   알약의 backdrop-filter 는 뒤가 1px 만 바뀌어도 통째로 다시 흐려야 해서, 페이지가 지나가는
-   내내 프레임을 잡아먹었다. 흐림 대신 불투명 배경 - 흐림을 못 쓰는 브라우저가 쓰던 그 모습이다. */
-body.thmap-dragging .thmap-ripple path,
-body.thmap-up .thmap-ripple path { animation-play-state: paused; }
-body.thmap-dragging .thmap-pill,
-body.thmap-up .thmap-pill {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  background: var(--surface-app);
+/* 고른 지역 요약. 뒷배경은 그 지역 사진을 눌러 어둡게 - 흰 글자가 사진 어디서나 읽힌다 */
+.thmap-rcard {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  z-index: 4;
+  width: min(196px, calc(100% - 80px));
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-card);
+  box-shadow: var(--shadow-sm);
+  color: var(--gray-700);
+  font-size: 12px;
+  line-height: 1.4;
+  isolation: isolate;
+  overflow: hidden;
 }
+.thmap-rcard h3 { margin: 0; font-size: 15px; font-weight: 800; color: var(--ink); letter-spacing: -0.02em; }
+.thmap-rcard h3 span { margin-left: 5px; color: var(--primary-500); font-variant-numeric: tabular-nums; }
+.thmap-rcard p { margin: 0; }
+.thmap-rcard p b { font-weight: 800; color: var(--ink); }
+.thmap-rcard.photo { background: var(--gray-900); color: rgba(255, 255, 255, 0.9); box-shadow: var(--shadow-md); }
+.thmap-rc-bg { position: absolute; inset: 0; z-index: -1; background: center / cover no-repeat; filter: brightness(0.42) saturate(1.2); }
+.thmap-rcard.photo h3,
+.thmap-rcard.photo p b { color: var(--color-text-inverse); }
+.thmap-rcard.photo h3 span { color: var(--thmap-focus); }
+/* 형태 갈래 색 - 혜택 그림 칸(benefit-tile.css)과 같은 세 갈래 */
+.thmap-rcard .family-stay { --tb: #f0edfa; --ts: #5a4b94; }
+.thmap-rcard .family-money { --tb: #fff4dc; --ts: #8a5a00; }
+.thmap-rcard .family-move { --tb: #e9f1fc; --ts: #2a5da8; }
+.thmap-rbar { display: flex; gap: 2px; height: 8px; border-radius: 4px; overflow: hidden; }
+.thmap-rbar i { display: block; background: var(--ts); }
+.thmap-rcard.photo .thmap-rbar { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.thmap-rtypes { display: flex; flex-wrap: wrap; gap: 4px; }
+.thmap-rtypes button {
+  min-height: 28px; padding: 0 9px; border: 1px solid transparent; border-radius: 14px;
+  background: var(--tb); color: var(--ts); cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 700;
+}
+.thmap-rtypes button[aria-pressed="true"] { border-color: var(--ts); }
+.thmap-rc-btn {
+  min-height: 40px; border: 1px solid var(--primary-100); border-radius: var(--radius-md);
+  background: var(--primary-50); color: var(--primary-700); cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 800;
+}
+
+/* ── 위 칩: 혜택 형태 ─────────────────────────────────────────── */
+.thmap-chips {
+  display: flex;
+  gap: 8px;
+  padding: 4px 16px 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+/* 검색줄 밑에 붙을 때는 화면 끝에서 끝까지 넘어가게 - 줄 여백만큼 밖으로 내민다 */
+.prototype-policy-toolbar > .thmap-chips {
+  margin: -2px calc(-1 * var(--app-page-gutter, 16px)) -4px;
+  padding: 2px var(--app-page-gutter, 16px) 4px;
+}
+.thmap-chips::-webkit-scrollbar { display: none; }
+.thmap-chips.dragging { cursor: grabbing; user-select: none; }
+/* 더 있는 쪽 끝을 흐리게 - 칩이 옆에 더 있다는 표시 */
+.thmap-chips.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 44px), transparent); }
+.thmap-chips.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px); mask-image: linear-gradient(90deg, transparent, #000 36px); }
+.thmap-chips.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 44px), transparent); }
+.thmap-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  min-width: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 20px;
+  background: var(--color-bg-card);
+  color: var(--gray-700);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.thmap-chip .n { font-weight: 500; color: var(--gray-500); font-variant-numeric: tabular-nums; }
+.thmap-chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--color-text-inverse); }
+.thmap-chip[aria-pressed="true"] .n { color: var(--gray-300); }
+.thmap-chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* 칩 안 그림은 칸 없이 선만 - 글자와 같은 색 */
+.thmap-chip .benefit-tile { width: 18px; height: 18px; border-radius: 0; background: none; }
+.thmap-chip .benefit-tile svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.9; }
+.thmap-chip .benefit-tile .f,
+.thmap-chip .benefit-tile .w { fill: none; }
+.thmap-chip .benefit-tile .dot { fill: currentColor; }
+
+/* ── 지도 위 목록 시트 ────────────────────────────────────────────
+   자리는 셋 - 지도 중심(머리 한 줄) · 반반(지역이면 2/3) · 한 페이지. 높이는 PolicyMapSheet 가 박는다.
+   **레이어는 탭바(z 90) 아래여야 한다** - 위면 모바일에서 하단 메뉴를 가린다. */
 .thmap-sheet {
   position: fixed;
   left: 50%;
-  bottom: 0;
+  bottom: var(--thmap-tabbar);
   z-index: 70;
   width: var(--thmap-sheet-width);
-  height: calc(100dvh - var(--thmap-sheet-top));
-  /* 닫힌 자리 - 손잡이 20px 만 탭바 위로 내민다. JS 의 travelOf() 와 같은 식이어야 한다. */
-  --thmap-closed-y: calc(100% - 20px - var(--thmap-tabbar));
+  height: 50vh;
   display: flex;
   flex-direction: column;
-  /* 창이 아니라 페이지가 된다 - 모서리·그림자가 사라지고 바탕색이 검색창 영역(--surface-app)과
-     같아져 경계선이 안 보인다. 다만 이 셋은 다시 칠해야 하는 속성이라 진행도에 매 프레임
-     걸지 않는다. 손을 뗀 뒤 아래 .thmap-open 으로 한 번만 넘어간다(전환은 그대로 0.42s).
-     끄는 동안 매 프레임 바뀌는 것은 합성만으로 되는 transform·opacity 뿐이다. */
-  border-radius: 24px 24px 0 0;
+  transform: translateX(-50%);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--color-bg-card);
-  box-shadow: 0 -14px 34px rgba(23, 23, 40, 0.16);
-  transform: translateX(-50%) translateY(calc(var(--thmap-closed-y) * (1 - var(--thmap-progress))));
-  transition:
-    transform 0.42s cubic-bezier(0.22, 0.61, 0.36, 1),
-    border-radius 0.42s cubic-bezier(0.22, 0.61, 0.36, 1),
-    background-color 0.42s ease,
-    box-shadow 0.42s ease;
-  will-change: transform;
+  box-shadow: 0 -4px 18px rgba(15, 23, 42, 0.1);
+  touch-action: none;
 }
-.thmap-sheet.thmap-open {
-  border-radius: 0;
-  background: var(--surface-app);
-  box-shadow: none;
+.thmap-sheet.thmap-anim { transition: height 0.3s ease, border-radius 0.3s ease; }
+/* 한 페이지가 되면 창의 흔적(모서리·그림자)이 사라지며 뒤 화면과 한 장으로 합쳐진다 */
+.thmap-sheet.thmap-at-full { border-radius: 0; box-shadow: none; touch-action: pan-y; }
+/* 반반·지역 선택: 시트는 제자리, 목록만 안에서 굴러간다. 끌기는 머리로만 */
+.thmap-sheet.thmap-at-mid { touch-action: pan-y; }
+.thmap-sheet.thmap-at-mid .thmap-handle,
+.thmap-sheet.thmap-at-mid .thmap-head,
+.thmap-sheet.thmap-at-full .thmap-handle,
+.thmap-sheet.thmap-at-full .thmap-head { touch-action: none; }
+.thmap-handle {
+  flex: none; display: grid; place-items: center; width: 100%; height: 28px;
+  border: 0; background: transparent; cursor: grab;
 }
-/* 끄는 동안은 손을 그대로 따라간다 - 시트·딤·탭바가 같이 멈춰야 따로 놀지 않는다 */
-body.thmap-dragging .thmap-sheet,
-body.thmap-dragging .thmap-dim,
-body.thmap-dragging .bottom-tabs { transition: none; }
-/* 서브창 우하단에 떠 있는 뒤로가기. 데스크톱에선 시트가 가운데 좁게 서므로 화면 끝이 아니라
-   시트 오른쪽 끝 안쪽에 맞춘다. 52px(사용자 선택). 조금 비치게 둬 밑의 카드를 덜 가린다 -
-   손을 대면 불투명해져 눌린 것이 분명하다. */
-.thmap-fab {
-  position: fixed;
-  right: calc((100vw - var(--thmap-sheet-width)) / 2 + 16px);
-  /* 시트가 열렸을 때만 뜨고 그때는 페이지가 탭바를 덮은 뒤다 - 화면 바닥에서 16px.
-     진행도를 섞으면 위치가 배치 계산이라 매 프레임 레이아웃이 다시 돈다. */
-  bottom: 16px;
-  /* 페이지(70)와 탭바(90) 둘 다의 위. 페이지가 다 올라왔을 때만 뜨는 버튼이다. */
-  z-index: 91;
-  width: 52px; height: 52px; border-radius: 50%;
-  display: grid; place-items: center;
-  /* 흰 버튼이라 흰 시트 위에서 묻히지 않게 옅은 테두리와 그림자로 띄운다 */
-  border: 1px solid var(--color-border-default); background: var(--color-bg-card); color: var(--ink);
-  box-shadow: 0 8px 22px rgba(23, 23, 40, 0.22);
-  padding: 0;
-  cursor: pointer;
-  opacity: 0.72;
-  transition: opacity 0.15s;
-}
-.thmap-fab:hover, .thmap-fab:active, .thmap-fab:focus-visible { opacity: 1; }
-.thmap-fab:focus-visible { outline: 2px solid var(--primary-500); outline-offset: 2px; }
+.thmap-handle i { width: 40px; height: 4px; border-radius: 2px; background: var(--color-border-strong); }
+.thmap-sheet.thmap-at-full .thmap-handle i { opacity: 0; }
+.thmap-handle:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; border-radius: var(--radius-xl) var(--radius-xl) 0 0; }
 
-.thmap-grab {
-  flex: 0 0 auto; display: grid; gap: 7px; justify-items: center;
-  width: 100%; padding: 9px 16px 12px; border: 0; background: transparent;
-  cursor: grab; font-family: inherit; touch-action: none;
+.thmap-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 0 12px 10px 20px; }
+.thmap-sheet.thmap-at-low .thmap-head { cursor: pointer; }
+.thmap-head-main { display: flex; align-items: flex-start; gap: 2px; min-width: 0; }
+.thmap-head-copy { min-width: 0; }
+.thmap-title { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.03em; color: var(--ink); }
+.thmap-title .n { color: var(--primary-500); font-variant-numeric: tabular-nums; }
+.thmap-hsub { margin: 1px 0 0; font-size: 13px; color: var(--gray-600); }
+.thmap-head-actions { flex: none; display: flex; align-items: center; gap: 4px; }
+.thmap-hback {
+  flex: none; display: grid; place-items: center; width: 40px; height: 44px; margin: -8px 0 0 -12px;
+  border: 0; border-radius: var(--radius-lg); background: transparent; color: var(--gray-700); cursor: pointer;
 }
-/* 다 올라오면 창의 흔적인 손잡이도 없앤다 - 끌어 내리는 자리는 그대로 남는다 */
-.thmap-grab { opacity: calc(1 - var(--thmap-progress)); transition: opacity 0.3s ease; }
-.thmap-grab:active { cursor: grabbing; }
-.thmap-grab i { display: block; width: 38px; height: 4px; border-radius: 999px; background: var(--color-border-strong); }
-.thmap-grab span { font-size: 12.5px; font-weight: 900; letter-spacing: -0.03em; color: var(--color-text-secondary); }
-.thmap-grab b { color: var(--primary-500); font-variant-numeric: tabular-nums; }
-.thmap-grab:focus-visible { outline: 2px solid var(--primary-500); outline-offset: -2px; border-radius: 24px 24px 0 0; }
-
-.thmap-sheet-head { flex: 0 0 auto; display: grid; gap: 11px; padding: 0 16px 12px; }
-.thmap-sheet-head h2 { margin: 0; font-size: 21px; font-weight: 900; letter-spacing: -0.05em; }
-.thmap-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 4px; border-radius: 14px; background: var(--gray-100); }
-.thmap-seg button {
-  min-height: 36px; border: 0; border-radius: 10px; background: transparent;
-  color: var(--color-text-secondary); cursor: pointer; font-family: inherit;
-  font-size: 13px; font-weight: 900; letter-spacing: -0.03em;
-  transition: background 0.18s ease, color 0.18s ease;
+.thmap-clear {
+  height: 40px; padding: 0 14px; border: 1px solid var(--color-border-strong); border-radius: 20px;
+  background: var(--color-bg-card); color: var(--gray-700); cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 700;
 }
-.thmap-seg button[aria-pressed="true"] { background: var(--color-bg-card); color: var(--ink); box-shadow: 0 1px 3px rgba(23, 23, 40, 0.1); }
-.thmap-seg button:focus-visible { outline: 2px solid var(--primary-500); outline-offset: 1px; }
+.thmap-toggle {
+  display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: var(--radius-lg);
+  background: transparent; color: var(--gray-700); cursor: pointer;
+}
+.thmap-toggle svg { transition: transform 0.2s ease; }
+.thmap-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.thmap-hback:focus-visible,
+.thmap-clear:focus-visible,
+.thmap-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-.thmap-sheet-body {
-  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  padding: 2px 16px 18px; display: grid; gap: 9px; align-content: start;
-  /* 오른쪽 스크롤 막대는 숨긴다 - 앱 컨테이너(app.css)와 같은 규칙이다. 굴리는 건 그대로 되고
-     화면만 깨끗해진다. 어디쯤인지는 카드가 알려 준다. */
+.thmap-list {
+  flex: 1 1 auto; min-height: 0; margin: 0; padding: 0 0 12px; list-style: none;
+  overflow-y: auto; overscroll-behavior: contain;
+  /* 오른쪽 스크롤 막대는 숨기고 5mm 짧은 막대 하나만 그린다(.thmap-sbar) */
   scrollbar-width: none;
 }
-.thmap-sheet-body::-webkit-scrollbar { display: none; }
+.thmap-list::-webkit-scrollbar { display: none; }
+.thmap-sheet.thmap-at-low .thmap-list { overflow-y: hidden; }
+.thmap-sbar {
+  position: absolute; right: 3px; width: 4px; height: 19px; border-radius: 2px;
+  background: rgba(17, 24, 39, 0.28); pointer-events: none; opacity: 0; transition: opacity 0.2s ease;
+}
+.thmap-sbar.on { opacity: 1; }
 
-/* 타일 - 목록 줄이 아니라 눌러 들어가는 자리임을 형태로 알린다 */
-.thmap-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.thmap-tile {
-  display: grid; gap: 9px; align-content: start; min-height: 132px; padding: 15px 14px;
-  border: 1px solid var(--color-border-default); border-radius: 19px; background: var(--color-bg-card);
-  cursor: pointer; text-align: left; font-family: inherit; color: var(--ink);
-  transition: border-color 0.18s ease, transform 0.18s var(--thmap-pop);
+/* 한 줄 - 그림 칸 · 어디 · 사업 이름 · 받는 것 · 마감 */
+.thmap-row-link,
+.thmap-grp-btn {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 0 12px;
+  align-items: start;
+  width: 100%;
+  padding: 14px 16px 14px 20px;
+  border: 0;
+  border-top: 1px solid var(--gray-100);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  text-decoration: none;
 }
-.thmap-tile:hover { border-color: var(--primary-500); transform: translateY(-2px); }
-.thmap-tile:focus-visible { outline: 2px solid var(--primary-500); outline-offset: 2px; }
-.thmap-ic { display: grid; width: 46px; height: 46px; place-items: center; border-radius: 15px; font-size: 23px; line-height: 1; }
-.thmap-ic-plain { background: var(--gray-100); font-size: 17px; font-weight: 900; color: var(--color-text-secondary); letter-spacing: -0.05em; }
-.thmap-tile strong { font-size: 15px; font-weight: 900; letter-spacing: -0.04em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thmap-foot { display: flex; align-items: baseline; gap: 6px; }
-.thmap-foot b { font-size: 20px; font-weight: 900; color: var(--primary-500); letter-spacing: -0.04em; font-variant-numeric: tabular-nums; line-height: 1; }
-.thmap-foot span { font-size: 11.5px; font-weight: 800; color: var(--color-text-secondary); letter-spacing: -0.02em; }
-.thmap-tile.thmap-wide { grid-column: 1 / -1; grid-template-columns: 46px minmax(0, 1fr) auto; align-items: center; gap: 13px; min-height: 0; padding: 14px; }
-.thmap-tile.thmap-wide .thmap-foot { justify-content: flex-end; }
-/* 사진 카드는 눕혀도 세로를 줄이지 않는다. 홀수라 마지막 한 장이 가로로 눕는데, 거기까지
-   납작하게 만들면 그 지역만 다른 카드처럼 보인다 - 폭만 넓히고 높이·여백은 그대로 둔다. */
-.thmap-tile.thmap-wide.thmap-photo {
-  grid-template-columns: minmax(0, 1fr);
-  align-items: end;
-  gap: 4px;
-  min-height: 132px;
-  padding: 15px 14px;
+.thmap-row-link:hover,
+.thmap-grp-btn:hover { background: var(--gray-50); }
+.thmap-row-link:focus-visible,
+.thmap-grp-btn:focus-visible,
+.thmap-kid-link:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.thmap-body { display: grid; gap: 1px; min-width: 0; }
+.thmap-body .l1 { font-size: 13px; color: var(--gray-600); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thmap-body .l1 b { font-weight: 800; color: var(--ink); }
+.thmap-body .t {
+  font-size: 15px; font-weight: 600; color: var(--ink);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.thmap-tile.thmap-wide.thmap-photo .thmap-foot { justify-content: flex-start; }
+.thmap-body .amt { font-size: 13px; font-weight: 700; color: var(--primary-700); }
+.thmap-side { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.thmap-chev { color: var(--gray-600); transition: transform 0.2s ease; }
+.thmap-grp-btn[aria-expanded="true"] .thmap-chev { transform: rotate(180deg); }
+/* 앞 줄과 같은 사업이면 그림·이름을 되풀이하지 않고 들여 쓴다 */
+.thmap-row.cont .thmap-row-link {
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: auto;
+  margin-left: 76px;
+  padding: 10px 16px 10px 0;
+  border-top: 1px dashed var(--color-border-default);
+}
 
-/* ── 관광명소 사진을 깐 지역 카드 ─────────────────────────────
-   글자는 아래에 모으고 그 위로만 그늘을 깐다. 사진 전체를 고르게 덮으면 사진이 죽고,
-   글자 뒤만 덮으면 밝은 하늘 위 숫자가 뜬다 - 아래로 갈수록 진해지는 그늘이 둘 다 잡는다. */
-.thmap-tile.thmap-photo {
-  position: relative;
-  overflow: hidden;
-  align-content: end;
-  gap: 4px;
-  border-color: transparent;
-  background-position: center;
-  background-size: cover;
-  color: #fff;
+/* 마감 표 - 일주일 안 붉게, 한 달 안 노랗게, 그 뒤·상시는 회색 */
+.thmap-dday {
+  padding: 3px 8px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 800;
+  white-space: nowrap; font-variant-numeric: tabular-nums;
 }
-.thmap-tile.thmap-photo::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(10, 12, 20, 0.06) 0%, rgba(10, 12, 20, 0.34) 46%, rgba(10, 12, 20, 0.76) 100%);
-  opacity: var(--thmap-photo-shade);
-}
-/* 그늘이 절대 배치라 글자가 그 밑에 깔린다 - 쌓임 순서를 만들어 위로 올린다 */
-.thmap-tile.thmap-photo > * { position: relative; }
-.thmap-tile.thmap-photo strong { color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); }
-.thmap-tile.thmap-photo .thmap-foot b { color: #fff; }
-.thmap-tile.thmap-photo .thmap-foot span { color: rgba(255, 255, 255, 0.88); }
-.thmap-tile.thmap-photo:hover { border-color: transparent; }
+.thmap-dday.urgent { background: var(--status-danger-bg); color: var(--status-danger-text); }
+.thmap-dday.soon { background: var(--status-draft-bg); color: var(--status-draft-text); }
+.thmap-dday.later { background: var(--gray-100); color: var(--gray-700); font-weight: 600; }
+.thmap-dday.always { background: var(--gray-100); color: var(--gray-600); font-weight: 600; }
 
-/* 타일을 누른 뒤 - 안에 묶인 정책 카드 전부 */
-.thmap-detail { display: grid; gap: 11px; }
-.thmap-det-top { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 11px; }
-.thmap-det-back {
-  width: 34px; height: 34px; display: grid; place-items: center;
-  border: 1px solid var(--color-border-default); border-radius: 11px;
-  background: var(--color-bg-card); color: var(--ink); cursor: pointer;
-  font-family: inherit; font-size: 18px; font-weight: 900; line-height: 1; padding-bottom: 2px;
+/* 펼친 묶음 = 한 덩어리. 머리가 위로 넘어가면 한 줄 고정 줄이 그 자리를 잇는다 */
+.thmap-grp.open { background: var(--gray-50); border-bottom: 1px solid var(--color-border-default); }
+.thmap-grp.open > .thmap-grp-btn { border-top-color: var(--color-border-default); }
+.thmap-grp.open > .thmap-grp-btn:hover { background: var(--gray-100); }
+.thmap-grp-pin { position: sticky; top: 0; z-index: 3; height: 0; }
+.thmap-pin-bar {
+  position: absolute; top: 0; left: 0; right: 0; min-height: 48px;
+  display: flex; align-items: center; gap: 10px; padding: 0 16px 0 20px;
+  border: 0; border-bottom: 1px solid var(--color-border-default);
+  background: var(--gray-50); box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+  color: var(--ink); cursor: pointer; font-family: inherit; font-size: 14px; text-align: left;
+  opacity: 0; pointer-events: none; transition: opacity 0.15s ease;
 }
-.thmap-det-back:hover { background: var(--primary-100); color: var(--primary-600); border-color: var(--primary-500); }
-.thmap-det-back:focus-visible { outline: 2px solid var(--primary-500); outline-offset: 1px; }
-.thmap-det-ttl { min-width: 0; display: grid; gap: 2px; }
-.thmap-det-ttl strong { font-size: 17px; font-weight: 900; letter-spacing: -0.045em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thmap-det-ttl em { font-style: normal; font-size: 11.5px; font-weight: 800; color: var(--color-text-secondary); }
-.thmap-det-empty {
-  margin: 0; padding: 22px 16px; text-align: center;
-  border: 1px dashed var(--color-border-default); border-radius: 15px;
-  color: var(--color-text-secondary); font-size: 13px; font-weight: 800; letter-spacing: -0.03em;
+.thmap-grp.pinned .thmap-pin-bar { opacity: 1; pointer-events: auto; }
+.thmap-pin-bar b { flex: 1; min-width: 0; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thmap-pin-bar .n { flex: none; font-size: 13px; color: var(--gray-600); }
+.thmap-pin-fold { flex: none; display: flex; align-items: center; gap: 2px; font-size: 13px; font-weight: 700; color: var(--primary-700); }
+.thmap-kids,
+.thmap-natlist { list-style: none; margin: 0; padding: 0; }
+.thmap-kids { padding: 0 16px 8px 76px; }
+.thmap-kids[hidden],
+.thmap-natlist[hidden] { display: none; }
+.thmap-kid-link {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: start;
+  padding: 10px 0; border-top: 1px dashed var(--color-border-default);
+  color: inherit; text-decoration: none;
 }
+.thmap-kid-link .kn { font-size: 14px; }
+.thmap-kid-link .kn b { font-weight: 800; }
+.thmap-kid-link .reg { margin-left: 6px; font-size: 13px; color: var(--gray-600); }
+.thmap-kid-link .kd {
+  grid-column: 1 / -1; font-size: 13px; color: var(--gray-700);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+.thmap-empty {
+  margin: 0 20px 8px; padding: 12px 14px; border-radius: var(--radius-lg);
+  background: var(--primary-50); font-size: 14px; color: var(--gray-700);
+}
+.thmap-more {
+  display: block; width: calc(100% - 40px); min-height: 44px; margin: 12px 20px 4px;
+  border: 1px solid var(--primary-100); border-radius: var(--radius-lg); background: var(--primary-50);
+  color: var(--primary-700); cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 700;
+}
+.thmap-more:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* ── 돋보기: 지역·혜택 검색 ───────────────────────────────────────
+   칩 아래부터 탭바 위까지 덮는다(시트보다 위, 탭바 아래). */
+.thmap-search {
+  position: fixed;
+  left: 50%;
+  top: var(--thmap-sheet-top);
+  bottom: var(--thmap-tabbar);
+  z-index: 75;
+  width: var(--thmap-sheet-width);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-50%);
+  background: var(--color-bg-card);
+}
+/* 맨 위 검색창이 이 칸의 입력이다. 칸이 열린 동안 '필터' 자리에 '닫기' */
+.prototype-search-close {
+  flex: none; min-width: 64px; height: 44px; padding: 0 14px; border: 0; border-radius: 22px;
+  background: var(--gray-100); color: var(--gray-700); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.prototype-search-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.thmap-search-body { flex: 1; overflow-y: auto; padding: 4px 16px 16px; scrollbar-width: none; }
+/* 이름 말고 정책 글 전체에서 찾은 목록으로 - 결과 맨 끝 */
+.thmap-sres-all {
+  display: flex; align-items: center; width: 100%; min-height: 48px; margin-top: 12px; padding: 0 14px;
+  border: 1px solid var(--gray-200); border-radius: var(--radius-lg); background: var(--gray-50);
+  color: var(--primary-600); font: inherit; font-size: 14px; font-weight: 700; text-align: left; cursor: pointer;
+}
+.thmap-sres-all:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.thmap-search-body::-webkit-scrollbar { display: none; }
+.thmap-search-body h3 { margin: 12px 4px 6px; font-size: 12px; font-weight: 800; letter-spacing: 0.04em; color: var(--gray-600); }
+/* 지역 사진 칸 - 혜택 많은 순. 0건은 흑백으로 뒤로 */
+.thmap-rtiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.thmap-rt {
+  position: relative; isolation: isolate; overflow: hidden; height: 92px;
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; padding: 10px 12px;
+  border: 0; border-radius: var(--radius-xl); background: var(--gray-200); color: var(--color-text-inverse);
+  cursor: pointer; font-family: inherit; text-align: left;
+}
+.thmap-rt-img { position: absolute; inset: 0; z-index: -2; background: center / cover no-repeat; }
+.thmap-rt::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(15, 23, 42, 0) 25%, rgba(15, 23, 42, 0.72)); }
+.thmap-rt b { font-size: 16px; font-weight: 800; line-height: 1.25; }
+.thmap-rt .n { font-size: 12.5px; font-weight: 600; opacity: 0.94; }
+.thmap-rt.zero .thmap-rt-img { filter: grayscale(0.85); }
+.thmap-rt.nat { background: linear-gradient(135deg, var(--primary-500), var(--thmap-focus-wall, var(--primary-600))); }
+.thmap-rt.nat::after { background: none; }
+.thmap-rt[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--ink); }
+.thmap-rt:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.thmap-sres-row {
+  width: 100%; min-height: 52px; display: flex; align-items: center; gap: 12px; padding: 6px 8px;
+  border: 0; border-radius: var(--radius-md); background: transparent; color: inherit; cursor: pointer; font-family: inherit; text-align: left;
+}
+.thmap-sres-row:hover { background: var(--gray-50); }
+.thmap-sres-row:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.thmap-sres-row .tx { display: grid; min-width: 0; }
+.thmap-sres-row b { font-size: 15px; font-weight: 600; color: var(--ink); }
+.thmap-sres-row .tx > span { font-size: 13px; color: var(--gray-600); }
+.thmap-sres-row mark { background: none; color: var(--primary-700); font-weight: 800; }
+.thmap-sres-empty { margin: 24px 4px; font-size: 14px; color: var(--gray-600); }
 
 @media (prefers-reduced-motion: reduce) {
-  .thmap-lift, .thmap-wall, .thmap-lbl, .thmap-top, .thmap-sheet, .thmap-dim, .thmap-tile,
-  .thmap-grab, .bottom-tabs { transition: none; }
-  .thmap-pill, .thmap-ripple path { animation: none; }
+  .thmap-rg, .thmap-sheet, .thmap-toggle svg, .thmap-chev,
+  .thmap-pin-bar, .thmap-sbar { transition: none; }
+  .thmap-pill { animation: none; }
 }

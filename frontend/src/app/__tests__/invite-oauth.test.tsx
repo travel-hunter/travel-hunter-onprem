@@ -488,9 +488,10 @@ describe("Travel Hunter app — profile, invites, OAuth & sharing", () => {
       cleanup();
       renderAppRoute(examplePolicyPath);
 
-      await waitFor(() => expect(document.body).toHaveTextContent("필요서류"));
-      expect(document.querySelectorAll(".check-item").length).toBeGreaterThan(0);
-      expect(document.querySelector(".check-item")?.tagName).toBe("DIV");
+      // 준비물은 누르는 체크박스가 아니라 읽기만 하는 목록이다
+      const documentsSection = await screen.findByRole("region", { name: "준비물" });
+      expect(documentsSection.querySelectorAll("li").length).toBeGreaterThan(0);
+      expect(documentsSection.querySelector("input, button")).toBeNull();
     } finally {
       getPolicySpy.mockRestore();
     }

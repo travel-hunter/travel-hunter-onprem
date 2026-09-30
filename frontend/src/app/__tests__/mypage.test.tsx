@@ -21,7 +21,7 @@ import {
   examplePolicyPath,
   examplePolicySlug,
   examplePolicyTitle,
-  getPreviewTrip,
+  getUpcomingPreviewTrip,
   getPreviewUser,
   testEmail,
 } from "../../test/fixtures";
@@ -348,7 +348,7 @@ describe("Travel Hunter app — my page", () => {
   });
 
   it("refreshes the my page applied policy summary after policy linking on another route", async () => {
-    const trip = getPreviewTrip();
+    const trip = getUpcomingPreviewTrip();
     const user = userEvent.setup();
 
     await login();
@@ -410,7 +410,7 @@ describe("Travel Hunter app — my page", () => {
 
   it("removes trip detail unlinked policies from the my page applied summary", async () => {
     const trip: Trip = {
-      ...getPreviewTrip(),
+      ...getUpcomingPreviewTrip(),
       linkedPolicies: [],
     };
     const user = userEvent.setup();
@@ -702,7 +702,7 @@ describe("Travel Hunter app — my page", () => {
 
   it("shows one trip title in the my page trip summary", async () => {
     const trip: Trip = {
-      ...getPreviewTrip(),
+      ...getUpcomingPreviewTrip(),
       id: "101",
       title: "부산 맛집 여행",
     };
@@ -736,9 +736,9 @@ describe("Travel Hunter app — my page", () => {
 
   it("shows the trip count in the my page stats", async () => {
     const trips: Trip[] = [
-      { ...getPreviewTrip(), id: "101", title: "부산 맛집 여행" },
-      { ...getPreviewTrip(), id: "102", title: "강원 2일 여행" },
-      { ...getPreviewTrip(), id: "103", title: "제주 3일 여행" },
+      { ...getUpcomingPreviewTrip(), id: "101", title: "부산 맛집 여행" },
+      { ...getUpcomingPreviewTrip(), id: "102", title: "강원 2일 여행" },
+      { ...getUpcomingPreviewTrip(), id: "103", title: "제주 3일 여행" },
     ];
 
     await login();

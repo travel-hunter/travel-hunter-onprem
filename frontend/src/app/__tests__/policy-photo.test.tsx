@@ -35,17 +35,9 @@ function makePolicy(overrides: Partial<Policy> = {}): Policy {
   };
 }
 
-/* 지도 화면엔 지도 밑 목록이 없다(시안 그대로). 목록 카드는 시트 손잡이 → 지역 타일을 거쳐야 보인다. */
-async function openSheetTile(tile: RegExp) {
-  const grab = await waitFor(() => {
-    const button = document.querySelector(".thmap-grab");
-    expect(button).toBeTruthy();
-    return button as HTMLButtonElement;
-  });
-  fireEvent.click(grab);
-  const sheet = document.querySelector(".thmap-sheet") as HTMLElement;
-  fireEvent.click(within(sheet).getByRole("button", { name: tile }));
-}
+/* 정책 사진은 목록 카드(검색·필터 목록)와 상세에만 있다. 지도 뒤 목록 시트의 줄은 혜택 형태 그림을 쓴다.
+   지역 필터(region=)를 걸면 목록 카드 화면이 된다. */
+const listRoute = "/policies?region=전남";
 
 describe("Travel Hunter app — policy region photos", () => {
   afterEach(() => {
@@ -91,8 +83,7 @@ describe("Travel Hunter app — policy region photos", () => {
 
     await login();
     cleanup();
-    renderAppRoute("/policies");
-    await openSheetTile(/^전남\s*\d/);
+    renderAppRoute(listRoute);
 
     await waitFor(() => {
       expect(screen.getByText("해남 공식 할인")).toBeInTheDocument();
@@ -110,8 +101,7 @@ describe("Travel Hunter app — policy region photos", () => {
 
     await login();
     cleanup();
-    renderAppRoute("/policies");
-    await openSheetTile(/^전남\s*\d/);
+    renderAppRoute(listRoute);
 
     await waitFor(() => {
       expect(screen.getByText(pixabayAttribution)).toBeInTheDocument();
@@ -126,8 +116,7 @@ describe("Travel Hunter app — policy region photos", () => {
 
     await login();
     cleanup();
-    renderAppRoute("/policies");
-    await openSheetTile(/^전남\s*\d/);
+    renderAppRoute(listRoute);
 
     await waitFor(() => {
       expect(screen.getByText("해남 공식 할인")).toBeInTheDocument();
@@ -135,8 +124,8 @@ describe("Travel Hunter app — policy region photos", () => {
     expect(screen.queryByText("사진: 한국관광공사")).not.toBeInTheDocument();
   });
 
-  it("keeps a single attribution line on the grouped region list behind the map pill", async () => {
-    // 지역을 고르고 알약을 누르면 종류별 그룹 목록이다 - 여기도 사진이 보이므로 출처 줄이 붙어야 한다
+  it("keeps policy photos off the map list - rows show the benefit kind instead, so no credit line", async () => {
+    // 사진은 상세에만(시안 결정). 사진을 안 보이는 목록에 출처 줄만 남으면 안 된다
     vi.spyOn(appDataApi, "listPolicies").mockResolvedValue([
       makePolicy({ photo }),
       makePolicy({ id: "p2", slug: "p2", title: "[완도] 디지털관광주민증 혜택", photo: { ...photo, alt: "완도 타워" } }),
@@ -152,19 +141,16 @@ describe("Travel Hunter app — policy region photos", () => {
 
     await login();
     cleanup();
-    renderAppRoute("/policies");
-    // 지도에서 전남을 눌러야 표시가 뜬다 - URL 의 region 은 이제 필터일 뿐 지도를 안 움직인다
-    await waitFor(() => expect(document.querySelector('.thmap-rg[data-region="전남"]')).toBeTruthy());
-    fireEvent.click(document.querySelector('.thmap-rg[data-region="전남"]') as unknown as Element);
-
-    fireEvent.click(await screen.findByRole("button", { name: "전남 정책 2건 보기" }));
-    // 제목이 그룹 헤더에도 한 번 더 있으니 사진으로 카드를 센다
-    await waitFor(() => {
-      expect(screen.getByRole("img", { name: "완도 타워" })).toBeInTheDocument();
+    renderAppRoute("/policies?place=전남");
+    const sheet = await waitFor(() => {
+      const element = document.querySelector(".thmap-sheet") as HTMLElement | null;
+      expect(element?.querySelector(".thmap-title")).toHaveTextContent("전남 2건");
+      return element as HTMLElement;
     });
-    expect(document.querySelectorAll(".thmap-grp")).toHaveLength(2);
-    expect(screen.getByRole("img", { name: "두륜산 케이블카" })).toBeInTheDocument();
-    expect(screen.getAllByText("사진: 한국관광공사")).toHaveLength(1);
+    expect(within(sheet).getByText("해남 공식 할인")).toBeInTheDocument();
+    expect(within(sheet).getAllByRole("img", { name: "제휴 할인" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("img", { name: "두륜산 케이블카" })).not.toBeInTheDocument();
+    expect(screen.queryByText("사진: 한국관광공사")).not.toBeInTheDocument();
     expect(screen.queryByText("사진: 강원관광재단")).not.toBeInTheDocument();
   });
 

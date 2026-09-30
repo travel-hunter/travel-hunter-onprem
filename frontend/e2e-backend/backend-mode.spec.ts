@@ -96,8 +96,9 @@ test("backend data source drives policy, trip, recommendation, invite, and logou
   );
   await page.getByRole("button", { name: "저장" }).click();
   await expect(page.locator(".toast")).toContainText("관심 정책");
-  await expect(page.locator(".sticky-cta button").first()).toBeVisible();
-  await page.locator(".sticky-cta button").first().click();
+  const policyTripButton = page.getByRole("button", { name: /내 일정에 담기|일정에 담김/ });
+  await expect(policyTripButton).toBeVisible();
+  await policyTripButton.click();
   const policyTripSheet = page.locator(".trip-select-sheet");
   await expect(policyTripSheet).toBeVisible();
   const policyTripRow = policyTripSheet.locator(".trip-select-row").first();
@@ -175,12 +176,14 @@ test("policy filter toolbar stays usable within the mobile list screen", async (
   const listScreen = page.locator(".prototype-policy-list-screen");
   const toolbar = listScreen.locator(".prototype-policy-toolbar");
   const searchRow = listScreen.locator(".prototype-policy-search-row");
-  const resultRow = listScreen.locator(".prototype-policy-result-row");
+  /* 지도 화면은 건수 줄 대신 혜택 형태 칩 줄과 지도 뒤 목록 시트(머리가 건수를 말한다) */
+  const chipRow = page.getByRole("group", { name: "혜택 형태" });
 
   await expect(toolbar).toBeVisible();
   await expect(page.getByRole("searchbox", { name: "정책 검색" })).toBeVisible();
   await expect(page.getByRole("button", { name: "필터 열기" })).toBeVisible();
-  await expect(resultRow).toBeVisible();
+  await expect(chipRow).toBeVisible();
+  await expect(page.locator(".thmap-sheet .thmap-title")).toContainText("모든 지역");
 
   const layout = await searchRow.evaluate((element) => {
     const screen = element.closest(".prototype-policy-list-screen");
@@ -199,32 +202,30 @@ test("policy filter toolbar stays usable within the mobile list screen", async (
   expect(layout.searchRowScrollWidth - layout.searchRowClientWidth).toBeLessThanOrEqual(1);
 });
 
-test("policy detail sticky CTA stays attached above bottom tabs while scrolling", async ({ page }) => {
+test("policy detail action bar replaces the bottom tabs and stays at the bottom while scrolling", async ({ page }) => {
   await seedStoredAuth(page);
   await page.setViewportSize({ width: 390, height: 844 });
 
   await page.goto(examplePolicyPath);
-  const cta = page.locator(".prototype-policy-detail-screen .sticky-cta");
-  const bottomTabs = page.locator(".bottom-tabs");
-  await expect(cta).toBeVisible();
-  await expect(bottomTabs).toBeVisible();
+  const bar = page.locator(".prototype-policy-detail-screen .policy-detail-bar");
+  await expect(bar).toBeVisible();
+  await expect(bar.getByRole("button", { name: /내 일정에 담기|일정에 담김/ })).toBeVisible();
+  // 상세에서는 탭바를 가리고 그 자리에 버튼 줄을 둔다
+  await expect(page.locator(".bottom-tabs")).toBeHidden();
 
-  await page.locator(".app-container").evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
-
-  const layout = await page.evaluate(() => {
-    const ctaElement = document.querySelector(".prototype-policy-detail-screen .sticky-cta");
-    const bottomTabsElement = document.querySelector(".bottom-tabs");
-    if (!ctaElement || !bottomTabsElement) return null;
-    const ctaRect = ctaElement.getBoundingClientRect();
-    const bottomTabsRect = bottomTabsElement.getBoundingClientRect();
-    return {
-      gap: Math.round(bottomTabsRect.top - ctaRect.bottom),
-    };
-  });
-
-  expect(Math.abs(layout?.gap ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(1);
+  for (const position of ["top", "bottom"] as const) {
+    await page.evaluate((where) => {
+      const scroller = document.querySelector(".app-container");
+      const top = where === "top" ? 0 : Number.MAX_SAFE_INTEGER;
+      scroller?.scrollTo({ top });
+      window.scrollTo({ top });
+    }, position);
+    const gap = await page.evaluate(() => {
+      const barElement = document.querySelector(".prototype-policy-detail-screen .policy-detail-bar");
+      return barElement ? Math.round(window.innerHeight - barElement.getBoundingClientRect().bottom) : null;
+    });
+    expect(Math.abs(gap ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(1);
+  }
 });
 
 test("confirmed trip detail keeps owner editing controls available", async ({ page }) => {
@@ -509,7 +510,7 @@ test("normalized policy save, unsave, trip link, and unlink stay consistent on m
 
   // Link the normalized policy to the dedicated trip from the policy detail CTA.
   await page.goto(examplePolicyPath);
-  await page.locator(".sticky-cta button").first().click();
+  await page.getByRole("button", { name: /내 일정에 담기|일정에 담김/ }).click();
   const tripSheet = page.locator(".trip-select-sheet");
   await expect(tripSheet).toBeVisible();
   await tripSheet.locator(".trip-select-row", { hasText: tripTitle }).click();
