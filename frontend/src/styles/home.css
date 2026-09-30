@@ -51,6 +51,151 @@
   color: var(--gray-500);
 }
 
+/* 홈 맨 위 배너(시안 v42): 한 장씩 옆으로. 장마다 혜택 형태 색이라 넘어가는 게 보인다.
+   누르는 버튼은 30px 로 그리고 보이지 않는 범위로 44px 를 채운다. */
+.family-place {
+  --tb: var(--primary-50);
+  --tf: var(--primary-100);
+  --ts: var(--primary-700);
+}
+
+.home-hero {
+  position: relative;
+  margin: 0 var(--app-page-gutter) 18px;
+  overflow: hidden;
+  border-radius: 16px;
+}
+
+.home-hero-track {
+  display: flex;
+  transition: transform 0.45s ease;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.home-hero-slide {
+  display: flex;
+  flex: 0 0 100%;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  min-height: 116px;
+  padding: 14px 16px 34px;
+  border: 1px solid var(--tf);
+  border-radius: 16px;
+  background: var(--tb);
+  color: var(--ink);
+  -webkit-user-drag: none;
+}
+
+.home-hero-slide .benefit-tile,
+.home-hero-pin {
+  --tb: var(--white);
+
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+}
+
+.home-hero-slide .benefit-tile svg {
+  width: 30px;
+  height: 30px;
+}
+
+.home-hero-pin {
+  display: grid;
+  flex: none;
+  place-items: center;
+  background: var(--white);
+  color: var(--ts);
+}
+
+.home-hero-copy {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.home-hero-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ts);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.home-hero-eyebrow > span:last-child,
+.home-hero-copy b,
+.home-hero-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-hero-copy b {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.home-hero-sub {
+  color: var(--gray-700);
+  font-size: 13.5px;
+}
+
+.home-hero-go {
+  flex: none;
+  color: var(--ts);
+  font-size: 22px;
+}
+
+.home-hero-controls {
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.home-hero-controls button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--gray-700);
+}
+
+.home-hero-controls button::after {
+  position: absolute;
+  inset: -7px -3px;
+  content: "";
+}
+
+.home-hero-count {
+  min-width: 34px;
+  color: var(--gray-700);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.home-hero-count b {
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-hero-track {
+    transition: none;
+  }
+}
+
 .home-section {
   margin-bottom: 22px;
 }
@@ -280,6 +425,46 @@
   opacity: 0.94;
 }
 
+/* 시군 카드(시안 v43~44): 맨 아래 줄은 누르면 열리는 혜택. 글이 낱말 가운데서 끊기지 않게 */
+.home-region-card {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.home-region-card .home-region-lead {
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+/* 그 시군만 쓰는 사진이 없는 곳 - 같은 사진을 되풀이하지 않고 혜택 그림과 그 형태 색 바탕 */
+.home-region-card.nophoto {
+  background: var(--tb);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--tf);
+}
+
+.home-region-card.nophoto::after {
+  display: none;
+}
+
+.home-region-card.nophoto .benefit-tile {
+  --tb: var(--white);
+
+  margin-bottom: auto;
+}
+
+.home-region-card.nophoto i {
+  color: var(--gray-700);
+  opacity: 1;
+}
+
+.home-photo-credit {
+  margin: 6px var(--app-page-gutter) 0;
+  color: var(--gray-600);
+  font-size: 11.5px;
+  text-align: right;
+}
+
 /* 전국 공통 · 일정 만들기 한 줄 카드 */
 .home-line-card {
   display: flex;
@@ -318,6 +503,7 @@
   font-size: 22px;
 }
 
+.home-hero-controls button:focus-visible,
 .home-banner-go:focus-visible,
 .home-banner-close:focus-visible,
 .home-deadline-card:focus-visible,
@@ -328,6 +514,12 @@
   outline-offset: 2px;
 }
 
+/* 배너 장은 둘레가 잘리는 틀 안이라 안쪽으로 그린다 */
+.home-hero-slide:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
 @media (min-width: 768px) {
   .home-row {
     flex-wrap: wrap;
@@ -335,9 +527,9 @@
   }
 }
 
-/* 넓은 화면(1024px 이상, 시안 v41 데스크톱). 가운데 1040px 판을 두 단 격자로 쓰고, 한 줄 카드 두 장
+/* 넓은 화면(1024px 이상, 시안 v41 데스크톱). 화면 폭 전부(2026-10-01)를 두 단 격자로 쓰고, 한 줄 카드 두 장
    (전국 공통 · 일정 만들기 또는 AI 추천)만 나란히, 나머지는 한 줄을 다 쓴다. 가로 넘김 줄은 격자로 편다 -
-   마감 임박 3열, 지역 4열(지도 + 7곳으로 두 줄을 꽉 채운다). 옆 여백은 판이 맡으므로 gutter 는 0 으로. */
+   마감 카드는 들어가는 만큼, 지역 4열(지도 + 7곳으로 두 줄), 아주 넓으면 한 줄 9장. 옆 여백은 판이 맡으므로 gutter 는 0 으로. */
 @media (min-width: 1024px) {
   .service-layout .prototype-home-screen.desktop-wide {
     --app-page-gutter: 0px;
@@ -346,9 +538,9 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 16px;
     align-content: start;
-    max-width: 1040px;
-    margin: 0 auto;
-    padding: 0 32px 40px;
+    max-width: none;
+    margin: 0;
+    padding: 0 var(--desk-gutter) 40px;
   }
 
   .prototype-home-screen.desktop-wide > * {
@@ -386,8 +578,10 @@
     scroll-snap-type: none;
   }
 
+  /* 마감 카드는 한 장 340px 이상으로 들어가는 만큼(1280 에서 3열, 1920 에서 5열).
+     auto-fill 이라 한 장뿐인 줄(관심 지역)도 카드가 화면 끝까지 늘어나지 않는다 */
   .prototype-home-screen.desktop-wide .home-row-deadline {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   }
 
   .prototype-home-screen.desktop-wide .home-row-regions {
@@ -414,6 +608,22 @@
 
   .prototype-home-screen.desktop-wide .home-map {
     height: 142px;
+  }
+
+  .prototype-home-screen.desktop-wide .home-hero-slide {
+    min-height: 128px;
+    padding: 18px 24px 36px;
+  }
+
+  /* 아주 넓은 화면은 지역 줄을 한 줄 9장(지도 + 시군 8곳) */
+  @media (min-width: 1720px) {
+    .prototype-home-screen.desktop-wide .home-row-regions {
+      grid-template-columns: repeat(9, minmax(0, 1fr));
+    }
+
+    .prototype-home-screen.desktop-wide .home-row-regions > :nth-child(n + 9) {
+      display: flex;
+    }
   }
 
   .prototype-home-screen.desktop-wide > .home-line-card,

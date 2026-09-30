@@ -562,14 +562,13 @@
 @media (min-width: 1024px) {
   .prototype-policy-detail-screen.screen.detail.policy-detail-desk {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-columns: minmax(0, 1fr) 380px;
     align-items: start;
     gap: 28px;
-    /* app.css 의 900px 이상 '.screen.detail { max-width: 920px }' 를 풀고 틀(1200px) 전체를 쓴다.
-       가운데 1120px 에 모으되 회색 바탕은 틀 끝까지(padding 의 % 는 틀 폭 기준) */
+    /* app.css 의 900px 이상 '.screen.detail { max-width: 920px }' 를 풀고 화면 폭 전부를 쓴다(옆 여백은 틀의 --desk-gutter) */
     max-width: none;
     margin: 0;
-    padding: 20px max(32px, calc((100% - 1120px) / 2)) 48px;
+    padding: 20px var(--desk-gutter) 48px;
     border: 0;
     border-radius: 0;
     background: var(--gray-50);

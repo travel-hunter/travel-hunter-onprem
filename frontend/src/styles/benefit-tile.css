@@ -1,18 +1,19 @@
-/* 혜택 형태 그림 칸 - components/benefitTile.tsx 전용.
-   세 갈래 색: 숙박(보라) · 돈(금색) · 이동(파랑). --tb 칸 바탕, --tf 옅은 면, --ts 선. */
-.benefit-tile.family-stay {
+/* 혜택 형태 그림 칸 - components/benefitTile.tsx.
+   세 갈래 색: 숙박(보라) · 돈(금색) · 이동(파랑). --tb 칸 바탕, --tf 옅은 면, --ts 선.
+   색 이름표(.family-*)는 그림 칸 밖에서도 쓴다 - 홈 배너 장·시군 카드 바탕. */
+.family-stay {
   --tb: #f0edfa;
   --tf: #dcd4f5;
   --ts: #5a4b94;
 }
 
-.benefit-tile.family-money {
+.family-money {
   --tb: #fff4dc;
   --tf: #ffdf9e;
   --ts: #8a5a00;
 }
 
-.benefit-tile.family-move {
+.family-move {
   --tb: #e9f1fc;
   --tf: #c9dcf7;
   --ts: #2a5da8;

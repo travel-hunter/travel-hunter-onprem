@@ -73,7 +73,14 @@ describe("Travel Hunter app — home", () => {
       .getAllByRole("link")
       .filter((link) => link.classList.contains("home-region-card"));
     expect(regionLinks.length).toBeGreaterThan(0);
-    expect(regionLinks[0].getAttribute("href")).toMatch(/^\/policies\?place=.+&sheet=1$/);
+    // 혜택이 많은 시군 카드 - 누르면 그 시군 대표 혜택 상세
+    expect(regionLinks[0].getAttribute("href")).toMatch(/^\/policies\/.+/);
+    expect(regionLinks[0]).toHaveTextContent(/혜택 \d+건/);
+
+    // 인사 바로 아래 배너(임시 내용)
+    const hero = screen.getByRole("region", { name: "이번 주 소식" });
+    expect(hero.compareDocumentPosition(deadlineSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(hero).getAllByRole("link")).toHaveLength(1);
 
     // 넓은 화면 배치의 걸쇠: 이 표시가 있어야 1024px 이상에서 앱 틀이 넓어지고(app.css) 두 줄이 격자로 펴진다(home.css)
     expect(document.querySelector(".prototype-home-screen")).toHaveClass("desktop-wide");
@@ -212,7 +219,7 @@ describe("Travel Hunter app — home", () => {
     }
   });
 
-  it("counts benefits and this week's deadlines, and ranks regions by their own policies", async () => {
+  it("counts benefits and this week's deadlines, ranks places by their own policies, and builds the banner from them", async () => {
     const policies: Policy[] = [
       policy({ id: "jn-1", title: "[강진] 반값여행", region: "전남", deadline: testIsoDateFromToday(3) }),
       policy({ id: "jn-2", title: "[영광] 반값여행", region: "전남", deadline: testIsoDateFromToday(4) }),
@@ -234,15 +241,74 @@ describe("Travel Hunter app — home", () => {
       const regionLinks = within(regionSection)
         .getAllByRole("link")
         .filter((link) => link.classList.contains("home-region-card"));
-      // 전국 정책은 모든 지역에 걸려 순위를 흐리므로 지역 카드 셈에서 뺀다
-      expect(regionLinks.map((link) => link.textContent)).toEqual(["전남혜택 2건", "경남혜택 1건"]);
-      expect(regionLinks[0]).toHaveAttribute(
-        "href",
+      // 시군 카드: 혜택 수가 같으면 마감이 빠른 곳부터. 전국 정책은 모든 곳에 걸려 순위를 흐리므로 뺀다
+      expect(regionLinks.map((link) => link.querySelector("b")?.textContent)).toEqual(["강진", "영광", "합천"]);
+      expect(regionLinks[0]).toHaveTextContent("전남 · 혜택 1건");
+      expect(regionLinks[0].querySelector(".home-region-lead")).toHaveTextContent("D-3");
+      expect(regionLinks[0]).toHaveAttribute("href", "/policies/jn-1");
+
+      // 배너: 가장 가까운 마감(전국 포함) · 혜택이 가장 많은 지역 · 전국 공통. 보이는 장은 하나
+      const slides = Array.from(document.querySelectorAll(".home-hero-slide"));
+      expect(slides.map((slide) => slide.querySelector("b")?.textContent)).toEqual([
+        "내일로패스 할인",
+        "전라남도 2건",
+        "전국 공통 혜택 1건",
+      ]);
+      expect(slides.map((slide) => slide.getAttribute("href"))).toEqual([
+        "/policies/nation-1",
         `/policies?${new URLSearchParams({ place: "전남", sheet: "1" })}`,
-      );
+        "/policies?region=전국",
+      ]);
+      expect(slides[0].querySelector(".home-hero-eyebrow")).toHaveTextContent("D-2전국 공통");
+      expect(slides[1]).toHaveAttribute("inert");
       const nationwideCard = screen.getByRole("link", { name: /전국 공통 혜택 1건/ });
       expect(nationwideCard).toHaveAttribute("href", "/policies?region=전국");
       expect(nationwideCard).toHaveTextContent("기차");
+    } finally {
+      getProfileSpy.mockRestore();
+      listPoliciesSpy.mockRestore();
+    }
+  });
+
+  it("puts a place's own photo on its card and draws the benefit instead of a photo shared by several places", async () => {
+    const photo = (name: string) => ({
+      imageUrl: `https://tong.visitkorea.or.kr/${name}_2.jpg`,
+      thumbnailUrl: `https://tong.visitkorea.or.kr/${name}_3.jpg`,
+      alt: name,
+      attribution: "사진: 한국관광공사",
+    });
+    const policies: Policy[] = [
+      policy({ id: "yg-1", title: "[영광] 대한민국 반값여행 지원", region: "전남", deadline: testIsoDateFromToday(5), photo: photo("yeonggwang") }),
+      policy({ id: "yg-2", title: "[영광] 디지털관광주민증 혜택", region: "전남", deadline: "", photo: photo("yeonggwang") }),
+      // 두 시군이 같은 도 대표 사진을 나눠 쓴다
+      policy({ id: "gj-1", title: "[거제] 숙박세일 페스타 숙박 할인", region: "경남", category: "숙박", deadline: testIsoDateFromToday(30), photo: photo("gyeongnam") }),
+      policy({ id: "ty-1", title: "[통영] 숙박세일 페스타 숙박 할인", region: "경남", category: "숙박", deadline: testIsoDateFromToday(30), photo: photo("gyeongnam") }),
+    ];
+    const listPoliciesSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
+    const getProfileSpy = withoutPreferredRegions();
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/home");
+
+      const regionSection = await screen.findByRole("region", { name: "혜택이 많은 지역" });
+      const cards = within(regionSection)
+        .getAllByRole("link")
+        .filter((link) => link.classList.contains("home-region-card"));
+      expect(cards.map((card) => card.querySelector("b")?.textContent)).toEqual(["영광", "거제", "통영"]);
+      // 영광: 제 사진, 누르면 안 지난 가장 빠른 마감(반값여행) 상세
+      expect(cards[0].querySelector("img")).toHaveAttribute("src", photo("yeonggwang").imageUrl);
+      expect(cards[0]).toHaveAttribute("href", "/policies/yg-1");
+      expect(cards[0].querySelector(".home-region-lead")).toHaveTextContent("여행비 환급 · D-5");
+      // 거제·통영: 나눠 쓰는 사진 대신 혜택 그림
+      for (const card of cards.slice(1)) {
+        expect(card).toHaveClass("nophoto");
+        expect(card.querySelector("img")).toBeNull();
+        expect(card.querySelector(".benefit-tile")).toBeTruthy();
+      }
+      // 공공누리 출처는 줄 아래 한 번
+      expect(within(regionSection).getAllByText("사진: 한국관광공사")).toHaveLength(1);
     } finally {
       getProfileSpy.mockRestore();
       listPoliciesSpy.mockRestore();

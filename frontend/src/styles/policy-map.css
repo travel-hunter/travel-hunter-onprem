@@ -414,6 +414,8 @@ body.thmap-map-view .app-container { overflow: hidden; }
   display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
 }
 .thmap-grp-btn .thmap-body .desc { color: var(--gray-600); -webkit-line-clamp: 2; }
+/* 모든 곳이 같은 지역 한 줄 - 머리에 한 번 */
+.thmap-grp-btn .thmap-body .desc.shared { color: var(--gray-700); -webkit-line-clamp: 1; }
 .thmap-side { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 .thmap-chev { color: var(--gray-600); transition: transform 0.2s ease; }
 .thmap-grp-btn[aria-expanded="true"] .thmap-chev { transform: rotate(180deg); }

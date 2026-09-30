@@ -1,4 +1,4 @@
-import { Search, X } from "lucide-react";
+import { MapPin, Search, X } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -11,6 +11,7 @@ import { Link } from "react-router-dom";
 import {
   appDataApi,
   type Policy,
+  type PolicyPhoto,
   type Profile,
   type RegionRecommendation,
 } from "../api";
@@ -25,8 +26,8 @@ import {
   BenefitTile,
   benefitTypeOf,
 } from "../components/benefitTile";
+import { HomeHeroBanner, type HomeHeroSlide } from "../components/HomeHeroBanner";
 import { KOREA_REGION_SHAPES } from "../components/map/koreaRegionShapes";
-import { REGION_PHOTOS } from "../components/map/regionPhotos";
 import { HomeSectionHeader } from "../components/patterns";
 import { ErrorState, LoadingState } from "../components/ui";
 import {
@@ -34,13 +35,19 @@ import {
   getInterestRegionHomePolicies,
   getNationwideHomePolicies,
 } from "../data/displayConfig";
-import { deadlineChip, programName } from "../components/map/policyBrowse";
+import {
+  BROWSE_FILTERS,
+  REGION_FULL_NAMES,
+  deadlineChip,
+  programName,
+  regionSummary,
+} from "../components/map/policyBrowse";
 import { policyListText, PROGRAM_GROUP_COPY } from "../components/map/policyListText";
 import {
   NATIONWIDE_REGION,
   cityOf,
 } from "../utils/policyPrograms";
-import { daysUntilPolicyDeadline } from "../utils";
+import { daysUntilPolicyDeadline, isDigitalTourismResidentCardPolicy } from "../utils";
 import "../styles/home.css";
 
 const PROFILE_PROMPT_DISMISSAL_PREFIX =
@@ -98,14 +105,19 @@ export function HomePage() {
       ).slice(0, DEADLINE_CARD_LIMIT),
     [policies, profile.preferredRegions],
   );
-  const nationwidePolicies = getNationwideHomePolicies(policies);
+  const nationwidePolicies = useMemo(() => getNationwideHomePolicies(policies), [policies]);
   const regionCounts = useMemo(
     () => countRegionalPolicies(policies),
     [policies],
   );
-  const topRegions = Object.entries(regionCounts)
-    .sort((left, right) => right[1] - left[1])
-    .slice(0, REGION_CARD_LIMIT);
+  const placeCards = useMemo(
+    () => pickPlaceCards(policies ?? []).slice(0, REGION_CARD_LIMIT),
+    [policies],
+  );
+  const heroSlides = useMemo(
+    () => buildHeroSlides(closingGroups, regionCounts, policies ?? [], nationwidePolicies),
+    [closingGroups, regionCounts, policies, nationwidePolicies],
+  );
   const closingThisWeek = (policies ?? []).filter((policy) => {
     const days = daysUntilPolicyDeadline(policy.deadline);
     return days !== null && days >= 0 && days <= 7;
@@ -184,6 +196,8 @@ export function HomePage() {
         )}
       </div>
 
+      {policies && <HomeHeroBanner slides={heroSlides} />}
+
       {/* 가운데 뜨는 창은 홈을 가렸다. 닫을 수 있는 한 줄로 두고, 닫으면 이번 세션 동안 안 뜬다. */}
       {shouldShowProfilePrompt && (
         <section className="home-banner" aria-label="프로필 설정 안내">
@@ -223,7 +237,7 @@ export function HomePage() {
             />
           )}
 
-          {topRegions.length > 0 && (
+          {placeCards.length > 0 && (
             <section className="home-section" aria-label="혜택이 많은 지역">
               <HomeSectionHeader title="혜택이 많은 지역" />
               <ul className="home-row home-row-regions">
@@ -238,24 +252,13 @@ export function HomePage() {
                     </span>
                   </Link>
                 </li>
-                {topRegions.map(([region, count]) => (
-                  <li key={region}>
-                    <Link
-                      className="home-region-card"
-                      to={`/policies?${new URLSearchParams({ place: region, sheet: "1" })}`}
-                    >
-                      <img
-                        alt=""
-                        className="home-region-photo"
-                        loading="lazy"
-                        src={REGION_PHOTOS[region]}
-                      />
-                      <b>{region}</b>
-                      <i>혜택 {count}건</i>
-                    </Link>
+                {placeCards.map((card) => (
+                  <li key={card.key}>
+                    <PlaceCard card={card} />
                   </li>
                 ))}
               </ul>
+              <PhotoCredit cards={placeCards} />
             </section>
           )}
 
@@ -347,7 +350,8 @@ function groupHead(group: DeadlineGroup): string | null {
   return texts.every((text) => text.head === texts[0].head) ? texts[0].head || null : null;
 }
 
-function DeadlineCard({ group }: { group: DeadlineGroup }) {
+/* 마감 카드와 배너 첫 장이 같이 쓰는 한 묶음의 사실: 어디(가장 빠른 마감의 두 곳 + 외 N곳), 받는 것, 칩, 누르면 갈 곳 */
+function deadlineGroupFacts(group: DeadlineGroup) {
   const [first] = group.items;
   const soonest = group.items.filter(
     (policy) => policy.deadline === first.deadline,
@@ -369,6 +373,11 @@ function DeadlineCard({ group }: { group: DeadlineGroup }) {
           ...(regions.size === 1 ? { place: first.region } : {}),
           prog: group.key,
         })}`;
+  return { first, where, head, chip, to };
+}
+
+function DeadlineCard({ group }: { group: DeadlineGroup }) {
+  const { first, where, head, chip, to } = deadlineGroupFacts(group);
   return (
     <Link className="home-deadline-card" to={to}>
       <BenefitTile kind={benefitTypeOf(first)} size="sm" />
@@ -380,13 +389,13 @@ function DeadlineCard({ group }: { group: DeadlineGroup }) {
   );
 }
 
-/* 지역 사진 카드가 있는 17개 시도만 센다. 전국 정책은 모든 지역에 걸려 순위를 흐리므로 뺀다. */
+/* 17개 시도만 센다(미니 지도·배너). 전국 정책은 모든 지역에 걸려 순위를 흐리므로 뺀다. */
 function countRegionalPolicies(
   policies: Policy[] | null | undefined,
 ): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const policy of policies ?? []) {
-    if (!(policy.region in REGION_PHOTOS)) continue;
+    if (!(policy.region in REGION_FULL_NAMES)) continue;
     counts[policy.region] = (counts[policy.region] ?? 0) + 1;
   }
   return counts;
@@ -429,6 +438,148 @@ function HomeRegionMap({ counts }: { counts: Record<string, number> }) {
       ))}
     </svg>
   );
+}
+
+/* 홈 맨 위 배너의 장들. 넣을 내용은 개발서버에서 보고 정할 임시(2026-09-30) - 지금 데이터로만 만든다:
+   가장 가까운 마감 · 혜택이 가장 많은 지역 · 전국 공통. 내용을 바꿀 때는 이 함수만 고친다. */
+function buildHeroSlides(
+  closingGroups: DeadlineGroup[],
+  regionCounts: Record<string, number>,
+  policies: Policy[],
+  nationwide: Policy[],
+): HomeHeroSlide[] {
+  const slides: HomeHeroSlide[] = [];
+  if (closingGroups[0]) {
+    const { first, where, head, chip, to } = deadlineGroupFacts(closingGroups[0]);
+    const kind = benefitTypeOf(first);
+    slides.push({
+      key: "closing",
+      to,
+      family: BENEFIT_TYPES[kind].family,
+      icon: <BenefitTile kind={kind} />,
+      eyebrow: (
+        <>
+          <span className={`home-deadline-badge ${chip.tone}`}>{chip.text}</span>
+          <span>{where}</span>
+        </>
+      ),
+      title: closingGroups[0].key,
+      sub: head ?? BENEFIT_TYPES[kind].label,
+    });
+  }
+  const [top] = Object.entries(regionCounts).sort((left, right) => right[1] - left[1]);
+  if (top) {
+    const summary = regionSummary(policies, top[0]);
+    const label = (key: string) => BROWSE_FILTERS.find((filter) => filter.key === key)?.label ?? key;
+    slides.push({
+      key: "region",
+      to: `/policies?${new URLSearchParams({ place: top[0], sheet: "1" })}`,
+      family: "place",
+      icon: (
+        <span className="home-hero-pin" aria-hidden="true">
+          <MapPin size={26} />
+        </span>
+      ),
+      eyebrow: <span>혜택이 가장 많은 지역</span>,
+      title: `${summary.fullName} ${top[1]}건`,
+      sub: summary.kinds.map((kind) => `${label(kind.key)} ${kind.count}`).join(" · "),
+    });
+  }
+  if (nationwide.length > 0) {
+    slides.push({
+      key: "nation",
+      to: `/policies?region=${NATIONWIDE_REGION}`,
+      family: "move",
+      icon: <BenefitTile kind="nation" />,
+      eyebrow: <span>어느 지역을 가도 쓸 수 있어요</span>,
+      title: `전국 공통 혜택 ${nationwide.length}건`,
+      sub: Array.from(new Set(nationwide.map((policy) => BENEFIT_TYPES[benefitTypeOf(policy)].label)))
+        .slice(0, 4)
+        .join(" · "),
+    });
+  }
+  return slides;
+}
+
+type PlaceCardData = {
+  key: string;
+  region: string;
+  place: string;
+  count: number;
+  lead: Policy;
+  photo: PolicyPhoto | null;
+};
+
+const isOpenDated = (policy: Policy) =>
+  !isDigitalTourismResidentCardPolicy(policy) && (daysUntilPolicyDeadline(policy.deadline) ?? -1) >= 0;
+
+/* 혜택이 많은 시군(시안 v43~44): 혜택 수 → 안 지난 가장 빠른 마감 → 이름. 전국 정책은 모든 곳에 걸려 순위를 흐리므로 뺀다.
+   누르면 그 시군의 대표 혜택(안 지난 가장 빠른 마감, 없으면 첫 혜택) 상세 - 나머지는 상세의 '같은 곳 다른 혜택'.
+   사진은 그 시군만 쓰는 수집 사진. 도 대표 사진을 여러 시군이 나눠 쓰는 곳은 같은 사진이 되풀이되므로 혜택 그림으로 둔다. */
+function pickPlaceCards(policies: Policy[]): PlaceCardData[] {
+  const byPlace = new Map<string, Policy[]>();
+  const placesByPhoto = new Map<string, Set<string>>();
+  for (const policy of policies) {
+    const place = cityOf(policy);
+    if (!place || policy.region === NATIONWIDE_REGION) continue;
+    const key = `${policy.region}|${place}`;
+    byPlace.set(key, [...(byPlace.get(key) ?? []), policy]);
+    if (policy.photo) {
+      placesByPhoto.set(policy.photo.imageUrl, (placesByPhoto.get(policy.photo.imageUrl) ?? new Set()).add(key));
+    }
+  }
+  const ownPhoto = (items: Policy[]) =>
+    items.map((policy) => policy.photo).find((photo) => photo && placesByPhoto.get(photo.imageUrl)?.size === 1) ?? null;
+  return Array.from(byPlace, ([key, items]) => {
+    const dated = items.filter(isOpenDated).sort((left, right) => left.deadline.localeCompare(right.deadline));
+    const [region, place] = key.split("|");
+    return { key, region, place, count: items.length, lead: dated[0] ?? items[0], photo: ownPhoto(items) };
+  }).sort(
+    (left, right) =>
+      right.count - left.count ||
+      (isOpenDated(left.lead) ? left.lead.deadline : "9999").localeCompare(isOpenDated(right.lead) ? right.lead.deadline : "9999") ||
+      left.place.localeCompare(right.place, "ko"),
+  );
+}
+
+function PlaceCard({ card }: { card: PlaceCardData }) {
+  const [isBroken, setIsBroken] = useState(false);
+  const kind = benefitTypeOf(card.lead);
+  const photo = isBroken ? null : card.photo;
+  return (
+    <Link
+      className={photo ? "home-region-card" : `home-region-card nophoto family-${BENEFIT_TYPES[kind].family}`}
+      to={`/policies/${card.lead.slug}`}
+    >
+      {photo ? (
+        <img
+          alt=""
+          className="home-region-photo"
+          loading="lazy"
+          onError={() => setIsBroken(true)}
+          sizes="(min-width: 1024px) 240px, 136px"
+          src={photo.imageUrl}
+          srcSet={photo.thumbnailUrl ? `${photo.thumbnailUrl} 300w, ${photo.imageUrl} 940w` : undefined}
+        />
+      ) : (
+        <BenefitTile kind={kind} />
+      )}
+      <b>{card.place}</b>
+      <i>
+        {card.region} · 혜택 {card.count}건
+      </i>
+      {/* 누르면 열리는 혜택 */}
+      <i className="home-region-lead">
+        {BENEFIT_TYPES[kind].label} · {deadlineChip(card.lead).text}
+      </i>
+    </Link>
+  );
+}
+
+/* 공공누리 1유형 출처 표시 - 사진을 쓴 카드가 있으면 줄 아래 한 번 */
+function PhotoCredit({ cards }: { cards: PlaceCardData[] }) {
+  const credits = Array.from(new Set(cards.flatMap((card) => (card.photo ? [card.photo.attribution] : []))));
+  return credits.length > 0 ? <p className="home-photo-credit">{credits.join(" · ")}</p> : null;
 }
 
 function NationwideLineCard({ policies }: { policies: Policy[] }) {

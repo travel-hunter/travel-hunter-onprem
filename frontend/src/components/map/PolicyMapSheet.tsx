@@ -398,6 +398,8 @@ function EntryItem({
   const partnerSum = texts.reduce((sum, text) => sum + text.partners, 0);
   const head = copy ? copy.head.replace("{sum}", partnerSum.toLocaleString("ko-KR")) : firstText.head;
   const desc = copy?.desc ?? (detailVaries ? "" : firstText.detail);
+  /* 사업 공통 문구가 설명 자리를 차지해도, 모든 곳이 같은 지역 한 줄은 머리에 한 번 보인다(지역 줄마다 되풀이하지 않고) */
+  const shared = copy && !detailVaries ? firstText.detail : "";
   const kidText = (index: number) =>
     [headVaries ? texts[index].head : "", detailVaries ? texts[index].detail : ""].filter(Boolean).join(" · ");
   const lead = nation
@@ -413,6 +415,7 @@ function EntryItem({
           <span className="t">{title}</span>
           {nation ? <span className="amt">어느 지역을 가도 쓸 수 있어요</span> : head && <span className="amt">{head}</span>}
           {!nation && desc && <span className="desc">{desc}</span>}
+          {!nation && shared && <span className="desc shared">공통 · {shared}</span>}
         </span>
         <span className="thmap-side">
           <span className={`thmap-dday ${chip.tone}`}>{chip.text}</span>

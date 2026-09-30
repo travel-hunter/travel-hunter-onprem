@@ -43,7 +43,9 @@ function mount({
   onClear = vi.fn(),
   onNation = vi.fn(),
   enabled = true,
+  list = policies,
 }: {
+  list?: Policy[];
   region?: string | null;
   stop?: SheetStop;
   onStop?: (stop: SheetStop) => void;
@@ -52,7 +54,7 @@ function mount({
   onNation?: () => void;
   enabled?: boolean;
 } = {}) {
-  const view = browseView(policies, region, null, null);
+  const view = browseView(list, region, null, null);
   const ui = (next: SheetStop) => (
     <MemoryRouter>
       <PolicyMapSheet
@@ -106,6 +108,30 @@ describe("PolicyMapSheet", () => {
     fireEvent.click(group);
     expect(group).toHaveAttribute("aria-expanded", "false");
     expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a place line every place shares once on the group head instead of on each row", () => {
+    const refund = (place: string, id: string, pay: string) =>
+      make(id, `[${place}] 대한민국 반값여행 지원`, "전남", {
+        cardSummary: "최대 20만원 환급",
+        summary: "여행 경비의 50%를 돌려드립니다.",
+        structuredDetail: {
+          supportContent: [{ title: "혜택 적용 조건", description: `관광지 2개소 방문 인증, ${pay} 앱으로 결제` }],
+        } as Policy["structuredDetail"],
+      });
+    mount({ list: [refund("고흥", "gh", "chak"), refund("장흥", "jh", "chak")], region: "전남" });
+    const group = screen.getByRole("button", { name: /대한민국 반값여행 지원/ });
+    expect(group).toHaveTextContent("공통 · 관광지 2곳 인증 · chak 앱으로 결제");
+    const kids = document.getElementById(group.getAttribute("aria-controls") as string) as HTMLElement;
+    expect(kids).not.toHaveTextContent("관광지 2곳 인증");
+    cleanup();
+    // 곳마다 다르면 머리가 아니라 지역 줄마다
+    mount({ list: [refund("고흥", "gh", "chak"), refund("영광", "yg", "코나아이")], region: "전남" });
+    const mixed = screen.getByRole("button", { name: /대한민국 반값여행 지원/ });
+    expect(mixed).not.toHaveTextContent("공통 ·");
+    const rows = document.getElementById(mixed.getAttribute("aria-controls") as string) as HTMLElement;
+    expect(rows).toHaveTextContent("관광지 2곳 인증 · chak 앱으로 결제");
+    expect(rows).toHaveTextContent("관광지 2곳 인증 · 코나아이 앱으로 결제");
   });
 
   it("opens groups by default in a picked region and offers the nationwide ones", () => {

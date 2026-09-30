@@ -4395,11 +4395,14 @@
 }
 
 /* 넓은 화면 배치(1024px 이상, 시안 v41). 배치를 새로 짠 화면만 화면 section 에 .desktop-wide 를 달아 틀을 넓히고,
-   나머지 화면은 지금 폭 그대로 둔다. 기준 폭은 lib/useMediaQuery.ts 의 DESKTOP_MEDIA_QUERY 와 같아야 한다. */
+   나머지 화면은 지금 폭 그대로 둔다. 기준 폭은 lib/useMediaQuery.ts 의 DESKTOP_MEDIA_QUERY 와 같아야 한다.
+   틀은 화면 폭 전부(2026-10-01 사용자 결정 - 1200px 상한은 좁았다). 화면 안의 옆 여백은 --desk-gutter 하나로 맞춘다. */
 @media (min-width: 1024px) {
   .service-layout:has(.desktop-wide) {
-    width: min(100vw, 1200px);
-    max-width: 1200px;
+    --desk-gutter: clamp(32px, 4vw, 72px);
+
+    width: 100%; /* 100vw 는 세로 스크롤 막대 폭만큼 오른쪽을 가린다 */
+    max-width: none;
   }
 }
 
@@ -5586,16 +5589,16 @@
    목록 2열, 상세 두 단(왼쪽 내용 + 오른쪽 고정 지도), ⋯ 메뉴·여행기간 수정은 가운데 창,
    새 일정 만들기는 가운데 한 줄. 1024px 아래는 건드리지 않는다. */
 @media (min-width: 1024px) {
-  /* 목록: 가운데 1040px 안에서 2열 */
+  /* 목록: 화면 폭 전부, 카드가 들어가는 만큼 열(1280 에서 2열, 1920 에서 4열) */
   .prototype-trip-list-screen.desktop-wide .prototype-screen-head,
   .prototype-trip-list-screen.desktop-wide .prototype-trip-list-content {
     box-sizing: border-box;
-    width: min(100%, 1040px);
-    margin-inline: auto;
+    width: auto;
+    margin-inline: var(--desk-gutter);
   }
 
   .prototype-trip-list-screen.desktop-wide .prototype-trip-list-content {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
     align-items: start;
     padding-bottom: 48px;
   }
@@ -5645,7 +5648,7 @@
      그리드 칸만 옮기면 한 번만 그린 채 오른쪽에 선다. 순서·동작은 그대로다. */
   .prototype-trip-detail-screen.desktop-wide {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 36%);
     column-gap: 24px;
     align-content: start;
     align-items: start;
