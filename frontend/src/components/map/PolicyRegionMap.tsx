@@ -44,6 +44,7 @@ export function PolicyRegionMap({
   onSelect,
   renderPill,
   focus = false,
+  zoom = true,
   showCounts = false,
   coverTop = null,
   sheetLow = false,
@@ -58,6 +59,8 @@ export function PolicyRegionMap({
   renderPill?: (region: string) => ReactNode;
   /** 고른 지역으로 다가가고 둘레를 옅게 눌러 둔다(정책 탭 지도) */
   focus?: boolean;
+  /** focus 에서 다가가기만 끈다(넓은 화면) - 전국 틀 그대로 둘레 흐림·시군 점만 */
+  zoom?: boolean;
   /** 이름표 옆에 건수 */
   showCounts?: boolean;
   /** 지도 아래쪽을 덮는 시트의 윗변(화면 y). 그 위쪽에 그림을 맞춘다 */
@@ -113,6 +116,7 @@ export function PolicyRegionMap({
     host.replaceChildren();
     const handle = createPolicyRegionMap(host, counts, (name) => onSelectRef.current(name), {
       focus,
+      zoom,
       showCounts,
       onPlace: (place) => onPlaceRef.current?.(place),
     });
@@ -144,7 +148,7 @@ export function PolicyRegionMap({
       handle.destroy();
       handleRef.current = null;
     };
-  }, [counts, focus, showCounts]);
+  }, [counts, focus, zoom, showCounts]);
 
   /* 시트가 자리에 서면 그 위쪽에 맞춰 다가가고, 고른 지역의 시·군 점을 다시 찍는다 */
   useEffect(() => {

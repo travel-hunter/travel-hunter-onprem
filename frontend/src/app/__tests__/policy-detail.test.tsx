@@ -1509,4 +1509,45 @@ describe("Travel Hunter app — policy detail", () => {
       getPolicySpy.mockRestore();
     }
   });
+
+  it("lays the detail out in two columns with a summary card on wide screens", async () => {
+    // jsdom 에는 matchMedia 가 없어 늘 좁은 화면이다. 1024px 이상인 척한다
+    const hadMatchMedia = "matchMedia" in window;
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(min-width: 1024px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    const getPolicySpy = vi.spyOn(appDataApi, "getPolicy").mockResolvedValue(examplePolicyDetail);
+    const listTripsSpy = vi
+      .spyOn(appDataApi, "listTrips")
+      .mockResolvedValue([{ ...getUpcomingPreviewTrip(), id: "301", title: "넓은 화면 여행" }]);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute(examplePolicyPath);
+      const summary = await screen.findByRole("complementary", { name: "요약과 담기" });
+      expect(document.querySelector(".prototype-policy-detail-screen")).toHaveClass("desktop-wide", "policy-detail-desk");
+      // 받는 것·기간은 오른쪽 카드로 옮기고, 탭바 자리의 버튼 줄은 그리지 않는다
+      expect(within(summary).getByText("받는 것")).toBeInTheDocument();
+      expect(within(summary).getByText("기간")).toBeInTheDocument();
+      expect(document.querySelector(".policy-detail-bar")).toBeNull();
+      expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
+      await userEvent.setup().click(within(summary).getByRole("button", { name: /내 일정에 담기|일정에 담김/ }));
+      expect(await screen.findByRole("dialog", { name: "일정 선택" })).toBeInTheDocument();
+      expect(await screen.findByText("넓은 화면 여행")).toBeInTheDocument();
+    } finally {
+      if (hadMatchMedia) window.matchMedia = originalMatchMedia;
+      else Reflect.deleteProperty(window, "matchMedia");
+      getPolicySpy.mockRestore();
+      listTripsSpy.mockRestore();
+    }
+  });
 });

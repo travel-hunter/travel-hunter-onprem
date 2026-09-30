@@ -35,6 +35,8 @@ export type RegionMapPlace = { name: string; count: number };
 export type RegionMapOptions = {
   /** 고른 지역으로 다가가고 둘레 지역은 옅은 땅으로 눌러 둔다(정책 탭). 끄면 띄우기만 한다. */
   focus?: boolean;
+  /** focus 에서 다가가기만 끈다 - 전국 틀 그대로 둘레 흐림·시군 점만 한다(넓은 화면은 지도가 넉넉하다). 기본은 다가간다 */
+  zoom?: boolean;
   /** 이름표 옆에 건수를 쓴다 */
   showCounts?: boolean;
   /** 시·군 점을 누르면. 같은 점을 다시 누르면 null */
@@ -187,7 +189,7 @@ export function createPolicyRegionMap(
     const { bw, bh } = box();
     if (!(bw > 0 && bh > 0)) return { ...FULL_VB };
     const vis = view.visible > 0 ? Math.min(view.visible, bh) : bh;
-    const b = focusRegion() ? BOX[current as string] : null;
+    const b = focusRegion() && options.zoom !== false ? BOX[current as string] : null;
     let x: number, y: number, w: number, h: number;
     if (!b) {
       const ppu = Math.min(bw / FULL_VB.w, vis / FULL_VB.h);

@@ -30,15 +30,17 @@ import { REGION_PHOTOS } from "../components/map/regionPhotos";
 import { HomeSectionHeader } from "../components/patterns";
 import { ErrorState, LoadingState } from "../components/ui";
 import {
-  getHomeBenefitPolicies,
+  getClosingSoonHomePolicies,
+  getInterestRegionHomePolicies,
   getNationwideHomePolicies,
 } from "../data/displayConfig";
+import { deadlineChip, programName } from "../components/map/policyBrowse";
+import { policyListText, PROGRAM_GROUP_COPY } from "../components/map/policyListText";
 import {
   NATIONWIDE_REGION,
   cityOf,
-  programOf,
 } from "../utils/policyPrograms";
-import { daysUntilPolicyDeadline, formatPolicyDeadlineTag } from "../utils";
+import { daysUntilPolicyDeadline } from "../utils";
 import "../styles/home.css";
 
 const PROFILE_PROMPT_DISMISSAL_PREFIX =
@@ -77,23 +79,24 @@ export function HomePage() {
     );
   }, [dismissalKey]);
   const name = currentUser?.nickname ?? "여행자";
-  /* 관심 지역 정책이 있으면 그것만, 없으면 전체 지역 정책을 마감순으로 - 전국은 아래 한 줄 카드 몫. */
-  const deadlinePick = useMemo(
+  /* 마감이 가까운 혜택(시안 v40, 전국 포함) 다음에 내 관심 지역 혜택 - 두 칸 다 사업별 한 장, 마감순 */
+  const closingGroups = useMemo(
     () =>
-      getHomeBenefitPolicies(
-        policies,
-        Number.POSITIVE_INFINITY,
-        profile.preferredRegions,
-      ),
-    [policies, profile.preferredRegions],
-  );
-  const deadlineGroups = useMemo(
-    () =>
-      groupByProgramInListOrder(deadlinePick.policies).slice(
+      groupByProgramInListOrder(getClosingSoonHomePolicies(policies)).slice(
         0,
         DEADLINE_CARD_LIMIT,
       ),
-    [deadlinePick],
+    [policies],
+  );
+  const hasInterestRegions = (profile.preferredRegions ?? []).some((region) =>
+    region.trim(),
+  );
+  const interestGroups = useMemo(
+    () =>
+      groupByProgramInListOrder(
+        getInterestRegionHomePolicies(policies, profile.preferredRegions),
+      ).slice(0, DEADLINE_CARD_LIMIT),
+    [policies, profile.preferredRegions],
   );
   const nationwidePolicies = getNationwideHomePolicies(policies);
   const regionCounts = useMemo(
@@ -148,7 +151,8 @@ export function HomePage() {
   };
 
   return (
-    <section className="screen with-tabs prototype-app-screen prototype-home-screen">
+    /* desktop-wide: 1024px 이상에서 앱 틀을 넓히고(app.css) 홈을 두 단 격자로 편다(home.css). 좁은 화면에서는 아무 일도 안 한다. */
+    <section className="screen with-tabs prototype-app-screen prototype-home-screen desktop-wide">
       <div className="prototype-status-spacer" aria-hidden="true" />
       <div className="prototype-home-search-row">
         <Link className="prototype-home-search-pill" to="/policies">
@@ -205,29 +209,24 @@ export function HomePage() {
 
       {policies && (
         <>
-          <section className="home-section" aria-label={deadlinePick.title}>
-            <HomeSectionHeader
-              title={deadlinePick.title}
-              actionLabel="전체 보기"
-              to="/policies"
+          <DeadlineSection
+            title="마감이 가까운 혜택"
+            groups={closingGroups}
+            empty="곧 마감되는 혜택이 없어요."
+          />
+          {/* 관심 지역을 아직 안 골랐으면 위 배너가 고르기를 권한다 */}
+          {hasInterestRegions && (
+            <DeadlineSection
+              title="내 관심 지역 혜택"
+              groups={interestGroups}
+              empty="관심 지역에 아직 모아 둔 혜택이 없어요."
             />
-            {deadlineGroups.length > 0 ? (
-              <ul className="home-row" aria-label={`${deadlinePick.title} 목록`}>
-                {deadlineGroups.map((group) => (
-                  <li key={group.key}>
-                    <DeadlineCard group={group} />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="home-empty">아직 보여 드릴 지역 혜택이 없어요.</p>
-            )}
-          </section>
+          )}
 
           {topRegions.length > 0 && (
             <section className="home-section" aria-label="혜택이 많은 지역">
               <HomeSectionHeader title="혜택이 많은 지역" />
-              <ul className="home-row">
+              <ul className="home-row home-row-regions">
                 <li>
                   <Link className="home-map-card" to="/policies">
                     <HomeRegionMap counts={regionCounts} />
@@ -269,7 +268,8 @@ export function HomePage() {
       {/* 일정 만들기 자리. 관심 지역이 있으면 그 지역 코스 카드, 없으면 한 줄 카드 하나 -
           예전 기본 카드의 '숙소 포함·맛집 포함' 말풍선은 근거 없는 약속이라 뺐다. */}
       {aiRegionCards.length > 0 ? (
-        <>
+        /* 넓은 화면에서 전국 공통 카드 옆 한 칸을 차지하도록 제목과 카드를 한 덩어리로 묶는다(좁은 화면에서는 모양 없음) */
+        <div className="home-ai-block">
           <div className="prototype-home-ai-title">AI 추천 맞춤 일정</div>
           {aiRegionCards.length > 1 ? (
             <PreferredAiCarousel cards={aiRegionCards} />
@@ -278,7 +278,7 @@ export function HomePage() {
               <AiRecommendationCard {...aiRegionCards[0]} />
             </div>
           )}
-        </>
+        </div>
       ) : (
         <Link className="home-line-card home-trip-line" to="/trips/new">
           <BenefitTile kind="trip" />
@@ -302,10 +302,49 @@ type DeadlineGroup = { key: string; items: Policy[] };
 function groupByProgramInListOrder(policies: Policy[]): DeadlineGroup[] {
   const groups = new Map<string, Policy[]>();
   for (const policy of policies) {
-    const key = programOf(policy).replace(/^\d{4}\s+/, "");
+    const key = programName(policy); // 정책 탭 사업 주소(prog)와 같은 이름
     groups.set(key, [...(groups.get(key) ?? []), policy]);
   }
   return Array.from(groups, ([key, items]) => ({ key, items }));
+}
+
+function DeadlineSection({
+  title,
+  groups,
+  empty,
+}: {
+  title: string;
+  groups: DeadlineGroup[];
+  empty: string;
+}) {
+  return (
+    <section className="home-section" aria-label={title}>
+      <HomeSectionHeader title={title} actionLabel="전체 보기" to="/policies" />
+      {groups.length > 0 ? (
+        <ul className="home-row home-row-deadline" aria-label={`${title} 목록`}>
+          {groups.map((group) => (
+            <li key={group.key}>
+              <DeadlineCard group={group} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="home-empty">{empty}</p>
+      )}
+    </section>
+  );
+}
+
+/* 받는 것 한 줄은 정책 탭 목록과 같은 출처(policyListText). 여러 곳 묶음은 사업 공통 문구가 있으면 그것,
+   없으면 모두 같을 때만 싣는다 - 첫 곳 금액이 묶음 전체 금액처럼 읽히면 안 된다. */
+function groupHead(group: DeadlineGroup): string | null {
+  const texts = group.items.map(policyListText);
+  const copy = group.items.length > 1 ? PROGRAM_GROUP_COPY[group.key] : undefined;
+  const partners = texts.reduce((sum, text) => sum + text.partners, 0);
+  if (copy && (partners > 0 || !copy.head.includes("{sum}"))) {
+    return copy.head.replace("{sum}", partners.toLocaleString("ko-KR"));
+  }
+  return texts.every((text) => text.head === texts[0].head) ? texts[0].head || null : null;
 }
 
 function DeadlineCard({ group }: { group: DeadlineGroup }) {
@@ -315,27 +354,27 @@ function DeadlineCard({ group }: { group: DeadlineGroup }) {
   );
   const shown = soonest
     .slice(0, 2)
-    .map((policy) => cityOf(policy) ?? policy.region);
+    .map((policy) => cityOf(policy) ?? (policy.region === NATIONWIDE_REGION ? "전국 공통" : policy.region));
   const rest = group.items.length - shown.length;
   const where = shown.join(" · ") + (rest > 0 ? ` 외 ${rest}곳` : "");
-  /* 묶음 안 문구가 모두 같을 때만 싣는다 - 첫 곳 금액이 묶음 전체 금액처럼 읽히면 안 된다. */
-  const summary = group.items.every(
-    (policy) => policy.cardSummary === first.cardSummary,
-  )
-    ? first.cardSummary
-    : null;
-  const days = daysUntilPolicyDeadline(first.deadline);
-  const tone =
-    days === null ? "later" : days <= 7 ? "urgent" : days <= 30 ? "soon" : "later";
-  // ponytail: 묶음도 마감이 가장 빠른 곳의 상세로 보낸다. 정책 탭에 사업 검색 주소가 생기면 그리로.
+  const head = groupHead(group);
+  /* 칩은 정책 탭 목록과 같은 규칙(시안 v40): 오늘 마감·D-5·10.31 마감, 주민증은 '상시' */
+  const chip = deadlineChip(first);
+  /* 한 곳이면 그 상세로, 여러 곳 묶음은 정책 탭의 그 사업으로(시안 - 지도가 사업이 있는 곳을 칠한다). 한 지역 안의 묶음이면 그 지역으로 좁힌다 */
+  const regions = new Set(group.items.map((policy) => policy.region));
+  const to =
+    group.items.length === 1
+      ? `/policies/${first.slug}`
+      : `/policies?${new URLSearchParams({
+          ...(regions.size === 1 ? { place: first.region } : {}),
+          prog: group.key,
+        })}`;
   return (
-    <Link className="home-deadline-card" to={`/policies/${first.slug}`}>
+    <Link className="home-deadline-card" to={to}>
       <BenefitTile kind={benefitTypeOf(first)} size="sm" />
-      <span className={`home-deadline-badge ${tone}`}>
-        {formatPolicyDeadlineTag(first)}
-      </span>
+      <span className={`home-deadline-badge ${chip.tone}`}>{chip.text}</span>
       <strong>{group.key}</strong>
-      {summary && <span className="home-deadline-summary">{summary}</span>}
+      {head && <span className="home-deadline-summary">{head}</span>}
       <span className="home-deadline-where">{where}</span>
     </Link>
   );

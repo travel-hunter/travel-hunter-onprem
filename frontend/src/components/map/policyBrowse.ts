@@ -50,7 +50,7 @@ export function countByRegion(policies: Policy[]): Record<string, number> {
 }
 
 /* ── 마감 표 ───────────────────────────────────────────────────
-   일주일 안은 붉게, 한 달 안은 노랗게, 그 뒤는 날짜만. 주민증은 앱 규칙대로 '상시 발급'.
+   일주일 안은 붉게, 한 달 안은 노랗게, 그 뒤는 날짜만. 주민증은 짧은 칩이라 '상시'(시안 v40 - 상세의 기간 칸은 '상시 발급').
    earliest = 묶음처럼 여러 마감 중 가장 이른 것을 보일 때 - "D-5부터" */
 export type DeadlineChip = { tone: "urgent" | "soon" | "later" | "always"; text: string };
 
@@ -58,7 +58,7 @@ export function deadlineChip(
   policy: Pick<Policy, "title" | "officialUrl" | "deadline">,
   earliest = false,
 ): DeadlineChip {
-  if (isDigitalTourismResidentCardPolicy(policy)) return { tone: "always", text: "상시 발급" };
+  if (isDigitalTourismResidentCardPolicy(policy)) return { tone: "always", text: "상시" };
   const days = isSafePolicyDeadline(policy.deadline) ? daysUntilPolicyDeadline(policy.deadline) : null;
   if (days === null) return { tone: "always", text: "기간 확인" };
   if (days < 0) return { tone: "later", text: "마감" };
@@ -240,6 +240,8 @@ export type BrowseState = {
   filter: BrowseFilter | null;
   sheet: SheetStop;
   search: boolean;
+  /** 넓은 화면: 목록 패널이 보이는 정책 상세(slug). 좁은 화면은 쓰지 않는다 - 상세는 따로 연다 */
+  detail: string | null;
 };
 
 export function readBrowseState(params: URLSearchParams): BrowseState {
@@ -255,6 +257,7 @@ export function readBrowseState(params: URLSearchParams): BrowseState {
        sheet=1 은 예전 '열린 시트' - 일정 화면 링크가 아직 이 모양으로 온다. */
     sheet: sheet === "low" ? "low" : sheet === "full" || params.get("view") === "list" ? "full" : "mid",
     search: params.get("find") === "1",
+    detail: params.get("detail") || null,
   };
 }
 
@@ -267,22 +270,33 @@ export function writeBrowseState(params: URLSearchParams, state: BrowseState): U
   put("type", state.filter);
   put("sheet", state.sheet === "mid" ? null : state.sheet);
   put("find", state.search ? "1" : null);
+  put("detail", state.detail);
   next.delete("view");
   return next;
 }
 
 const levelOf = (state: BrowseState) => (state.city ? 2 : state.region || state.program ? 1 : 0);
 
-export function browseDepth(state: BrowseState): number {
+/* desk = 넓은 화면. 목록 패널이 늘 옆에 서 있어 시트 자리는 층이 아니다 */
+export function browseDepth(state: BrowseState, desk = false): number {
   const level = levelOf(state);
-  return level + (state.sheet === "full" ? 1 : 0) + (state.search ? 1 : 0) + (level === 0 && state.sheet !== "low" ? 1 : 0);
+  const top = (state.search ? 1 : 0) + (state.detail ? 1 : 0);
+  if (desk) return level + top;
+  return level + (state.sheet === "full" ? 1 : 0) + top + (level === 0 && state.sheet !== "low" ? 1 : 0);
 }
 
 export const browseDepthOf = (params: URLSearchParams) => browseDepth(readBrowseState(params));
+export const deskBrowseDepthOf = (params: URLSearchParams) => browseDepth(readBrowseState(params), true);
 
 /* 한 층 아래. 더 내려갈 데가 없으면 null(앱 밖으로) */
-export function lowerBrowseState(state: BrowseState): BrowseState | null {
+export function lowerBrowseState(state: BrowseState, desk = false): BrowseState | null {
+  if (state.detail) return { ...state, detail: null };
   if (state.search) return { ...state, search: false };
+  if (desk) {
+    if (state.city) return { ...state, city: null };
+    if (state.region || state.program) return { ...state, region: null, city: null, program: null };
+    return null;
+  }
   if (state.sheet === "full") return { ...state, sheet: "mid" };
   if (state.city) return { ...state, city: null };
   if (state.region || state.program) return { ...state, region: null, city: null, program: null, sheet: "mid" };

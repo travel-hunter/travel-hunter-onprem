@@ -72,7 +72,7 @@ describe("policy tab browse model", () => {
   it("marks deadlines by urgency and keeps the app's always-issued label for resident cards", () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
-    expect(deadlineChip(policies[0])).toEqual({ tone: "always", text: "상시 발급" });
+    expect(deadlineChip(policies[0])).toEqual({ tone: "always", text: "상시" });
     expect(deadlineChip(make("x", "숙박 할인", "제주"))).toEqual({ tone: "always", text: "기간 확인" });
     expect(deadlineChip(policies[2])).toEqual({ tone: "urgent", text: "D-5" });
     expect(deadlineChip(policies[2], true)).toEqual({ tone: "urgent", text: "D-5부터" });
@@ -103,7 +103,7 @@ describe("policy tab browse model", () => {
 
 describe("policy tab layers in the URL", () => {
   const state = (patch: Partial<BrowseState>): BrowseState => ({
-    region: null, city: null, program: null, filter: null, sheet: "mid", search: false, ...patch,
+    region: null, city: null, program: null, filter: null, sheet: "mid", search: false, detail: null, ...patch,
   });
 
   it("reads the old list and open-sheet links as the new stops", () => {
@@ -122,5 +122,17 @@ describe("policy tab layers in the URL", () => {
       current = lowerBrowseState(current);
     }
     expect(depths).toEqual([4, 3, 2, 1, 1, 0]);
+  });
+
+  it("on wide screens peels the panel detail first and ignores the sheet stop", () => {
+    expect(readBrowseState(new URLSearchParams("place=전남&detail=yg")).detail).toBe("yg");
+    expect(writeBrowseState(new URLSearchParams(), state({ region: "전남", detail: "yg" })).get("detail")).toBe("yg");
+    let current: BrowseState | null = state({ region: "전남", city: "완도", sheet: "full", search: true, detail: "yg" });
+    const depths: number[] = [];
+    while (current) {
+      depths.push(browseDepth(current, true));
+      current = lowerBrowseState(current, true);
+    }
+    expect(depths).toEqual([4, 3, 2, 1, 0]);
   });
 });

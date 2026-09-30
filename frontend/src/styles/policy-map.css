@@ -316,6 +316,9 @@ body.thmap-map-view .app-container { overflow: hidden; }
   background: var(--color-bg-card);
   box-shadow: 0 -4px 18px rgba(15, 23, 42, 0.1);
   touch-action: none;
+  /* 목록 줄이 '필/모텔'처럼 낱말 가운데서 끊기지 않게(넓은 화면 .thmap-split 과 같은 규칙) */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 .thmap-sheet.thmap-anim { transition: height 0.3s ease, border-radius 0.3s ease; }
 /* 한 페이지가 되면 창의 흔적(모서리·그림자)이 사라지며 뒤 화면과 한 장으로 합쳐진다 */
@@ -405,6 +408,12 @@ body.thmap-map-view .app-container { overflow: hidden; }
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .thmap-body .amt { font-size: 13px; font-weight: 700; color: var(--primary-700); }
+/* 그 지역만의 한 줄 / 묶음 공통 설명(시안 v40). 목록을 길게 만들지 않게 한두 줄에서 자른다 */
+.thmap-body .desc {
+  margin-top: 2px; font-size: 13px; color: var(--gray-700);
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+}
+.thmap-grp-btn .thmap-body .desc { color: var(--gray-600); -webkit-line-clamp: 2; }
 .thmap-side { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 .thmap-chev { color: var(--gray-600); transition: transform 0.2s ease; }
 .thmap-grp-btn[aria-expanded="true"] .thmap-chev { transform: rotate(180deg); }
@@ -531,6 +540,144 @@ body.thmap-map-view .app-container { overflow: hidden; }
 .thmap-sres-row .tx > span { font-size: 13px; color: var(--gray-600); }
 .thmap-sres-row mark { background: none; color: var(--primary-700); font-weight: 800; }
 .thmap-sres-empty { margin: 24px 4px; font-size: 14px; color: var(--gray-600); }
+
+/* ── 넓은 화면(1024px~, 시안 v41 데스크톱) ─────────────────────────
+   검색·칩 줄 아래를 지도(남는 폭)와 오른쪽 목록 패널 420px 로 나누고 쪽은 굴리지 않는다 - 목록·상세는 패널 안에서
+   굴러간다. 목록 시트는 패널 모드(PolicyMapSheet mode="panel")로 제자리에 서고, 검색 칸·정책 상세가 그 위를 덮는다.
+   좁은 화면 규칙은 건드리지 않는다. 기준 폭은 lib/useMediaQuery.ts 의 DESKTOP_MEDIA_QUERY 와 같다. */
+@media (min-width: 1024px) {
+  /* .service-layout .screen.with-tabs(쪽 아래 여백·최소 높이)를 순서와 상관없이 이기도록 한 단 더 */
+  .service-layout .screen.prototype-policy-list-screen.desktop-wide {
+    height: 100%;
+    min-height: 0;
+    padding-bottom: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* 한 줄: 칩은 지도 위(왼쪽), 검색창은 결과가 뜨는 패널 바로 위(오른쪽, 패널 왼쪽 끝과 맞춘다) */
+  .prototype-policy-list-screen.desktop-wide .prototype-policy-toolbar {
+    flex: none;
+    grid-template-columns: minmax(0, 1fr) calc(420px - var(--app-page-gutter, 16px));
+    align-items: center;
+    column-gap: 16px;
+  }
+  .prototype-policy-list-screen.desktop-wide .prototype-policy-search-row { grid-column: 2; grid-row: 1; }
+  .prototype-policy-list-screen.desktop-wide .prototype-policy-toolbar > .thmap-chips { grid-column: 1; grid-row: 1; margin: 0; padding: 2px 0; }
+  /* 지도 칸 높이는 PolicyRegionMap 이 남은 높이로 박는다(바닥 몇 px 은 칸의 꼬리 그림자가 바다로 잇는다) */
+  .thmap-split {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 420px;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+  }
+  .thmap-split .thmap-rcard { width: 240px; }
+  /* 넓은 화면은 지도 칸이 왼쪽 칸 높이를 다 쓴다(시안 v41). 폰 규칙(PolicyRegionMap 의 fitHeight)은 아래 시트·탭바 몫을
+     빼고 칸 높이를 인라인으로 박는데, 넓은 화면에는 그 시트가 없어 지도가 위쪽 2/3 에만 그려졌다. */
+  .thmap-split {
+    grid-template-rows: minmax(0, 1fr);   /* 줄 높이를 칸 높이에 묶는다 - 안 묶으면 svg 제 비율대로 늘어난다 */
+  }
+  .thmap-split > .thmap-stage {
+    height: auto !important;
+    min-height: 0;
+    margin-bottom: 0 !important;
+    align-self: stretch;
+  }
+  .thmap-split > .thmap-stage > .thmap-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .thmap-split > .thmap-stage .thmap-host {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto !important;
+  }
+  .thmap-panel {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--color-border-default);
+    background: var(--color-bg-card);
+  }
+  /* 목록 시트는 폰 규칙의 z-index(70)를 그대로 갖는다 - 목록 층을 따로 묶어 검색 칸·상세가 그 위에 덮이게 */
+  .thmap-panel-list { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; isolation: isolate; }
+  .thmap-panel .thmap-sheet {
+    position: relative;
+    left: auto;
+    bottom: auto;
+    flex: 1 1 auto;
+    width: auto;
+    height: auto;
+    min-height: 0;
+    transform: none;
+    border-radius: 0;
+    box-shadow: none;
+    touch-action: auto;
+  }
+  .thmap-panel .thmap-head { padding-top: 16px; }
+  .thmap-panel .thmap-search {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    width: auto;
+    transform: none;
+  }
+
+  /* 패널 안 정책 상세 - 목록을 덮는 한 장. 사진·머리·절 글꼴은 상세 페이지(policy-detail.css)와 같은 값을
+     이 자리 안에서만 준다(상세 페이지의 넓은 화면 규칙이 패널에 번지지 않게 상세 화면 범위 이름을 쓰지 않는다) */
+  .thmap-pdetail {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-bg-card);
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+  }
+  .thmap-pdetail-missing { display: grid; align-content: start; justify-items: start; gap: 12px; padding: 24px 20px; }
+  .thmap-pdetail-missing p { margin: 0; font-size: 15px; color: var(--gray-700); }
+  .thmap-pdetail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  /* 사진 위 단추(‹ · 크게 보기 · 저장 · 공유) - 상세 페이지의 흰 동그라미와 같은 모양 */
+  .thmap-pdetail .overlay-nav {
+    position: absolute; top: 12px; left: 0; right: 0; z-index: 3;
+    padding: 0 12px;
+  }
+  .thmap-pdetail .overlay-nav .icon-btn {
+    width: 38px; height: 38px; border: 0; border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.85); color: #3f3f55; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    cursor: pointer;
+  }
+  .thmap-pdetail .overlay-nav .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .thmap-pdetail .overlay-nav .icon-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .thmap-pdetail-body .policy-detail-hero {
+    position: relative; height: 188px; display: flex; align-items: center; justify-content: center; overflow: hidden;
+    background-color: var(--gray-100); background-position: center; background-size: cover;
+  }
+  .thmap-pdetail-body .policy-detail-hero > .benefit-tile { width: 72px; height: 72px; border-radius: 20px; }
+  .thmap-pdetail-body .policy-detail-hero > .benefit-tile svg { width: 42px; height: 42px; stroke-width: 1.5; }
+  .thmap-pdetail-body .policy-hero-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .thmap-pdetail-body .policy-hero-credit {
+    position: absolute; right: 10px; bottom: 8px; z-index: 2; padding: 2px 8px; border-radius: 999px;
+    background: rgba(20, 20, 34, 0.55); color: #fff; font-size: 11px; line-height: 1.6;
+  }
+  .thmap-pdetail-main { padding: 16px 20px 12px; }
+  .thmap-pdetail-main .policy-detail-head { display: grid; gap: 6px; padding-bottom: 4px; }
+  .thmap-pdetail-main .policy-detail-head h1 { margin: 2px 0 0; color: var(--ink); font-size: 20px; font-weight: 800; line-height: 1.3; }
+  .thmap-pdetail-main .policy-detail-section h2 { margin: 0 0 10px; color: var(--ink); font-size: 16px; font-weight: 800; line-height: 1.35; }
+  .thmap-pdetail-main .policy-detail-section h3 { margin: 14px 0 8px; color: var(--gray-600); font-size: 13px; font-weight: 700; }
+  .thmap-pdetail-bar {
+    flex: none; display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px 14px;
+    border-top: 1px solid var(--gray-200); background: var(--color-bg-card);
+  }
+  .thmap-pdetail-bar a { text-decoration: none; }
+  .thmap-pdetail-bar .toast { flex-basis: 100%; margin: 0; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .thmap-rg, .thmap-sheet, .thmap-toggle svg, .thmap-chev,

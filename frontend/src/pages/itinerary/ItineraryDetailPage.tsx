@@ -3918,7 +3918,7 @@ export function ItineraryDetailPage() {
 
   if (isLoading) {
     return (
-      <section className="screen with-tabs prototype-trip-detail-screen">
+      <section className="screen with-tabs prototype-trip-detail-screen desktop-wide">
         <LoadingState label="일정 상세를 불러오는 중입니다" />
       </section>
     );
@@ -3926,7 +3926,7 @@ export function ItineraryDetailPage() {
 
   if (error || !trip) {
     return (
-      <section className="screen with-tabs prototype-trip-detail-screen">
+      <section className="screen with-tabs prototype-trip-detail-screen desktop-wide">
         <ErrorState
           message={error ?? "일정 정보를 찾지 못했어요."}
           action={
@@ -3943,7 +3943,7 @@ export function ItineraryDetailPage() {
     <section
       className={
         [
-          "screen with-tabs prototype-trip-detail-screen",
+          "screen with-tabs prototype-trip-detail-screen desktop-wide",
           canEditTrip ? "" : "readonly-trip",
           isPreviewActive ? "recommendation-preview-active" : "",
         ]

@@ -20,9 +20,17 @@ const make = (id: string, title: string, region: string, extra: Partial<Policy> 
   ...extra,
 });
 
+/* 목록 줄의 제휴처 수는 수집된 상세의 핵심 혜택 문장에서 읽는다(실데이터 모양 그대로) */
+const partners = (place: string, count: number): Partial<Policy> => ({
+  cardSummary: "지역 제휴 혜택",
+  structuredDetail: {
+    supportContent: [{ title: "핵심 혜택", description: `${place} 제휴처 ${count}곳의 숙박, 식음, 체험, 관광지 혜택을 제공합니다.` }],
+  } as Policy["structuredDetail"],
+});
+
 const policies: Policy[] = [
-  make("yg", "[영광] 디지털관광주민증 혜택", "전남", { cardSummary: "제휴처 12곳 할인" }),
-  make("wd", "[완도] 디지털관광주민증 혜택", "전남", { cardSummary: "제휴처 9곳 할인" }),
+  make("yg", "[영광] 디지털관광주민증 혜택", "전남", partners("영광", 12)),
+  make("wd", "[완도] 디지털관광주민증 혜택", "전남", partners("완도", 9)),
   make("hd", "[하동] 대한민국 반값여행 지원", "경남"),
   make("rail", "내일로패스 할인", "전국"),
 ];
@@ -92,7 +100,8 @@ describe("PolicyMapSheet", () => {
     expect(group).toHaveAttribute("aria-expanded", "true");
     const kids = document.getElementById(group.getAttribute("aria-controls") as string) as HTMLElement;
     expect(within(kids).getByRole("link", { name: /영광/ })).toHaveAttribute("href", "/policies/yg");
-    // 받는 것이 지역마다 다르면 지역 줄마다 보인다
+    // 묶음 머리는 사업 공통 문구와 보이는 지역의 제휴처 합, 받는 것이 지역마다 다르면 지역 줄마다 보인다
+    expect(group).toHaveTextContent("제휴처 21곳에서 할인");
     expect(kids).toHaveTextContent("제휴처 12곳 할인");
     fireEvent.click(group);
     expect(group).toHaveAttribute("aria-expanded", "false");

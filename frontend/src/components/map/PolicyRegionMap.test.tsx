@@ -211,6 +211,32 @@ describe("PolicyRegionMap", () => {
     expect(document.querySelector(".thmap-lift")?.childElementCount).toBe(0);
   });
 
+  it("keeps the whole country in frame with zoom off but still fades the neighbours and dots the pick", () => {
+    // 넓은 화면: 지도가 넉넉해 다가가지 않는다. 움직임 없이 바로 제자리를 보도록 rAF 를 뺀다
+    const width = vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(800);
+    const height = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(600);
+    vi.stubGlobal("requestAnimationFrame", undefined);
+    const viewBox = () => (document.querySelector(".thmap-svg") as SVGSVGElement).getAttribute("viewBox");
+    try {
+      const { rerender } = render(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} focus zoom={false} />);
+      const whole = viewBox();
+      rerender(
+        <PolicyRegionMap counts={counts} onSelect={() => undefined} selected="전남" focus zoom={false} places={[{ name: "완도", count: 2 }]} />,
+      );
+      expect(viewBox()).toBe(whole);
+      expect(region("경기").classList.contains("thmap-dim")).toBe(true);
+      expect(document.querySelectorAll(".thmap-dot")).toHaveLength(1);
+      // 다가가기가 켜 있으면(좁은 화면) 같은 선택에 틀이 그 도로 좁아진다
+      cleanup();
+      render(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected="전남" focus />);
+      expect(viewBox()).not.toBe(whole);
+    } finally {
+      vi.unstubAllGlobals();
+      height.mockRestore();
+      width.mockRestore();
+    }
+  });
+
   it("tells the page when empty sea is tapped with nothing picked", () => {
     const onBackground = vi.fn();
     render(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} onBackground={onBackground} />);

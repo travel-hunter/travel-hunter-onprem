@@ -554,7 +554,7 @@ export function ItineraryCreatePage() {
   };
 
   return (
-    <section className="screen prototype-trip-create-screen">
+    <section className="screen prototype-trip-create-screen desktop-wide">
       <div className="prototype-create-top">
         <IconButton label="일정 목록" to="/trips">
           <ChevronLeft size={20} />

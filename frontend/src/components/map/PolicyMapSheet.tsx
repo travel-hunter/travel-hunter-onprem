@@ -5,6 +5,7 @@ import type { Policy } from "../../api";
 import { BENEFIT_TYPES, BenefitTile, benefitTypeOf } from "../benefitTile";
 import { cityOf, NATIONWIDE_REGION } from "../../utils/policyPrograms";
 import { deadlineChip, programName, type BrowseEntry, type BrowseView, type SheetStop } from "./policyBrowse";
+import { policyListText, PROGRAM_GROUP_COPY } from "./policyListText";
 
 /* 지도 위 목록 시트. 자리는 셋 - 지도 중심(머리 한 줄) · 반반(지역을 고르면 2/3) · 한 페이지.
    반반·지역 선택에서는 시트가 제자리에 서고 목록만 안에서 스크롤한다 - 스크롤로 시트가 올라가지 않는다.
@@ -29,6 +30,7 @@ export function sheetHeight(stop: SheetStop, picked: boolean, area: number) {
 
 export function PolicyMapSheet({
   enabled,
+  mode = "sheet",
   view,
   stop,
   region,
@@ -40,7 +42,12 @@ export function PolicyMapSheet({
   onClear,
   onNation,
   onRest,
+  onOpen,
 }: {
+  /** panel = 넓은 화면의 오른쪽 목록 패널. 끌기·높이 자리 없이 제자리에 선다 */
+  mode?: "sheet" | "panel";
+  /** 있으면 줄을 누를 때 상세 페이지 대신 이것을 부른다(새 탭 열기 등은 그대로 상세 주소로) */
+  onOpen?: (policy: Policy) => void;
   /** 지도 화면일 때만 보인다. 필터·검색 목록 위에 겹치면 안 된다. */
   enabled: boolean;
   view: BrowseView;
@@ -59,6 +66,7 @@ export function PolicyMapSheet({
   onRest?: (coverTop: number) => void;
 }) {
   const picked = region !== null;
+  const panel = mode === "panel";
   const sheetRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -125,17 +133,17 @@ export function PolicyMapSheet({
 
   /* 자리가 바뀌면(주소가 바뀌면) 그 높이로 */
   useLayoutEffect(() => {
-    if (!enabled || !area) return;
+    if (!enabled || !area || panel) return;
     const px = sheetHeight(stop, picked, area);
     apply(px, heightRef.current > 0);
     rest(px);
     updateScroll();
-  }, [enabled, stop, picked, area]);
+  }, [enabled, stop, picked, area, panel]);
 
   /* 끌기 - 머리·손잡이는 늘, 목록은 지도 중심(목록이 숨어 있다)과 한 페이지 맨 위에서만 */
   useEffect(() => {
     const sheet = sheetRef.current;
-    if (!enabled || !sheet) return;
+    if (!enabled || !sheet || panel) return;
     let drag: { id: number; y: number; from: number; last: number; t: number; v: number; moved: boolean } | null = null;
     const down = (event: PointerEvent) => {
       if (event.button !== 0) return;
@@ -212,7 +220,7 @@ export function PolicyMapSheet({
       sheet.removeEventListener("click", swallow, true);
       sheet.removeEventListener("wheel", wheel);
     };
-  }, [enabled]);
+  }, [enabled, panel]);
 
   /* ── 묶음 여닫기 ─────────────────────────────────────────────
      모든 지역은 접힌 채로, 지역을 고르면 펼친 채로 시작한다. 다시 누르면 닫히고 열기 전 스크롤 자리로. */
@@ -232,7 +240,7 @@ export function PolicyMapSheet({
     if (opening) origins.current.set(key, { top: list?.scrollTop ?? 0, scope: scopeKey });
     if (picked) setShut((set) => flip(set, key));
     else setOpened((set) => flip(set, key));
-    if (opening && !picked && stop !== "full") onStop("full");
+    if (opening && !picked && stop !== "full" && !panel) onStop("full");
     if (!opening && list) {
       const origin = origins.current.get(key);
       origins.current.delete(key);
@@ -277,7 +285,7 @@ export function PolicyMapSheet({
     const bar = barRef.current;
     if (!bar) return;
     const max = list.scrollHeight - list.clientHeight;
-    const on = max > 1 && live.current.stop !== "low";
+    const on = max > 1 && (panel || live.current.stop !== "low");
     bar.classList.toggle("on", on);
     if (on) bar.style.top = `${list.offsetTop + 4 + (list.clientHeight - 8 - BAR) * (list.scrollTop / max)}px`;
   }
@@ -285,17 +293,21 @@ export function PolicyMapSheet({
   if (!enabled) return null;
 
   const toggle = () => onStop(stop === "mid" ? "full" : "mid");
+  /* 패널은 늘 펼친 목록이다 - 시트 자리(낮게·한 페이지)가 없다 */
+  const at = panel ? "panel" : stop;
   return (
     <section
-      className={`thmap-sheet thmap-at-${stop}`}
+      className={`thmap-sheet thmap-at-${at}`}
       ref={sheetRef}
       aria-label="정책 목록"
     >
-      <button className="thmap-handle" type="button" aria-label="목록 펼치기 또는 접기" onClick={toggle}>
-        <i aria-hidden="true" />
-      </button>
+      {!panel && (
+        <button className="thmap-handle" type="button" aria-label="목록 펼치기 또는 접기" onClick={toggle}>
+          <i aria-hidden="true" />
+        </button>
+      )}
       {/* 지도 중심에서는 머리 전체가 올리는 손잡이다. 키보드는 오른쪽 ∧ 버튼을 쓴다 */}
-      <div className="thmap-head" onClick={stop === "low" ? toggle : undefined}>
+      <div className="thmap-head" onClick={at === "low" ? toggle : undefined}>
         <div className="thmap-head-main">
           {showBack && (
             <button className="thmap-hback" type="button" aria-label="뒤로" onClick={(event) => { event.stopPropagation(); onBack(); }}>
@@ -304,7 +316,7 @@ export function PolicyMapSheet({
           )}
           <div className="thmap-head-copy">
             <h2 className="thmap-title">{view.title} <span className="n">{view.count}건</span></h2>
-            <p className="thmap-hsub">{stop === "low" ? "누르거나 끌어 올리면 목록이 나와요" : view.sub}</p>
+            <p className="thmap-hsub">{at === "low" ? "누르거나 끌어 올리면 목록이 나와요" : view.sub}</p>
           </div>
         </div>
         <div className="thmap-head-actions">
@@ -313,21 +325,23 @@ export function PolicyMapSheet({
               {clearLabel}
             </button>
           )}
-          <button
-            className="thmap-toggle"
-            type="button"
-            aria-expanded={stop === "full"}
-            aria-label={stop === "full" ? "목록 접기" : "목록 펼치기"}
-            onClick={(event) => { event.stopPropagation(); toggle(); }}
-          >
-            <ChevronUp size={22} aria-hidden="true" />
-          </button>
+          {!panel && (
+            <button
+              className="thmap-toggle"
+              type="button"
+              aria-expanded={stop === "full"}
+              aria-label={stop === "full" ? "목록 접기" : "목록 펼치기"}
+              onClick={(event) => { event.stopPropagation(); toggle(); }}
+            >
+              <ChevronUp size={22} aria-hidden="true" />
+            </button>
+          )}
         </div>
       </div>
       <ul className="thmap-list" ref={listRef} onScroll={updateScroll}>
         {view.empty && <li className="thmap-empty">{view.empty}</li>}
         {view.entries.map((entry) => (
-          <EntryItem entry={entry} key={entry.kind === "row" ? entry.policy.id : entry.key} open={entry.kind !== "row" && isOpen(entry.key)} region={region} onToggle={toggleGroup} />
+          <EntryItem entry={entry} key={entry.kind === "row" ? entry.policy.id : entry.key} open={entry.kind !== "row" && isOpen(entry.key)} region={region} onToggle={toggleGroup} onOpen={onOpen} />
         ))}
         {view.nationMore > 0 && (
           <li>
@@ -342,18 +356,30 @@ export function PolicyMapSheet({
   );
 }
 
+/* 줄 누르기: onOpen 이 있으면(넓은 화면 패널) 그 자리에서 열고, 새 탭·가운데 누르기는 상세 주소 그대로 */
+function openHandler(policy: Policy, onOpen?: (policy: Policy) => void) {
+  if (!onOpen) return undefined;
+  return (event: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    onOpen(policy);
+  };
+}
+
 function EntryItem({
   entry,
   open,
   region,
   onToggle,
+  onOpen,
 }: {
   entry: BrowseEntry;
   open: boolean;
   region: string | null;
   onToggle: (key: string, head: Element | null) => void;
+  onOpen?: (policy: Policy) => void;
 }) {
-  if (entry.kind === "row") return <Row policy={entry.policy} prev={null} region={region} />;
+  if (entry.kind === "row") return <Row policy={entry.policy} prev={null} region={region} onOpen={onOpen} />;
   const { key, items } = entry;
   const id = `thmap-g-${encodeURIComponent(key)}`;
   const nation = entry.kind === "nation";
@@ -362,8 +388,18 @@ function EntryItem({
   const chip = deadlineChip(first, !sameDeadline);
   const kind = nation ? "nation" : benefitTypeOf(first);
   const title = nation ? "전국 공통 혜택" : key;
-  /* 받는 것이 지역마다 같으면 머리에 한 번만 - 다르면 지역 줄마다 보인다 */
-  const common = items.every((policy) => policy.cardSummary === first.cardSummary) ? first.cardSummary ?? null : null;
+  /* 머리와 같은 말은 되풀이하지 않는다(시안 v40) - 받는 것·지역 한 줄이 지역마다 다를 때만 지역 줄에 보인다.
+     묶음 머리는 사업 공통 문구(PROGRAM_GROUP_COPY)가 있으면 그것, 없으면 첫 곳의 받는 것 */
+  const texts = items.map(policyListText);
+  const firstText = texts[0];
+  const headVaries = texts.some((text) => text.head !== firstText.head);
+  const detailVaries = texts.some((text) => text.detail !== firstText.detail);
+  const copy = nation ? undefined : PROGRAM_GROUP_COPY[key];
+  const partnerSum = texts.reduce((sum, text) => sum + text.partners, 0);
+  const head = copy ? copy.head.replace("{sum}", partnerSum.toLocaleString("ko-KR")) : firstText.head;
+  const desc = copy?.desc ?? (detailVaries ? "" : firstText.detail);
+  const kidText = (index: number) =>
+    [headVaries ? texts[index].head : "", detailVaries ? texts[index].detail : ""].filter(Boolean).join(" · ");
   const lead = nation
     ? <><b>{items.length}건</b> · {Array.from(new Set(items.map((p) => BENEFIT_TYPES[benefitTypeOf(p)].label))).slice(0, 4).join("·")} 등</>
     : <><b>{items.length}곳</b> · {items.slice(0, 3).map((p) => cityOf(p) ?? p.region).join(", ")}{items.length > 3 ? " 등" : ""}</>;
@@ -375,7 +411,8 @@ function EntryItem({
         <span className="thmap-body">
           <span className="l1">{lead}</span>
           <span className="t">{title}</span>
-          {nation ? <span className="amt">어느 지역을 가도 쓸 수 있어요</span> : common && <span className="amt">{common}</span>}
+          {nation ? <span className="amt">어느 지역을 가도 쓸 수 있어요</span> : head && <span className="amt">{head}</span>}
+          {!nation && desc && <span className="desc">{desc}</span>}
         </span>
         <span className="thmap-side">
           <span className={`thmap-dday ${chip.tone}`}>{chip.text}</span>
@@ -395,30 +432,34 @@ function EntryItem({
       )}
       <ul className={nation ? "thmap-natlist" : "thmap-kids"} id={id} hidden={!open}>
         {nation
-          ? items.map((policy, index) => <Row key={policy.id} policy={policy} prev={items[index - 1] ?? null} region={region} />)
-          : items.map((policy) => <Kid key={policy.id} policy={policy} showRegion={!region} showAmount={!common} />)}
+          ? items.map((policy, index) => <Row key={policy.id} policy={policy} prev={items[index - 1] ?? null} region={region} onOpen={onOpen} />)
+          : items.map((policy, index) => <Kid key={policy.id} policy={policy} showRegion={!region} text={kidText(index)} onOpen={onOpen} />)}
       </ul>
     </li>
   );
 }
 
 /* 앞 줄과 같은 사업이면 이름·받는 것을 되풀이하지 않고 지역과 그곳만의 내용만 보인다 */
-function Row({ policy, prev, region }: { policy: Policy; prev: Policy | null; region: string | null }) {
+function Row({ policy, prev, region, onOpen }: { policy: Policy; prev: Policy | null; region: string | null; onOpen?: (policy: Policy) => void }) {
   const cont = Boolean(prev) && programName(prev as Policy) === programName(policy);
   const chip = deadlineChip(policy);
   const place = cityOf(policy);
   const where = !place
     ? <b>{policy.region === NATIONWIDE_REGION ? "전국 공통" : policy.region}</b>
     : region === policy.region ? <b>{place}</b> : <><b>{place}</b> · {policy.region}</>;
-  const amount = policy.cardSummary && !(cont && prev?.cardSummary === policy.cardSummary) ? policy.cardSummary : null;
+  const text = policyListText(policy);
+  const prevText = cont ? policyListText(prev as Policy) : null;
+  const amount = text.head && !(prevText && prevText.head === text.head) ? text.head : null;
+  const desc = text.detail && !(prevText && prevText.detail === text.detail) ? text.detail : null;
   return (
     <li className={cont ? "thmap-row cont" : "thmap-row"}>
-      <Link className="thmap-row-link" to={`/policies/${policy.slug}`}>
+      <Link className="thmap-row-link" to={`/policies/${policy.slug}`} onClick={openHandler(policy, onOpen)}>
         {!cont && <BenefitTile kind={benefitTypeOf(policy)} decorative={false} />}
         <span className="thmap-body">
           <span className="l1">{where}</span>
           {!cont && <span className="t">{programName(policy)}</span>}
           {amount && <span className="amt">{amount}</span>}
+          {desc && <span className="desc">{desc}</span>}
         </span>
         <span className="thmap-side">
           <span className={`thmap-dday ${chip.tone}`}>{chip.text}</span>
@@ -428,17 +469,17 @@ function Row({ policy, prev, region }: { policy: Policy; prev: Policy | null; re
   );
 }
 
-function Kid({ policy, showRegion, showAmount }: { policy: Policy; showRegion: boolean; showAmount: boolean }) {
+function Kid({ policy, showRegion, text, onOpen }: { policy: Policy; showRegion: boolean; text: string; onOpen?: (policy: Policy) => void }) {
   const chip = deadlineChip(policy);
   return (
     <li className="thmap-kid">
-      <Link className="thmap-kid-link" to={`/policies/${policy.slug}`}>
+      <Link className="thmap-kid-link" to={`/policies/${policy.slug}`} onClick={openHandler(policy, onOpen)}>
         <span className="kn">
           <b>{cityOf(policy) ?? policy.region}</b>
           {showRegion && <span className="reg">{policy.region}</span>}
         </span>
         <span className={`thmap-dday ${chip.tone}`}>{chip.text}</span>
-        {showAmount && policy.cardSummary && <span className="kd">{policy.cardSummary}</span>}
+        {text && <span className="kd">{text}</span>}
       </Link>
     </li>
   );

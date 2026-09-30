@@ -556,3 +556,151 @@
     min-height: 260px;
   }
 }
+
+/* 넓은 화면(1024px 이상, 시안 v41 '큰 상세'). PolicyDetailPage 가 useIsDesktop() 일 때만 .policy-detail-desk 로 그린다:
+   왼쪽 본문 카드(위 줄·사진·머리·절들) + 오른쪽 고정 카드(받는 것·기간·받는 방법 + 담기). 담기 창은 가운데 창. */
+@media (min-width: 1024px) {
+  .prototype-policy-detail-screen.screen.detail.policy-detail-desk {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    align-items: start;
+    gap: 28px;
+    /* app.css 의 900px 이상 '.screen.detail { max-width: 920px }' 를 풀고 틀(1200px) 전체를 쓴다.
+       가운데 1120px 에 모으되 회색 바탕은 틀 끝까지(padding 의 % 는 틀 폭 기준) */
+    max-width: none;
+    margin: 0;
+    padding: 20px max(32px, calc((100% - 1120px) / 2)) 48px;
+    border: 0;
+    border-radius: 0;
+    background: var(--gray-50);
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .policy-detail-main {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--gray-200);
+    border-radius: 18px;
+    background: var(--white);
+  }
+
+  .policy-detail-toprow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 12px 8px;
+  }
+
+  .policy-detail-toptitle {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--gray-600);
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .policy-detail-toprow .icon-btn {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--gray-700);
+  }
+
+  .policy-detail-toprow .icon-btn:hover:not(:disabled) {
+    background: var(--gray-100);
+  }
+
+  .prototype-policy-detail-screen.policy-detail-desk .policy-detail-hero {
+    height: 300px;
+    min-height: 300px;
+    margin: 0 20px;
+    border-radius: 14px;
+  }
+
+  .prototype-policy-detail-screen.policy-detail-desk .detail-body {
+    padding: 22px 28px 8px;
+  }
+
+  .prototype-policy-detail-screen.policy-detail-desk .policy-detail-head h1 {
+    font-size: 28px;
+  }
+
+  /* 오른쪽 고정 카드: 스크롤 상자는 .app-container 라 그 안에서 붙는다 */
+  .policy-detail-side {
+    position: sticky;
+    top: 20px;
+    min-width: 0;
+  }
+
+  .policy-detail-card {
+    overflow: hidden;
+    border: 1px solid var(--gray-200);
+    border-radius: 18px;
+    background: var(--white);
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+  }
+
+  .policy-detail-card .policy-detail-facts,
+  .policy-detail-card .policy-detail-facts.two {
+    grid-template-columns: minmax(0, 1fr);
+    margin: 0;
+    border: 0;
+  }
+
+  .policy-detail-card .policy-detail-facts > div {
+    padding: 14px 18px;
+  }
+
+  .policy-detail-card .policy-detail-facts > div + div {
+    padding-left: 18px;
+    border-left: 0;
+    border-top: 1px solid var(--gray-200);
+  }
+
+  .policy-detail-card .policy-detail-facts dd {
+    font-size: 16px;
+  }
+
+  /* 주 버튼이 위, 공식 안내가 아래(DOM 은 보조 → 주 순서라 뒤집는다). 알림·도움말은 버튼 아래 */
+  .policy-detail-side-actions {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 8px;
+    padding: 16px 18px 18px;
+    border-top: 1px solid var(--gray-200);
+  }
+
+  .policy-detail-side-actions .policy-detail-primary,
+  .policy-detail-side-actions .policy-detail-secondary {
+    flex: none;
+    width: 100%;
+  }
+
+  .policy-detail-side-actions .toast,
+  .policy-detail-side-actions .helper-text {
+    margin: 0;
+  }
+
+  /* 일정 담기 창: 아래에서 올라오는 시트 대신 가운데 창. 정책 탭 패널 상세는 창을 body 로 띄우며 .policy-trip-window 로 감싼다 */
+  .policy-detail-desk .sheet-backdrop,
+  .policy-trip-window .sheet-backdrop {
+    align-items: center;
+    justify-items: center;
+    padding: 24px;
+  }
+
+  .policy-detail-desk .trip-select-sheet,
+  .policy-trip-window .trip-select-sheet {
+    width: min(100%, 440px);
+    max-height: min(80dvh, 640px);
+    padding: 20px;
+    border-radius: 18px;
+    box-shadow: 0 22px 70px rgba(15, 23, 42, 0.24);
+  }
+}

@@ -1,4 +1,5 @@
 ﻿import type { Policy } from "../api";
+import { daysUntilPolicyDeadline, isDigitalTourismResidentCardPolicy } from "../utils";
 import { NATIONWIDE_REGION } from "../utils/policyPrograms";
 
 type PolicyMoodSource = {
@@ -93,22 +94,24 @@ function compareDeadlineHomePolicies(left: Policy, right: Policy): number {
   return left.title.localeCompare(right.title, "ko");
 }
 
-export type HomeBenefitPick = { title: string; policies: Policy[] };
+/* 홈 목록은 근거 없는 "인기"(match 는 백엔드가 전부 90) 대신 실제 데이터로 고른다.
+   '마감이 가까운 혜택'(시안 v40): 마감일이 있고 아직 안 지난 혜택 전부를 마감순 - 전국도 넣는다(2026-09-30 사용자 결정).
+   상시(주민증)는 마감이 없으니 뺀다. */
+export function getClosingSoonHomePolicies(policies: Policy[] | null | undefined): Policy[] {
+  return (policies ?? [])
+    .filter((policy) => !isDigitalTourismResidentCardPolicy(policy) && (daysUntilPolicyDeadline(policy.deadline) ?? -1) >= 0)
+    .sort(compareDeadlineHomePolicies);
+}
 
-/* 홈 목록. 근거 없는 "인기"(match 는 백엔드가 전부 90) 대신 실제 데이터로 고른다:
-   관심 지역 정책이 있으면 그것만 마감순, 없으면 전체 지역 정책을 마감순. 전국은 홈 카드가 따로 맡는다. */
-export function getHomeBenefitPolicies(
+/* '내 관심 지역 혜택': 관심 지역의 지역 정책(상시 포함)을 마감순. 관심 지역이 없으면 빈 목록 - 홈은 그때 이 칸을 안 그린다. */
+export function getInterestRegionHomePolicies(
   policies: Policy[] | null | undefined,
-  limit: number,
   preferredRegions: readonly string[] | null | undefined,
-): HomeBenefitPick {
-  const regional = (policies ?? []).filter((policy) => policy.region !== NATIONWIDE_REGION);
+): Policy[] {
   const wanted = new Set((preferredRegions ?? []).map((region) => region.trim()).filter(Boolean));
-  const mine = wanted.size > 0 ? regional.filter((policy) => wanted.has(policy.region)) : [];
-  if (mine.length > 0) {
-    return { title: "내 관심 지역 혜택", policies: [...mine].sort(compareDeadlineHomePolicies).slice(0, limit) };
-  }
-  return { title: "마감 임박 혜택", policies: [...regional].sort(compareDeadlineHomePolicies).slice(0, limit) };
+  return (policies ?? [])
+    .filter((policy) => policy.region !== NATIONWIDE_REGION && wanted.has(policy.region))
+    .sort(compareDeadlineHomePolicies);
 }
 
 export function getNationwideHomePolicies(policies: Policy[] | null | undefined): Policy[] {

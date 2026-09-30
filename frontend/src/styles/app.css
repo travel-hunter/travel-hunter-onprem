@@ -4394,6 +4394,15 @@
   }
 }
 
+/* 넓은 화면 배치(1024px 이상, 시안 v41). 배치를 새로 짠 화면만 화면 section 에 .desktop-wide 를 달아 틀을 넓히고,
+   나머지 화면은 지금 폭 그대로 둔다. 기준 폭은 lib/useMediaQuery.ts 의 DESKTOP_MEDIA_QUERY 와 같아야 한다. */
+@media (min-width: 1024px) {
+  .service-layout:has(.desktop-wide) {
+    width: min(100vw, 1200px);
+    max-width: 1200px;
+  }
+}
+
 @media (min-width: 1200px) {
   .service-layout {
     width: min(100vw, 820px);
@@ -5565,6 +5574,138 @@
 .prototype-trip-list-screen .itinerary-card-menu-list > button:disabled {
   cursor: default;
   opacity: 0.72;
+}
+
+/* 가운데 창일 때만 쓰는 바탕과 일정 이름. 좁은 화면에서는 카드 옆 작은 목록이라 숨긴다. */
+.prototype-trip-list-screen .itinerary-card-menu-scrim,
+.prototype-trip-list-screen .itinerary-card-menu-title {
+  display: none;
+}
+
+/* ── 일정 탭 넓은 화면(1024px 이상, 시안 v41) ───────────────────────────────
+   목록 2열, 상세 두 단(왼쪽 내용 + 오른쪽 고정 지도), ⋯ 메뉴·여행기간 수정은 가운데 창,
+   새 일정 만들기는 가운데 한 줄. 1024px 아래는 건드리지 않는다. */
+@media (min-width: 1024px) {
+  /* 목록: 가운데 1040px 안에서 2열 */
+  .prototype-trip-list-screen.desktop-wide .prototype-screen-head,
+  .prototype-trip-list-screen.desktop-wide .prototype-trip-list-content {
+    box-sizing: border-box;
+    width: min(100%, 1040px);
+    margin-inline: auto;
+  }
+
+  .prototype-trip-list-screen.desktop-wide .prototype-trip-list-content {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    padding-bottom: 48px;
+  }
+
+  /* 불러오는 중·빈 목록·오류는 두 칸을 다 쓴다 */
+  .prototype-trip-list-screen.desktop-wide .prototype-trip-list-content > :not(.itinerary-card) {
+    grid-column: 1 / -1;
+  }
+
+  /* ⋯ 메뉴는 가운데 창 */
+  .prototype-trip-list-screen .itinerary-card-menu-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 110;
+    display: block;
+    border: 0;
+    background: rgba(15, 23, 42, 0.38);
+    cursor: default;
+  }
+
+  .prototype-trip-list-screen .itinerary-card-menu-list {
+    position: fixed;
+    top: 50%;
+    right: auto;
+    left: 50%;
+    z-index: 120;
+    width: min(calc(100vw - 48px), 300px);
+    padding: 10px;
+    border-radius: 20px;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 22px 70px rgba(15, 23, 42, 0.24);
+  }
+
+  .prototype-trip-list-screen .itinerary-card-menu-title {
+    display: block;
+    overflow: hidden;
+    padding: 8px 12px 6px;
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 상세: 머리는 한 줄 가득, 그 아래 왼쪽 내용 + 오른쪽 고정 지도.
+     지도(.prototype-map-wrap)는 화면 section 의 바로 아래 자식이라(DndContext 는 DOM 을 만들지 않는다)
+     그리드 칸만 옮기면 한 번만 그린 채 오른쪽에 선다. 순서·동작은 그대로다. */
+  .prototype-trip-detail-screen.desktop-wide {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+    column-gap: 24px;
+    align-content: start;
+    align-items: start;
+  }
+
+  .prototype-trip-detail-screen.desktop-wide > * {
+    grid-column: 1;
+    min-width: 0;
+  }
+
+  .prototype-trip-detail-screen.desktop-wide > .prototype-trip-detail-hero {
+    grid-column: 1 / -1;
+  }
+
+  .prototype-trip-detail-screen.desktop-wide > .prototype-map-wrap {
+    position: sticky;
+    top: 16px;
+    grid-column: 2;
+    grid-row: 2 / span 40;
+    margin: 20px 24px 32px 0;
+  }
+
+  .prototype-trip-detail-screen.desktop-wide > .prototype-map-wrap .prototype-full-map,
+  .prototype-trip-detail-screen.desktop-wide > .prototype-map-wrap > .kakao-map-view {
+    height: clamp(420px, calc(100dvh - 240px), 620px);
+    min-height: 420px;
+  }
+
+  /* 여행기간 수정은 가운데 창. 달력이 길면 창 안에서 굴린다. */
+  .trip-date-editor-backdrop {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .trip-date-editor-sheet {
+    box-sizing: border-box;
+    max-height: calc(100dvh - 48px);
+    margin: 0 auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 20px;
+    box-shadow: 0 22px 70px rgba(15, 23, 42, 0.24);
+  }
+
+  .trip-date-editor-sheet .sheet-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* 새 일정 만들기: 가운데 560px 한 줄. 아래 버튼 줄은 폭 가득 두고 버튼만 같은 줄에 맞춘다. */
+  .prototype-trip-create-screen.desktop-wide > .prototype-create-top,
+  .prototype-trip-create-screen.desktop-wide > .prototype-create-progress,
+  .prototype-trip-create-screen.desktop-wide > .prototype-create-content {
+    box-sizing: border-box;
+    width: min(100%, 560px);
+    align-self: center;
+  }
+
+  .prototype-trip-create-screen.desktop-wide .prototype-create-sticky-actions {
+    padding-inline: max(16px, calc(50% - 280px));
+  }
 }
 
 .prototype-trip-list-screen .itinerary-card .meta {

@@ -1193,7 +1193,8 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     const css = readFileSync("src/styles/app.css", "utf8");
 
     // 뒤로가기 버튼은 left 14px 에 20px 이다. 왼쪽 여백이 34px 보다 작으면 글이 버튼에 깔린다.
-    const hero = /\.prototype-trip-detail-hero\s*\{([^}]*)\}/s.exec(css)?.[1] ?? "";
+    // 줄 머리에서 시작하는 기본 규칙만 본다(넓은 화면 @media 안의 덮어쓰기는 들여 써 있다).
+    const hero = /^\.prototype-trip-detail-hero\s*\{([^}]*)\}/ms.exec(css)?.[1] ?? "";
     const padding = /padding:\s*([^;]+);/.exec(hero)?.[1] ?? "";
     const left = Number(padding.trim().split(/\s+/)[3]?.replace("px", ""));
     expect(left).toBeGreaterThanOrEqual(34);

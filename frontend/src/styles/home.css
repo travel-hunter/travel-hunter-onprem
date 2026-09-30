@@ -122,7 +122,8 @@
   color: var(--status-draft-text);
 }
 
-.home-deadline-badge.later {
+.home-deadline-badge.later,
+.home-deadline-badge.always {
   background: var(--gray-100);
   color: var(--gray-700);
   font-weight: 500;
@@ -331,5 +332,94 @@
   .home-row {
     flex-wrap: wrap;
     overflow: visible;
+  }
+}
+
+/* 넓은 화면(1024px 이상, 시안 v41 데스크톱). 가운데 1040px 판을 두 단 격자로 쓰고, 한 줄 카드 두 장
+   (전국 공통 · 일정 만들기 또는 AI 추천)만 나란히, 나머지는 한 줄을 다 쓴다. 가로 넘김 줄은 격자로 편다 -
+   마감 임박 3열, 지역 4열(지도 + 7곳으로 두 줄을 꽉 채운다). 옆 여백은 판이 맡으므로 gutter 는 0 으로. */
+@media (min-width: 1024px) {
+  .service-layout .prototype-home-screen.desktop-wide {
+    --app-page-gutter: 0px;
+
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 16px;
+    align-content: start;
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 0 32px 40px;
+  }
+
+  .prototype-home-screen.desktop-wide > * {
+    grid-column: 1 / -1;
+  }
+
+  /* 768px 부터 숨긴 검색 줄을 되살린다(시안). 아바타는 위 메뉴의 '마이'가 같은 일을 한다. */
+  .service-layout .prototype-home-screen.desktop-wide .prototype-home-search-row {
+    display: flex;
+    padding: 24px 0 4px;
+  }
+
+  .prototype-home-screen.desktop-wide .prototype-home-search-pill {
+    flex: 0 1 520px;
+    padding: 0 16px;
+  }
+
+  .prototype-home-screen.desktop-wide .prototype-home-avatar {
+    display: none;
+  }
+
+  .service-layout .prototype-home-screen.desktop-wide .prototype-home-greeting {
+    padding: 12px 0 20px;
+  }
+
+  .prototype-home-screen.desktop-wide .ds-section-header {
+    padding: 0 2px 4px;
+  }
+
+  .prototype-home-screen.desktop-wide .home-row {
+    display: grid;
+    gap: 12px;
+    padding: 8px 0 0;
+    overflow: visible;
+    scroll-snap-type: none;
+  }
+
+  .prototype-home-screen.desktop-wide .home-row-deadline {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .prototype-home-screen.desktop-wide .home-row-regions {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .prototype-home-screen.desktop-wide .home-row-regions > :nth-child(n + 9) {
+    display: none;
+  }
+
+  .prototype-home-screen.desktop-wide .home-row > li > * {
+    flex: 1;
+    width: auto;
+  }
+
+  .prototype-home-screen.desktop-wide .home-deadline-card {
+    min-height: 156px;
+  }
+
+  .prototype-home-screen.desktop-wide .home-map-card,
+  .prototype-home-screen.desktop-wide .home-region-card {
+    height: 200px;
+  }
+
+  .prototype-home-screen.desktop-wide .home-map {
+    height: 142px;
+  }
+
+  .prototype-home-screen.desktop-wide > .home-line-card,
+  .prototype-home-screen.desktop-wide > .home-ai-block {
+    grid-column: auto;
+    align-self: start;
+    margin: 2px 0 10px;
   }
 }

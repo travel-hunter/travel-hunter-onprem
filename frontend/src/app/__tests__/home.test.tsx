@@ -40,7 +40,7 @@ describe("Travel Hunter app — home", () => {
     renderAppRoute("/home");
 
     const deadlineSection = await screen.findByRole("region", {
-      name: /내 관심 지역 혜택|마감 임박 혜택/,
+      name: "마감이 가까운 혜택",
     });
     expect(document.body).toHaveTextContent("어디로 떠나세요?");
     expect(screen.getByLabelText("마이페이지")).toBeInTheDocument();
@@ -56,8 +56,9 @@ describe("Travel Hunter app — home", () => {
     );
     expect(cards.length).toBeGreaterThan(0);
     expect(cards.length).toBeLessThanOrEqual(6);
-    expect(cards[0].getAttribute("href")).toMatch(/^\/policies\/.+/);
-    expect(cards[0].querySelector(".home-deadline-badge")).toHaveTextContent(/D-|상시|마감/);
+    // 한 곳이면 그 상세, 여러 곳 묶음이면 정책 탭의 그 사업
+    expect(cards[0].getAttribute("href")).toMatch(/^\/policies(\/.+|\?.*prog=.+)$/);
+    expect(cards[0].querySelector(".home-deadline-badge")).toHaveTextContent(/D-|마감/);
     expect(cards[0].querySelector(".home-deadline-where")).toHaveTextContent(/\S/);
     // 조건 줄·'상세 보기' 꼬리는 카드에서 뺐다 - 상세 화면의 몫이다
     expect(cards[0]).not.toHaveTextContent("조건:");
@@ -73,6 +74,11 @@ describe("Travel Hunter app — home", () => {
       .filter((link) => link.classList.contains("home-region-card"));
     expect(regionLinks.length).toBeGreaterThan(0);
     expect(regionLinks[0].getAttribute("href")).toMatch(/^\/policies\?place=.+&sheet=1$/);
+
+    // 넓은 화면 배치의 걸쇠: 이 표시가 있어야 1024px 이상에서 앱 틀이 넓어지고(app.css) 두 줄이 격자로 펴진다(home.css)
+    expect(document.querySelector(".prototype-home-screen")).toHaveClass("desktop-wide");
+    expect(deadlineSection.querySelector(".home-row")).toHaveClass("home-row-deadline");
+    expect(regionSection.querySelector(".home-row")).toHaveClass("home-row-regions");
   });
 
   it("folds places of the same program into one deadline card, soonest first", async () => {
@@ -140,27 +146,31 @@ describe("Travel Hunter app — home", () => {
       cleanup();
       renderAppRoute("/home");
 
-      const list = await screen.findByRole("list", { name: "마감 임박 혜택 목록" });
+      const list = await screen.findByRole("list", { name: "마감이 가까운 혜택 목록" });
       const cards = within(list).getAllByRole("link");
-      expect(cards).toHaveLength(4);
+      // 마감이 없는 디지털관광주민증은 '마감이 가까운 혜택'에 들지 않는다
+      expect(cards).toHaveLength(3);
+      expect(list).not.toHaveTextContent("디지털관광주민증");
       expect(cards[0]).toHaveTextContent("청년 여행 지원");
       expect(cards[0]).toHaveTextContent("서울");
+      expect(cards[0]).toHaveAttribute("href", "/policies/youth-seoul");
+      expect(cards[0].querySelector(".home-deadline-badge")).toHaveTextContent(/^D-20$/);
 
-      // 지명만 다른 반값여행 세 곳이 한 장이다. 가장 빠른 마감의 곳부터 이름을 대고, 그곳 상세로 간다.
+      // 지명만 다른 반값여행 세 곳이 한 장이다. 가장 빠른 마감의 곳부터 이름을 대고, 정책 탭의 그 사업으로 간다.
+      // 받는 것은 사업 공통 문구(정책 탭 목록 묶음 머리와 같음)
       expect(cards[1]).toHaveTextContent("대한민국 반값여행 지원");
-      expect(cards[1]).toHaveTextContent("최대 20만원 환급");
+      expect(cards[1].querySelector(".home-deadline-summary")).toHaveTextContent("여행비 50% 환급 · 최대 20만원");
       expect(cards[1].querySelector(".home-deadline-where")).toHaveTextContent("강진 · 합천 외 1곳");
-      expect(cards[1]).toHaveAttribute("href", "/policies/halfprice-gangjin");
+      expect(cards[1]).toHaveAttribute("href", `/policies?${new URLSearchParams({ prog: "대한민국 반값여행 지원" })}`);
       expect(screen.queryByText("[합천] 대한민국 반값여행 지원")).toBeNull();
 
-      // 곳마다 금액이 다르면 첫 곳 금액을 묶음 전체 금액처럼 싣지 않는다
+      // 곳마다 금액이 다르면 첫 곳 금액을 묶음 전체 금액처럼 싣지 않는다. 한 지역 안의 묶음은 그 지역으로 좁혀 보낸다
       expect(cards[2]).toHaveTextContent("숙박세일 페스타 숙박 할인");
       expect(cards[2].querySelector(".home-deadline-summary")).toBeNull();
-
-      // 마감일이 없는 디지털관광주민증은 맨 뒤, '상시 발급'
-      expect(cards[3]).toHaveTextContent("디지털관광주민증 혜택");
-      expect(cards[3].querySelector(".home-deadline-badge")).toHaveTextContent("상시 발급");
-      expect(cards[3]).toHaveTextContent("지역 제휴 혜택");
+      expect(cards[2]).toHaveAttribute(
+        "href",
+        `/policies?${new URLSearchParams({ place: "강원", prog: "숙박세일 페스타 숙박 할인" })}`,
+      );
       expect(document.body).not.toHaveTextContent("마감일 확인 필요");
     } finally {
       getProfileSpy.mockRestore();
@@ -184,7 +194,7 @@ describe("Travel Hunter app — home", () => {
       cleanup();
       renderAppRoute("/home");
 
-      const list = await screen.findByRole("list", { name: "마감 임박 혜택 목록" });
+      const list = await screen.findByRole("list", { name: "마감이 가까운 혜택 목록" });
       const titles = within(list)
         .getAllByRole("link")
         .map((link) => link.querySelector("strong")?.textContent);
@@ -239,11 +249,20 @@ describe("Travel Hunter app — home", () => {
     }
   });
 
-  it("prefers preferred-region policies and labels the list by that rule", async () => {
+  it("shows closing-soon benefits nationwide first, then the preferred regions' own row", async () => {
     const policies: Policy[] = [
-      policy({ id: "b1", title: "부산 늦은 혜택", region: "부산", deadline: "2026-12-31" }),
-      policy({ id: "j1", title: "전남 임박 혜택", region: "전남", deadline: "2026-07-01" }),
-      policy({ id: "n1", title: "전국 교통 혜택", region: "전국", deadline: "2026-07-02" }),
+      policy({ id: "b1", title: "부산 늦은 혜택", region: "부산", deadline: testIsoDateFromToday(90) }),
+      policy({ id: "j1", title: "전남 임박 혜택", region: "전남", deadline: testIsoDateFromToday(3) }),
+      policy({ id: "n1", title: "전국 교통 혜택", region: "전국", deadline: testIsoDateFromToday(10) }),
+      policy({ id: "old", title: "지난 혜택", region: "전남", deadline: testIsoDateFromToday(-1) }),
+      policy({
+        id: "dgtour-busan",
+        title: "[부산동구] 디지털관광주민증 혜택",
+        region: "부산",
+        deadline: "",
+        cardSummary: "지역 제휴 혜택",
+        officialUrl: "https://korean.visitkorea.or.kr/dgtourcard/biz/regn/regnMain.do?mtpcDoCd=26&signguCd=26170",
+      }),
     ];
     const listPoliciesSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
     const getProfileSpy = vi.spyOn(appDataApi, "getProfile").mockResolvedValue({
@@ -257,13 +276,29 @@ describe("Travel Hunter app — home", () => {
       cleanup();
       renderAppRoute("/home");
 
-      // 관심 지역이 있으면 그 지역 정책만, 제목도 그 규칙을 말한다
-      const list = await screen.findByRole("list", { name: "내 관심 지역 혜택 목록" });
-      await waitFor(() => expect(within(list).getAllByRole("link")).toHaveLength(1));
-      expect(within(list).getByText("부산 늦은 혜택")).toBeInTheDocument();
-      expect(within(list).queryByText("전남 임박 혜택")).toBeNull();
-      // 전국은 지역 줄이 아니라 아래 전국 한 줄 카드 몫이다 - 카드는 정책을 늘어놓지 않고 목록으로 보낸다
-      expect(within(list).queryByText("전국 교통 혜택")).toBeNull();
+      // 마감이 가까운 혜택: 지역을 가리지 않고(전국 포함) 아직 안 지난 마감순. 지난 것·상시는 빠진다
+      const closing = await screen.findByRole("list", { name: "마감이 가까운 혜택 목록" });
+      await waitFor(() =>
+        expect(within(closing).getAllByRole("link").map((link) => link.querySelector("strong")?.textContent)).toEqual([
+          "전남 임박 혜택",
+          "전국 교통 혜택",
+          "부산 늦은 혜택",
+        ]),
+      );
+      expect(within(closing).getAllByRole("link")[1].querySelector(".home-deadline-where")).toHaveTextContent("전국 공통");
+
+      // 그다음 줄이 내 관심 지역 혜택: 그 지역 정책만, 상시 주민증은 맨 뒤 '상시'
+      const mine = await screen.findByRole("list", { name: "내 관심 지역 혜택 목록" });
+      expect(closing.compareDocumentPosition(mine) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const mineCards = within(mine).getAllByRole("link");
+      expect(mineCards.map((link) => link.querySelector("strong")?.textContent)).toEqual([
+        "부산 늦은 혜택",
+        "디지털관광주민증 혜택",
+      ]);
+      expect(mineCards[1].querySelector(".home-deadline-badge")).toHaveTextContent(/^상시$/);
+      expect(within(mine).queryByText("전남 임박 혜택")).toBeNull();
+      expect(within(mine).queryByText("전국 교통 혜택")).toBeNull();
+      // 전국 한 줄 카드는 그대로 - 정책을 늘어놓지 않고 목록으로 보낸다
       const nationwideCard = screen.getByRole("link", { name: /전국 공통 혜택 1건/ });
       expect(nationwideCard).toHaveAttribute("href", "/policies?region=전국");
       expect(within(nationwideCard).queryByText("전국 교통 혜택")).toBeNull();
@@ -273,18 +308,18 @@ describe("Travel Hunter app — home", () => {
     }
   });
 
-  it("falls back to deadline order without preferred regions and counts nationwide policies on the card", async () => {
+  it("skips the preferred-region row without preferred regions and counts nationwide policies on the card", async () => {
     const nationwide = Array.from({ length: 7 }, (_, index) =>
       policy({
         id: `n${index}`,
         title: `전국 혜택 ${index + 1}`,
         region: "전국",
-        deadline: `2026-08-0${index + 1}`,
+        deadline: testIsoDateFromToday(10 + index),
       }),
     );
     const policies: Policy[] = [
       ...nationwide,
-      policy({ id: "j1", title: "전남 임박 혜택", region: "전남", deadline: "2026-07-01" }),
+      policy({ id: "j1", title: "전남 임박 혜택", region: "전남", deadline: testIsoDateFromToday(3) }),
     ];
     const listPoliciesSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
     const getProfileSpy = vi.spyOn(appDataApi, "getProfile").mockResolvedValue({
@@ -298,13 +333,16 @@ describe("Travel Hunter app — home", () => {
       cleanup();
       renderAppRoute("/home");
 
-      const list = await screen.findByRole("list", { name: "마감 임박 혜택 목록" });
+      const list = await screen.findByRole("list", { name: "마감이 가까운 혜택 목록" });
       const nationwideCard = screen.getByRole("link", { name: /전국 공통 혜택 7건/ });
       expect(nationwideCard).toHaveAttribute("href", "/policies?region=전국");
       // 카드 안에는 정책 제목이 없다
       expect(within(nationwideCard).queryByText(/전국 혜택 \d/)).toBeNull();
-      await waitFor(() => expect(within(list).getAllByRole("link")).toHaveLength(1));
-      expect(within(list).getByText("전남 임박 혜택")).toBeInTheDocument();
+      // 전국도 마감이 가까운 혜택에 든다 - 여섯 장까지
+      await waitFor(() => expect(within(list).getAllByRole("link")).toHaveLength(6));
+      expect(within(list).getAllByRole("link")[0]).toHaveTextContent("전남 임박 혜택");
+      // 관심 지역을 안 골랐으면 그 줄은 없다(배너가 고르기를 권한다)
+      expect(screen.queryByRole("region", { name: "내 관심 지역 혜택" })).toBeNull();
     } finally {
       getProfileSpy.mockRestore();
       listPoliciesSpy.mockRestore();
