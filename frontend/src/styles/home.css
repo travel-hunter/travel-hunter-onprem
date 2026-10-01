@@ -51,8 +51,8 @@
   color: var(--gray-500);
 }
 
-/* 홈 맨 위 배너(시안 v42): 한 장씩 옆으로. 장마다 혜택 형태 색이라 넘어가는 게 보인다.
-   누르는 버튼은 30px 로 그리고 보이지 않는 범위로 44px 를 채운다. */
+/* 홈 맨 위 배너(시안 v45): 가운데 장 하나를 좁게(폰 80%) 두고, 앞뒤 장은 작고 흐리게 뒤에 겹쳐 양옆으로 비친다.
+   장의 자리는 data-pos(0 가운데, ±1 옆, x 숨김) - HomeHeroBanner.tsx. 장마다 혜택 형태 색이라 넘어가는 게 보인다. */
 .family-place {
   --tb: var(--primary-50);
   --tf: var(--primary-100);
@@ -61,31 +61,55 @@
 
 .home-hero {
   position: relative;
-  margin: 0 var(--app-page-gutter) 18px;
+  height: 128px;
+  margin: 0 0 18px;
   overflow: hidden;
-  border-radius: 16px;
-}
-
-.home-hero-track {
-  display: flex;
-  transition: transform 0.45s ease;
   touch-action: pan-y;
   user-select: none;
 }
 
 .home-hero-slide {
+  position: absolute;
+  top: 4px;
+  bottom: 8px;
+  left: 50%;
+  z-index: 1;
   display: flex;
-  flex: 0 0 100%;
   align-items: center;
   gap: 14px;
+  width: 80%;
   min-width: 0;
-  min-height: 116px;
-  padding: 14px 16px 34px;
+  padding: 14px 16px;
   border: 1px solid var(--tf);
   border-radius: 16px;
   background: var(--tb);
   color: var(--ink);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.1);
+  opacity: 0;
+  transform: translateX(-50%) scale(0.8);
+  transition:
+    transform 0.45s ease,
+    opacity 0.45s ease;
   -webkit-user-drag: none;
+}
+
+.home-hero-slide[data-pos="0"] {
+  z-index: 3;
+  opacity: 1;
+  transform: translateX(-50%);
+}
+
+.home-hero-slide[data-pos="1"],
+.home-hero-slide[data-pos="-1"] {
+  --peek: 17%;
+
+  z-index: 2;
+  opacity: 0.55;
+  transform: translateX(-50%) translateX(var(--peek)) scale(0.88);
+}
+
+.home-hero-slide[data-pos="-1"] {
+  transform: translateX(-50%) translateX(calc(var(--peek) * -1)) scale(0.88);
 }
 
 .home-hero-slide .benefit-tile,
@@ -152,46 +176,36 @@
   font-size: 22px;
 }
 
-.home-hero-controls {
+/* 멈춤(WCAG 2.2.2): 화면에는 안 보이고, 키보드 초점이 가면 가운데 장 오른쪽 아래에 나타난다 */
+.home-hero-pause {
   position: absolute;
-  right: 8px;
-  bottom: 4px;
+  right: calc(10% + 10px);
+  bottom: 14px;
+  z-index: 4;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  background: var(--ink);
+  color: var(--white);
+  font-size: 13px;
+  font-weight: 500;
 }
 
-.home-hero-controls button {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 15px;
-  background: transparent;
-  color: var(--gray-700);
-}
-
-.home-hero-controls button::after {
-  position: absolute;
-  inset: -7px -3px;
-  content: "";
-}
-
-.home-hero-count {
-  min-width: 34px;
-  color: var(--gray-700);
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
-.home-hero-count b {
-  color: var(--ink);
+.home-hero-pause:not(:focus-visible) {
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home-hero-track {
+  .home-hero-slide {
     transition: none;
   }
 }
@@ -503,7 +517,7 @@
   font-size: 22px;
 }
 
-.home-hero-controls button:focus-visible,
+.home-hero-pause:focus-visible,
 .home-banner-go:focus-visible,
 .home-banner-close:focus-visible,
 .home-deadline-card:focus-visible,
@@ -527,9 +541,9 @@
   }
 }
 
-/* 넓은 화면(1024px 이상, 시안 v41 데스크톱). 화면 폭 전부(2026-10-01)를 두 단 격자로 쓰고, 한 줄 카드 두 장
-   (전국 공통 · 일정 만들기 또는 AI 추천)만 나란히, 나머지는 한 줄을 다 쓴다. 가로 넘김 줄은 격자로 편다 -
-   마감 카드는 들어가는 만큼, 지역 4열(지도 + 7곳으로 두 줄), 아주 넓으면 한 줄 9장. 옆 여백은 판이 맡으므로 gutter 는 0 으로. */
+/* 넓은 화면(1024px 이상, 시안 v41 데스크톱). 시안 비율대로 화면의 81.25% 판(옆 여백 32px)을 두 단 격자로 쓰고,
+   한 줄 카드 두 장(전국 공통 · 일정 만들기 또는 AI 추천)만 나란히, 나머지는 한 줄을 다 쓴다. 가로 넘김 줄은 격자로 편다 -
+   마감 3열, 지역 4열(지도 + 7곳으로 두 줄). 지역 카드는 시안 모양(235:200)대로 판과 함께 커진다. 옆 여백은 판이 맡으므로 gutter 는 0 으로. */
 @media (min-width: 1024px) {
   .service-layout .prototype-home-screen.desktop-wide {
     --app-page-gutter: 0px;
@@ -538,16 +552,17 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 16px;
     align-content: start;
+    width: 81.25%;
     max-width: none;
-    margin: 0;
-    padding: 0 var(--desk-gutter) 40px;
+    margin: 0 auto;
+    padding: 0 32px 40px;
   }
 
   .prototype-home-screen.desktop-wide > * {
     grid-column: 1 / -1;
   }
 
-  /* 768px 부터 숨긴 검색 줄을 되살린다(시안). 아바타는 위 메뉴의 '마이'가 같은 일을 한다. */
+  /* 768px 부터 숨긴 검색 줄을 되살린다(시안). 아바타는 위 메뉴의 '내 정보'가 같은 일을 한다. */
   .service-layout .prototype-home-screen.desktop-wide .prototype-home-search-row {
     display: flex;
     padding: 24px 0 4px;
@@ -578,10 +593,8 @@
     scroll-snap-type: none;
   }
 
-  /* 마감 카드는 한 장 340px 이상으로 들어가는 만큼(1280 에서 3열, 1920 에서 5열).
-     auto-fill 이라 한 장뿐인 줄(관심 지역)도 카드가 화면 끝까지 늘어나지 않는다 */
   .prototype-home-screen.desktop-wide .home-row-deadline {
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .prototype-home-screen.desktop-wide .home-row-regions {
@@ -603,27 +616,36 @@
 
   .prototype-home-screen.desktop-wide .home-map-card,
   .prototype-home-screen.desktop-wide .home-region-card {
-    height: 200px;
+    height: auto;
+    aspect-ratio: 235 / 200;
   }
 
   .prototype-home-screen.desktop-wide .home-map {
-    height: 142px;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .prototype-home-screen.desktop-wide .home-hero {
+    height: 140px;
   }
 
   .prototype-home-screen.desktop-wide .home-hero-slide {
-    min-height: 128px;
-    padding: 18px 24px 36px;
+    --peek: 26%;
+
+    width: 60%;
+    padding: 18px 24px;
   }
 
-  /* 아주 넓은 화면은 지역 줄을 한 줄 9장(지도 + 시군 8곳) */
-  @media (min-width: 1720px) {
-    .prototype-home-screen.desktop-wide .home-row-regions {
-      grid-template-columns: repeat(9, minmax(0, 1fr));
-    }
+  .prototype-home-screen.desktop-wide .home-hero-slide[data-pos="1"] {
+    transform: translateX(-50%) translateX(var(--peek)) scale(0.9);
+  }
 
-    .prototype-home-screen.desktop-wide .home-row-regions > :nth-child(n + 9) {
-      display: flex;
-    }
+  .prototype-home-screen.desktop-wide .home-hero-slide[data-pos="-1"] {
+    transform: translateX(-50%) translateX(calc(var(--peek) * -1)) scale(0.9);
+  }
+
+  .prototype-home-screen.desktop-wide .home-hero-pause {
+    right: calc(20% + 12px);
   }
 
   .prototype-home-screen.desktop-wide > .home-line-card,

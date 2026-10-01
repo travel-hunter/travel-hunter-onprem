@@ -260,7 +260,9 @@ describe("Travel Hunter app — home", () => {
         "/policies?region=전국",
       ]);
       expect(slides[0].querySelector(".home-hero-eyebrow")).toHaveTextContent("D-2전국 공통");
-      expect(slides[1]).toHaveAttribute("inert");
+      // 가운데는 첫 장, 둘째 장은 오른쪽에 비친다(누르면 가운데로)
+      expect(slides[0]).toHaveAttribute("data-pos", "0");
+      expect(slides[1]).toHaveAttribute("data-pos", "1");
       const nationwideCard = screen.getByRole("link", { name: /전국 공통 혜택 1건/ });
       expect(nationwideCard).toHaveAttribute("href", "/policies?region=전국");
       expect(nationwideCard).toHaveTextContent("기차");

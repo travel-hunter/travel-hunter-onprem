@@ -570,7 +570,7 @@ body.thmap-map-view .app-container { overflow: hidden; }
     flex: 1 1 auto;
     min-height: 0;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 420px;
+    grid-template-columns: minmax(0, 1fr) clamp(380px, 32.8%, 640px); /* 시안 비율: 목록 패널 420/1280 */
     word-break: keep-all;
     overflow-wrap: anywhere;
   }

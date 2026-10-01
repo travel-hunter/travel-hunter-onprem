@@ -562,13 +562,14 @@
 @media (min-width: 1024px) {
   .prototype-policy-detail-screen.screen.detail.policy-detail-desk {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 380px;
+    grid-template-columns: minmax(0, 1fr) clamp(300px, 32.2%, 480px);
     align-items: start;
     gap: 28px;
-    /* app.css 의 900px 이상 '.screen.detail { max-width: 920px }' 를 풀고 화면 폭 전부를 쓴다(옆 여백은 틀의 --desk-gutter) */
+    /* app.css 의 900px 이상 '.screen.detail { max-width: 920px }' 를 풀고, 시안 비율대로 화면의 87.5% 판(옆 여백 32px)에 모은다.
+       회색 바탕은 화면 끝까지 - 판은 padding 으로 만든다(padding 의 % 는 화면 폭 기준) */
     max-width: none;
     margin: 0;
-    padding: 20px var(--desk-gutter) 48px;
+    padding: 20px calc(6.25% + 32px) 48px;
     border: 0;
     border-radius: 0;
     background: var(--gray-50);
