@@ -72,7 +72,7 @@
 }
 
 .acct-main,
-.lg-main {
+.lg-screen .lg-main {
   width: 100%;
   min-height: 52px;
   display: flex;
@@ -89,15 +89,20 @@
 }
 
 .acct-main:hover:not(:disabled),
-.lg-main:hover:not(:disabled) {
+.lg-screen .lg-main:hover:not(:disabled) {
   background: var(--primary-600);
 }
 
 .acct-main:disabled,
-.lg-main:disabled {
+.lg-screen .lg-main:disabled {
   background: var(--gray-200);
   color: var(--gray-600);
   cursor: default;
+  opacity: 1;
+}
+
+.lg-screen .lg-main {
+  margin-top: 4px;
 }
 
 .pe-field {
@@ -193,26 +198,20 @@
 }
 
 /* ---------- 내 정보 ---------- */
-/* 폰: 한 줄로 프로필 → 활동 → 목록 → 설정 → 회원 탈퇴. 넓은 화면 두 단을 위해 프로필·활동·설정을 .mp-side 로 묶어 두고,
-   폰에서는 그 묶음을 풀어(display: contents) order 로 목록을 활동과 설정 사이에 끼운다.
-   app.css 가 이 파일보다 늦게 실리고 .screen.with-tabs { display: block } 이 있어 한 단 더 붙인다 */
+/* 폰: 문서 순서 그대로 한 줄 - 프로필 → 활동 → 목록 → 설정 → 회원 탈퇴(화면 순서 = 낭독·Tab 순서).
+   넓은 화면은 같은 문서를 grid 영역으로 두 단에 놓는다(아래 @media).
+   app.css 가 이 파일보다 늦게 실리고 같은 무게면 이긴다(.screen.with-tabs { display: block } 등) - 겹치는 규칙은 한 단 더 붙인다 */
 .screen.with-tabs.mp-screen {
   display: flex;
   flex-direction: column;
   background: var(--gray-50);
 }
 
-.mp-screen > *,
-.mp-side > * {
+.mp-screen > * {
   flex-shrink: 0;
 }
 
-.mp-side {
-  display: contents;
-}
-
 .mp-top {
-  order: 0;
   display: flex;
   align-items: center;
   min-height: 56px;
@@ -229,7 +228,6 @@
 }
 
 .mp-hero {
-  order: 1;
   display: flex;
   align-items: flex-start;
   gap: 14px;
@@ -259,7 +257,7 @@
   gap: 3px;
 }
 
-.mp-who .profile-name {
+.mp-screen .mp-who .profile-name {
   margin: 0;
   font-size: 19px;
   font-weight: 700;
@@ -304,7 +302,6 @@
 }
 
 .mp-stats {
-  order: 2;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 10px 16px 0;
@@ -341,10 +338,6 @@
 .mp-stat span {
   font-size: 13px;
   color: var(--gray-700);
-}
-
-.mp-lists {
-  order: 3;
 }
 
 .mp-sec {
@@ -535,8 +528,8 @@
   text-decoration: none;
 }
 
-.mp-menu {
-  order: 4;
+.mp-screen .mp-menu.ds-settings-menu {
+  display: block; /* app.css 의 .ds-settings-menu(grid + 간격)를 이긴다 - 줄 사이는 선 하나 */
   margin: 20px 16px 0;
   overflow: hidden;
   border-radius: 16px;
@@ -576,7 +569,6 @@
 }
 
 .mp-quit {
-  order: 5;
   align-self: center;
   min-height: 44px;
   margin: 12px 0 8px;
@@ -606,7 +598,14 @@
   .screen.with-tabs.mp-screen.desktop-wide {
     display: grid;
     grid-template-columns: 340px minmax(0, 1fr);
-    align-content: start; /* 판의 남는 높이를 줄 사이에 나누지 않는다 */
+    grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    grid-template-areas:
+      "top top"
+      "hero lists"
+      "stats lists"
+      "menu lists"
+      "quit lists";
+    align-content: start; /* 판의 남는 높이를 줄 사이에 나누지 않는다 - 목록이 길면 마지막 줄이 받는다 */
     align-items: start;
     column-gap: 28px;
     width: 81.25%;
@@ -615,24 +614,30 @@
   }
 
   .mp-screen.desktop-wide > .mp-top {
-    grid-column: 1 / -1;
-    grid-row: 1;
+    grid-area: top;
     padding: 20px 0 12px;
     border: 0;
     background: transparent;
   }
 
-  .mp-screen.desktop-wide > .mp-side {
-    grid-column: 1;
-    grid-row: 2;
-    display: block;
-    position: sticky;
-    top: 16px;
+  .mp-screen.desktop-wide > .mp-hero {
+    grid-area: hero;
+  }
+
+  .mp-screen.desktop-wide > .mp-stats {
+    grid-area: stats;
+  }
+
+  .mp-screen.desktop-wide > .mp-menu {
+    grid-area: menu;
+  }
+
+  .mp-screen.desktop-wide > .mp-quit {
+    grid-area: quit;
   }
 
   .mp-screen.desktop-wide > .mp-lists {
-    grid-column: 2;
-    grid-row: 2;
+    grid-area: lists;
   }
 
   .mp-screen.desktop-wide .mp-hero,
@@ -659,9 +664,10 @@
     padding-left: 2px;
   }
 
-  .mp-screen.desktop-wide .mp-quit {
-    display: block;
-    margin: 12px auto 0;
+  .mp-screen.desktop-wide > .mp-quit {
+    align-self: start; /* 폰의 align-self: center(가로 가운데)가 grid 에선 세로 가운데가 된다 */
+    justify-self: center;
+    margin: 12px 0 0;
   }
 }
 
@@ -769,8 +775,9 @@
   box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.18);
 }
 
-.lg-error {
+.lg-screen .lg-error {
   margin: 0;
+  text-align: left;
   font-size: 14px;
   color: var(--status-danger-text);
 }

@@ -9,8 +9,8 @@ const MAX_REGIONS = 3; // 프로필 완성 기준(관심 지역 1~3곳)과 같�
 
 /* 프로필 편집 창(시안 v49): 닉네임 · 관심 지역 · 여행 스타일 · 예산. 내 정보 '편집'과 홈 '관심 지역 바꾸기'가 같이 쓴다.
    폰은 아래에서 올라오는 시트, 넓은 화면은 가운데 창(account.css). */
-export function useProfileEditor(): { open: () => void; sheet: ReactNode } {
-  const { currentUser, profile, saveNickname, saveProfile } = useSession();
+export function useProfileEditor(): { open: () => void; ready: boolean; sheet: ReactNode } {
+  const { currentUser, isSessionBootstrapping, profile, saveNickname, saveProfile } = useSession();
   const { data: options } = useAsyncResource(() => appDataApi.getProfileOptions(), []);
   const [draft, setDraft] = useState<Profile | null>(null);
   const [nickname, setNickname] = useState("");
@@ -19,7 +19,11 @@ export function useProfileEditor(): { open: () => void; sheet: ReactNode } {
   const [isSaving, setIsSaving] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
 
+  /* 새로 띄운 화면은 서버 프로필을 한 번 더 받는다(session.tsx applyAuth). 그 전에 열면 빈 자리값으로 초안이 잡혀
+     저장할 때 관심 지역·스타일·예산이 지워진다 - 다 받을 때까지는 열지 않는다(ProfileSetupPage 와 같은 이유) */
+  const ready = !isSessionBootstrapping;
   const open = () => {
+    if (!ready) return;
     setDraft(profile);
     setNickname(currentUser?.nickname ?? "여행자");
     setNicknameError("");
@@ -88,7 +92,7 @@ export function useProfileEditor(): { open: () => void; sheet: ReactNode } {
       onSuggest={suggest}
     />
   ) : null;
-  return { open, sheet };
+  return { open, ready, sheet };
 }
 
 function ProfileEditSheet({

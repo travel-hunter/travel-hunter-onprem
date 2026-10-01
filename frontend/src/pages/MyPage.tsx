@@ -49,6 +49,7 @@ export function MyPage() {
   const [tripError, setTripError] = useState("");
   const [appliedPolicies, setAppliedPolicies] = useState<Policy[]>([]);
   const [isLoadingAppliedPolicies, setIsLoadingAppliedPolicies] = useState(true);
+  const [appliedPolicyError, setAppliedPolicyError] = useState(false);
   const [removingPolicySlug, setRemovingPolicySlug] = useState<string | null>(null);
   const [infoSheetType, setInfoSheetType] = useState<InfoSheetType | null>(null);
   const [accountDialogType, setAccountDialogType] = useState<AccountDialogType | null>(null);
@@ -69,6 +70,7 @@ export function MyPage() {
     setIsLoadingTrips(true);
     setTripError("");
     setIsLoadingAppliedPolicies(true);
+    setAppliedPolicyError(false);
 
     Promise.allSettled([
       appDataApi.listSavedPolicies(),
@@ -85,7 +87,8 @@ export function MyPage() {
       else setTripError("일정 정보를 불러오지 못했어요.");
       setIsLoadingTrips(false);
 
-      setAppliedPolicies(appliedResult.status === "fulfilled" ? uniquePoliciesBySlug(appliedResult.value) : []);
+      if (appliedResult.status === "fulfilled") setAppliedPolicies(uniquePoliciesBySlug(appliedResult.value));
+      else setAppliedPolicyError(true);
       setIsLoadingAppliedPolicies(false);
     });
 
@@ -192,7 +195,8 @@ export function MyPage() {
 
   const visibleSavedPolicies = uniquePoliciesBySlug(savedPolicies);
   const savedPolicyCount = Math.max(visibleSavedPolicies.length, savedSlugs.size);
-  const appliedPolicyCount = Math.max(appliedPolicies.length, addedPolicySlugs.size);
+  // 목록과 같은 출처(서버)로 센다. 못 불러왔을 때만 이번 세션에서 담은 것을 센다
+  const appliedPolicyCount = appliedPolicyError ? addedPolicySlugs.size : appliedPolicies.length;
   const tripCount = tripError ? 0 : trips.length;
   const regions = (profile.preferredRegions ?? []).filter((region) => region.trim());
   const tags = [
@@ -200,63 +204,55 @@ export function MyPage() {
     profile.style?.trim() || "여행 스타일 없음",
     profile.budget?.trim() || "예산 없음",
   ];
-  const scrollToSection = (id: string) => document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  // 활동 칸 → 그 목록으로 굴리고 초점도 옮긴다(다음 Tab 이 목록에서 이어지게)
+  const scrollToSection = (id: string) => {
+    const section = document.getElementById(id);
+    section?.scrollIntoView({ block: "start", behavior: "smooth" });
+    section?.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
+  };
 
   return (
     <section className="screen with-tabs mp-screen prototype-mypage-screen desktop-wide">
       <header className="mp-top">
         <h1>내 정보</h1>
       </header>
-      <div className="mp-side">
-        <section className="mp-hero" aria-label="내 프로필 요약">
-          <span aria-hidden="true" className="mp-avatar">
-            {name.trim().slice(0, 1) || "여"}
-          </span>
-          <div className="mp-who">
-            <h2 className="profile-name">{name}</h2>
-            <p className="mp-mail">{currentUser?.email ?? "이메일 정보 없음"}</p>
-            <ul aria-label="프로필 취향" className="mp-tags">
-              {tags.map((tag) => (
-                <li key={tag}>{tag}</li>
-              ))}
-            </ul>
-          </div>
-          <button className="mp-edit" onClick={editor.open} type="button">
-            편집
-          </button>
-        </section>
-
-        <section aria-label="나의 활동 요약" className="mp-stats">
-          <Link aria-label="내 일정 보기" className="mp-stat" to="/trips">
-            <b>{isLoadingTrips ? "..." : tripCount}</b>
-            <span>내 일정</span>
-          </Link>
-          <button aria-label="즐겨찾기 정책 보기" className="mp-stat" onClick={() => scrollToSection("my-favorites")} type="button">
-            <b>{isLoadingSavedPolicies ? "..." : savedPolicyCount}</b>
-            <span>즐겨찾기</span>
-          </button>
-          <button aria-label="담은 혜택 보기" className="mp-stat" onClick={() => scrollToSection("my-applied")} type="button">
-            <b>{isLoadingAppliedPolicies ? "..." : appliedPolicyCount}</b>
-            <span>담은 혜택</span>
-          </button>
-        </section>
-
-        <section aria-label="설정 메뉴" className="mp-menu ds-settings-menu">
-          <MenuRow icon={<CircleHelp size={20} />} label="공지사항 / FAQ" onClick={() => setInfoSheetType("faq")} />
-          <MenuRow icon={<FileText size={20} />} label="이용약관" onClick={() => setInfoSheetType("terms")} />
-          <MenuRow icon={<ShieldCheck size={20} />} label="개인정보처리방침" onClick={() => setInfoSheetType("privacy")} />
-          <MenuRow icon={<KeyRound size={20} />} label="비밀번호 관리" onClick={() => setAccountDialogType("password")} />
-          <MenuRow icon={<LogOut size={20} />} label="로그아웃" onClick={signOut} />
-        </section>
-        <button className="mp-quit" onClick={() => setAccountDialogType("withdrawal")} type="button">
-          회원 탈퇴
+      <section className="mp-hero" aria-label="내 프로필 요약">
+        <span aria-hidden="true" className="mp-avatar">
+          {name.trim().slice(0, 1) || "여"}
+        </span>
+        <div className="mp-who">
+          <h2 className="profile-name">{name}</h2>
+          <p className="mp-mail">{currentUser?.email ?? "이메일 정보 없음"}</p>
+          <ul aria-label="프로필 취향" className="mp-tags">
+            {tags.map((tag) => (
+              <li key={tag}>{tag}</li>
+            ))}
+          </ul>
+        </div>
+        <button className="mp-edit" disabled={!editor.ready} onClick={editor.open} type="button">
+          편집
         </button>
-      </div>
+      </section>
+
+      <section aria-label="나의 활동 요약" className="mp-stats">
+        <Link aria-label="내 일정 보기" className="mp-stat" to="/trips">
+          <b>{isLoadingTrips ? "..." : tripCount}</b>
+          <span>내 일정</span>
+        </Link>
+        <button aria-label="즐겨찾기 정책 보기" className="mp-stat" onClick={() => scrollToSection("my-favorites")} type="button">
+          <b>{isLoadingSavedPolicies ? "..." : savedPolicyCount}</b>
+          <span>즐겨찾기</span>
+        </button>
+        <button aria-label="담은 혜택 보기" className="mp-stat" onClick={() => scrollToSection("my-applied")} type="button">
+          <b>{isLoadingAppliedPolicies ? "..." : appliedPolicyCount}</b>
+          <span>담은 혜택</span>
+        </button>
+      </section>
 
       <div className="mp-lists">
         <section aria-labelledby="my-favorites-title" className="mp-sec" id="my-favorites">
           <div className="mp-sec-head">
-            <h2 id="my-favorites-title">
+            <h2 id="my-favorites-title" tabIndex={-1}>
               즐겨찾기 정책 <span>{isLoadingSavedPolicies ? "..." : savedPolicyCount}</span>
             </h2>
             <Link to="/policies">정책 찾기</Link>
@@ -298,13 +294,24 @@ export function MyPage() {
 
         <section aria-labelledby="my-applied-title" className="mp-sec" id="my-applied">
           <div className="mp-sec-head">
-            <h2 id="my-applied-title">
+            <h2 id="my-applied-title" tabIndex={-1}>
               일정에 담은 혜택 <span>{isLoadingAppliedPolicies ? "..." : appliedPolicyCount}</span>
             </h2>
             {appliedPolicies.length > 0 && <Link to="/applied-policies">일정별로 보기</Link>}
           </div>
           {isLoadingAppliedPolicies && <LoadingState compact label="담은 혜택을 불러오는 중입니다" />}
-          {!isLoadingAppliedPolicies && appliedPolicies.length === 0 && (
+          {!isLoadingAppliedPolicies && appliedPolicyError && (
+            <ErrorState
+              compact
+              message="담은 혜택을 불러오지 못했어요."
+              action={
+                <Link className="btn line" to="/applied-policies">
+                  일정별로 보기
+                </Link>
+              }
+            />
+          )}
+          {!isLoadingAppliedPolicies && !appliedPolicyError && appliedPolicies.length === 0 && (
             <div className="mp-empty">
               <b>일정에 담은 혜택이 없어요</b>
               <span>혜택 상세의 ‘내 일정에 담기’로 담을 수 있어요.</span>
@@ -319,6 +326,17 @@ export function MyPage() {
           )}
         </section>
       </div>
+
+      <section aria-label="설정 메뉴" className="mp-menu ds-settings-menu">
+        <MenuRow icon={<CircleHelp size={20} />} label="공지사항 / FAQ" onClick={() => setInfoSheetType("faq")} />
+        <MenuRow icon={<FileText size={20} />} label="이용약관" onClick={() => setInfoSheetType("terms")} />
+        <MenuRow icon={<ShieldCheck size={20} />} label="개인정보처리방침" onClick={() => setInfoSheetType("privacy")} />
+        <MenuRow icon={<KeyRound size={20} />} label="비밀번호 관리" onClick={() => setAccountDialogType("password")} />
+        <MenuRow icon={<LogOut size={20} />} label="로그아웃" onClick={signOut} />
+      </section>
+      <button className="mp-quit" onClick={() => setAccountDialogType("withdrawal")} type="button">
+        회원 탈퇴
+      </button>
 
       {editor.sheet}
       {infoSheetType && <InfoSheet type={infoSheetType} onClose={() => setInfoSheetType(null)} />}

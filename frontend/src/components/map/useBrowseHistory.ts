@@ -57,12 +57,32 @@ export function useBrowseHistory(depthOf: (params: URLSearchParams) => number) {
   const back = (lower: URLSearchParams | null) => {
     const target = lower?.toString() ?? null;
     if (chain.length > 0) {
-      if (target === null || chain[chain.length - 1] === target) navigate(-1);
-      else replace(target);
+      const parent = chain[chain.length - 1];
+      if (target === null || parent === target) navigate(-1);
+      /* 쌓은 뒤 같은 층에서 고친 것(위 칩 등)만 다르면 한 칸 되감고 고친 것을 얹는다 - 덮어쓰면 쌓아 둔 칸이
+         남아 다음 뒤로가기가 옛 화면을 다시 연다 */
+      else if (lower && depthOf(new URLSearchParams(parent)) === depthOf(lower)) {
+        pendingRef.current = target;
+        navigate(-1);
+      } else replace(target);
     } else if (state?.thLocal || location.key === "default") {
       if (target !== null) replace(target);
     } else navigate(-1);
   };
 
-  return { go, back };
+  /* 층 밖 화면(필터 목록)으로 한 칸 - 지금 칸을 부모로 쌓아 기기 뒤로가기가 그 지도로 돌아온다 */
+  const push = (next: URLSearchParams) => {
+    const target = next.toString();
+    if (target === normalize(location.search)) return;
+    navigate({ search: searchOf(target) }, { state: { thChain: [...chain, normalize(location.search)], thLocal: true } });
+  };
+
+  /* 바로 아래 쌓아 둔 칸이 target 이면 되감고, 아니면 이 자리에서 바꾼다(필터 풀기 - 다른 화면으로는 나가지 않는다) */
+  const unwind = (next: URLSearchParams) => {
+    const target = next.toString();
+    if (chain.length > 0 && chain[chain.length - 1] === target) navigate(-1);
+    else replace(target);
+  };
+
+  return { go, back, push, unwind, replace };
 }

@@ -402,7 +402,7 @@ function getPolicyControlsHelpText(policy: Policy) {
 }
 
 export function PolicyListPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const categoryParam = searchParams.get("category");
   const regionParam = searchParams.get("region");
   const periodParam = searchParams.get("period");
@@ -429,7 +429,8 @@ export function PolicyListPage() {
   /* 넓은 화면(1024px~)은 지도 옆에 목록 패널이 늘 서 있다 - 시트 자리는 층이 아니고, 줄을 누르면 패널이 상세가 된다 */
   const isDesktop = useIsDesktop();
   const navigate = useNavigate();
-  const { go: goBrowse, back: backBrowse } = useBrowseHistory(isDesktop ? deskBrowseDepthOf : browseDepthOf);
+  const browseHistory = useBrowseHistory(isDesktop ? deskBrowseDepthOf : browseDepthOf);
+  const { go: goBrowse, back: backBrowse } = browseHistory;
   const setBrowse = (next: BrowseState) => goBrowse(writeBrowseState(searchParams, next));
   /* 지도·칩·검색으로 옮기면 패널 상세는 목록으로 돌아간다 */
   const base: BrowseState = { ...browse, detail: null };
@@ -528,21 +529,30 @@ export function PolicyListPage() {
     setSelectedAmount(isAmountFilter(nextAmount) ? nextAmount : "전체");
   }, [searchParams]);
 
+  const filterParams = (filters: PolicyFilterState) => {
+    const next = new URLSearchParams(searchParams);
+    if (filters.category === allFilter) next.delete("category");
+    else next.set("category", filters.category);
+    if (filters.region === allFilter) next.delete("region");
+    else next.set("region", filters.region);
+    if (filters.period === "전체") next.delete("period");
+    else next.set("period", filters.period);
+    if (filters.amount === "전체") next.delete("amount");
+    else next.set("amount", filters.amount);
+    if (filters.savedOnly) next.set("saved", "1");
+    else next.delete("saved");
+    return next;
+  };
+  /* 필터 목록은 지도 층 밖 화면이다. 지도에서 처음 걸면 한 칸 쌓고(기기 뒤로가기가 지도로), 목록에서 바꾸면 덮어쓴다.
+     예전처럼 상태 없이 쌓으면 화면 안 ‹ 가 그 칸을 '앞 화면이 연 주소'로 보고 필터 목록으로 되감았다 */
   const writeFilterParams = (filters: PolicyFilterState) => {
-    setSearchParams((params) => {
-      const next = new URLSearchParams(params);
-      if (filters.category === allFilter) next.delete("category");
-      else next.set("category", filters.category);
-      if (filters.region === allFilter) next.delete("region");
-      else next.set("region", filters.region);
-      if (filters.period === "전체") next.delete("period");
-      else next.set("period", filters.period);
-      if (filters.amount === "전체") next.delete("amount");
-      else next.set("amount", filters.amount);
-      if (filters.savedOnly) next.set("saved", "1");
-      else next.delete("saved");
-      return next;
-    });
+    const next = filterParams(filters);
+    const keys = ["category", "region", "period", "amount", "saved"];
+    const filtered = keys.some((key) => searchParams.has(key));
+    // 시트에서 다 풀어 적용하면 ✕ 와 같다 - 쌓아 둔 칸을 되감아 빈 기록 칸을 남기지 않는다
+    if (filtered && !keys.some((key) => next.has(key))) browseHistory.unwind(next);
+    else if (filtered) browseHistory.replace(next.toString());
+    else browseHistory.push(next);
   };
 
   /* ── 지도 화면 조작 ─────────────────────────────────────────── */
@@ -613,7 +623,7 @@ export function PolicyListPage() {
     setShowSavedOnly(false);
     setSearchTerm("");
     setDraftFilters(nextFilters);
-    writeFilterParams(nextFilters);
+    browseHistory.unwind(filterParams(nextFilters));
     setIsFilterSheetOpen(false);
   };
 
@@ -661,6 +671,8 @@ export function PolicyListPage() {
     if (!showMap || isFilterSheetOpen) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || !lowered) return;
+      // 담기 창 같은 대화창이 떠 있으면 그 창의 일이다 - 뒤의 상세까지 닫지 않는다
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if ((event.target as Element | null)?.closest?.(".thmap-host")) return;
       stepBack();
     };
@@ -775,8 +787,10 @@ export function PolicyListPage() {
               if (showMap && !browse.search) setBrowse({ ...base, search: true });
             }}
             onKeyDown={(event) => {
-              if (!panelOpen || event.key !== "Enter") return;
+              // 한글 조합을 끝내는 Enter(맥 크롬은 두 번 온다)와 빈 찾을 말은 첫 결과를 누르지 않는다
+              if (!panelOpen || event.key !== "Enter" || event.nativeEvent.isComposing) return;
               event.preventDefault();
+              if (!panelQuery.trim()) return;
               document.querySelector<HTMLButtonElement>("#policy-search-panel button")?.click();
             }}
             placeholder={panelOpen ? "지역이나 혜택 이름 (예: 여수, 반값)" : "정책명, 지역, 혜택 검색"}

@@ -55,7 +55,7 @@ export function ProfileSetupPage() {
   /* 새로 띄운 화면은 로그인을 확인한 뒤 서버 프로필을 한 번 더 받는다(session.tsx applyAuth).
      그 응답보다 먼저 고르면 늦게 온 응답이 고른 값을 덮어, 관심 지역이 빈 채로 저장됐다.
      프로필을 다 받을 때까지는 고르지 못하게 불러오는 중으로 둔다. */
-  if (profileOptionsLoading || !profileOptions || isSessionBootstrapping) {
+  if (!profileOptionsError && (profileOptionsLoading || !profileOptions || isSessionBootstrapping)) {
     return (
       <section className="screen">
         <div className="top-bar">

@@ -3330,7 +3330,7 @@
 }
 
 .place-search-status.error {
-  color: var(--primary-600);
+  color: var(--status-danger-text);
 }
 
 .place-basket {
@@ -11960,7 +11960,7 @@ a.prototype-stat-card:active {
   padding: 10px 12px;
   border: 1px solid rgba(180, 35, 24, 0.22);
   border-radius: 8px;
-  background: var(--primary-50);
+  background: var(--status-danger-bg);
 }
 
 .trip-region-selector__error-panel button {

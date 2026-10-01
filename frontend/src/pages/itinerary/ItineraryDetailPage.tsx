@@ -95,6 +95,7 @@ import {
 } from "../../utils/draftStorage";
 import { REGION_NAMES } from "../../components/map/regionMapEngine";
 import { hasPolicySaving, tripStatus } from "../../utils";
+import { DESKTOP_MEDIA_QUERY } from "../../lib/useMediaQuery";
 import { FriendInvitePanel } from "./FriendInvitePanel";
 import { DraftRestoreNotice } from "./_shared";
 
@@ -231,6 +232,18 @@ function formatDayDateLabel(dates: string, dayNumber: number): string {
     Number(match[3]) + dayNumber - 1,
   );
   return `${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
+}
+
+type DayEdgeRect = Pick<DOMRect, "left" | "right" | "top" | "height">;
+
+/* 끌기 중 날짜 넘기기 띠의 자리: 세로는 스크롤 틀, 가로는 넓은 화면(1024px~)이면 타임라인 칸.
+   넓은 화면의 스크롤 틀은 창 전체 폭(1440 넘으면 양옆 여백 포함)이고 타임라인 오른쪽에 지도가 있어
+   틀 끝에 띠를 두면 지도를 가로질러 끌어야 다음 날로 넘어갔다 */
+function dayEdgeRect(container: HTMLElement): DayEdgeRect {
+  const box = container.getBoundingClientRect();
+  const lane = document.querySelector<HTMLElement>("[data-itinerary-timeline]")?.getBoundingClientRect();
+  if (!lane || !window.matchMedia?.(DESKTOP_MEDIA_QUERY).matches) return box;
+  return { left: lane.left, right: lane.right, top: box.top, height: box.height };
 }
 
 function parseTripDateInputs(dates: string): { startDate: string; endDate: string } | null {
@@ -2453,7 +2466,7 @@ export function ItineraryDetailPage() {
   /* 이동영역 표시를 그린다. 매 포인터 이동마다 리렌더하면 무거우므로
      상태가 아니라 DOM 을 직접 만진다. 색은 쓰지 않고 어둠과 화살표로만 알린다. */
   const paintDayEdges = useCallback(
-    (rect: DOMRect, pointerX: number | null) => {
+    (rect: DayEdgeRect, pointerX: number | null) => {
       const left = dayEdgeLeftRef.current;
       const right = dayEdgeRightRef.current;
       if (!left || !right) return;
@@ -2507,7 +2520,7 @@ export function ItineraryDetailPage() {
     const startContainer = document.querySelector<HTMLElement>(".app-container");
     if (startContainer) {
       paintDayEdges(
-        startContainer.getBoundingClientRect(),
+        dayEdgeRect(startContainer),
         placeDragPointerRef.current?.x ?? null,
       );
     }
@@ -2516,13 +2529,14 @@ export function ItineraryDetailPage() {
       const pointer = placeDragPointerRef.current;
       if (!container) return;
       if (!pointer) {
-        paintDayEdges(container.getBoundingClientRect(), null);
+        paintDayEdges(dayEdgeRect(container), null);
         zone = 0;
         nextAt = 0;
         return;
       }
       const rect = container.getBoundingClientRect();
-      paintDayEdges(rect, pointer.x);
+      const lane = dayEdgeRect(container);
+      paintDayEdges(lane, pointer.x);
 
       /* 자동 스크롤 제동. dnd-kit 은 한 번 시작한 스크롤을 멈출 판정을
          포인터가 멈춰 있는 동안 다시 하지 않는다. 여기서 직접 붙잡는다. */
@@ -2548,8 +2562,8 @@ export function ItineraryDetailPage() {
       }
       const next = resolveDayEdgeZone({
         pointerX: pointer.x,
-        left: rect.left,
-        right: rect.right,
+        left: lane.left,
+        right: lane.right,
       });
       if (next === 0) {
         zone = 0;
@@ -2564,8 +2578,8 @@ export function ItineraryDetailPage() {
       if (Date.now() < nextAt) return;
       const depth = resolveDayEdgeDepth({
         pointerX: pointer.x,
-        left: rect.left,
-        right: rect.right,
+        left: lane.left,
+        right: lane.right,
         zone: next,
       });
       shiftVisibleDay(next);
@@ -2602,7 +2616,11 @@ export function ItineraryDetailPage() {
 
   const openDateEditor = () => {
     if (!trip) return;
-    const parsedDates = parseTripDateInputs(trip.dates);
+    /* 서버가 주는 ISO 날짜를 먼저 쓴다. 보이는 글('2026.12.30 - 01.02')은 끝 날짜에 연도가 없어
+       해를 넘기는 일정이 끝 < 시작으로 읽혔다 */
+    const parsedDates = trip.startDate && trip.endDate
+      ? { startDate: trip.startDate.slice(0, 10), endDate: trip.endDate.slice(0, 10) }
+      : parseTripDateInputs(trip.dates);
     if (!parsedDates) {
       setNotice("현재 여행기간을 읽지 못했어요. 새로고침 후 다시 시도해 주세요.");
       return;

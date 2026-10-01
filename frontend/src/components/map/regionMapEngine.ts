@@ -240,8 +240,22 @@ export function createPolicyRegionMap(
     raf = requestAnimationFrame(step);
   }
 
-  /* --- 칠하기: 땅 색·흐림, 띄운 도, 이름표, 시군 점, 작은 지역 누르기 범위 --- */
+  /* 칠하기는 시군 점을 새로 만들고 도 모양을 옮긴다 - 그 안에 있던 키보드 초점을 같은 점·같은 도로 돌려 놓는다.
+     안 돌려 놓으면 Enter 로 시군을 고른 뒤 초점이 문서 맨 앞으로 가 버린다 */
   function paint() {
+    const active = document.activeElement;
+    const inside = active instanceof SVGElement && svg.contains(active);
+    const place = inside ? active.getAttribute("data-place") : null;
+    paintShapes();
+    if (!inside) return;
+    const next = place
+      ? (Array.from(dotLayer.children).find((dot) => dot.getAttribute("data-place") === place) as SVGElement | undefined)
+      : active;
+    if (next?.isConnected && document.activeElement !== next) next.focus({ preventScroll: true });
+  }
+
+  /* --- 칠하기: 땅 색·흐림, 띄운 도, 이름표, 시군 점, 작은 지역 누르기 범위 --- */
+  function paintShapes() {
     const ppu = ppuOf(goal), fs = LABEL_PX / ppu;
     const focus = focusRegion();
     for (const s of VIEW) {

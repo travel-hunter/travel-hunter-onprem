@@ -1,5 +1,5 @@
 import { Pause, Play } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import type { HeroPhoto } from "./heroPhotos";
@@ -27,9 +27,10 @@ function slidePos(i: number, current: number, count: number) {
 }
 
 /* 홈 맨 위 배너(시안 v45). 가운데 장 하나를 좁게 두고 앞뒤 장은 작고 흐리게 뒤에 겹쳐 양옆으로 비친다 - 몇 장인지
-   숫자 없이 보인다. 옆 장을 누르면 그 장이 가운데로, 폰은 밀어 넘긴다. 5.5초마다 다음 장, 마우스가 올라가 있거나
-   안에 초점이 있으면 쉰다. 번호·이전·다음 버튼은 화면에서 뺐고(사용자 결정), 멈춤 버튼은 WCAG 2.2.2 때문에 남기되
-   키보드 초점이 갈 때만 보인다(home.css). 기기의 '동작 줄이기'가 켜져 있으면 자동으로 넘기지 않는다. */
+   숫자 없이 보인다. 옆 장을 누르면 그 장이 가운데로, 폰은 밀어 넘기고 키보드는 ← → 로 넘긴다. 5.5초마다 다음 장,
+   마우스가 올라가 있거나 안에 초점이 있으면 쉬고, 손으로 한 번 넘기면(밀기·옆 장·화살표) 자동 넘김을 멈춘다 -
+   터치에서도 멈출 수 있고(WCAG 2.2.2) 넘긴 장이 곧바로 다음 장으로 바뀌지 않는다. 번호·이전·다음 버튼은 화면에서 뺐고
+   (사용자 결정), 멈춤 버튼은 키보드 초점이 갈 때만 보인다(home.css). 기기의 '동작 줄이기'가 켜져 있으면 자동으로 넘기지 않는다. */
 export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -37,6 +38,7 @@ export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
   const [focused, setFocused] = useState(false);
   const reduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const swipe = useRef<{ x: number; swiped: boolean } | null>(null);
+  const slideRefs = useRef<Array<HTMLAnchorElement | null>>([]);
   const count = slides.length;
   const current = count ? index % count : 0;
   const auto = count > 1 && !paused && !hovered && !focused && !reduceMotion;
@@ -50,7 +52,19 @@ export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
   }, [auto, count]);
 
   if (!count) return null;
-  const go = (delta: number) => setIndex((value) => (((value + delta) % count) + count) % count);
+  const goTo = (next: number, focus = false) => {
+    setIndex(next);
+    setPaused(true);
+    // 화살표로 넘기면 초점도 새 가운데 장으로 - 옆으로 밀려난 장은 낭독·탭 순서에서 빠진다
+    if (focus) window.requestAnimationFrame(() => slideRefs.current[next]?.focus());
+  };
+  const go = (delta: number, focus = false) => goTo((((current + delta) % count) + count) % count, focus);
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (count < 2 || (event.key !== "ArrowRight" && event.key !== "ArrowLeft")) return;
+    if (event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return; // Alt+← 는 브라우저 뒤로가기
+    event.preventDefault();
+    go(event.key === "ArrowRight" ? 1 : -1, true);
+  };
   const onPointerDown = (event: PointerEvent<HTMLElement>) => {
     swipe.current = { x: event.clientX, swiped: false };
   };
@@ -82,6 +96,7 @@ export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
       onBlur={onBlur}
       onClickCapture={onClickCapture}
       onFocus={() => setFocused(true)}
+      onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
       onPointerEnter={(event) => event.pointerType === "mouse" && setHovered(true)}
       onPointerLeave={(event) => event.pointerType === "mouse" && setHovered(false)}
@@ -93,12 +108,16 @@ export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
         return (
           <Link
             aria-hidden={center ? undefined : true}
+            aria-keyshortcuts={center && count > 1 ? "ArrowLeft ArrowRight" : undefined}
             className={`home-hero-slide family-${slide.family}${slide.photo ? " photo" : ""}`}
             data-pos={Math.abs(pos) <= 1 ? pos : "x"}
             draggable={false}
             key={slide.key}
             // 옆에 비친 장을 누르면 그 장의 화면으로 가지 않고 가운데로 온다
-            onClick={center ? undefined : (event) => { event.preventDefault(); setIndex(i); }}
+            onClick={center ? undefined : (event) => { event.preventDefault(); goTo(i); }}
+            ref={(element) => {
+              slideRefs.current[i] = element;
+            }}
             style={slide.photo ? ({ "--ph": `url(${slide.photo.src})` } as CSSProperties) : undefined}
             tabIndex={center ? undefined : -1}
             to={slide.to}
@@ -119,7 +138,6 @@ export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
       })}
       {count > 1 && !reduceMotion && (
         <button
-          aria-pressed={paused}
           className="home-hero-pause"
           onClick={() => setPaused((value) => !value)}
           type="button"

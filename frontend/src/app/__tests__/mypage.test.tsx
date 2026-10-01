@@ -335,18 +335,19 @@ describe("Travel Hunter app — my page", () => {
     const listSavedPoliciesSpy = vi
       .spyOn(appDataApi, "listSavedPolicies")
       .mockResolvedValue([]);
+    // 담은 혜택은 서버 목록으로 센다 - 담은 뒤에는 서버가 그 정책을 돌려준다
+    let linked = false;
     const listAppliedPoliciesSpy = vi
       .spyOn(appDataApi, "listAppliedPolicies")
-      .mockResolvedValue([]);
+      .mockImplementation(async () => (linked ? [examplePolicyDetail] : []));
     const listTripsSpy = vi
       .spyOn(appDataApi, "listTrips")
       .mockResolvedValue([trip]);
     const addPolicyToTripSpy = vi
       .spyOn(appDataApi, "addPolicyToTrip")
-      .mockResolvedValue({
-        tripId: trip.id,
-        policyId: examplePolicySlug,
-        added: true,
+      .mockImplementation(async () => {
+        linked = true;
+        return { tripId: trip.id, policyId: examplePolicySlug, added: true };
       });
 
     try {
@@ -556,7 +557,10 @@ describe("Travel Hunter app — my page", () => {
       renderAppRoute("/mypage");
       const user = userEvent.setup();
 
-      await user.click(await screen.findByRole("button", { name: "편집" }));
+      // 서버 프로필을 받기 전엔 편집을 못 연다(빈 자리값으로 저장돼 지워지지 않게) - 켜질 때까지 기다린다
+      const editButton = await screen.findByRole("button", { name: "편집" });
+      await waitFor(() => expect(editButton).toBeEnabled());
+      await user.click(editButton);
       const dialog = screen.getByRole("dialog", { name: "프로필 편집" });
       expect(dialog).toBeInTheDocument();
       const nicknameInput = within(dialog).getByRole("textbox", {
@@ -588,8 +592,15 @@ describe("Travel Hunter app — my page", () => {
           nickname: nextUser.nickname,
         }),
       );
+      // 편집 창은 서버 프로필을 받은 뒤에 열린다 - 원래 관심 지역에 고른 지역이 더해진다(빈 초안으로 덮지 않는다)
       await waitFor(() =>
-        expect(updateProfileSpy).toHaveBeenCalledWith(nextProfile),
+        expect(updateProfileSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            preferredRegions: expect.arrayContaining([targetRegion]),
+            style: nextProfile.style,
+            budget: nextProfile.budget,
+          }),
+        ),
       );
       await waitFor(() =>
         expect(
@@ -618,7 +629,10 @@ describe("Travel Hunter app — my page", () => {
       renderAppRoute("/mypage");
       const user = userEvent.setup();
 
-      await user.click(await screen.findByRole("button", { name: "편집" }));
+      // 서버 프로필을 받기 전엔 편집을 못 연다(빈 자리값으로 저장돼 지워지지 않게) - 켜질 때까지 기다린다
+      const editButton = await screen.findByRole("button", { name: "편집" });
+      await waitFor(() => expect(editButton).toBeEnabled());
+      await user.click(editButton);
       const dialog = screen.getByRole("dialog", { name: "프로필 편집" });
       const nicknameInput = within(dialog).getByRole("textbox", {
         name: "닉네임",
@@ -659,7 +673,10 @@ describe("Travel Hunter app — my page", () => {
       renderAppRoute("/mypage");
       const user = userEvent.setup();
 
-      await user.click(await screen.findByRole("button", { name: "편집" }));
+      // 서버 프로필을 받기 전엔 편집을 못 연다(빈 자리값으로 저장돼 지워지지 않게) - 켜질 때까지 기다린다
+      const editButton = await screen.findByRole("button", { name: "편집" });
+      await waitFor(() => expect(editButton).toBeEnabled());
+      await user.click(editButton);
       const dialog = screen.getByRole("dialog", { name: "프로필 편집" });
       await user.click(
         within(dialog).getByRole("button", { name: "추천 받기" }),

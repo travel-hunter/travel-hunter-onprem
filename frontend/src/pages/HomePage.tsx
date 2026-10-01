@@ -530,6 +530,7 @@ type PlaceCardData = {
   place: string;
   count: number;
   lead: Policy;
+  soonest: string; // 순위용 - 안 지난 가장 빠른 마감(대표 혜택과 따로. 없으면 "9999")
   photo: PolicyPhoto | null;
 };
 
@@ -567,11 +568,11 @@ function pickPlaceCards(policies: Policy[]): PlaceCardData[] {
     const dated = items.filter(isOpenDated).sort((left, right) => left.deadline.localeCompare(right.deadline));
     const [region, place] = key.split("|");
     const lead = dated.find(ownPage) ?? items.find((policy) => ownPage(policy) && isDigitalTourismResidentCardPolicy(policy)) ?? dated[0] ?? items[0];
-    return { key, region, place, count: items.length, lead, photo: ownPhoto(items) };
+    return { key, region, place, count: items.length, lead, soonest: dated[0]?.deadline ?? "9999", photo: ownPhoto(items) };
   }).sort(
     (left, right) =>
       right.count - left.count ||
-      (isOpenDated(left.lead) ? left.lead.deadline : "9999").localeCompare(isOpenDated(right.lead) ? right.lead.deadline : "9999") ||
+      left.soonest.localeCompare(right.soonest) ||
       left.place.localeCompare(right.place, "ko"),
   );
 }

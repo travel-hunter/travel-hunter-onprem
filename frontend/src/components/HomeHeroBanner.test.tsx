@@ -76,18 +76,40 @@ describe("HomeHeroBanner", () => {
     expect(center()).toContain("첫째");
   });
 
-  it("brings a peeking slide to the middle instead of opening it", () => {
+  it("brings a peeking slide to the middle instead of opening it, and stops moving by itself after that", () => {
     mount();
     const click = new MouseEvent("click", { bubbles: true, cancelable: true });
     act(() => void slide("셋째").dispatchEvent(click));
     expect(click.defaultPrevented).toBe(true);
+    expect(center()).toContain("셋째");
+    // 손으로 넘겼으면 자동 넘김을 멈춘다 - 고른 장이 곧바로 바뀌지 않는다
+    tick();
+    expect(center()).toContain("셋째");
+  });
+
+  it("moves with the arrow keys and takes focus to the new middle slide", () => {
+    const hero = mount();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    expect(screen.getByRole("link", { name: /첫째/ })).toHaveAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight");
+    fireEvent.keyDown(hero, { key: "ArrowRight" });
+    expect(center()).toContain("둘째");
+    expect(screen.getByRole("link", { name: /둘째/ })).toHaveFocus();
+    fireEvent.keyDown(hero, { key: "ArrowLeft" });
+    fireEvent.keyDown(hero, { key: "ArrowLeft" });
+    expect(center()).toContain("셋째");
+    tick();
     expect(center()).toContain("셋째");
   });
 
   it("keeps a pause button for keyboard users that stops the slides", () => {
     mount();
     fireEvent.click(screen.getByRole("button", { name: "자동 넘김 멈추기" }));
-    expect(screen.getByRole("button", { name: "자동 넘김 다시 켜기" })).toHaveAttribute("aria-pressed", "true");
+    // 이름이 상태를 말한다 - 이름과 눌림(aria-pressed)을 같이 바꾸면 낭독이 거꾸로 들린다
+    const resume = screen.getByRole("button", { name: "자동 넘김 다시 켜기" });
+    expect(resume).not.toHaveAttribute("aria-pressed");
     tick();
     expect(center()).toContain("첫째");
   });
