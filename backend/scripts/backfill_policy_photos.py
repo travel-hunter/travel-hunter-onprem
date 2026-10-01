@@ -3,11 +3,16 @@
 Run this after policy normalization and region-photo backfill.  It only writes
 to ``policy_photos``; policies without a suitable specific image continue to
 use the region/city fallback at API response time.
+
+사진은 수집 기준(app/services/photo_criteria.py, 지역 사진과 같은 기준)을 거친다(2026-10-01): 그 시군 관광지(시군 코드)에서
+저작권 유형 · 시설 · 겹침 · 가로/크기를 통과한 첫 곳. 이미 쓴 사진은 다시 쓰지 않는다. 기준 이전에 넣은 줄(저작권 유형 없음)과
+다른 정책과 같은 사진을 쓰는 줄은 다시 고르고, 맞는 곳이 없으면 숨긴다(응답은 시군 사진 차례).
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -21,11 +26,19 @@ if str(APP_ROOT) not in sys.path:
 
 from app.repositories.policies import list_active_policies_for_photo_backfill
 from app.repositories.policy_photos import get_policy_photo, upsert_policy_photo
+from app.services.photo_criteria import ImageSizeProbe, attribution_for
 from app.services.pixabay import PixabayImage, PixabayPhotoProvider
 from scripts.backfill_region_photos import (
+    CITY_SPOT_ROWS,
     PROVIDER,
+    REPORT_REJECTED_LIMIT,
+    Rejected,
+    SizeOf,
     _addr_matches_sido,
+    _report_spot,
     resolve_area_code_for_sido,
+    resolve_sigungu_code,
+    spot_rejections,
 )
 from app.services.tour_api import (
     TourApiPhotoProvider,
@@ -148,21 +161,31 @@ def choose_city_photo(
     *,
     city: str | None,
     excluded_image_urls: Collection[str] = frozenset(),
+    sido: str | None = None,
+    size_of: SizeOf | None = None,
+    rejected: Rejected | None = None,
+    sigungu_code: str | None = None,
 ) -> PhotoCandidate | None:
-    """Persist only a genuine city match; regional images stay resolver fallbacks."""
+    """Persist only a genuine city match; regional images stay resolver fallbacks.
+
+    받은 순서(조회순)대로 수집 기준을 다 통과한 첫 시군 관광지. 이미 쓴 사진은 다시 쓰지 않는다(없으면 None).
+    시군 코드가 같으면 주소에 정책 표기('부산동구')가 없어도 그 시군 관광지다.
+    """
 
     if not city:
         return None
-    candidates = [
-        PhotoCandidate(spot=spot, relevance_score=300, assignment_reason="city_match")
-        for spot in spots
-        if spot.first_image and _city_matches(spot, city)
-    ]
-    candidates.sort(key=lambda candidate: candidate.spot.content_id)
-    for candidate in candidates:
-        if candidate.spot.first_image not in excluded_image_urls:
-            return candidate
-    return candidates[0] if candidates else None
+    for spot in spots:
+        in_city = bool(sigungu_code) and spot.sigungu_code == sigungu_code
+        if not spot.first_image or not (in_city or _city_matches(spot, city)):
+            continue
+        reasons = spot_rejections(
+            spot, sido=sido, excluded_image_urls=excluded_image_urls, size_of=size_of
+        )
+        if not reasons:
+            return PhotoCandidate(spot=spot, relevance_score=300, assignment_reason="city_match")
+        if rejected is not None:
+            rejected.append((spot, reasons))
+    return None
 
 
 def _unique_spots(groups: Iterable[Iterable[TourApiSpot]]) -> list[TourApiSpot]:
@@ -184,7 +207,13 @@ def _spots_for_city(
     region: str,
     city: str | None,
     area_code: str | None,
+    sigungu_code: str | None = None,
 ) -> list[TourApiSpot]:
+    # 시군 코드가 있으면 그 시군 관광지만. 2026-10-01 실측: '{시군} 관광지' 키워드 검색은 0건이라 시군 코드가 없을 때만 덧붙인다
+    if area_code and sigungu_code:
+        return provider.list_area_spots(
+            area_code=area_code, sigungu_code=sigungu_code, rows=CITY_SPOT_ROWS
+        )
     groups: list[list[TourApiSpot]] = []
     if area_code:
         groups.append(provider.list_area_spots(area_code=area_code, rows=50))
@@ -202,17 +231,30 @@ def run_backfill(
     refresh_older_than: datetime | None = None,
     fallback_provider: PixabayPhotoProvider | None = None,
     force: bool = False,
+    size_of: SizeOf | None = None,
+    report: list[dict[str, object]] | None = None,
 ) -> dict[str, int]:
     area_codes = None
     area_code_by_region: dict[str, str | None] = {}
+    sigungu_codes_by_area: dict[str, list] = {}
     tour_spots_by_location: dict[tuple[str, str], list[TourApiSpot]] = {}
     pixabay_images_by_city: dict[str, list[PixabayImage]] = {}
     used_image_urls: set[str] = set()
-    filled = refreshed = skipped = failed = 0
+    filled = refreshed = skipped = failed = emptied = 0
+
+    # dry-run 은 기존 줄을 읽지 않는다 - 지금 기준으로 새로 고르면 무엇을 고르는지 보는 보고서용(지역 사진 스크립트와 같다)
+    existing_by_policy = {
+        int(policy.id): None if dry_run else get_policy_photo(db, policy_id=int(policy.id)) for policy in policies
+    }
+    # 다른 정책과 같은 사진을 쓰는 줄은 다시 고른다 - 먼저 나온 정책 하나만 그 사진을 지킨다
+    claimed: dict[str, int] = {}
+    for policy_id, row in existing_by_policy.items():
+        if row is not None and row.status == "active" and row.image_url:
+            claimed.setdefault(row.image_url, policy_id)
 
     for policy in policies:
         policy_id = int(policy.id)
-        existing = get_policy_photo(db, policy_id=policy_id)
+        existing = existing_by_policy[policy_id]
         if (
             not force
             and existing is not None
@@ -224,30 +266,44 @@ def run_backfill(
                 or existing.fetched_at is not None
                 and existing.fetched_at >= refresh_older_than
             )
-            if is_fresh:
+            meets_criteria = getattr(existing, "copyright_type", None) is not None  # 기준이 생긴 뒤 고른 줄
+            unique = claimed.get(existing.image_url) == policy_id
+            if is_fresh and meets_criteria and unique:
                 used_image_urls.add(existing.image_url)
                 skipped += 1
                 continue
 
         region = str(policy.region)
         city = policy_city_hint(policy)
+        rejected: Rejected = []
         if region not in area_code_by_region:
             if area_codes is None:
                 area_codes = provider.list_area_codes()
             area_code_by_region[region] = resolve_area_code_for_sido(region, area_codes)
         try:
+            area_code = area_code_by_region[region]
+            sigungu_code = None
+            if city and area_code:
+                if area_code not in sigungu_codes_by_area:
+                    sigungu_codes_by_area[area_code] = provider.list_area_codes(area_code=area_code)
+                sigungu_code = resolve_sigungu_code(city, sigungu_codes_by_area[area_code], region)
             location = (region, city or "")
             if location not in tour_spots_by_location:
                 tour_spots_by_location[location] = _spots_for_city(
                     provider,
                     region=region,
                     city=city,
-                    area_code=area_code_by_region[region],
+                    area_code=area_code,
+                    sigungu_code=sigungu_code,
                 )
             candidate = choose_city_photo(
                 tour_spots_by_location[location],
                 city=city,
                 excluded_image_urls=used_image_urls,
+                sido=region,
+                size_of=size_of,
+                rejected=rejected,
+                sigungu_code=sigungu_code,
             )
             fallback_image = None
             if candidate is None and fallback_provider is not None and city:
@@ -264,13 +320,30 @@ def run_backfill(
             print(f"failed policy_id={policy_id} error={exc}")
             failed += 1
             continue
+        size = (
+            size_of(candidate.spot.first_image)
+            if candidate is not None and size_of is not None and candidate.spot.first_image
+            else None
+        )
+        if report is not None:
+            report.append({
+                "policyId": policy_id,
+                "title": str(policy.title),
+                "sido": region,
+                "city": city,
+                "chosen": None if candidate is None else {**_report_spot(candidate.spot), "size": size},
+                "rejected": [
+                    {**_report_spot(item), "reasons": reasons}
+                    for item, reasons in rejected[:REPORT_REJECTED_LIMIT]
+                ],
+            })
         if candidate is None and fallback_image is None:
-            # A forced refresh is an explicit request to replace old choices.  Do
-            # not keep a now-unverifiable city photo active: hiding it lets the
-            # API use the region-level fallback instead.
-            if not dry_run and force and existing is not None:
+            # 맞는 시군 사진이 없으면 있던 줄을 숨긴다 - 기준 이전 줄이거나(저작권 유형 없음) 다른 정책과
+            # 같은 사진이다. 강제 갱신(--force)이면 늘 숨긴다. 응답은 시군 사진(region_photos) 차례가 된다.
+            if not dry_run and existing is not None and existing.status == "active":
                 upsert_policy_photo(db, policy_id=policy_id, status="hidden")
-            print(f"no_specific_photo policy_id={policy_id}")
+                emptied += 1
+            print(f"no_specific_photo policy_id={policy_id} rejected={len(rejected)}")
             failed += 1
             continue
 
@@ -284,7 +357,10 @@ def run_backfill(
                     image_url=candidate.spot.first_image,
                     thumbnail_url=candidate.spot.first_image2 or candidate.spot.first_image,
                     alt_text=candidate.spot.title or str(policy.title),
-                    attribution_text="Photo: Korea Tourism Organization TourAPI",
+                    attribution_text=attribution_for(candidate.spot.copyright_type),
+                    copyright_type=candidate.spot.copyright_type,
+                    image_width=size[0] if size else None,
+                    image_height=size[1] if size else None,
                     relevance_score=candidate.relevance_score,
                     assignment_reason=candidate.assignment_reason,
                     status="active",
@@ -321,6 +397,7 @@ def run_backfill(
         "refreshed": refreshed,
         "skipped": skipped,
         "failed": failed,
+        "emptied": emptied,
     }
 
 
@@ -332,6 +409,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--refresh-older-than-days", type=int, default=None)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--report", type=str, default=None, help="고른 것·뺀 것(이유)을 이 JSON 파일에 쓴다")
     args = parser.parse_args(argv)
 
     provider = build_tour_api_client()
@@ -347,6 +425,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from app.db.session import get_session_factory
 
+    report: list[dict[str, object]] | None = [] if args.report else None
     session_factory = get_session_factory()
     with session_factory() as db:
         policies = list_active_policies_for_photo_backfill(db)
@@ -364,8 +443,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             # (2026-09-17-policy-photo-managed-storage.md 에서 managed 저장과 함께 되살린다)
             fallback_provider=None,
             force=args.force,
+            size_of=ImageSizeProbe(),
+            report=report,
         )
-    print("filled={filled} refreshed={refreshed} skipped={skipped} failed={failed}".format(**summary))
+    if report is not None:
+        Path(args.report).write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(
+        "filled={filled} refreshed={refreshed} skipped={skipped} failed={failed} emptied={emptied}".format(
+            **summary
+        )
+    )
     return 0
 
 

@@ -538,6 +538,11 @@ class RegionPhoto(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="active"
     )
+    # 사진 수집 기준(0046): 저작권 유형(cpyrhtDivCd Type1·Type3) · 실제 크기 · 고른 이유. 기준 이전 줄은 비어 있다.
+    copyright_type: Mapped[str | None] = mapped_column(String(20))
+    image_width: Mapped[int | None] = mapped_column(Integer)
+    image_height: Mapped[int | None] = mapped_column(Integer)
+    selection_reason: Mapped[str | None] = mapped_column(String(30))
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
@@ -566,6 +571,10 @@ class PolicyPhotoAssignment(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="active"
     )
+    # 사진 수집 기준(0046): 저작권 유형(cpyrhtDivCd Type1·Type3) · 실제 크기. 기준 이전 줄은 비어 있다.
+    copyright_type: Mapped[str | None] = mapped_column(String(20))
+    image_width: Mapped[int | None] = mapped_column(Integer)
+    image_height: Mapped[int | None] = mapped_column(Integer)
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()

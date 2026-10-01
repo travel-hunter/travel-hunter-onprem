@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from scripts.backfill_region_photos import (
     NATIONWIDE_KEYWORD,
     _spots_for_target,
     build_target_keys,
     choose_representative_spot,
     resolve_area_code_for_sido,
+    resolve_sigungu_code,
 )
 from app.services.tour_api import TourApiAreaCode, TourApiSpot
 
@@ -21,6 +24,7 @@ def make_spot(**overrides: object) -> TourApiSpot:
         "addr1": "전라남도 해남군 삼산면",
         "area_code": "38",
         "sigungu_code": "16",
+        "copyright_type": "Type1",
     }
     data.update(overrides)
     return TourApiSpot(**data)  # type: ignore[arg-type]
@@ -83,7 +87,7 @@ def test_choose_representative_spot_skips_images_used_by_another_city() -> None:
 
     chosen = choose_representative_spot(
         [duplicate, unique],
-        sido="?꾨궓",
+        sido="전남",
         excluded_image_urls={"https://example.test/shared.jpg"},
     )
 
@@ -142,8 +146,13 @@ def test_dry_run_does_not_commit(monkeypatch) -> None:
         def list_area_codes(self, *, area_code=None):
             return AREA_CODES
 
+        def __init__(self) -> None:
+            self.calls = 0
+
         def list_area_spots(self, *, area_code, sigungu_code=None, rows=10):
-            return [make_spot()]
+            # 대상마다 다른 사진 - 같은 사진은 두 번 쓰지 않는다
+            self.calls += 1
+            return [make_spot(content_id=str(self.calls), first_image=f"https://tong.visitkorea.or.kr/{self.calls}.jpg")]
 
         def search_spots_by_keyword(self, *, keyword, rows=10):
             return [make_spot()]
@@ -177,3 +186,124 @@ def test_dry_run_does_not_commit(monkeypatch) -> None:
     assert len(upserts) == 1
     assert upserts[0]["sido"] == "전남"
     assert upserts[0]["city"] == "해남"
+
+
+# ── 수집 기준(2026-10-01): 홈 배너 사진과 같은 기준 ─────────────────────────────
+
+
+def test_choose_representative_spot_applies_collection_criteria() -> None:
+    no_copyright = make_spot(content_id="a", copyright_type=None)
+    facility = make_spot(content_id="b", title="영광 태양광 발전소", first_image="https://x.test/b.jpg")
+    small = make_spot(content_id="c", first_image="https://x.test/small.jpg")
+    portrait = make_spot(content_id="d", first_image="https://x.test/tall.jpg")
+    type3 = make_spot(content_id="e", first_image="https://x.test/e.jpg", copyright_type="Type3")
+    sizes = {"https://x.test/small.jpg": (699, 466), "https://x.test/tall.jpg": (626, 940), "https://x.test/e.jpg": (940, 626)}
+    rejected: list = []
+
+    chosen = choose_representative_spot(
+        [no_copyright, facility, small, portrait, type3],
+        sido="전남",
+        size_of=sizes.get,
+        rejected=rejected,
+    )
+
+    # 제3유형(변경금지)은 원본 주소 그대로 보여 줄 때 쓸 수 있다(사용자 결정)
+    assert chosen is not None and chosen.content_id == "e"
+    reasons = {spot.content_id: rs for spot, rs in rejected}
+    assert reasons["a"] == ["copyright:none"]
+    assert reasons["b"] == ["facility:발전소"]
+    assert reasons["c"] == ["too-small:699x466"]
+    assert reasons["d"][0].startswith("not-landscape:")
+
+
+def test_choose_representative_spot_never_reuses_a_claimed_photo() -> None:
+    only = make_spot(first_image="https://x.test/shared.jpg")
+    assert choose_representative_spot([only], sido="전남", excluded_image_urls={"https://x.test/shared.jpg"}) is None
+
+
+def test_merged_jeonnam_gwangju_address_matches_both() -> None:
+    # 2026-10-01 실측: 전남·광주 관광지 주소가 모두 '전남광주통합특별시'로 시작한다
+    spot = make_spot(addr1="전남광주통합특별시 영광군 법성면")
+    assert choose_representative_spot([spot], sido="전남") is not None
+    assert choose_representative_spot([spot], sido="광주") is not None
+    assert choose_representative_spot([spot], sido="경북") is None
+
+
+def test_resolve_sigungu_code_matches_short_city_name() -> None:
+    codes = [TourApiAreaCode(code="14", name="영광군"), TourApiAreaCode(code="16", name="완도군")]
+    assert resolve_sigungu_code("영광", codes) == "14"
+    assert resolve_sigungu_code("없는곳", codes) is None
+    busan = [TourApiAreaCode(code="3", name="동구"), TourApiAreaCode(code="7", name="부산진구"), TourApiAreaCode(code="8", name="서구")]
+    assert resolve_sigungu_code("부산동", busan, "부산") == "3"
+    assert resolve_sigungu_code("부산서", busan, "부산") == "8"
+    assert resolve_sigungu_code("부산진", busan, "부산") == "7"
+
+
+def test_city_target_lists_only_that_city_by_sigungu_code() -> None:
+    class Provider:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str | None, int]] = []
+
+        def list_area_spots(self, *, area_code, sigungu_code=None, rows=10):
+            self.calls.append((area_code, sigungu_code, rows))
+            return [make_spot()]
+
+    provider = Provider()
+    _spots_for_target(provider, sido="전남", city="영광", area_code="38", sigungu_code="14")  # type: ignore[arg-type]
+    assert provider.calls == [("38", "14", 30)]
+
+
+def _run(script, monkeypatch, provider, existing_rows, targets):
+    upserts: list[dict[str, object]] = []
+    monkeypatch.setattr(script, "upsert_region_photo", lambda db, **fields: upserts.append(fields))
+    monkeypatch.setattr(script, "get_region_photo", lambda db, **kw: existing_rows.get((kw["sido"], kw["city"])))
+
+    class Session:
+        def commit(self) -> None:
+            return None
+
+    summary = script.run_backfill(Session(), provider, targets=targets, dry_run=False)
+    return summary, upserts
+
+
+def test_city_without_a_passing_photo_is_emptied_not_given_the_sido_photo(monkeypatch) -> None:
+    from scripts import backfill_region_photos as script
+
+    class Provider:
+        def list_area_codes(self, *, area_code=None):
+            return [TourApiAreaCode(code="14", name="영광군")] if area_code else AREA_CODES
+
+        def list_area_spots(self, *, area_code, sigungu_code=None, rows=10):
+            # 그 시군 관광지는 모두 저작권 유형이 없고, 도 전체에는 쓸 만한 사진이 있다
+            if sigungu_code:
+                return [make_spot(content_id="city", copyright_type=None)]
+            return [make_spot(content_id="sido", first_image="https://x.test/sido.jpg")]
+
+    old = SimpleNamespace(status="active", hero_image_url="https://x.test/old.jpg", fetched_at=None, copyright_type=None)
+    summary, upserts = _run(script, monkeypatch, Provider(), {("전남", "영광"): old}, [("전남", "영광")])
+
+    assert summary["emptied"] == 1
+    assert upserts == [{"provider": "tour_api", "sido": "전남", "city": "영광", "status": "hidden"}]
+
+
+def test_existing_rows_are_rechecked_when_old_or_shared(monkeypatch) -> None:
+    from scripts import backfill_region_photos as script
+
+    class Provider:
+        def list_area_codes(self, *, area_code=None):
+            return [TourApiAreaCode(code="14", name="영광군"), TourApiAreaCode(code="16", name="완도군")] if area_code else AREA_CODES
+
+        def list_area_spots(self, *, area_code, sigungu_code=None, rows=10):
+            return [make_spot(content_id=f"c{sigungu_code}", first_image=f"https://x.test/{sigungu_code}.jpg")]
+
+    good = SimpleNamespace(status="active", hero_image_url="https://x.test/shared.jpg", fetched_at=None, copyright_type="Type1")
+    shared = SimpleNamespace(status="active", hero_image_url="https://x.test/shared.jpg", fetched_at=None, copyright_type="Type1")
+    summary, upserts = _run(
+        script, monkeypatch, Provider(), {("전남", "영광"): good, ("전남", "완도"): shared}, [("전남", "영광"), ("전남", "완도")]
+    )
+
+    # 먼저 나온 영광이 사진을 지키고, 같은 사진을 쓰던 완도는 다시 골라 제 사진을 받는다
+    assert summary["skipped"] == 1 and summary["refreshed"] == 1
+    assert upserts[0]["city"] == "완도" and upserts[0]["hero_image_url"] == "https://x.test/16.jpg"
+    assert upserts[0]["copyright_type"] == "Type1"
+    assert upserts[0]["attribution_text"] == "사진: 한국관광공사 · 공공누리 제1유형"

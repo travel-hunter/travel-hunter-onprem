@@ -616,7 +616,10 @@ CREATE TABLE public.policy_photos (
     status character varying(20) DEFAULT 'active'::character varying NOT NULL,
     fetched_at timestamp without time zone,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    copyright_type character varying(20),
+    image_width integer,
+    image_height integer
 );
 
 
@@ -732,7 +735,11 @@ CREATE TABLE public.region_photos (
     status character varying(20) DEFAULT 'active'::character varying NOT NULL,
     fetched_at timestamp without time zone,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    copyright_type character varying(20),
+    image_width integer,
+    image_height integer,
+    selection_reason character varying(30)
 );
 
 

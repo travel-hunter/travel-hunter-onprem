@@ -1,0 +1,79 @@
+# 사진 수집을 배너 사진과 같은 기준으로 (1단계)
+
+사용자 요청(2026-10-01): "크롤링 과정에서 사진들을 같은 기준으로 모아야 함". 홈 배너 사진은
+`docs/photo-sourcing/2026-10-01-home-banner-photos.md`(프런트 브랜치) 의 기준(라이선스·가로·크기·내용·겹침)으로 골랐다.
+서버가 모으는 사진(정책 상세·카드·시군 카드에 나가는 사진)도 같은 기준을 거치게 한다. 브랜치 `feature/photo-collection-criteria`(develop c02a330 위).
+
+## 그전 - 코드와 실측으로 확인한 사실
+
+| 단계 | 하던 일 | 문제 |
+|---|---|---|
+| `scripts/backfill_region_photos.py` | 도 전체 관광지 **10건**을 받아 주소에 시군 이름이 든 곳을 시군 사진으로, 없으면 **도 대표 관광지 사진을 시군 줄에** 넣음. 거른 뒤 없으면 **이미 쓴 사진을 다시** 씀 | 같은 사진 반복(6장을 18개 시군이), 라이선스·크기·내용 검사 없음 |
+| `scripts/backfill_policy_photos.py` | 도 전체 50건 + '{시군} 관광지' 키워드 검색에서 시군이 맞는 곳, 없으면 이미 쓴 사진 다시 | 같음. **키워드 검색은 실측 0건** |
+| 응답(`RegionPhotoIndex.resolve`) | 정책 사진 → 시군 사진 → **도 대표 사진** | 도 대표 사진을 여러 시군이 나눠 씀 |
+| `tour_api.py` | `contentid · title · firstimage · addr1 · 지역 코드` 만 읽음 | 저작권 유형(`cpyrhtDivCd`)·분류를 버림 |
+
+개발서버 실측(2026-10-01, 읽기만 - TourAPI `areaBasedList2`):
+- 목록 응답에 `cpyrhtDivCd` 가 늘 온다. 전남 20곳: Type1 13 · Type3 7. 시도마다 상위 5곳(85곳): Type3 약 40%(인천·광주는 5곳 전부). 영광 시군 27곳: Type1 9 · Type3 17.
+- 사진 크기: 20장 중 19장 940px 가로, 1장 699px.
+- 시군 코드(`areaCode2?areaCode=`)로 그 시군 관광지만 받을 수 있다 - 영광 27곳(사진 26).
+- **주소 표기가 바뀌었다**: 전남·광주 관광지 주소가 모두 '전남광주통합특별시'로 시작한다. 그전 코드는 '전라남도'·'전남'만 맞춰
+  전남 관광지가 전부 '도 불일치'로 걸러졌다.
+- 영광에서 조회수 1위로 뽑히던 곳은 '천일염전'(Type1) - 사용자가 어울리지 않는다고 한 사진. 규칙으로 가를 일이 아니라 사람 검토 몫.
+
+## 정한 것(2026-10-01 사용자 결정)
+
+1. 1단계부터: 거르기 + 보고서 + DB 칸. 검토 대기·관리자 승인(2단계)은 나중.
+2. 맞는 사진이 없는 시군은 **비운다** - 도 대표 사진을 나눠 쓰지 않는다(정책 상세 머리·카드는 혜택 그림).
+3. 공공누리 제3유형(변경금지)은 **원본 주소 그대로 보여 주는 조건으로만** 쓴다 - 유형을 DB 에 남겨, 자체 보관으로 다시 인코딩할 때는 빼게 한다.
+4. 시군 코드로 받는다. 주소 표기('전남광주통합특별시')를 고친다 - 전남·광주 둘 다 받아들이고 도 구분은 지역 코드로.
+5. 검증: 사용자가 로컬 루트 `.env` 에 TourAPI 키를 넣고, 로컬에서 dry-run 보고서를 만든다(키는 출력하지 않는다).
+
+## 바꾼 것
+
+- `app/services/photo_criteria.py`(새) - 저작권 유형(Type1·Type3, 없으면 뺌) · 시설 낱말(발전소·태양광·변전소·청사·주차장·터미널·처리장·산업단지·공단·매립장·소각장)
+  · 가로(≥ 세로×1.2) · 가로 800px 이상(사진 머리 128KB 만 받아 JPEG/PNG 머리에서 잼, 주소마다 한 번) · 출처 문구
+  `사진: 한국관광공사 · 공공누리 제1유형`(제3유형은 `(변경금지)`) - 그전 두 가지 표기('Photo: Korea Tourism Organization TourAPI'·'사진: 한국관광공사')를 하나로.
+- `tour_api.py` - `cpyrhtDivCd` → `copyright_type`, `cat3` → `category_code`.
+- 두 수집 스크립트 - 시군 코드로 그 시군 관광지만, 기준을 순서대로(조회순) 통과한 첫 곳, 이미 쓴 사진은 다시 쓰지 않음,
+  시군 줄은 도 사진으로 넘어가지 않음, **기준 이전 줄(저작권 유형 없음)과 다른 줄과 같은 사진을 쓰는 줄은 갱신 날짜와 상관없이 다시 고름**,
+  못 고르면 있던 줄을 숨김(`status='hidden'`), `--report out.json` 으로 대상마다 고른 것·뺀 것(이유)을 남김. dry-run 은 기존 줄을 읽지 않는다.
+- 응답 - 시군이 있는 정책은 시군 사진이 없으면 `null`(도 대표 사진으로 넘어가지 않음). 시군이 없는 정책(도 단위·전국)만 도 대표 사진.
+  **주의**: 이것만으로는 이미 시군 줄에 들어가 있는 도 사진이 안 빠진다 - 배포 뒤 수집을 한 번 다시 돌려야(기준 이전 줄이라 자동으로 다시 고른다) 겹침이 사라진다.
+- Alembic `0046_photo_criteria` - `region_photos` · `policy_photos` 에 `copyright_type` · `image_width` · `image_height`, `region_photos.selection_reason`. 모두 nullable.
+- 문서 - `docs/db-schema-current.md` · `.sql`, `docs/mvp-api-contract.md`(사진 해석 순서·출처 문구). API 모양은 그대로.
+- `docs/photo-sourcing/tools/report_sheet.py`(새, 로컬) - dry-run 보고서를 한 장 그림으로(고른 사진 초록, 뺀 사진 붉은 테두리 + 이유).
+
+## 검증
+
+- 백엔드 시험: `python -m pytest`(루트 `backend/.venv`) - 사진 시험 + 새 기준 시험. `tests/test_stay_discount_semantics_snapshot.py` 1건은
+  Windows 에서 폴더 권한(POSIX) 검사라 원래 떨어진다(이번 변경과 무관).
+- `alembic upgrade 0045_traffic_detail:head --sql` · 내리기 SQL 확인(0044 는 데이터 마이그레이션이라 전체 오프라인 SQL 은 원래 멈춘다).
+- 로컬 dry-run: 키를 넣은 뒤 아래로 보고서를 만들고 `report_sheet.py` 로 그림을 본다(키는 출력하지 않는다).
+  `run_with_root_env.py` 는 저장소 밖 로컬 래퍼다 - `backend/.env`(DB 주소)와 루트 `.env` 의 `TOUR_API_*` 만 프로세스 환경에 넣고 스크립트를 돌린다.
+  래퍼 없이 하려면 그 값들을 환경에 넣고 `backend/` 에서 스크립트를 직접 돌리면 된다.
+
+```
+python run_with_root_env.py backend/scripts/backfill_region_photos.py --dry-run --report region-report.json
+python run_with_root_env.py backend/scripts/backfill_policy_photos.py --dry-run --report policy-report.json
+python docs/photo-sourcing/tools/report_sheet.py region-report.json region-sheet.jpg
+```
+
+로컬 dry-run 결과(2026-10-01, 개발서버와 같은 키·로컬 DB 대상):
+
+| | 대상 | 고름 | 비움 | 제1유형 / 제3유형 | 대상 사이 같은 사진 | 뺀 이유 |
+|---|---|---|---|---|---|---|
+| 지역 사진 | 68 | 66 | 2(전국 · 비수도권·인구감소지역 - 지역 코드 없음) | 48 / 18 | 0 | 이미 씀 3 · 작음 5 · 세로 1 · 시설 1 |
+| 정책 사진 | 105 | 93 | 12(시군 없는 정책 - 전국 11, 제주 1. 응답에서 도 대표 사진) | 63 / 30 | 0 | 이미 씀 25 · 작음 6 |
+
+- 돌려 보다 찾은 것 - 부산 동구·영도·서구: 정책 표기('부산동' · '부산동구')가 TourAPI 시군 이름('동구')과 달라 시군 코드를 못 찾았고,
+  정책 쪽은 주소에 '부산동구' 글자가 없어 또 걸렀다. 시도 이름을 떼고 비교하고, 시군 코드가 같으면 그 시군 관광지로 본다(시험 추가).
+- 같은 시군의 첫 정책 사진은 그 시군 지역 사진과 같다(같은 목록에서 첫 통과 사진) - 시군 사이 겹침이 아니라 그대로 둔다.
+- 영광은 여전히 '천일염전'(규칙은 통과) - 사람 검토(2단계) 몫.
+- 보고서·그림: `D:\travel-hunter-review\2026-10-01-photo-criteria-dryrun\`(저장소 밖).
+
+- 개발서버 반영(머지·배포 뒤): `alembic upgrade head` → 두 수집 스크립트를 dry-run 으로 먼저, 보고서 확인 뒤 실제 실행(DB 쓰기 - 매번 사용자 승인).
+
+## 하지 않는 것
+
+2단계(검토 대기 → 관리자 승인), 사진 자체 보관(9/17 계획), 홈 배너 사진(손으로 고른 사진 그대로).

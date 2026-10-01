@@ -19,6 +19,7 @@ def make_spot(**overrides: object) -> TourApiSpot:
         "addr1": "West River County",
         "area_code": "1",
         "sigungu_code": None,
+        "copyright_type": "Type1",
     }
     values.update(overrides)
     return TourApiSpot(**values)  # type: ignore[arg-type]
@@ -84,7 +85,7 @@ def test_run_backfill_dry_run_does_not_write(monkeypatch) -> None:
         db, FakeProvider(), policies=[policy], dry_run=True
     )
 
-    assert summary == {"filled": 1, "refreshed": 0, "skipped": 0, "failed": 0}
+    assert summary == {"filled": 1, "refreshed": 0, "skipped": 0, "failed": 0, "emptied": 0}
     assert writes == []
     assert db.committed is False
 
@@ -104,6 +105,7 @@ def test_run_backfill_skips_a_fresh_existing_assignment(monkeypatch) -> None:
         status="active",
         image_url="https://example.test/current.jpg",
         fetched_at=datetime.now(UTC).replace(tzinfo=None),
+        copyright_type="Type1",
     )
     monkeypatch.setattr(
         script, "get_policy_photo", lambda db, **kwargs: existing
@@ -120,7 +122,7 @@ def test_run_backfill_skips_a_fresh_existing_assignment(monkeypatch) -> None:
     db = FakeSession()
     summary = script.run_backfill(db, FailingProvider(), policies=[policy], dry_run=False)
 
-    assert summary == {"filled": 0, "refreshed": 0, "skipped": 1, "failed": 0}
+    assert summary == {"filled": 0, "refreshed": 0, "skipped": 1, "failed": 0, "emptied": 0}
     assert db.committed is True
 
 
@@ -144,6 +146,16 @@ def test_choose_city_photo_rejects_region_only_candidate() -> None:
     )
 
     assert candidate is None
+
+
+def test_choose_city_photo_accepts_spot_in_resolved_sigungu() -> None:
+    # 정책 표기 '부산동구' 는 주소('부산광역시 동구 …')에 없다 - 시군 코드가 같으면 그 시군 관광지다.
+    spot = make_spot(addr1="부산광역시 동구 초량동", sigungu_code="3")
+
+    assert script.choose_city_photo([spot], city="부산동구") is None
+    candidate = script.choose_city_photo([spot], city="부산동구", sigungu_code="3")
+    assert candidate is not None
+    assert script.choose_city_photo([spot], city="부산동구", sigungu_code="7") is None
 
 
 def test_run_backfill_uses_pixabay_only_after_missing_tour_city_match(monkeypatch) -> None:
@@ -192,7 +204,7 @@ def test_run_backfill_uses_pixabay_only_after_missing_tour_city_match(monkeypatc
         dry_run=False,
     )
 
-    assert summary == {"filled": 1, "refreshed": 0, "skipped": 0, "failed": 0}
+    assert summary == {"filled": 1, "refreshed": 0, "skipped": 0, "failed": 0, "emptied": 0}
     assert pixabay.calls == ["River landscape"]
     assert writes[0]["provider"] == "pixabay"
     assert writes[0]["assignment_reason"] == "pixabay_city_fallback"
@@ -229,3 +241,69 @@ def test_force_hides_stale_assignment_when_no_city_candidate_exists(monkeypatch)
 
     assert summary["failed"] == 1
     assert writes == [{"policy_id": 1, "status": "hidden"}]
+
+
+
+def test_assignment_from_before_the_criteria_is_rechecked_and_hidden_without_a_match(monkeypatch) -> None:
+    class FakeSession:
+        def commit(self) -> None:
+            return None
+
+    class TourProvider:
+        def list_area_codes(self, *, area_code=None):
+            return [TourApiAreaCode(code="1", name="West")]
+
+        def list_area_spots(self, *, area_code, sigungu_code=None, rows=10):
+            # 시군 관광지가 있지만 시설이다
+            return [make_spot(title="River 태양광 발전소")]
+
+        def search_spots_by_keyword(self, *, keyword, rows=10):
+            return []
+
+    old = SimpleNamespace(
+        status="active",
+        image_url="https://example.test/old.jpg",
+        fetched_at=datetime.now(UTC).replace(tzinfo=None),
+        copyright_type=None,  # 기준 이전 줄
+    )
+    writes: list[dict[str, object]] = []
+    report: list[dict[str, object]] = []
+    monkeypatch.setattr(script, "get_policy_photo", lambda db, **kwargs: old)
+    monkeypatch.setattr(script, "upsert_policy_photo", lambda db, **fields: writes.append(fields))
+    policy = SimpleNamespace(id=1, title="[River] campaign", region="West", city="River")
+
+    summary = script.run_backfill(FakeSession(), TourProvider(), policies=[policy], dry_run=False, report=report)
+
+    assert summary["emptied"] == 1
+    assert writes == [{"policy_id": 1, "status": "hidden"}]
+    assert report[0]["chosen"] is None
+    assert report[0]["rejected"][0]["reasons"] == ["facility:발전소"]
+
+
+def test_new_assignment_records_copyright_size_and_attribution(monkeypatch) -> None:
+    class FakeSession:
+        def commit(self) -> None:
+            return None
+
+    class TourProvider:
+        def list_area_codes(self, *, area_code=None):
+            return [TourApiAreaCode(code="1", name="West")]
+
+        def list_area_spots(self, *, area_code, sigungu_code=None, rows=10):
+            return [make_spot(copyright_type="Type3")]
+
+        def search_spots_by_keyword(self, *, keyword, rows=10):
+            return []
+
+    writes: list[dict[str, object]] = []
+    monkeypatch.setattr(script, "get_policy_photo", lambda db, **kwargs: None)
+    monkeypatch.setattr(script, "upsert_policy_photo", lambda db, **fields: writes.append(fields))
+    policy = SimpleNamespace(id=1, title="[River] campaign", region="West", city="River")
+
+    script.run_backfill(
+        FakeSession(), TourProvider(), policies=[policy], dry_run=False, size_of=lambda url: (940, 626)
+    )
+
+    assert writes[0]["copyright_type"] == "Type3"
+    assert (writes[0]["image_width"], writes[0]["image_height"]) == (940, 626)
+    assert writes[0]["attribution_text"] == "사진: 한국관광공사 · 공공누리 제3유형(변경금지)"

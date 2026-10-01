@@ -73,13 +73,22 @@ def test_upsert_region_photo_updates_existing_row(session: Session) -> None:
         sido="전남",
         city="해남",
         hero_image_url="https://tong.visitkorea.or.kr/new.jpg",
+        copyright_type="Type3",
+        image_width=940,
+        image_height=627,
+        selection_reason="criteria_v1",
     )
     session.commit()
+    session.expire_all()
     assert first.id == second.id
     stored = get_region_photo(session, provider="tour_api", sido="전남", city="해남")
     assert stored is not None
     assert stored.hero_image_url is not None
     assert stored.hero_image_url.endswith("new.jpg")
+    # 수집 기준 칸(0046)이 실제로 저장된다 - 비면 기준 이전 줄로 보여 매번 다시 고른다.
+    assert (stored.copyright_type, stored.image_width, stored.image_height, stored.selection_reason) == (
+        "Type3", 940, 627, "criteria_v1"
+    )
     assert len(list_active_region_photos(session)) == 1
 
 
@@ -131,12 +140,15 @@ def test_resolve_normalizes_city_suffix(session: Session) -> None:
     assert resolved.image_url.endswith("yw.jpg")
 
 
-def test_resolve_falls_back_to_sido_photo(session: Session) -> None:
+def test_resolve_uses_sido_photo_only_without_city(session: Session) -> None:
     add_photo(session, city="", hero_image_url="https://tong.visitkorea.or.kr/jn.jpg")
     index = build_region_photo_index(session)
-    resolved = index.resolve("전남", "없는도시")
+    # 시군이 없는 정책(도 단위)은 도 대표 사진
+    resolved = index.resolve("전남", None)
     assert resolved is not None
     assert resolved.image_url.endswith("jn.jpg")
+    # 시군이 있는데 그 시군 사진이 없으면 비운다 - 도 대표 사진을 여러 시군이 나눠 쓰지 않는다(2026-10-01)
+    assert index.resolve("전남", "없는도시") is None
 
 
 def test_resolve_missing_sido_returns_none(session: Session) -> None:

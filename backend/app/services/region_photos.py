@@ -59,6 +59,9 @@ class RegionPhotoIndex:
                 normalized_hit = self._by_key.get((region, normalized))
                 if normalized_hit is not None:
                     return normalized_hit
+            # 시군 사진이 없으면 도 대표 사진으로 넘어가지 않는다(2026-10-01 사용자 결정) - 같은 도의 여러 시군이
+            # 한 장을 나눠 써 같은 사진이 되풀이됐다. 사진 없음 → 화면은 혜택 그림.
+            return None
         return self._by_key.get((region, SIDO_LEVEL_CITY))
 
     def resolve_policy(

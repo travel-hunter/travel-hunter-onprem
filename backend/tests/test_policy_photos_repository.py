@@ -58,13 +58,18 @@ def test_upsert_policy_photo_keeps_one_current_assignment(session: Session) -> N
         relevance_score=150,
         assignment_reason="policy_keyword",
         status="active",
+        copyright_type="Type1",
+        image_width=940,
+        image_height=626,
     )
     session.commit()
+    session.expire_all()
 
     assert first.id == second.id
     stored = get_policy_photo(session, policy_id=42)
     assert stored is not None
     assert stored.image_url.endswith("better.jpg")
+    assert (stored.copyright_type, stored.image_width, stored.image_height) == ("Type1", 940, 626)
     assert stored.relevance_score == 150
     assert stored.assignment_reason == "policy_keyword"
     assert len(list_active_policy_photos(session)) == 1

@@ -193,6 +193,10 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 - `policies.city`: 시군구 표시명(String(80), nullable). `external_source_records.city`를 승격 시 복사한다. 숙박세일 지역 alias 정책은 시도 단위 노출이므로 `NULL`로 명시 저장한다. 관리자 override/legacy dgtour 조기 반환 경로에서는 갱신하지 않으며, 그 경우 시도 대표 사진으로 폴백한다.
 - `region_photos`: 정책 카드 hero/썸네일용 지역 대표 관광지 사진 조회 테이블. `(provider, sido, city)` UNIQUE이며 `city`는 NOT NULL 기본 `''`(빈 문자열이 시도 대표 사진 sentinel — NULL이면 UNIQUE가 중복 upsert를 못 막는다). `sido`는 `policies.region`과 동일한 축약형(전남/경북)만 저장한다. `hero_image_url`/`thumb_image_url`/`provider_image_url`(원본 출처 보존), `storage_kind`(`remote`→S3 전환 시 `managed`), `attribution_text`(공공누리 1유형 출처표시, 기본 `사진: 한국관광공사`), `status`(`active`/`blocked` — 배포 없이 사진 차단), `fetched_at`(URL 부패 재검증 기준)을 담는다. 채움은 `backend/scripts/backfill_region_photos.py`(TourAPI, 키 없으면 no-op)가 담당한다.
 
+사진 수집 기준 컬럼 (2026-10-01, `0046_photo_criteria`):
+
+- `region_photos` · `policy_photos` 에 `copyright_type`(TourAPI `cpyrhtDivCd`: `Type1` 공공누리 제1유형, `Type3` 제3유형 변경금지), `image_width` · `image_height`(실제 크기, 머리만 받아 잼), `region_photos.selection_reason`(고른 기준 판, 예 `criteria_v1`)을 더했다. 모두 nullable - 기준 이전 줄은 비어 있고 수집 스크립트가 그 줄을 다시 고른다. 기준은 `backend/app/services/photo_criteria.py`. 자체 보관으로 다시 인코딩할 때는 `Type3` 를 빼야 하므로 유형이 필요하다. 못 고른 줄은 `status='hidden'`.
+
 수집 소스·검토 후보 테이블 (2026-09-13, `0038_policy_source_catalog`; `0039_external_source_status_text`는 `external_source_records.status_text`를 Text로 넓혔다):
 
 - `policy_collection_sources`: 코드 소유 수집 소스 카탈로그. `key` UNIQUE, `adapter_key`, `official_url`, `source_category`, `display_name`, `enabled`, `publication_mode`(`review` | `auto_after_reviewed_baseline`, CHECK), `expected_min_records`, 최근 실행 상태(`last_outcome`/`last_collected_at`/`last_successful_at`/`last_error`). 행은 마이그레이션이 아니라 저장소(`ensure_builtin_collection_sources`)가 만든다.

@@ -48,6 +48,10 @@ class TourApiSpot:
     addr1: str | None
     area_code: str | None
     sigungu_code: str | None
+    # 저작권 유형(cpyrhtDivCd: Type1 공공누리 제1유형 · Type3 제3유형 변경금지)과 관광지 분류(cat3).
+    # 2026-10-01 개발서버 실측: 목록 응답에 늘 온다. 사진 수집 기준(photo_criteria.py)이 쓴다.
+    copyright_type: str | None = None
+    category_code: str | None = None
 
 
 class TourApiPhotoProvider(Protocol):
@@ -142,6 +146,8 @@ def _to_spot(entry: dict[str, Any]) -> TourApiSpot:
         addr1=_string_or_none(entry.get("addr1")),
         area_code=_string_or_none(entry.get("areacode")),
         sigungu_code=_string_or_none(entry.get("sigungucode")),
+        copyright_type=_string_or_none(entry.get("cpyrhtDivCd")),
+        category_code=_string_or_none(entry.get("cat3")),
     )
 
 
