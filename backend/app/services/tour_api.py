@@ -25,8 +25,8 @@ AREA_BASED_LIST_PATH = "/areaBasedList2"
 SEARCH_KEYWORD_PATH = "/searchKeyword2"
 CONTENT_TYPE_TOURIST_SPOT = "12"
 TOUR_API_DEFAULT_ROWS = 10
-# arrange=Q: 대표이미지가 있는 항목을 조회순으로. 실키 확보 후 실효성 재확인 대상.
-TOUR_API_DEFAULT_ARRANGE = "Q"
+# arrange=P: 대표이미지가 있는 항목을 조회순으로(2026-10-01 실측 - Q 는 수정일순이었다. A/O 제목순, C/Q 수정일순).
+TOUR_API_DEFAULT_ARRANGE = "P"
 
 
 class TourApiConfigurationError(RuntimeError):
@@ -52,6 +52,8 @@ class TourApiSpot:
     # 2026-10-01 개발서버 실측: 목록 응답에 늘 온다. 사진 수집 기준(photo_criteria.py)이 쓴다.
     copyright_type: str | None = None
     category_code: str | None = None
+    # 관광공사 분류(contenttypeid): 12 관광지 · 14 문화시설 · 15 축제 · 38 쇼핑 · 32 숙박 · 39 음식점 …
+    content_type_id: str | None = None
 
 
 class TourApiPhotoProvider(Protocol):
@@ -66,11 +68,17 @@ class TourApiPhotoProvider(Protocol):
         area_code: str,
         sigungu_code: str | None = None,
         rows: int = TOUR_API_DEFAULT_ROWS,
+        content_type_id: str = CONTENT_TYPE_TOURIST_SPOT,
+        page: int = 1,
     ) -> list[TourApiSpot]:
         ...
 
     def search_spots_by_keyword(
-        self, *, keyword: str, rows: int = TOUR_API_DEFAULT_ROWS
+        self,
+        *,
+        keyword: str,
+        rows: int = TOUR_API_DEFAULT_ROWS,
+        content_type_id: str | None = CONTENT_TYPE_TOURIST_SPOT,
     ) -> list[TourApiSpot]:
         ...
 
@@ -148,6 +156,7 @@ def _to_spot(entry: dict[str, Any]) -> TourApiSpot:
         sigungu_code=_string_or_none(entry.get("sigungucode")),
         copyright_type=_string_or_none(entry.get("cpyrhtDivCd")),
         category_code=_string_or_none(entry.get("cat3")),
+        content_type_id=_string_or_none(entry.get("contenttypeid")),
     )
 
 
@@ -220,12 +229,14 @@ class TourApiClient:
         area_code: str,
         sigungu_code: str | None = None,
         rows: int = TOUR_API_DEFAULT_ROWS,
+        content_type_id: str = CONTENT_TYPE_TOURIST_SPOT,
+        page: int = 1,
     ) -> list[TourApiSpot]:
         params: dict[str, object] = {
-            "contentTypeId": CONTENT_TYPE_TOURIST_SPOT,
+            "contentTypeId": content_type_id,
             "areaCode": area_code,
             "numOfRows": rows,
-            "pageNo": 1,
+            "pageNo": page,
             "arrange": TOUR_API_DEFAULT_ARRANGE,
         }
         if sigungu_code:
@@ -233,15 +244,21 @@ class TourApiClient:
         return self._parse_spots(self._request_items(AREA_BASED_LIST_PATH, params))
 
     def search_spots_by_keyword(
-        self, *, keyword: str, rows: int = TOUR_API_DEFAULT_ROWS
+        self,
+        *,
+        keyword: str,
+        rows: int = TOUR_API_DEFAULT_ROWS,
+        content_type_id: str | None = CONTENT_TYPE_TOURIST_SPOT,
     ) -> list[TourApiSpot]:
+        # content_type_id=None 은 분류를 가리지 않는다(사진 검토 '이름으로 찾기' - 대표 장소가 문화시설·쇼핑일 수 있다)
         params: dict[str, object] = {
             "keyword": keyword.strip(),
-            "contentTypeId": CONTENT_TYPE_TOURIST_SPOT,
             "numOfRows": rows,
             "pageNo": 1,
             "arrange": TOUR_API_DEFAULT_ARRANGE,
         }
+        if content_type_id:
+            params["contentTypeId"] = content_type_id
         return self._parse_spots(self._request_items(SEARCH_KEYWORD_PATH, params))
 
     @staticmethod

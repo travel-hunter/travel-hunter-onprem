@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -19,6 +20,10 @@ from app.schemas.admin import (
     AdminEligibleIslandSnapshotDetail,
     AdminEligibleIslandSnapshotItem,
     AdminEligibleIslandSnapshotListResponse,
+    AdminPhotoReviewApproveRequest,
+    AdminPhotoReviewSearchRequest,
+    AdminPhotoReviewTargetDetail,
+    AdminPhotoReviewTargetListResponse,
     AdminPolicyReviewCandidateItem,
     AdminPolicyReviewCandidateListResponse,
     AdminPolicyReviewBatchApproveRequest,
@@ -41,6 +46,9 @@ from app.repositories.eligible_islands import EligibleIslandCatalogError
 from app.services import admin as admin_service
 from app.services import eligible_island_catalog, eligible_island_notice
 from app.services import policy_candidate_review
+from app.services import photo_review
+from app.services.photo_criteria import ImageSizeProbe
+from app.services.tour_api import TourApiConfigurationError, build_tour_api_client
 from app.services.policy_normalization import PolicyNormalizationError
 
 
@@ -571,3 +579,120 @@ def reject_eligible_island_snapshot(
     approved_id = eligible_island_repository.get_catalog(session, catalog_key=catalog_key).approved_snapshot_id
     session.commit()
     return _snapshot_item(snapshot, approved_snapshot_id=approved_id)
+
+
+# ---------- 사진 검토(0047) ----------
+
+PHOTO_PROBE_TIMEOUT_SECONDS = 5.0
+
+
+def _photo_review_call(session: Session, action):
+    """결정 · 후보 받기를 한 트랜잭션으로. 실패하면 되돌리고 상태 코드로 바꾼다(관광공사 오류 문구에는 키가 없다)."""
+
+    try:
+        target = action()
+        session.commit()
+    except photo_review.PhotoReviewError as error:
+        session.rollback()
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+    except TourApiConfigurationError as error:
+        session.rollback()
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    except Exception:
+        session.rollback()
+        raise
+    return AdminPhotoReviewTargetDetail(**photo_review.target_detail(session, target))
+
+
+def _tour_api_or_503():
+    provider = build_tour_api_client()
+    if provider is None:
+        raise HTTPException(status_code=503, detail="TourAPI is disabled")
+    return provider
+
+
+@router.get("/photo-review/targets", response_model=AdminPhotoReviewTargetListResponse)
+def list_photo_review_targets(
+    unit: Literal["region", "policy"] = Query(default="region"),
+    status: Literal["pending", "approved", "none", "all"] = Query(default="pending"),
+    db: Session | None = Depends(get_optional_db),
+    _current_admin: User = Depends(require_admin_user),
+) -> AdminPhotoReviewTargetListResponse:
+    session = _require_db(db)
+    return AdminPhotoReviewTargetListResponse(
+        **photo_review.list_targets(session, unit=unit, status=None if status == "all" else status)
+    )
+
+
+@router.get("/photo-review/targets/{target_id}", response_model=AdminPhotoReviewTargetDetail)
+def get_photo_review_target(
+    target_id: str,
+    db: Session | None = Depends(get_optional_db),
+    _current_admin: User = Depends(require_admin_user),
+) -> AdminPhotoReviewTargetDetail:
+    session = _require_db(db)
+    try:
+        target = photo_review.get_target(session, target_id)
+    except photo_review.PhotoReviewError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+    return AdminPhotoReviewTargetDetail(**photo_review.target_detail(session, target))
+
+
+@router.post("/photo-review/targets/{target_id}/approve", response_model=AdminPhotoReviewTargetDetail)
+def approve_photo_review_target(
+    target_id: str,
+    payload: AdminPhotoReviewApproveRequest,
+    db: Session | None = Depends(get_optional_db),
+    current_admin: User = Depends(require_admin_user),
+) -> AdminPhotoReviewTargetDetail:
+    session = _require_db(db)
+    return _photo_review_call(
+        session, lambda: photo_review.approve(session, target_id, payload.candidateId, current_admin)
+    )
+
+
+@router.post("/photo-review/targets/{target_id}/none", response_model=AdminPhotoReviewTargetDetail)
+def mark_photo_review_target_none(
+    target_id: str,
+    db: Session | None = Depends(get_optional_db),
+    current_admin: User = Depends(require_admin_user),
+) -> AdminPhotoReviewTargetDetail:
+    session = _require_db(db)
+    return _photo_review_call(session, lambda: photo_review.mark_none(session, target_id, current_admin))
+
+
+@router.post("/photo-review/targets/{target_id}/reopen", response_model=AdminPhotoReviewTargetDetail)
+def reopen_photo_review_target(
+    target_id: str,
+    db: Session | None = Depends(get_optional_db),
+    current_admin: User = Depends(require_admin_user),
+) -> AdminPhotoReviewTargetDetail:
+    session = _require_db(db)
+    return _photo_review_call(session, lambda: photo_review.reopen(session, target_id, current_admin))
+
+
+@router.post("/photo-review/targets/{target_id}/more", response_model=AdminPhotoReviewTargetDetail)
+def fetch_more_photo_review_candidates(
+    target_id: str,
+    db: Session | None = Depends(get_optional_db),
+    _current_admin: User = Depends(require_admin_user),
+) -> AdminPhotoReviewTargetDetail:
+    session = _require_db(db)
+    provider = _tour_api_or_503()
+    probe = ImageSizeProbe(timeout=PHOTO_PROBE_TIMEOUT_SECONDS)
+    return _photo_review_call(session, lambda: photo_review.fetch_more(session, target_id, provider, size_of=probe))
+
+
+@router.post("/photo-review/targets/{target_id}/search", response_model=AdminPhotoReviewTargetDetail)
+def search_photo_review_candidates(
+    target_id: str,
+    payload: AdminPhotoReviewSearchRequest,
+    db: Session | None = Depends(get_optional_db),
+    _current_admin: User = Depends(require_admin_user),
+) -> AdminPhotoReviewTargetDetail:
+    session = _require_db(db)
+    provider = _tour_api_or_503()
+    probe = ImageSizeProbe(timeout=PHOTO_PROBE_TIMEOUT_SECONDS)
+    return _photo_review_call(
+        session, lambda: photo_review.search(session, target_id, payload.keyword, provider, size_of=probe)
+    )

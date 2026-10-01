@@ -13,6 +13,7 @@ import { LoadingState } from "../components/ui";
 import { AdminAuditLogsPage, AdminDashboardPage, AdminForbiddenPage, AdminLayout, AdminPoliciesPage, AdminPolicyEditorPage, AdminPolicyReviewPage, AdminUserDetailPage, AdminUsersPage } from "../pages/admin/AdminPages";
 import { getOnboardingPath, isOnboardingRoute, withRedirect } from "./onboarding";
 import { useSession } from "./session";
+import { AdminPhotoReviewPage } from "../pages/admin/AdminPhotoReviewPage";
 import { adminUrl, isAdminHost } from "./adminHost";
 
 export function App() {
@@ -44,6 +45,7 @@ export function App() {
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
             <Route path="/admin/policies" element={<AdminPoliciesPage />} />
             <Route path="/admin/policy-review" element={<AdminPolicyReviewPage />} />
+            <Route path="/admin/photo-review" element={<AdminPhotoReviewPage />} />
             <Route path="/admin/policies/new" element={<AdminPolicyEditorPage mode="create" />} />
             <Route path="/admin/policies/:policyId" element={<AdminPolicyEditorPage />} />
             <Route path="/admin/audit-logs" element={<AdminAuditLogsPage />} />

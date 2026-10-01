@@ -566,3 +566,54 @@ export type AdminEligibleIslandCollectResponse = {
   entryCount: number;
   error: string | null;
 };
+
+// 사진 검토(관리자): 수집은 후보만, 관리자가 한 장을 확정해야 앱 사진이 된다
+export type AdminPhotoReviewUnit = "region" | "policy";
+export type AdminPhotoReviewStatus = "pending" | "approved" | "none";
+
+export type AdminPhotoReviewPhoto = {
+  candidateId: string;
+  title: string;
+  imageUrl: string;
+  thumbnailUrl: string | null;
+  copyrightType: string | null;
+};
+
+export type AdminPhotoReviewTarget = {
+  id: string;
+  unit: AdminPhotoReviewUnit;
+  status: AdminPhotoReviewStatus;
+  sido: string;
+  city: string;
+  policySlug: string | null;
+  policyTitle: string | null;
+  policyCategory: string | null;
+  benefitCount: number;
+  candidateCount: number;
+  photo: AdminPhotoReviewPhoto | null;
+  inheritedPhoto: AdminPhotoReviewPhoto | null;
+  decidedAt: string | null;
+};
+
+export type AdminPhotoReviewCandidate = {
+  id: string;
+  title: string;
+  kind: string;
+  contentTypeId: string | null;
+  imageUrl: string;
+  thumbnailUrl: string | null;
+  copyrightType: string | null;
+  width: number | null;
+  height: number | null;
+  address: string | null;
+  source: "collect" | "search";
+  searchKeyword: string | null;
+};
+
+export type AdminPhotoReviewTargetDetail = AdminPhotoReviewTarget & { candidates: AdminPhotoReviewCandidate[] };
+
+export type AdminPhotoReviewTargetListResponse = {
+  items: AdminPhotoReviewTarget[];
+  counts: { pending: number; approved: number; none: number; all: number };
+  pendingTotal: number;
+};

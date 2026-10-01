@@ -464,6 +464,90 @@ ALTER SEQUENCE public.pending_social_signups_id_seq OWNED BY public.pending_soci
 
 
 --
+-- Name: photo_review_candidates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.photo_review_candidates (
+    id bigint NOT NULL,
+    target_id bigint NOT NULL,
+    provider character varying(30) NOT NULL,
+    provider_content_id character varying(60),
+    title character varying(200) NOT NULL,
+    content_type_id character varying(10),
+    image_url character varying(500) NOT NULL,
+    thumbnail_url character varying(500),
+    copyright_type character varying(20),
+    image_width integer,
+    image_height integer,
+    address character varying(200),
+    source character varying(20) NOT NULL,
+    search_keyword character varying(100),
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_photo_review_candidates_source CHECK (((source)::text = ANY ((ARRAY['collect'::character varying, 'search'::character varying])::text[])))
+);
+
+
+--
+-- Name: photo_review_candidates_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.photo_review_candidates_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: photo_review_candidates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.photo_review_candidates_id_seq OWNED BY public.photo_review_candidates.id;
+
+
+--
+-- Name: photo_review_targets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.photo_review_targets (
+    id bigint NOT NULL,
+    target_key character varying(160) NOT NULL,
+    target_type character varying(20) NOT NULL,
+    sido character varying(50) NOT NULL,
+    city character varying(80) DEFAULT ''::character varying NOT NULL,
+    policy_id bigint,
+    status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
+    approved_candidate_id bigint,
+    decided_at timestamp without time zone,
+    decided_by_user_id bigint,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_photo_review_targets_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'none'::character varying])::text[]))),
+    CONSTRAINT ck_photo_review_targets_type CHECK (((target_type)::text = ANY ((ARRAY['region'::character varying, 'policy'::character varying])::text[])))
+);
+
+
+--
+-- Name: photo_review_targets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.photo_review_targets_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: photo_review_targets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.photo_review_targets_id_seq OWNED BY public.photo_review_targets.id;
+
+
+--
 -- Name: policies; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -499,6 +583,7 @@ CREATE TABLE public.policies (
     updated_at timestamp without time zone DEFAULT now() NOT NULL,
     structured_detail jsonb,
     city character varying(80),
+    card_summary text,
     CONSTRAINT ck_policies_status_active_hidden CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'hidden'::character varying])::text[])))
 );
 
@@ -659,7 +744,10 @@ CREATE TABLE public.policy_review_candidates (
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     updated_at timestamp without time zone DEFAULT now() NOT NULL,
     review_reason character varying(40),
+    review_scope character varying(24) DEFAULT 'full_policy'::character varying NOT NULL,
+    detail_fingerprint character varying(64),
     CONSTRAINT ck_policy_review_candidates_change_kind CHECK (((change_kind)::text = ANY ((ARRAY['new'::character varying, 'material_change'::character varying])::text[]))),
+    CONSTRAINT ck_policy_review_candidates_review_scope CHECK (((review_scope)::text = ANY ((ARRAY['full_policy'::character varying, 'card_copy_only'::character varying])::text[]))),
     CONSTRAINT ck_policy_review_candidates_review_status CHECK (((review_status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying, 'superseded'::character varying])::text[])))
 );
 
@@ -1161,6 +1249,20 @@ ALTER TABLE ONLY public.pending_social_signups ALTER COLUMN id SET DEFAULT nextv
 
 
 --
+-- Name: photo_review_candidates id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.photo_review_candidates ALTER COLUMN id SET DEFAULT nextval('public.photo_review_candidates_id_seq'::regclass);
+
+
+--
+-- Name: photo_review_targets id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.photo_review_targets ALTER COLUMN id SET DEFAULT nextval('public.photo_review_targets_id_seq'::regclass);
+
+
+--
 -- Name: policies id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1433,6 +1535,30 @@ ALTER TABLE ONLY public.pending_social_signups
 
 
 --
+-- Name: photo_review_candidates photo_review_candidates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.photo_review_candidates
+    ADD CONSTRAINT photo_review_candidates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: photo_review_targets photo_review_targets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.photo_review_targets
+    ADD CONSTRAINT photo_review_targets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: photo_review_targets photo_review_targets_target_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.photo_review_targets
+    ADD CONSTRAINT photo_review_targets_target_key_key UNIQUE (target_key);
+
+
+--
 -- Name: policies policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1638,6 +1764,14 @@ ALTER TABLE ONLY public.eligible_island_snapshot_entries
 
 ALTER TABLE ONLY public.eligible_islands
     ADD CONSTRAINT uq_eligible_islands_catalog_name_jurisdiction UNIQUE (catalog_id, normalized_name, jurisdiction_name);
+
+
+--
+-- Name: photo_review_candidates uq_photo_review_candidates_target_image; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.photo_review_candidates
+    ADD CONSTRAINT uq_photo_review_candidates_target_image UNIQUE (target_id, image_url);
 
 
 --
@@ -1890,6 +2024,20 @@ CREATE INDEX ix_pending_social_signups_token_hash ON public.pending_social_signu
 
 
 --
+-- Name: ix_photo_review_candidates_target_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_photo_review_candidates_target_id ON public.photo_review_candidates USING btree (target_id);
+
+
+--
+-- Name: ix_photo_review_targets_type_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_photo_review_targets_type_status ON public.photo_review_targets USING btree (target_type, status);
+
+
+--
 -- Name: ix_policies_external_source_record_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2088,6 +2236,30 @@ ALTER TABLE ONLY public.notification_deliveries
 
 ALTER TABLE ONLY public.password_reset_tokens
     ADD CONSTRAINT password_reset_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: photo_review_candidates photo_review_candidates_target_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.photo_review_candidates
+    ADD CONSTRAINT photo_review_candidates_target_id_fkey FOREIGN KEY (target_id) REFERENCES public.photo_review_targets(id) ON DELETE CASCADE;
+
+
+--
+-- Name: photo_review_targets photo_review_targets_decided_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.photo_review_targets
+    ADD CONSTRAINT photo_review_targets_decided_by_user_id_fkey FOREIGN KEY (decided_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: photo_review_targets photo_review_targets_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.photo_review_targets
+    ADD CONSTRAINT photo_review_targets_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.policies(id) ON DELETE CASCADE;
 
 
 --

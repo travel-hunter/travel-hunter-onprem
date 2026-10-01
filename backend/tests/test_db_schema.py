@@ -33,6 +33,8 @@ def test_current_schema_tables_are_registered() -> None:
         "eligible_island_catalog_snapshots",
         "eligible_island_snapshot_entries",
         "eligible_islands",
+        "photo_review_targets",
+        "photo_review_candidates",
     }
 
     assert expected_tables.issubset(set(Base.metadata.tables))

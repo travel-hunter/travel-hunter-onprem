@@ -1328,6 +1328,209 @@
         "cardPreview": "AdminPolicyCardPreview"
       },
       "dbModeBehavior": "Rejects one pending candidate and returns the admin-only candidate item, including bounded cardPreview evidence."
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/photo-review/targets",
+      "status": 200,
+      "authRequired": true,
+      "adminRequired": true,
+      "queryFields": {
+        "unit": "string enum(region|policy), default region",
+        "status": "string enum(pending|approved|none|all), default pending"
+      },
+      "requiredFields": {
+        "items": "array of AdminPhotoReviewTarget",
+        "counts": "{pending, approved, none, all}: number",
+        "pendingTotal": "number"
+      },
+      "itemFields": {
+        "id": "string",
+        "unit": "string enum(region|policy)",
+        "status": "string enum(pending|approved|none)",
+        "sido": "string",
+        "city": "string ('' = 도 전체)",
+        "policySlug": "string|null",
+        "policyTitle": "string|null",
+        "policyCategory": "string|null",
+        "benefitCount": "number",
+        "candidateCount": "number",
+        "photo": "AdminPhotoReviewPhoto|null",
+        "inheritedPhoto": "AdminPhotoReviewPhoto|null",
+        "decidedAt": "string|null"
+      },
+      "photoFields": {
+        "candidateId": "string",
+        "title": "string",
+        "imageUrl": "string",
+        "thumbnailUrl": "string|null",
+        "copyrightType": "string|null"
+      },
+      "dbModeBehavior": "Admin-only read of photo review targets for one unit. Collection only writes candidates; nothing here is public until approved."
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/photo-review/targets/{targetId}",
+      "status": 200,
+      "authRequired": true,
+      "adminRequired": true,
+      "requiredFields": {
+        "id": "string",
+        "unit": "string enum(region|policy)",
+        "status": "string enum(pending|approved|none)",
+        "sido": "string",
+        "city": "string ('' = 도 전체)",
+        "policySlug": "string|null",
+        "policyTitle": "string|null",
+        "policyCategory": "string|null",
+        "benefitCount": "number",
+        "candidateCount": "number",
+        "photo": "AdminPhotoReviewPhoto|null",
+        "inheritedPhoto": "AdminPhotoReviewPhoto|null",
+        "decidedAt": "string|null",
+        "candidates": "array of AdminPhotoReviewCandidate"
+      },
+      "candidateFields": {
+        "id": "string",
+        "title": "string",
+        "kind": "string",
+        "contentTypeId": "string|null",
+        "imageUrl": "string",
+        "thumbnailUrl": "string|null",
+        "copyrightType": "string|null",
+        "width": "number|null",
+        "height": "number|null",
+        "address": "string|null",
+        "source": "string enum(collect|search)",
+        "searchKeyword": "string|null"
+      },
+      "dbModeBehavior": "Admin-only target with its candidates. Unknown id is 404."
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/photo-review/targets/{targetId}/approve",
+      "status": 200,
+      "authRequired": true,
+      "adminRequired": true,
+      "requiredRequestFields": {
+        "candidateId": "string"
+      },
+      "requiredFields": {
+        "id": "string",
+        "unit": "string enum(region|policy)",
+        "status": "string enum(pending|approved|none)",
+        "sido": "string",
+        "city": "string ('' = 도 전체)",
+        "policySlug": "string|null",
+        "policyTitle": "string|null",
+        "policyCategory": "string|null",
+        "benefitCount": "number",
+        "candidateCount": "number",
+        "photo": "AdminPhotoReviewPhoto|null",
+        "inheritedPhoto": "AdminPhotoReviewPhoto|null",
+        "decidedAt": "string|null",
+        "candidates": "array of AdminPhotoReviewCandidate"
+      },
+      "dbModeBehavior": "Publishes the candidate as the active region_photos/policy_photos row, sets status approved, writes photo_review.approve audit log. A candidate of another target is 404."
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/photo-review/targets/{targetId}/none",
+      "status": 200,
+      "authRequired": true,
+      "adminRequired": true,
+      "requiredFields": {
+        "id": "string",
+        "unit": "string enum(region|policy)",
+        "status": "string enum(pending|approved|none)",
+        "sido": "string",
+        "city": "string ('' = 도 전체)",
+        "policySlug": "string|null",
+        "policyTitle": "string|null",
+        "policyCategory": "string|null",
+        "benefitCount": "number",
+        "candidateCount": "number",
+        "photo": "AdminPhotoReviewPhoto|null",
+        "inheritedPhoto": "AdminPhotoReviewPhoto|null",
+        "decidedAt": "string|null",
+        "candidates": "array of AdminPhotoReviewCandidate"
+      },
+      "dbModeBehavior": "Hides the published row and sets status none (region: benefit illustration, policy: inherits the city photo). Audit log photo_review.none."
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/photo-review/targets/{targetId}/reopen",
+      "status": 200,
+      "authRequired": true,
+      "adminRequired": true,
+      "requiredFields": {
+        "id": "string",
+        "unit": "string enum(region|policy)",
+        "status": "string enum(pending|approved|none)",
+        "sido": "string",
+        "city": "string ('' = 도 전체)",
+        "policySlug": "string|null",
+        "policyTitle": "string|null",
+        "policyCategory": "string|null",
+        "benefitCount": "number",
+        "candidateCount": "number",
+        "photo": "AdminPhotoReviewPhoto|null",
+        "inheritedPhoto": "AdminPhotoReviewPhoto|null",
+        "decidedAt": "string|null",
+        "candidates": "array of AdminPhotoReviewCandidate"
+      },
+      "dbModeBehavior": "Hides the published row and sets status pending. Audit log photo_review.reopen."
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/photo-review/targets/{targetId}/more",
+      "status": 200,
+      "authRequired": true,
+      "adminRequired": true,
+      "requiredFields": {
+        "id": "string",
+        "unit": "string enum(region|policy)",
+        "status": "string enum(pending|approved|none)",
+        "sido": "string",
+        "city": "string ('' = 도 전체)",
+        "policySlug": "string|null",
+        "policyTitle": "string|null",
+        "policyCategory": "string|null",
+        "benefitCount": "number",
+        "candidateCount": "number",
+        "photo": "AdminPhotoReviewPhoto|null",
+        "inheritedPhoto": "AdminPhotoReviewPhoto|null",
+        "decidedAt": "string|null",
+        "candidates": "array of AdminPhotoReviewCandidate"
+      },
+      "dbModeBehavior": "Adds up to 6 unused TourAPI candidates from the same place list. 409 when decided, 503 when TourAPI is disabled, 502 when TourAPI fails."
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/photo-review/targets/{targetId}/search",
+      "status": 200,
+      "authRequired": true,
+      "adminRequired": true,
+      "requiredRequestFields": {
+        "keyword": "string (1..50)"
+      },
+      "requiredFields": {
+        "id": "string",
+        "unit": "string enum(region|policy)",
+        "status": "string enum(pending|approved|none)",
+        "sido": "string",
+        "city": "string ('' = 도 전체)",
+        "policySlug": "string|null",
+        "policyTitle": "string|null",
+        "policyCategory": "string|null",
+        "benefitCount": "number",
+        "candidateCount": "number",
+        "photo": "AdminPhotoReviewPhoto|null",
+        "inheritedPhoto": "AdminPhotoReviewPhoto|null",
+        "decidedAt": "string|null",
+        "candidates": "array of AdminPhotoReviewCandidate"
+      },
+      "dbModeBehavior": "TourAPI keyword search across content types; keeps same-sido, criteria-passing, non-food (39), non-lodging (32) photos as up to 6 source=search candidates. 409/503/502 as more."
     }
   ]
 }

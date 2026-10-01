@@ -43,6 +43,7 @@
 - Alembic `0046_photo_criteria` - `region_photos` · `policy_photos` 에 `copyright_type` · `image_width` · `image_height`, `region_photos.selection_reason`. 모두 nullable.
 - 문서 - `docs/db-schema-current.md` · `.sql`, `docs/mvp-api-contract.md`(사진 해석 순서·출처 문구). API 모양은 그대로.
 - `docs/photo-sourcing/tools/report_sheet.py`(새, 로컬) - dry-run 보고서를 한 장 그림으로(고른 사진 초록, 뺀 사진 붉은 테두리 + 이유).
+  2단계(`2026-10-02-photo-review-stage.md`)에서 관리자 '사진 검토' 화면과 `collect_photo_candidates.py` 로 바뀌어 이 도구와 두 백필 스크립트 · `--report` 는 지웠다.
 
 ## 검증
 
