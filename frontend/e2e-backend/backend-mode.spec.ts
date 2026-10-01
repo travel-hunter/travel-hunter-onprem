@@ -508,12 +508,13 @@ test("normalized policy save, unsave, trip link, and unlink stay consistent on m
   await saveToggle.click();
   await expect(page.locator(".toast")).toContainText("관심 정책");
 
-  // My page favorite list reflects the saved policy.
+  // My page favorite list reflects the saved policy. 줄은 지명과 사업명을 나눠 보여 주므로(시안 v49)
+  // 제목 전체가 붙은 해제 버튼으로 그 줄을 찾는다.
   await page.goto("/mypage");
   await expect(
     page
       .getByRole("region", { name: "즐겨찾기 정책" })
-      .locator("article.ds-favorite-policy-card", { hasText: linkedTitle }),
+      .getByRole("button", { name: `${linkedTitle} 즐겨찾기 해제` }),
   ).toBeVisible();
 
   // Unsave toggles only once the session has loaded the saved state.
@@ -527,7 +528,7 @@ test("normalized policy save, unsave, trip link, and unlink stay consistent on m
   await expect(
     page
       .getByRole("region", { name: "즐겨찾기 정책" })
-      .locator("article.ds-favorite-policy-card", { hasText: linkedTitle }),
+      .getByRole("button", { name: `${linkedTitle} 즐겨찾기 해제` }),
   ).toHaveCount(0);
 
   // Link the normalized policy to the dedicated trip from the policy detail CTA.

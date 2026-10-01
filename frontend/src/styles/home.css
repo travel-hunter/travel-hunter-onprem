@@ -685,3 +685,15 @@
     margin: 2px 0 10px;
   }
 }
+
+/* '내 관심 지역 혜택' 머리의 '관심 지역 바꾸기'(시안 v49) - 다른 칸의 '전체 보기' 링크와 같은 글자 모양 */
+.home-section-action {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-action-primary);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}

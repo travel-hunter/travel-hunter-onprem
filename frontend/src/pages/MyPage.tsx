@@ -1,14 +1,15 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { CircleHelp, Dice5, FileText, KeyRound, LogOut, ShieldCheck, UserX } from "lucide-react";
+import { ChevronRight, CircleHelp, FileText, Heart, KeyRound, LogOut, ShieldCheck } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { appDataApi, isApiError, type Policy, type Profile, type Trip } from "../api";
+import { appDataApi, isApiError, type Policy, type Trip } from "../api";
 import { useSession } from "../app/session";
-import { ProfilePreferencePreview } from "../components/ProfilePreferencePreview";
-import { PreferredRegionSelector } from "../components/PreferredRegionSelector";
-import { formatPreferredRegions, getPreferenceIcon } from "../components/preferenceDisplay";
-import { FavoritePolicyCard, ProfileSectionHeader } from "../components/patterns";
-import { Button, EmptyState, ErrorState, LoadingState } from "../components/ui";
-import { useAsyncResource } from "../api/useAsyncResource";
+import { BenefitTile, benefitTypeOf } from "../components/benefitTile";
+import { deadlineChip, programName, REGION_FULL_NAMES } from "../components/map/policyBrowse";
+import { policyListText } from "../components/map/policyListText";
+import { useProfileEditor } from "../components/ProfileEditSheet";
+import { Button, ErrorState, LoadingState } from "../components/ui";
+import { cityOf, NATIONWIDE_REGION } from "../utils/policyPrograms";
+import "../styles/account.css";
 
 type InfoSheetType = "faq" | "terms" | "privacy";
 type AccountDialogType = "password" | "withdrawal";
@@ -24,10 +25,6 @@ function uniquePoliciesBySlug(policies: Policy[]) {
   });
 }
 
-function profileValueLabel(value: string | null | undefined) {
-  return value?.trim() ? value : "미정";
-}
-
 function accountErrorMessage(error: unknown, fallback: string) {
   if (isApiError(error)) {
     if (error.status === 401) return "현재 비밀번호를 확인해 주세요.";
@@ -36,11 +33,13 @@ function accountErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+/* 내 정보(시안 v49): 앱 순서 그대로(프로필 → 활동 세 칸 → 즐겨찾기 → 설정)에 점검 보고서 문제만 고쳤다 -
+   활동 칸은 숫자만 강조색, '신청 정책'은 실제 뜻대로 '담은 혜택'(/api/me/applied-policies 는 일정에 담은 혜택) + 그 목록,
+   로그아웃은 보통 줄, 회원 탈퇴는 맨 아래 작은 글자. 넓은 화면은 왼쪽 프로필·설정 + 오른쪽 목록 두 단(account.css). */
 export function MyPage() {
   const navigate = useNavigate();
-  const { addedPolicySlugs, currentUser, likedPolicy, logout, profile, removeSavedSlug, saveNickname, saveProfile, savedSlugs } = useSession();
-  const { data: profileOptions } = useAsyncResource(() => appDataApi.getProfileOptions(), []);
-  const { regions, travelStyles, budgets } = profileOptions ?? { regions: [], travelStyles: [], budgets: [] };
+  const { addedPolicySlugs, currentUser, logout, profile, removeSavedSlug, savedSlugs } = useSession();
+  const editor = useProfileEditor();
   const name = currentUser?.nickname ?? "여행자";
   const [savedPolicies, setSavedPolicies] = useState<Policy[]>([]);
   const [isLoadingSavedPolicies, setIsLoadingSavedPolicies] = useState(true);
@@ -48,16 +47,9 @@ export function MyPage() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [isLoadingTrips, setIsLoadingTrips] = useState(true);
   const [tripError, setTripError] = useState("");
-  const [appliedPolicyCount, setAppliedPolicyCount] = useState(0);
+  const [appliedPolicies, setAppliedPolicies] = useState<Policy[]>([]);
   const [isLoadingAppliedPolicies, setIsLoadingAppliedPolicies] = useState(true);
   const [removingPolicySlug, setRemovingPolicySlug] = useState<string | null>(null);
-  const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false);
-  const [profileDraft, setProfileDraft] = useState<Profile>(() => profile);
-  const [nicknameDraft, setNicknameDraft] = useState(name);
-  const [nicknameError, setNicknameError] = useState("");
-  const [isSuggestingNickname, setIsSuggestingNickname] = useState(false);
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [profileEditError, setProfileEditError] = useState("");
   const [infoSheetType, setInfoSheetType] = useState<InfoSheetType | null>(null);
   const [accountDialogType, setAccountDialogType] = useState<AccountDialogType | null>(null);
   const [isWithdrawConfirmationOpen, setIsWithdrawConfirmationOpen] = useState(false);
@@ -93,8 +85,7 @@ export function MyPage() {
       else setTripError("일정 정보를 불러오지 못했어요.");
       setIsLoadingTrips(false);
 
-      if (appliedResult.status === "fulfilled") setAppliedPolicyCount(appliedResult.value.length);
-      else setAppliedPolicyCount(0);
+      setAppliedPolicies(appliedResult.status === "fulfilled" ? uniquePoliciesBySlug(appliedResult.value) : []);
       setIsLoadingAppliedPolicies(false);
     });
 
@@ -199,93 +190,77 @@ export function MyPage() {
     }
   };
 
-  const openProfileEditor = () => {
-    setProfileDraft(profile);
-    setNicknameDraft(currentUser?.nickname ?? name);
-    setNicknameError("");
-    setProfileEditError("");
-    setIsProfileEditorOpen(true);
-  };
-
-  const suggestNickname = async () => {
-    setNicknameError("");
-    setIsSuggestingNickname(true);
-    try {
-      const suggestion = await appDataApi.getNicknameSuggestion();
-      setNicknameDraft(suggestion.nickname);
-    } catch {
-      setNicknameError("닉네임을 추천하지 못했어요. 잠시 후 다시 시도해 주세요.");
-    } finally {
-      setIsSuggestingNickname(false);
-    }
-  };
-
-  const saveProfileDraft = async () => {
-    const trimmedNickname = nicknameDraft.trim();
-    setNicknameError("");
-    setProfileEditError("");
-    if (trimmedNickname.length < 2 || trimmedNickname.length > 20) {
-      setNicknameError("닉네임은 2자 이상 20자 이하로 입력해 주세요.");
-      return;
-    }
-
-    const nicknameChanged = trimmedNickname !== (currentUser?.nickname ?? "").trim();
-    setIsSavingProfile(true);
-    if (nicknameChanged) {
-      try {
-        await saveNickname(trimmedNickname);
-      } catch {
-        setNicknameError("닉네임을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.");
-        setIsSavingProfile(false);
-        return;
-      }
-    }
-
-    try {
-      await saveProfile(profileDraft);
-      setIsProfileEditorOpen(false);
-    } catch {
-      setProfileEditError("프로필을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.");
-    } finally {
-      setIsSavingProfile(false);
-    }
-  };
-
   const visibleSavedPolicies = uniquePoliciesBySlug(savedPolicies);
   const savedPolicyCount = Math.max(visibleSavedPolicies.length, savedSlugs.size);
-  const appliedPolicySummaryCount = Math.max(appliedPolicyCount, addedPolicySlugs.size);
+  const appliedPolicyCount = Math.max(appliedPolicies.length, addedPolicySlugs.size);
   const tripCount = tripError ? 0 : trips.length;
+  const regions = (profile.preferredRegions ?? []).filter((region) => region.trim());
+  const tags = [
+    regions.length > 0 ? `관심 지역 · ${regions.join("·")}` : "관심 지역 없음",
+    profile.style?.trim() || "여행 스타일 없음",
+    profile.budget?.trim() || "예산 없음",
+  ];
+  const scrollToSection = (id: string) => document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
+
   return (
-    <section className="screen with-tabs prototype-mypage-screen">
-      <div className="content stack padded prototype-mypage-content">
-        <section className="ds-card ds-profile-panel prototype-profile-hero-card" aria-label="내 프로필 요약">
-          <div className="prototype-profile-main">
-            <div className="avatar large prototype-profile-badge" aria-hidden="true">
-              🧳
-            </div>
-            <div className="prototype-profile-text">
-              <h2 className="profile-name">{name}</h2>
-              <p className="prototype-profile-email">{currentUser?.email ?? "이메일 정보 없음"}</p>
-              <div className="prototype-profile-chips" aria-label="프로필 취향">
-                <span>{formatPreferredRegions(profile.preferredRegions)}</span>
-                <span>{profileValueLabel(profile.style)}</span>
-                <span>{profileValueLabel(profile.budget)}</span>
-              </div>
-            </div>
-            <button className="btn ghost prototype-profile-edit-button" onClick={openProfileEditor} type="button">
-              편집
-            </button>
+    <section className="screen with-tabs mp-screen prototype-mypage-screen desktop-wide">
+      <header className="mp-top">
+        <h1>내 정보</h1>
+      </header>
+      <div className="mp-side">
+        <section className="mp-hero" aria-label="내 프로필 요약">
+          <span aria-hidden="true" className="mp-avatar">
+            {name.trim().slice(0, 1) || "여"}
+          </span>
+          <div className="mp-who">
+            <h2 className="profile-name">{name}</h2>
+            <p className="mp-mail">{currentUser?.email ?? "이메일 정보 없음"}</p>
+            <ul aria-label="프로필 취향" className="mp-tags">
+              {tags.map((tag) => (
+                <li key={tag}>{tag}</li>
+              ))}
+            </ul>
           </div>
+          <button className="mp-edit" onClick={editor.open} type="button">
+            편집
+          </button>
         </section>
 
-        <section className="prototype-stat-grid" aria-label="나의 활동 요약">
-          <ProfileStat label="내 일정" value={isLoadingTrips ? "..." : String(tripCount)} tone="primary" to="/trips" />
-          <ProfileStat label="즐겨찾기" value={isLoadingSavedPolicies ? "..." : String(savedPolicyCount)} tone="secondary" to="/policies?saved=1" />
-          <ProfileStat label="신청 정책" value={isLoadingAppliedPolicies ? "..." : String(appliedPolicySummaryCount)} tone="accent" to="/applied-policies" />
+        <section aria-label="나의 활동 요약" className="mp-stats">
+          <Link aria-label="내 일정 보기" className="mp-stat" to="/trips">
+            <b>{isLoadingTrips ? "..." : tripCount}</b>
+            <span>내 일정</span>
+          </Link>
+          <button aria-label="즐겨찾기 정책 보기" className="mp-stat" onClick={() => scrollToSection("my-favorites")} type="button">
+            <b>{isLoadingSavedPolicies ? "..." : savedPolicyCount}</b>
+            <span>즐겨찾기</span>
+          </button>
+          <button aria-label="담은 혜택 보기" className="mp-stat" onClick={() => scrollToSection("my-applied")} type="button">
+            <b>{isLoadingAppliedPolicies ? "..." : appliedPolicyCount}</b>
+            <span>담은 혜택</span>
+          </button>
         </section>
 
-        <section className="prototype-favorite-section" aria-label="즐겨찾기 정책">
-          <ProfileSectionHeader title={`즐겨찾기 정책 (${isLoadingSavedPolicies ? "..." : savedPolicyCount})`} actionLabel="정책 찾기" to="/policies" />
+        <section aria-label="설정 메뉴" className="mp-menu ds-settings-menu">
+          <MenuRow icon={<CircleHelp size={20} />} label="공지사항 / FAQ" onClick={() => setInfoSheetType("faq")} />
+          <MenuRow icon={<FileText size={20} />} label="이용약관" onClick={() => setInfoSheetType("terms")} />
+          <MenuRow icon={<ShieldCheck size={20} />} label="개인정보처리방침" onClick={() => setInfoSheetType("privacy")} />
+          <MenuRow icon={<KeyRound size={20} />} label="비밀번호 관리" onClick={() => setAccountDialogType("password")} />
+          <MenuRow icon={<LogOut size={20} />} label="로그아웃" onClick={signOut} />
+        </section>
+        <button className="mp-quit" onClick={() => setAccountDialogType("withdrawal")} type="button">
+          회원 탈퇴
+        </button>
+      </div>
+
+      <div className="mp-lists">
+        <section aria-labelledby="my-favorites-title" className="mp-sec" id="my-favorites">
+          <div className="mp-sec-head">
+            <h2 id="my-favorites-title">
+              즐겨찾기 정책 <span>{isLoadingSavedPolicies ? "..." : savedPolicyCount}</span>
+            </h2>
+            <Link to="/policies">정책 찾기</Link>
+          </div>
           {isLoadingSavedPolicies && <LoadingState compact label="즐겨찾기 정책을 불러오는 중입니다" />}
           {!isLoadingSavedPolicies && savedPolicyError && (
             <ErrorState
@@ -299,147 +274,129 @@ export function MyPage() {
             />
           )}
           {!isLoadingSavedPolicies && !savedPolicyError && visibleSavedPolicies.length === 0 && (
-            <div className="prototype-favorite-empty">
-              <EmptyState
-                compact
-                eyebrow="즐겨찾기 정책"
-                title="아직 즐겨찾기한 정책이 없어요"
-                body="관심 있는 혜택의 하트를 눌러두면 여기에서 다시 확인할 수 있어요."
-                action={
-                  <Link className="btn line" to="/policies">
-                    정책 보러가기
-                  </Link>
-                }
-              />
+            <div className="mp-empty">
+              <b>아직 즐겨찾기한 정책이 없어요</b>
+              <span>혜택 상세에서 하트를 누르면 여기에 모여요.</span>
+              <Link className="mp-empty-go" to="/policies">
+                정책 보러 가기
+              </Link>
             </div>
           )}
           {!isLoadingSavedPolicies && !savedPolicyError && visibleSavedPolicies.length > 0 && (
-            <div className="prototype-favorite-list">
+            <ul className="mp-list">
               {visibleSavedPolicies.map((policy) => (
-                <FavoritePolicyCard
+                <MyPolicyRow
                   isRemoving={removingPolicySlug === policy.slug}
                   key={policy.slug}
                   onRemove={() => removeSavedPolicy(policy)}
                   policy={policy}
                 />
               ))}
-            </div>
+            </ul>
           )}
         </section>
 
-        <section className="prototype-settings-menu ds-settings-menu" aria-label="설정 메뉴">
-          <button className="prototype-menu-row" onClick={() => setInfoSheetType("faq")} type="button">
-            <span className="prototype-menu-icon" aria-hidden="true">
-              <CircleHelp size={18} />
-            </span>
-            <strong>공지사항 / FAQ</strong>
-            <span className="prototype-menu-chevron" aria-hidden="true">
-              ›
-            </span>
-          </button>
-          <button className="prototype-menu-row" onClick={() => setInfoSheetType("terms")} type="button">
-            <span className="prototype-menu-icon" aria-hidden="true">
-              <FileText size={18} />
-            </span>
-            <strong>이용약관</strong>
-            <span className="prototype-menu-chevron" aria-hidden="true">
-              ›
-            </span>
-          </button>
-          <button className="prototype-menu-row" onClick={() => setInfoSheetType("privacy")} type="button">
-            <span className="prototype-menu-icon" aria-hidden="true">
-              <ShieldCheck size={18} />
-            </span>
-            <strong>개인정보처리방침</strong>
-            <span className="prototype-menu-chevron" aria-hidden="true">
-              ›
-            </span>
-          </button>
-          <button className="prototype-menu-row" onClick={() => setAccountDialogType("password")} type="button">
-            <span className="prototype-menu-icon" aria-hidden="true">
-              <KeyRound size={18} />
-            </span>
-            <strong>비밀번호 관리</strong>
-            <span className="prototype-menu-chevron" aria-hidden="true">
-              ›
-            </span>
-          </button>
-          <button className="prototype-menu-row danger" onClick={() => setAccountDialogType("withdrawal")} type="button">
-            <span className="prototype-menu-icon" aria-hidden="true">
-              <UserX size={18} />
-            </span>
-            <strong>회원 탈퇴</strong>
-            <span className="prototype-menu-chevron" aria-hidden="true">
-              ›
-            </span>
-          </button>
-          <button className="prototype-menu-row danger" onClick={signOut} type="button">
-            <span className="prototype-menu-icon" aria-hidden="true">
-              <LogOut size={18} />
-            </span>
-            <strong>로그아웃</strong>
-            <span className="prototype-menu-chevron" aria-hidden="true">
-              ›
-            </span>
-          </button>
+        <section aria-labelledby="my-applied-title" className="mp-sec" id="my-applied">
+          <div className="mp-sec-head">
+            <h2 id="my-applied-title">
+              일정에 담은 혜택 <span>{isLoadingAppliedPolicies ? "..." : appliedPolicyCount}</span>
+            </h2>
+            {appliedPolicies.length > 0 && <Link to="/applied-policies">일정별로 보기</Link>}
+          </div>
+          {isLoadingAppliedPolicies && <LoadingState compact label="담은 혜택을 불러오는 중입니다" />}
+          {!isLoadingAppliedPolicies && appliedPolicies.length === 0 && (
+            <div className="mp-empty">
+              <b>일정에 담은 혜택이 없어요</b>
+              <span>혜택 상세의 ‘내 일정에 담기’로 담을 수 있어요.</span>
+            </div>
+          )}
+          {!isLoadingAppliedPolicies && appliedPolicies.length > 0 && (
+            <ul className="mp-list">
+              {appliedPolicies.map((policy) => (
+                <MyPolicyRow key={policy.slug} policy={policy} />
+              ))}
+            </ul>
+          )}
         </section>
-
-        {isProfileEditorOpen && (
-          <ProfileEditSheet
-            draft={profileDraft}
-            error={profileEditError}
-            isSaving={isSavingProfile}
-            isSuggestingNickname={isSuggestingNickname}
-            nickname={nicknameDraft}
-            nicknameError={nicknameError}
-            profilesRegions={regions}
-            profilesTravelStyles={travelStyles}
-            profilesBudgets={budgets}
-            onCancel={() => !isSavingProfile && setIsProfileEditorOpen(false)}
-            onChange={setProfileDraft}
-            onNicknameChange={setNicknameDraft}
-            onSave={saveProfileDraft}
-            onSuggestNickname={suggestNickname}
-          />
-        )}
-
-
-        {infoSheetType && <InfoSheet type={infoSheetType} onClose={() => setInfoSheetType(null)} />}
-        {accountDialogType === "password" && (
-          <AccountSecurityDialog
-            currentPassword={currentPassword}
-            error={passwordChangeError}
-            hasPassword={currentUser?.hasPassword === true}
-            isSubmitting={isChangingPassword}
-            newPassword={newPassword}
-            onChangeCurrentPassword={setCurrentPassword}
-            onChangeNewPassword={setNewPassword}
-            onClose={closePasswordDialog}
-            onSubmit={changePassword}
-          />
-        )}
-        {accountDialogType === "withdrawal" && !isWithdrawConfirmationOpen && (
-          <AccountWithdrawalDialog
-            confirmation={withdrawConfirmation}
-            error={withdrawError}
-            hasPassword={currentUser?.hasPassword === true}
-            isSubmitting={isWithdrawing}
-            password={withdrawPassword}
-            onChangeConfirmation={setWithdrawConfirmation}
-            onChangePassword={setWithdrawPassword}
-            onClose={closeWithdrawalDialog}
-            onSubmit={openWithdrawConfirmation}
-          />
-        )}
-        {isWithdrawConfirmationOpen && (
-          <WithdrawalConfirmationDialog
-            isSubmitting={isWithdrawing}
-            onCancel={() => !isWithdrawing && setIsWithdrawConfirmationOpen(false)}
-            onConfirm={withdrawAccount}
-          />
-        )}
       </div>
+
+      {editor.sheet}
+      {infoSheetType && <InfoSheet type={infoSheetType} onClose={() => setInfoSheetType(null)} />}
+      {accountDialogType === "password" && (
+        <AccountSecurityDialog
+          currentPassword={currentPassword}
+          error={passwordChangeError}
+          hasPassword={currentUser?.hasPassword === true}
+          isSubmitting={isChangingPassword}
+          newPassword={newPassword}
+          onChangeCurrentPassword={setCurrentPassword}
+          onChangeNewPassword={setNewPassword}
+          onClose={closePasswordDialog}
+          onSubmit={changePassword}
+        />
+      )}
+      {accountDialogType === "withdrawal" && !isWithdrawConfirmationOpen && (
+        <AccountWithdrawalDialog
+          confirmation={withdrawConfirmation}
+          error={withdrawError}
+          hasPassword={currentUser?.hasPassword === true}
+          isSubmitting={isWithdrawing}
+          password={withdrawPassword}
+          onChangeConfirmation={setWithdrawConfirmation}
+          onChangePassword={setWithdrawPassword}
+          onClose={closeWithdrawalDialog}
+          onSubmit={openWithdrawConfirmation}
+        />
+      )}
+      {isWithdrawConfirmationOpen && (
+        <WithdrawalConfirmationDialog
+          isSubmitting={isWithdrawing}
+          onCancel={() => !isWithdrawing && setIsWithdrawConfirmationOpen(false)}
+          onConfirm={withdrawAccount}
+        />
+      )}
     </section>
+  );
+}
+
+function MenuRow({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button className="mp-row" onClick={onClick} type="button">
+      <span aria-hidden="true" className="mp-row-icon">
+        {icon}
+      </span>
+      <span className="mp-row-label">{label}</span>
+      <ChevronRight aria-hidden="true" className="mp-row-go" size={18} />
+    </button>
+  );
+}
+
+/* 즐겨찾기·담은 혜택 한 줄: 혜택 그림 · 어디 · 사업 · 받는 것 · 마감(정책 탭 목록과 같은 출처). 즐겨찾기 줄만 하트로 해제 */
+function MyPolicyRow({ isRemoving = false, onRemove, policy }: { isRemoving?: boolean; onRemove?: () => void; policy: Policy }) {
+  const place = cityOf(policy);
+  const region = policy.region === NATIONWIDE_REGION ? "전국 공통" : REGION_FULL_NAMES[policy.region] ?? policy.region;
+  const head = policyListText(policy).head;
+  const chip = deadlineChip(policy);
+  return (
+    <li className="mp-pol">
+      <Link className="mp-pol-open" to={`/policies/${policy.slug}`}>
+        <BenefitTile kind={benefitTypeOf(policy)} />
+        <span className="mp-pol-body">
+          <span className="mp-pol-where">
+            <b>{place ?? region}</b>
+            {place ? ` · ${policy.region}` : ""}
+          </span>
+          <span className="mp-pol-title">{programName(policy)}</span>
+          {head && <span className="mp-pol-head">{head}</span>}
+        </span>
+        <span className={`mp-dday ${chip.tone}`}>{chip.text}</span>
+      </Link>
+      {onRemove && (
+        <button aria-label={`${policy.title} 즐겨찾기 해제`} className="mp-heart" disabled={isRemoving} onClick={onRemove} type="button">
+          <Heart aria-hidden="true" fill="currentColor" size={22} />
+        </button>
+      )}
+    </li>
   );
 }
 
@@ -712,36 +669,6 @@ function WithdrawalConfirmationDialog({ isSubmitting, onCancel, onConfirm }: { i
   );
 }
 
-function ProfileStat({
-  label,
-  tone,
-  value,
-  to,
-}: {
-  label: string;
-  tone: "primary" | "secondary" | "accent";
-  value: string;
-  to?: string;
-}) {
-  const content = (
-    <>
-      <strong>{value}</strong>
-      <span>{label}</span>
-    </>
-  );
-  const className = `prototype-stat-card ${tone}`;
-
-  if (to) {
-    return (
-      <Link aria-label={`${label} 보기`} className={className} to={to}>
-        {content}
-      </Link>
-    );
-  }
-
-  return <div className={className}>{content}</div>;
-}
-
 const infoSheetContent: Record<InfoSheetType, { title: string; intro: string; sections: Array<{ heading: string; body: string }> }> = {
   faq: {
     title: "공지사항 / FAQ",
@@ -830,150 +757,6 @@ function InfoSheet({ onClose, type }: { onClose: () => void; type: InfoSheetType
           ))}
         </div>
       </section>
-    </div>
-  );
-}
-
-function ProfileEditSheet({
-  draft,
-  error,
-  isSaving,
-  isSuggestingNickname,
-  nickname,
-  nicknameError,
-  profilesRegions,
-  profilesTravelStyles,
-  profilesBudgets,
-  onCancel,
-  onChange,
-  onNicknameChange,
-  onSave,
-  onSuggestNickname,
-}: {
-  draft: Profile;
-  error: string;
-  isSaving: boolean;
-  isSuggestingNickname: boolean;
-  nickname: string;
-  nicknameError: string;
-  profilesRegions: readonly string[];
-  profilesTravelStyles: readonly string[];
-  profilesBudgets: readonly string[];
-  onCancel: () => void;
-  onChange: (draft: Profile) => void;
-  onNicknameChange: (nickname: string) => void;
-  onSave: () => void;
-  onSuggestNickname: () => void;
-}) {
-  return (
-    <div className="sheet-backdrop" role="presentation" onMouseDown={onCancel}>
-      <section className="trip-select-sheet" role="dialog" aria-modal="true" aria-labelledby="profile-editor-title" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="sheet-head">
-          <div>
-            <h2 id="profile-editor-title">프로필 편집</h2>
-            <p className="meta">관심 지역, 여행 스타일, 예산을 바꾸면 추천 기준도 함께 바뀝니다.</p>
-          </div>
-          <button className="btn sm ghost" type="button" onClick={onCancel} disabled={isSaving}>
-            취소
-          </button>
-        </div>
-        <div className="profile-edit-sections">
-          <ProfilePreferencePreview
-            className="profile-edit-preference-preview"
-            cta="저장하면 홈 추천과 맞춤 일정에 바로 반영됩니다."
-            profile={draft}
-          />
-          <label className="field">
-            <span>닉네임</span>
-            <div className="input-action-row nickname-row">
-              <input
-                name="nickname"
-                type="text"
-                value={nickname}
-                onChange={(event) => onNicknameChange(event.target.value)}
-                maxLength={20}
-                autoComplete="nickname"
-                disabled={isSaving}
-              />
-              <button className="icon-btn" type="button" aria-label="랜덤 닉네임 추천" onClick={onSuggestNickname} disabled={isSaving || isSuggestingNickname}>
-                <Dice5 size={18} />
-              </button>
-            </div>
-          </label>
-          {nicknameError && (
-            <p className="form-error" role="alert">
-              {nicknameError}
-            </p>
-          )}
-          <div>
-            <div className="choice-label">관심 지역</div>
-            <PreferredRegionSelector
-              compact
-              disabled={isSaving}
-              onChange={(preferredRegions) => onChange({ ...draft, preferredRegions: preferredRegions.length > 0 ? preferredRegions : null })}
-              options={profilesRegions}
-              value={draft.preferredRegions ?? []}
-            />
-          </div>
-          <ProfileEditChoices
-            label="여행 스타일"
-            selected={draft.style}
-            values={profilesTravelStyles}
-            onSelect={(style) => onChange({ ...draft, style })}
-            disabled={isSaving}
-          />
-          <ProfileEditChoices
-            label="예산"
-            selected={draft.budget}
-            values={profilesBudgets}
-            onSelect={(budget) => onChange({ ...draft, budget })}
-            disabled={isSaving}
-          />
-          {error && <p className="form-error">{error}</p>}
-        </div>
-        <div className="sheet-actions">
-          <Button full disabled={isSaving} onClick={onSave}>
-            {isSaving ? "저장 중입니다" : "저장하기"}
-          </Button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function ProfileEditChoices({
-  disabled = false,
-  label,
-  onSelect,
-  selected,
-  values,
-}: {
-  disabled?: boolean;
-  label: string;
-  onSelect: (value: string) => void;
-  selected: string | null;
-  values: readonly string[];
-}) {
-  return (
-    <div>
-      <div className="choice-label">{label}</div>
-      <div className="preference-choice-grid profile-edit-choice-grid">
-        {values.map((value) => (
-          <button
-            aria-pressed={selected === value}
-            className={selected === value ? "preference-choice-card active" : "preference-choice-card"}
-            disabled={disabled}
-            key={value}
-            onClick={() => onSelect(value)}
-            type="button"
-          >
-            <span className="preference-choice-icon" aria-hidden="true">
-              {getPreferenceIcon(value)}
-            </span>
-            {value}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

@@ -671,7 +671,10 @@ export function PolicyListPage() {
   /* 지도 화면의 세 조각 - 지도 칸 · 목록 · 검색 칸. 좁은 화면은 지도 위에 목록 시트와 검색 칸을 겹치고,
      넓은 화면은 지도 오른쪽 패널에 목록을 세우고 검색 칸·정책 상세를 그 위에 덮는다(아래 목록은 스크롤 자리째 남는다) */
   const ready = !isLoading && !error && Boolean(policies && policies.length > 0);
-  const split = isDesktop && showMap && ready;
+  /* 넓은 틀은 화면 폭만으로 정한다 - 불러오는 동안에도. ready 까지 기다리면 그 사이 좁은 화면 틀이 그려졌다가 바뀐다(10/1).
+     지도·패널(split)만 정책이 온 뒤에 그린다 */
+  const deskMap = isDesktop && showMap;
+  const split = deskMap && ready;
   const detailPolicy = split && browse.detail ? (policies ?? []).find((policy) => policy.slug === browse.detail) ?? null : null;
   const stage = ready && showMap && policies ? (
     <div className="thmap-stage">
@@ -746,7 +749,7 @@ export function PolicyListPage() {
   const panelCover = split && Boolean(search || browse.detail);
 
   return (
-    <section className={split ? "screen with-tabs prototype-policy-list-screen desktop-wide" : "screen with-tabs prototype-policy-list-screen"}>
+    <section className={deskMap ? "screen with-tabs prototype-policy-list-screen desktop-wide" : "screen with-tabs prototype-policy-list-screen"}>
       <div className="prototype-policy-toolbar">
         {/* 제목 줄을 걷어내고 검색줄부터 시작한다 - 지도가 그만큼 커진다. 제목은 화면에서만 빼고
             남긴다: 화면 낭독기와 아래 h2(지역 목록)의 뿌리가 되는 유일한 h1 이다.

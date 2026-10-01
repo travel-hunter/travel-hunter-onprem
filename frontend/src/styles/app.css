@@ -801,7 +801,7 @@
 }
 
 .prototype-auth-screen .field strong {
-  color: #ff5e5b;
+  color: var(--status-danger-text);
 }
 
 .prototype-auth-screen .field input {
@@ -819,7 +819,7 @@
 }
 
 .prototype-auth-screen .field input:focus {
-  border: 2px solid #ff5e5b;
+  border: 2px solid var(--primary-500);
   box-shadow: var(--shadow-none);
 }
 
@@ -863,7 +863,7 @@
   min-height: 52px;
   border: 0;
   border-radius: 8px;
-  background: #ff5e5b;
+  background: var(--primary-500);
   color: #fff;
   box-shadow: none;
 }
@@ -1343,7 +1343,7 @@
 }
 
 .prototype-field strong {
-  color: #ff5e5b;
+  color: var(--status-danger-text);
 }
 
 .prototype-field input {
@@ -1363,7 +1363,7 @@
 }
 
 .prototype-field input:focus {
-  border: 2px solid #ff5e5b;
+  border: 2px solid var(--primary-500);
   box-shadow: var(--shadow-none);
 }
 
@@ -1384,7 +1384,7 @@
   margin-top: 10px;
   border: 0;
   border-radius: 8px;
-  background: #ff5e5b;
+  background: var(--primary-500);
   color: #fff;
   font-size: 16px;
   font-weight: 700;
@@ -2654,10 +2654,10 @@
   gap: 4px;
   min-height: 56px;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 94, 91, 0.16);
+  border: 1px solid rgba(var(--primary-rgb), 0.16);
   border-radius: var(--radius-sm);
   color: var(--gray-900);
-  background: rgba(255, 94, 91, 0.06);
+  background: rgba(var(--primary-rgb), 0.06);
   text-align: left;
 }
 
@@ -2671,17 +2671,17 @@
 }
 
 .policy-category-button:hover {
-  border-color: rgba(255, 94, 91, 0.32);
-  background: rgba(255, 94, 91, 0.1);
+  border-color: rgba(var(--primary-rgb), 0.32);
+  background: rgba(var(--primary-rgb), 0.1);
 }
 
 .result-photo {
   display: grid;
   place-items: center;
   color: var(--primary-600);
-  background: rgba(255, 94, 91, 0.1);
+  background: rgba(var(--primary-rgb), 0.1);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 94, 91, 0.18);
+  border: 1px solid rgba(var(--primary-rgb), 0.18);
   font-weight: 1000;
 }
 
@@ -3840,7 +3840,7 @@
 }
 
 .profile-edit-preference-preview {
-  border-color: rgba(255, 94, 91, 0.18);
+  border-color: rgba(var(--primary-rgb), 0.18);
   border-radius: 18px;
   color: var(--text-900);
   background:
@@ -3866,10 +3866,10 @@
 }
 
 .profile-edit-preference-preview .profile-preference-preview-chips span {
-  border-color: rgba(255, 94, 91, 0.16);
+  border-color: rgba(var(--primary-rgb), 0.16);
   color: var(--text-800);
   background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 8px 18px rgba(255, 94, 91, 0.08);
+  box-shadow: 0 8px 18px rgba(var(--primary-rgb), 0.08);
 }
 
 .profile-edit-choice-grid .preference-choice-icon {
@@ -4369,6 +4369,18 @@
     width: 100%; /* 100vw 는 세로 스크롤 막대 폭만큼 오른쪽을 가린다 */
     max-width: none;
   }
+  /* 1440px 넘는 화면은 판을 가운데 1440px 로 모은다(2026-10-01 사용자 결정 - 1920 에서 카드가 너무 퍼졌다).
+     스크롤 틀에 양옆 안쪽 여백을 줘서 화면 안 비율(홈 81.25% 등)은 1440 기준 그대로 - 1920 도 1440 과 같은 모양.
+     지도가 주인공인 정책 탭만 전체 폭. 위 메뉴 띠는 끝까지, 글자만 1440 판 끝에 맞춘다 */
+  .service-layout:has(.desktop-wide):not(:has(.prototype-policy-list-screen)) .app-container {
+    padding-inline: max(0px, calc((100% - 1440px) / 2));
+  }
+  .service-layout:has(.prototype-policy-detail-screen.desktop-wide) .app-container {
+    background: var(--gray-50); /* 상세 판 바탕과 같게 - 양옆 여백에 경계가 안 보이게 */
+  }
+  .service-top-navigation {
+    padding-inline: max(28px, calc((100% - 1440px) / 2 + 28px));
+  }
 }
 
 @media (min-width: 1200px) {
@@ -4754,7 +4766,7 @@
 
 .prototype-policy-list-screen .prototype-filter-reset-chip:hover {
   background: #ffe9e8;
-  color: #ff5e5b;
+  color: var(--primary-500);
 }
 
 .prototype-policy-list-screen .prototype-filter-icon-button {
@@ -4933,10 +4945,10 @@
 
 .prototype-policy-list-screen .filter-chip.active,
 .prototype-filter-sheet .filter-chip.active {
-  border-color: #ff5e5b;
-  background: #ff5e5b;
+  border-color: var(--primary-500);
+  background: var(--primary-500);
   color: #fff;
-  box-shadow: 0 8px 18px rgba(255, 94, 91, 0.2);
+  box-shadow: 0 8px 18px rgba(var(--primary-rgb), 0.2);
 }
 
 .prototype-region-group-list {
@@ -4990,9 +5002,9 @@
 }
 
 .prototype-filter-apply-button {
-  background: #ff5e5b;
+  background: var(--primary-500);
   color: #fff;
-  box-shadow: 0 12px 24px rgba(255, 94, 91, 0.24);
+  box-shadow: 0 12px 24px rgba(var(--primary-rgb), 0.24);
 }
 
 @media (max-width: 430px) {
@@ -5171,7 +5183,7 @@
 .prototype-policy-list-screen .policy-list-badges em {
   margin-left: auto;
   background: #fff0f1;
-  color: #ff5e5b;
+  color: var(--primary-500);
 }
 
 .prototype-policy-list-screen .policy-list-copy h3 {
@@ -5217,7 +5229,7 @@
 
 .prototype-policy-list-screen .policy-list-heart.saved {
   background: #fff0f1;
-  color: #ff5e5b;
+  color: var(--primary-500);
 }
 
 .prototype-mypage-screen .card {
@@ -5841,7 +5853,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1px solid rgba(255, 94, 91, 0.18);
+  border: 1px solid rgba(var(--primary-rgb), 0.18);
   border-radius: 14px;
   padding: 0 14px;
   color: #1a1a2e;
@@ -5914,7 +5926,7 @@
 .prototype-region-grid button.active {
   border-color: var(--primary-500);
   color: var(--primary-500);
-  background: #fff1f0;
+  background: var(--primary-50);
   box-shadow: none;
 }
 
@@ -5976,7 +5988,7 @@
 
 .prototype-travel-area-card.active {
   border-color: var(--primary-500);
-  background: #fff1f0;
+  background: var(--primary-50);
   box-shadow: none;
 }
 
@@ -6281,7 +6293,7 @@
 .prototype-date-summary.invalid {
   align-items: center;
   color: #dc2626;
-  background: #fff1f0;
+  background: var(--status-danger-bg);
 }
 
 .prototype-date-summary-row {
@@ -6308,7 +6320,7 @@
   border-radius: 12px;
   padding: 10px 12px;
   color: #b42318;
-  background: #fff1f0;
+  background: var(--status-danger-bg);
   font-size: 12px;
   font-weight: 800;
   line-height: 1.45;
@@ -6894,7 +6906,7 @@
   padding: 4px 9px;
   border-radius: 999px;
   background: #fff0f1;
-  color: #ff5e5b;
+  color: var(--primary-500);
   font-size: 12.5px;
   font-style: normal;
   font-weight: 900;
@@ -8118,7 +8130,7 @@ body.itinerary-place-drag-scroll-locked,
 
 .prototype-trip-detail-screen .prototype-trip-action-ai {
   border: 1px solid #ffc7c4;
-  background: #fff1f0;
+  background: var(--primary-50);
   color: var(--primary-500);
 }
 
@@ -8234,7 +8246,7 @@ body.itinerary-place-drag-scroll-locked,
   width: 56px;
   height: 56px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #ff5e5b, #ec2f4b);
+  background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
 }
 
 .prototype-mypage-screen .profile-name {
@@ -8340,7 +8352,7 @@ a.prototype-stat-card:active {
 }
 .prototype-stat-card strong {
   display: block;
-  color: #ff5e5b;
+  color: var(--primary-500);
   font-size: 22px;
   font-weight: 700;
 }
@@ -8382,7 +8394,7 @@ a.prototype-stat-card:active {
 }
 
 .prototype-applied-policy-hero > span {
-  color: #ff5e5b;
+  color: var(--primary-500);
   font-size: 12px;
   font-weight: 800;
 }
@@ -8410,7 +8422,7 @@ a.prototype-stat-card:active {
 }
 
 .prototype-applied-policy-summary strong {
-  color: #ff5e5b;
+  color: var(--primary-500);
   font-size: 24px;
   line-height: 1;
 }
@@ -8474,7 +8486,7 @@ a.prototype-stat-card:active {
 }
 
 .prototype-applied-policy-title:hover {
-  color: #ff5e5b;
+  color: var(--primary-500);
 }
 
 .prototype-applied-policy-copy p {
@@ -8552,7 +8564,7 @@ a.prototype-stat-card:active {
 
 .prototype-applied-trip-link em {
   flex: 0 0 auto;
-  color: #ff5e5b;
+  color: var(--primary-500);
   font-size: 11px;
   font-style: normal;
   font-weight: 800;
@@ -8577,7 +8589,7 @@ a.prototype-stat-card:active {
 
 .prototype-section-header a {
   flex: 0 0 auto;
-  color: #ff5e5b;
+  color: var(--primary-500);
   font-size: 12px;
   font-weight: 700;
 }
@@ -8612,7 +8624,7 @@ a.prototype-stat-card:active {
   min-height: 34px;
   padding: 0 var(--app-page-gutter);
   border-color: #ffb8b6;
-  color: #e84845;
+  color: var(--primary-500);
 }
 
 .prototype-favorite-list {
@@ -8783,7 +8795,7 @@ a.prototype-stat-card:active {
   place-items: center;
   border: 0;
   background: transparent;
-  color: #ff5e5b;
+  color: var(--primary-500);
   cursor: pointer;
   font-size: 21px;
   font-weight: 700;
@@ -8915,7 +8927,7 @@ a.prototype-stat-card:active {
 }
 
 .prototype-menu-row.danger strong {
-  color: #ff5e5b;
+  color: var(--primary-500);
 }
 
 .prototype-menu-icon {
@@ -9979,8 +9991,8 @@ a.prototype-stat-card:active {
   border: 0;
   border-radius: 16px;
   background:
-    linear-gradient(90deg, rgba(255, 94, 91, 0.08) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(255, 94, 91, 0.08) 1px, transparent 1px), #fff8f0;
+    linear-gradient(90deg, rgba(var(--primary-rgb), 0.08) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(var(--primary-rgb), 0.08) 1px, transparent 1px), #fff8f0;
   background-size: 48px 48px;
   box-shadow:
     inset 0 0 0 1px rgba(0, 0, 0, 0.05),
@@ -10022,7 +10034,7 @@ a.prototype-stat-card:active {
   border: 2px solid #fff;
   border-radius: 999px;
   padding: 0 9px;
-  background: #ff5e5b;
+  background: var(--primary-500);
   color: #fff;
   font-weight: 900;
   box-shadow: 0 12px 28px rgba(20, 28, 38, 0.2);
@@ -10559,7 +10571,7 @@ a.prototype-stat-card:active {
   min-height: 24px;
   padding: 3px 9px;
   border-radius: 999px;
-  color: #ff5e5b;
+  color: var(--primary-500);
   background: #fff3f2;
   font-size: 11px;
   font-style: normal;

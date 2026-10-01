@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent,
+  type ReactNode,
 } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -30,6 +31,7 @@ import { HomeHeroBanner, type HomeHeroSlide } from "../components/HomeHeroBanner
 import { HERO_PHOTOS, heroThemeOf } from "../components/heroPhotos";
 import { KOREA_REGION_SHAPES } from "../components/map/koreaRegionShapes";
 import { HomeSectionHeader } from "../components/patterns";
+import { useProfileEditor } from "../components/ProfileEditSheet";
 import { ErrorState, LoadingState } from "../components/ui";
 import {
   getClosingSoonHomePolicies,
@@ -69,6 +71,7 @@ export function isProfileComplete(profile: Profile) {
 
 export function HomePage() {
   const { currentUser, profile } = useSession();
+  const profileEditor = useProfileEditor(); // '내 관심 지역 혜택'의 '관심 지역 바꾸기' - 내 정보와 같은 편집 창
   const dismissalKey = currentUser
     ? `${PROFILE_PROMPT_DISMISSAL_PREFIX}${currentUser.id}`
     : null;
@@ -235,6 +238,11 @@ export function HomePage() {
               title="내 관심 지역 혜택"
               groups={interestGroups}
               empty="관심 지역에 아직 모아 둔 혜택이 없어요."
+              action={
+                <button className="home-section-action" onClick={profileEditor.open} type="button">
+                  관심 지역 바꾸기
+                </button>
+              }
             />
           )}
 
@@ -295,6 +303,7 @@ export function HomePage() {
           </span>
         </Link>
       )}
+      {profileEditor.sheet}
     </section>
   );
 }
@@ -316,14 +325,23 @@ function DeadlineSection({
   title,
   groups,
   empty,
+  action,
 }: {
   title: string;
   groups: DeadlineGroup[];
   empty: string;
+  action?: ReactNode; // 머리 오른쪽(없으면 '전체 보기')
 }) {
   return (
     <section className="home-section" aria-label={title}>
-      <HomeSectionHeader title={title} actionLabel="전체 보기" to="/policies" />
+      {action ? (
+        <div className="ds-section-header">
+          <h3>{title}</h3>
+          {action}
+        </div>
+      ) : (
+        <HomeSectionHeader title={title} actionLabel="전체 보기" to="/policies" />
+      )}
       {groups.length > 0 ? (
         <ul className="home-row home-row-deadline" aria-label={`${title} 목록`}>
           {groups.map((group) => (
@@ -519,7 +537,9 @@ const isOpenDated = (policy: Policy) =>
   !isDigitalTourismResidentCardPolicy(policy) && (daysUntilPolicyDeadline(policy.deadline) ?? -1) >= 0;
 
 /* 혜택이 많은 시군(시안 v43~44): 혜택 수 → 안 지난 가장 빠른 마감 → 이름. 전국 정책은 모든 곳에 걸려 순위를 흐리므로 뺀다.
-   누르면 그 시군의 대표 혜택(안 지난 가장 빠른 마감, 없으면 첫 혜택) 상세 - 나머지는 상세의 '같은 곳 다른 혜택'.
+   누르면 그 시군의 대표 혜택 상세 - 나머지는 상세의 '같은 곳 다른 혜택'. 대표는 그 시군 전용 안내가 있는 혜택 먼저(시안 v49,
+   2026-10-01 사용자 결정): 공식 안내 주소를 다른 시군과 나눠 쓰지 않는 혜택(숙박세일은 32곳이 첫 화면 하나를 나눠 써서 빠지고,
+   반값여행·주민증은 시군마다 따로) 중 안 지난 가장 빠른 마감 → 전용 상시(주민증) → 전용이 없으면 안 지난 가장 빠른 마감 → 첫 혜택.
    사진은 그 시군만 쓰는 수집 사진. 도 대표 사진을 여러 시군이 나눠 쓰는 곳은 같은 사진이 되풀이되므로 혜택 그림으로 둔다. */
 function pickPlaceCards(policies: Policy[]): PlaceCardData[] {
   const byPlace = new Map<string, Policy[]>();
@@ -533,12 +553,21 @@ function pickPlaceCards(policies: Policy[]): PlaceCardData[] {
       placesByPhoto.set(policy.photo.imageUrl, (placesByPhoto.get(policy.photo.imageUrl) ?? new Set()).add(key));
     }
   }
+  const placesByUrl = new Map<string, Set<string>>();
+  for (const [key, items] of byPlace) {
+    for (const policy of items) {
+      const url = policy.officialUrl;
+      if (url) placesByUrl.set(url, (placesByUrl.get(url) ?? new Set()).add(key));
+    }
+  }
+  const ownPage = (policy: Policy) => Boolean(policy.officialUrl && placesByUrl.get(policy.officialUrl)?.size === 1);
   const ownPhoto = (items: Policy[]) =>
     items.map((policy) => policy.photo).find((photo) => photo && placesByPhoto.get(photo.imageUrl)?.size === 1) ?? null;
   return Array.from(byPlace, ([key, items]) => {
     const dated = items.filter(isOpenDated).sort((left, right) => left.deadline.localeCompare(right.deadline));
     const [region, place] = key.split("|");
-    return { key, region, place, count: items.length, lead: dated[0] ?? items[0], photo: ownPhoto(items) };
+    const lead = dated.find(ownPage) ?? items.find((policy) => ownPage(policy) && isDigitalTourismResidentCardPolicy(policy)) ?? dated[0] ?? items[0];
+    return { key, region, place, count: items.length, lead, photo: ownPhoto(items) };
   }).sort(
     (left, right) =>
       right.count - left.count ||
@@ -557,14 +586,14 @@ function PlaceCard({ card }: { card: PlaceCardData }) {
       to={`/policies/${card.lead.slug}`}
     >
       {photo ? (
+        /* 원본(940px)만 쓴다. TourAPI 축소판(thumbnailUrl)은 실제로 120×80 이라 300w 로 적어 두면 카드(232~362px)에서
+           2.5~3배로 늘어나 깨져 보였다(10/1 실측) */
         <img
           alt=""
           className="home-region-photo"
           loading="lazy"
           onError={() => setIsBroken(true)}
-          sizes="(min-width: 1024px) 240px, 136px"
           src={photo.imageUrl}
-          srcSet={photo.thumbnailUrl ? `${photo.thumbnailUrl} 300w, ${photo.imageUrl} 940w` : undefined}
         />
       ) : (
         <BenefitTile kind={kind} />

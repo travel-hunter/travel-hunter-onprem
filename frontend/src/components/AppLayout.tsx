@@ -93,7 +93,7 @@ export function BottomTabs() {
       </NavLink>
       <NavLink className={tabClass} to="/mypage">
         <UserRound size={19} />
-        <span>마이</span>
+        <span>내 정보</span>
       </NavLink>
       {isAdmin && (
         <NavLink className={tabClass} to="/admin">
