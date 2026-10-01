@@ -5,7 +5,7 @@ import { appDataApi, type SignupVerifyResponse } from "../api";
 import { getPostAuthPath } from "../app/onboarding";
 import { shouldShowPublicAuthActions } from "../app/adminHost";
 import { useSession } from "../app/session";
-import { HERO_PHOTOS } from "../components/heroPhotos";
+import { HERO_PHOTOS, heroCredit } from "../components/heroPhotos";
 import { AuthFormShell, BrandMark } from "../components/patterns";
 import { Button, IconButton, LinkButton } from "../components/ui";
 import "../styles/account.css";
@@ -343,7 +343,7 @@ export function LoginPage() {
           <br />
           지도에서 찾아요
         </p>
-        <span className="lg-credit">{photo.credit}</span>
+        <span className="lg-credit">{heroCredit(photo)}</span>
       </div>
       <div className="lg-body">
         <div className="ds-auth-form-shell lg-shell">

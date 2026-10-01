@@ -2,6 +2,16 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HERO_INTERVAL_MS, HomeHeroBanner, type HomeHeroSlide } from "./HomeHeroBanner";
+import type { HeroPhoto } from "./heroPhotos";
+
+const jeonju: HeroPhoto = {
+  src: "/hero/jeonju.webp", subject: "전주 한옥마을", author: "lumoplank", license: "CC0",
+  licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/deed.ko", page: "https://commons.wikimedia.org/wiki/File:Jeonju.jpg",
+};
+const market: HeroPhoto = {
+  src: "/hero/market.webp", subject: "광장시장 전", author: "Bo Park(US Army)", license: "퍼블릭 도메인",
+  licenseUrl: null, page: "https://commons.wikimedia.org/wiki/File:Market.jpg",
+};
 
 const slides: HomeHeroSlide[] = ["첫째", "둘째", "셋째"].map((title, i) => ({
   key: title,
@@ -13,10 +23,10 @@ const slides: HomeHeroSlide[] = ["첫째", "둘째", "셋째"].map((title, i) =>
   sub: `${title} 설명`,
 }));
 
-function mount(list = slides) {
+function mount(list = slides, credits: HeroPhoto[] = []) {
   render(
     <MemoryRouter>
-      <HomeHeroBanner slides={list} />
+      <HomeHeroBanner credits={credits} slides={list} />
     </MemoryRouter>,
   );
   return document.querySelector(".home-hero") as HTMLElement;
@@ -153,16 +163,36 @@ describe("HomeHeroBanner", () => {
     expect(screen.queryByRole("button", { name: "자동 넘김 멈추기" })).toBeNull();
   });
 
-  it("puts a photo behind a slide with its credit, and keeps the color when there is none", () => {
-    mount([
-      { ...slides[0], photo: { src: "/hero/jeonju.webp", credit: "전주 한옥마을 · lumoplank · CC0" } },
-      slides[1],
-    ]);
+  it("puts a photo behind a slide and keeps the color when there is none", () => {
+    mount([{ ...slides[0], photo: jeonju }, slides[1]], [jeonju, market]);
     expect(slide("첫째")).toHaveClass("photo");
     expect(slide("첫째").style.getPropertyValue("--ph")).toBe("url(/hero/jeonju.webp)");
-    expect(slide("첫째")).toHaveTextContent("전주 한옥마을 · lumoplank · CC0");
+    // 출처는 장마다 적지 않는다(시안 v53) - 배너 아래 '사진 출처' 하나
+    expect(slide("첫째")).not.toHaveTextContent("lumoplank");
     expect(slide("둘째")).not.toHaveClass("photo");
-    expect(slide("둘째").querySelector(".home-hero-credit")).toBeNull();
+  });
+
+  it("gathers the photo credits behind one '사진 출처' button", () => {
+    vi.useRealTimers();
+    mount([{ ...slides[0], photo: jeonju }, slides[1]], [jeonju, market]);
+    const open = screen.getByRole("button", { name: "사진 출처" });
+    fireEvent.click(open);
+
+    const dialog = screen.getByRole("dialog", { name: "배너 사진 출처" });
+    expect(dialog.querySelectorAll("li")).toHaveLength(2);
+    expect(screen.getByRole("link", { name: "CC0" })).toHaveAttribute("href", jeonju.licenseUrl);
+    expect(screen.getAllByRole("link", { name: "원본 보기(위키미디어 공용)" }).map((a) => a.getAttribute("href"))).toEqual([jeonju.page, market.page]);
+    expect(dialog).toHaveTextContent("Bo Park(US Army) · 퍼블릭 도메인");   // 라이선스 본문이 없으면 글자만
+    expect(screen.getByRole("button", { name: "닫기" })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(open).toHaveFocus();
+  });
+
+  it("shows no '사진 출처' when no slide has a photo", () => {
+    mount(slides, [jeonju]);
+    expect(screen.queryByRole("button", { name: "사진 출처" })).toBeNull();
   });
 
   it("draws a single slide without a pause button and nothing without slides", () => {
