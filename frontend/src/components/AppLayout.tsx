@@ -42,41 +42,33 @@ function topTabClass({ isActive }: { isActive: boolean }) {
   return isActive ? "top-tab active" : "top-tab";
 }
 
+/* 넓은 화면 위 메뉴(시안 v41): 빨간 글씨 이름 · 글자 탭(고른 탭은 굵게, 아래 밑줄) · 오른쪽 끝 '내 정보'.
+   관리자는 '내 정보' 앞. 오른쪽 무리의 첫 탭이 .push 로 남은 폭을 밀어낸다 */
 function TopNavigation() {
   const { currentUser } = useSession();
+  const isAdmin = currentUser?.role === "admin";
+  const pushed = (state: { isActive: boolean }) => `${topTabClass(state)} push`;
   return (
     <header className="service-top-navigation" aria-label="데스크톱 주요 메뉴">
-      <div className="service-top-brand">
-        <span className="service-top-brand-mark" aria-hidden="true">
-          ✈️
-        </span>
-        <span className="service-top-brand-copy">
-          <strong>Travel Hunter</strong>
-        </span>
-      </div>
+      <span className="service-top-brand">트래블헌터</span>
       <nav className="top-tabs" aria-label="주요 메뉴">
         <NavLink className={topTabClass} to="/home">
-          <Home size={17} />
           <span>홈</span>
         </NavLink>
         <NavLink className={topTabClass} to="/policies">
-          <WalletCards size={17} />
           <span>정책</span>
         </NavLink>
         <NavLink className={topTabClass} to="/trips">
-          <CalendarDays size={17} />
           <span>일정</span>
         </NavLink>
-        <NavLink className={topTabClass} to="/mypage">
-          <UserRound size={17} />
-          <span>마이</span>
-        </NavLink>
-        {currentUser?.role === "admin" && (
-          <NavLink className={topTabClass} to="/admin">
-            <ShieldCheck size={17} />
+        {isAdmin && (
+          <NavLink className={pushed} to="/admin">
             <span>관리자</span>
           </NavLink>
         )}
+        <NavLink className={isAdmin ? topTabClass : pushed} to="/mypage">
+          <span>내 정보</span>
+        </NavLink>
       </nav>
     </header>
   );
@@ -101,7 +93,7 @@ export function BottomTabs() {
       </NavLink>
       <NavLink className={tabClass} to="/mypage">
         <UserRound size={19} />
-        <span>마이</span>
+        <span>내 정보</span>
       </NavLink>
       {isAdmin && (
         <NavLink className={tabClass} to="/admin">

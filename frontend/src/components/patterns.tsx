@@ -1,7 +1,5 @@
 ﻿import { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import type { Policy } from "../api";
-import { getPolicyMoodIcon, getPolicyMoodTone } from "../data/displayConfig";
 import { SurfaceCard } from "./ui";
 
 function classNames(...parts: Array<string | false | null | undefined>) {
@@ -23,48 +21,6 @@ export function HomeSectionHeader({ actionLabel, title, to }: { actionLabel?: st
       <h3>{title}</h3>
       {actionLabel && to && <Link to={to}>{actionLabel}</Link>}
     </div>
-  );
-}
-
-export function ProfileSectionHeader({ actionLabel, title, to }: { actionLabel?: string; title: string; to?: string }) {
-  return (
-    <div className="ds-section-header ds-profile-section-header">
-      <h3>{title}</h3>
-      {actionLabel && to && <Link to={to}>{actionLabel}</Link>}
-    </div>
-  );
-}
-
-export function FavoritePolicyCard({
-  isRemoving,
-  onRemove,
-  policy,
-}: {
-  isRemoving: boolean;
-  onRemove: () => void;
-  policy: Policy;
-}) {
-  return (
-    <SurfaceCard as="article" className="ds-favorite-policy-card">
-      <Link className="ds-favorite-policy-link" to={`/policies/${policy.slug}`}>
-        <span className={`ds-favorite-policy-thumb ${getPolicyMoodTone(policy)}`} aria-hidden="true">
-          {getPolicyMoodIcon(policy)}
-        </span>
-        <span className="ds-favorite-policy-copy">
-          <strong>{policy.title}</strong>
-          {policy.cardSummary ? <small>{policy.cardSummary}</small> : null}
-        </span>
-      </Link>
-      <button
-        aria-label="저장 해제"
-        className="btn ghost ds-favorite-policy-remove"
-        disabled={isRemoving}
-        onClick={onRemove}
-        type="button"
-      >
-        {isRemoving ? "..." : "해제"}
-      </button>
-    </SurfaceCard>
   );
 }
 

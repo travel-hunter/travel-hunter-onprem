@@ -37,7 +37,7 @@ describe("Travel Hunter app — trips list", () => {
 
     try {
       await login();
-      const homeAiCard = document.querySelector(".prototype-home-ai-card");
+      const homeAiCard = document.querySelector(".prototype-home-ai-card, .home-trip-line");
       expect(homeAiCard).toBeTruthy();
       expect(homeAiCard).not.toHaveTextContent("부산 4일 여행");
       expect(
@@ -68,11 +68,14 @@ describe("Travel Hunter app — trips list", () => {
       );
       expect(document.body).not.toHaveTextContent("추천 정책 확인 가능");
       expect(document.body).toHaveTextContent("1명 참여 중");
-      expect(document.body).toHaveTextContent("예상 혜택");
+      // "예상 혜택 0원" 은 혜택이 없다는 말이라 빼고, 지난 여행은 "다녀옴" 으로 접는다.
+      expect(document.body).not.toHaveTextContent("예상 혜택");
+      expect(document.body).toHaveTextContent("다녀옴");
 
-      const deleteButton = await screen.findByRole("button", { name: "삭제" });
       const user = userEvent.setup();
-      await user.click(deleteButton);
+      const menuButton = screen.getByRole("button", { name: "부산 4일 여행 편집·삭제" });
+      await user.click(menuButton);
+      await user.click(screen.getByRole("button", { name: "일정 삭제" }));
 
       const cancelDialog = await screen.findByRole("dialog", {
         name: "일정을 삭제할까요?",
@@ -86,7 +89,8 @@ describe("Travel Hunter app — trips list", () => {
       );
       expect(deleteTripSpy).not.toHaveBeenCalled();
 
-      await user.click(await screen.findByRole("button", { name: "삭제" }));
+      await user.click(menuButton);
+      await user.click(screen.getByRole("button", { name: "일정 삭제" }));
       const deleteDialog = await screen.findByRole("dialog", {
         name: "일정을 삭제할까요?",
       });
@@ -127,7 +131,10 @@ describe("Travel Hunter app — trips list", () => {
       cleanup();
       renderAppRoute("/trips");
       const user = userEvent.setup();
-      await user.click(await screen.findByRole("button", { name: "삭제" }));
+      await user.click(
+        await screen.findByRole("button", { name: "강원 2일 여행 편집·삭제" }),
+      );
+      await user.click(screen.getByRole("button", { name: "일정 삭제" }));
       const deleteDialog = await screen.findByRole("dialog", {
         name: "일정을 삭제할까요?",
       });
@@ -174,11 +181,12 @@ describe("Travel Hunter app — trips list", () => {
       ).not.toBeInTheDocument();
       expect(document.querySelector(".trip-dday-chip")).not.toBeInTheDocument();
       expect(updateStatusSpy).not.toHaveBeenCalled();
+      // 작성 중·확정됨 같은 확정 상태가 아니라 여행 날짜 상태(다녀옴·D-n) 하나만 붙는다.
       const statusTags = Array.from(
         document.querySelectorAll(".itinerary-policy-row .tag"),
       );
       expect(statusTags).toHaveLength(1);
-      expect(statusTags[0]).toHaveClass("benefit");
+      expect(statusTags[0]).toHaveTextContent("다녀옴");
       expect(document.body).not.toHaveTextContent("작성 중");
       expect(document.body).not.toHaveTextContent("확정됨");
     } finally {
@@ -462,11 +470,16 @@ describe("Travel Hunter app — trips list", () => {
       expect(screen.getByText("경주 3일 여행")).toBeInTheDocument();
       expect(document.querySelectorAll(".itinerary-card")).toHaveLength(2);
       expect(
-        document.querySelectorAll(
-          ".itinerary-actions.itinerary-card-management",
-        ),
+        document.querySelectorAll(".itinerary-actions.itinerary-card-menu"),
       ).toHaveLength(2);
-      expect(document.querySelectorAll(".itinerary-card-edit")).toHaveLength(2);
+      const user = userEvent.setup();
+      await user.click(
+        screen.getByRole("button", { name: "경주 3일 여행 편집·삭제" }),
+      );
+      expect(screen.getByRole("link", { name: "일정 편집" })).toHaveAttribute(
+        "href",
+        "/trips/78/edit",
+      );
       expect(screen.getByText("4명 참여 중")).toBeInTheDocument();
       expect(screen.getByText("나, 민수 외 2명")).toBeInTheDocument();
       expect(document.body).not.toHaveTextContent("실제");

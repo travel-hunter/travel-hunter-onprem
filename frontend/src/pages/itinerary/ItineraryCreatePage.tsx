@@ -554,7 +554,7 @@ export function ItineraryCreatePage() {
   };
 
   return (
-    <section className="screen prototype-trip-create-screen">
+    <section className="screen prototype-trip-create-screen desktop-wide">
       <div className="prototype-create-top">
         <IconButton label="일정 목록" to="/trips">
           <ChevronLeft size={20} />
@@ -614,15 +614,12 @@ export function ItineraryCreatePage() {
             className="prototype-create-step-panel prototype-unified-checkout"
             aria-labelledby="trip-create-checkout-title"
           >
+            {/* 머리 표·설명 문장·카드 번호(순서가 아니다)·도움말은 필요도 점수 80 이하라 뺐다.
+                지역은 설명 문장에만 있었으므로 제목으로 올린다. */}
             <div className="prototype-checkout-hero">
-              <span>새 일정 만들기</span>
               <h2 id="trip-create-checkout-title">
-                여행 정보를 한 번에 확인해요
+                {selectedRegion} 여행 정보를 확인해요
               </h2>
-              <p>
-                {selectedRegion} 일정의 제목, 기간, 취향을 확인하고 바로 만들 수
-                있습니다.
-              </p>
             </div>
 
             <section
@@ -630,10 +627,8 @@ export function ItineraryCreatePage() {
               aria-labelledby="trip-title-section-title"
             >
               <div className="prototype-checkout-section-head">
-                <span>1</span>
                 <div>
                   <h3 id="trip-title-section-title">일정 제목</h3>
-                  <p>나중에 언제든 바꿀 수 있어요.</p>
                 </div>
               </div>
               <label className="prototype-title-field">
@@ -655,10 +650,8 @@ export function ItineraryCreatePage() {
               aria-labelledby="trip-date-section-title"
             >
               <div className="prototype-checkout-section-head">
-                <span>2</span>
                 <div>
                   <h3 id="trip-date-section-title">여행 기간</h3>
-                  <p>출발일과 도착일을 고릅니다.</p>
                 </div>
               </div>
               {/* 편집 화면·상세 기간 수정과 같은 컴포넌트다. */}
@@ -702,10 +695,8 @@ export function ItineraryCreatePage() {
               aria-labelledby="trip-style-section-title"
             >
               <div className="prototype-checkout-section-head">
-                <span>3</span>
                 <div>
                   <h3 id="trip-style-section-title">코스 취향</h3>
-                  <p>추천 일정 분위기를 정합니다.</p>
                 </div>
               </div>
               <button

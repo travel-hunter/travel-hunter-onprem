@@ -12,25 +12,26 @@ const counts: RegionCounts = {
 function region(name: string) {
   const el = document.querySelector(`.thmap-rg[data-region="${name}"]`);
   expect(el).toBeTruthy();
-  return el as SVGGElement;
+  return el as SVGPathElement;
 }
+const badgeTexts = () => Array.from(document.querySelectorAll(".thmap-bd text")).map((t) => t.textContent);
 
 describe("PolicyRegionMap", () => {
   afterEach(() => cleanup());
 
-  it("draws all 17 regions and dims only the ones with no policies of their own", () => {
+  it("draws all 17 regions flat and marks only the ones with no policies of their own as empty", () => {
     render(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} />);
     expect(document.querySelectorAll(".thmap-rg")).toHaveLength(17);
     expect(region("전남").classList.contains("thmap-empty")).toBe(false);
     expect(region("경기").classList.contains("thmap-empty")).toBe(false);
-    // 지금 API 기준 대구는 0건 - 시안이 굽던 92건 데이터와 다르다
     expect(region("대구").classList.contains("thmap-empty")).toBe(true);
     // 건수를 안 준 지역은 0건으로 그린다
     expect(region("서울").classList.contains("thmap-empty")).toBe(true);
+    // 시안처럼 평면 - 옆면을 켜켜이 쌓던 2.5D 벽은 없다
+    expect(document.querySelector(".thmap-walls, .thmap-floors")).toBeNull();
   });
 
-  it("keeps a region dimmed when only nationwide policies reach it, but counts them in the label", () => {
-    // 전국 정책은 목록엔 나오되(total) 흐림 판정(own)엔 불참 - 전국 1건에 17곳이 다 켜지면 안 된다
+  it("keeps a region empty when only nationwide policies reach it, but counts them in the label", () => {
     render(<PolicyRegionMap counts={{ 대구: { own: 0, total: 1 } }} onSelect={() => undefined} selected={null} />);
     expect(region("대구").classList.contains("thmap-empty")).toBe(true);
     expect(region("대구").getAttribute("aria-label")).toBe("대구 정책 1건");
@@ -43,28 +44,24 @@ describe("PolicyRegionMap", () => {
     expect(onSelect).toHaveBeenLastCalledWith("전남");
     rerender(<PolicyRegionMap counts={counts} onSelect={onSelect} selected="전남" />);
     expect(region("전남").classList.contains("thmap-on")).toBe(true);
+    expect(region("전남").getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(region("전남"));
     expect(onSelect).toHaveBeenLastCalledWith(null);
   });
 
-  it("raises the selected region above its neighbours and lowers it when deselected", () => {
+  it("lifts only the picked region - shade, teal wall, bright top - and puts it back when released", () => {
     const { rerender } = render(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} />);
-    const labels = document.querySelector(".thmap-labels") as Element;
-    expect(labels).toBeTruthy();
-    const zoomer = labels.parentNode as Element;
-    const label = (name: string) => Array.from(document.querySelectorAll(".thmap-lbl")).find((l) => l.textContent === name) as Element;
-    const after = (a: Element, b: Element) => (a.compareDocumentPosition(b) & window.Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    const lift = document.querySelector(".thmap-lift") as SVGGElement;
+    expect(lift.childElementCount).toBe(0);
     rerender(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected="경기" />);
-    // 고른 지역은 이름표 층보다 위 - 솟은 땅이 이웃 이름표(서울·인천)를 덮는다
-    expect(after(labels, region("경기"))).toBe(true);
-    // 제 이름표만 그 위에 얹힌다
-    expect(zoomer.lastElementChild).toBe(label("경기"));
-    expect(label("서울").parentNode).toBe(labels);
+    expect(Array.from(lift.children).map((p) => p.getAttribute("class"))).toEqual(["shade", "wall", "top"]);
+    expect((lift.querySelector(".top") as SVGPathElement).getAttribute("fill")).toMatch(/^url\(#thmap-face-/);
+    expect(lift.querySelector(".top")?.getAttribute("d")).toBe(region("경기").getAttribute("d"));
+    // 고른 도는 땅 무리의 맨 위 - 흰 경계선이 이웃에 덮이지 않는다
+    expect(document.querySelector(".thmap-rgs")?.lastElementChild).toBe(region("경기"));
     rerender(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} />);
+    expect(lift.childElementCount).toBe(0);
     expect(region("경기").classList.contains("thmap-on")).toBe(false);
-    // 풀면 지역은 이름표 층 아래로, 이름표는 층 안으로 돌아온다
-    expect(after(region("경기"), labels)).toBe(true);
-    expect(label("경기").parentNode).toBe(labels);
   });
 
   it("mounts the pill only while a region is selected", () => {
@@ -104,45 +101,166 @@ describe("PolicyRegionMap", () => {
   });
 
   it("stretches the viewBox to the box so no letterbox band is left", () => {
-    // 칸이 그림보다 길쭉하면 남는 쪽을 바다로 늘린다 - 비율이 같아지므로 빈 띠가 안 생기고
-    // 땅도 안 잘린다. 칸을 못 재는 환경에서는 그림 제 비율을 그대로 쓴다.
+    // 칸 비율과 viewBox 비율이 같아 빈 띠도, 잘리는 땅도 없다. 남는 쪽은 바다로 늘어난다.
     const width = vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(390);
     const height = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(600);
-    /* jsdom 에는 getBBox 가 없다 - 없으면 엔진이 추정 viewBox 를 그대로 쓰는 폴백으로 빠진다.
-       여기서 재려는 것은 그 폴백이 아니라 칸에 맞추는 계산이라 땅 범위를 흉내 낸다. */
-    const svgProto = window.SVGElement.prototype as unknown as { getBBox?: () => DOMRect };
-    const hadBBox = "getBBox" in svgProto;
-    svgProto.getBBox = () => ({ x: 0, y: 0, width: 100, height: 150 }) as DOMRect;
     try {
       render(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} />);
       const box = (document.querySelector(".thmap-svg") as SVGSVGElement).getAttribute("viewBox") as string;
       const [, , vw, vh] = box.split(" ").map(Number);
       expect(vw / vh).toBeCloseTo(390 / 600, 2);
     } finally {
-      if (!hadBBox) delete svgProto.getBBox;
       height.mockRestore();
       width.mockRestore();
     }
   });
 
-  it("keeps the sea under the land after a selection is cleared", () => {
-    // 선택을 풀면 레이어 순서를 되돌리는데, 그때 바다가 땅 위로 올라오던 적이 있다.
-    // 바다가 앞으로 나오면 해안 흰 테두리가 옆면·바닥을 덮어 지도 색이 달라 보인다.
-    const { rerender } = render(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} />);
-    const zoomer = document.querySelector(".thmap-svg > g") as SVGGElement;
-    const seaFirst = () => (zoomer.firstElementChild as Element).classList.contains("thmap-sea");
-    expect(seaFirst()).toBe(true);
-    rerender(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected="전남" />);
-    rerender(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} />);
-    expect(seaFirst()).toBe(true);
+  it("draws the three coastal ripple lines under the land", () => {
+    render(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected="전남" />);
+    const svg = document.querySelector(".thmap-svg") as SVGSVGElement;
+    const sea = svg.querySelector(".thmap-sea") as SVGGElement;
+    const rgs = svg.querySelector(".thmap-rgs") as SVGGElement;
+    expect((sea.compareDocumentPosition(rgs) & window.Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true);
+    // 굵은 선 세 겹과 바다색 덮개 세 겹이 번갈아 - 땅 모양 하나(defs)를 같이 쓴다
+    const uses = Array.from(sea.querySelectorAll("use"));
+    expect(uses).toHaveLength(6);
+    expect(uses.filter((u) => u.classList.contains("cut"))).toHaveLength(3);
+    const landId = (svg.querySelector("defs .thmap-land") as SVGGElement).id;
+    expect(uses.every((u) => u.getAttribute("href") === `#${landId}`)).toBe(true);
   });
 
-  it("clears the selection on Escape and on a background click", () => {
+  it("colours each region by its benefit count and writes the count in a label pill", () => {
+    render(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} showCounts />);
+    // 청록 5단계: 11건은 11~20 칸, 2건은 1~2 칸, 0건은 회색
+    expect(region("전남").getAttribute("fill")).toBe("#2ca25f");
+    expect(region("경기").getAttribute("fill")).toBe("#ccece6");
+    expect(region("대구").getAttribute("fill")).toBe("#e2e5ea");
+    expect(badgeTexts()).toEqual(expect.arrayContaining(["전남 11", "경기 2", "대구"]));
+  });
+
+  it("hides zero-benefit labels while the sheet covers half the map, and shows them with the map up", () => {
+    const { rerender } = render(
+      <PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} showCounts coverTop={300} />,
+    );
+    // 반반 - 지도가 작아 이름끼리 부딪히므로 혜택 있는 곳만
+    expect(badgeTexts()).toEqual(expect.arrayContaining(["전남 11", "경기 2"]));
+    expect(badgeTexts()).not.toContain("대구");
+    rerender(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} showCounts coverTop={300} sheetLow />);
+    expect(badgeTexts()).toContain("대구");
+  });
+
+  it("moves 제주 into a small inset at the bottom right so the mainland is larger", () => {
+    render(<PolicyRegionMap counts={{ 제주: { own: 2, total: 2 } }} onSelect={() => undefined} selected={null} showCounts />);
+    expect(document.querySelector(".thmap-inset")).toBeTruthy();
+    const [x, y] = (region("제주").getAttribute("d") as string).slice(1).split("L")[0].split(",").map(Number);
+    // 도안의 제주(가로 60~90, 세로 225~245)를 오른쪽 아래 삽입 틀(165.5~200.5, 193.5~215.5)로
+    expect(x).toBeGreaterThan(160);
+    expect(y).toBeLessThan(220);
+    const jeju = Array.from(document.querySelectorAll(".thmap-bd")).find((g) => g.textContent === "제주 2") as Element;
+    expect(jeju.getAttribute("transform")).toBe("translate(183,187)");
+  });
+
+  it("lets a small metro be picked from a generous invisible target", () => {
+    const onSelect = vi.fn();
+    const onBackground = vi.fn();
+    render(<PolicyRegionMap counts={counts} onSelect={onSelect} selected={null} onBackground={onBackground} />);
+    const seoul = document.querySelector('.thmap-hit[data-region="서울"]') as SVGCircleElement;
+    expect(seoul).toBeTruthy();
+    fireEvent.click(seoul);
+    expect(onSelect).toHaveBeenLastCalledWith("서울");
+    expect(onBackground).not.toHaveBeenCalled();
+  });
+
+  it("fades the neighbours to plain land and puts tappable city dots on the picked region", () => {
+    const onPlace = vi.fn();
+    const { rerender } = render(
+      <PolicyRegionMap
+        counts={counts}
+        onSelect={() => undefined}
+        selected="전남"
+        focus
+        showCounts
+        places={[{ name: "완도", count: 2 }, { name: "좌표없는곳", count: 1 }]}
+        onSelectPlace={onPlace}
+      />,
+    );
+    expect(document.querySelector(".thmap-svg")?.classList.contains("thmap-focus")).toBe(true);
+    expect(region("경기").classList.contains("thmap-dim")).toBe(true);
+    expect(region("전남").classList.contains("thmap-dim")).toBe(false);
+    // 고른 도의 이름표는 지역 카드가 말한다 - 둘레 도 이름만 옅게
+    expect(document.querySelectorAll(".thmap-bd")).toHaveLength(0);
+    const neighbours = Array.from(document.querySelectorAll(".thmap-nb")).map((t) => t.textContent);
+    expect(neighbours).toContain("경기 2");
+    expect(neighbours.some((text) => text?.startsWith("전남"))).toBe(false);
+    // 좌표가 없는 시군은 점을 찍지 않는다
+    const dots = document.querySelectorAll(".thmap-dot");
+    expect(dots).toHaveLength(1);
+    expect(dots[0].getAttribute("aria-label")).toBe("완도 혜택 2건");
+    fireEvent.click(dots[0]);
+    expect(onPlace).toHaveBeenLastCalledWith("완도");
+    // 다시 누르면 도 전체로
+    rerender(
+      <PolicyRegionMap counts={counts} onSelect={() => undefined} selected="전남" focus places={[{ name: "완도", count: 2 }]} selectedPlace="완도" onSelectPlace={onPlace} />,
+    );
+    fireEvent.click(document.querySelector(".thmap-dot") as Element);
+    expect(onPlace).toHaveBeenLastCalledWith(null);
+    // 선택을 풀면 흐림·점·띄운 도가 걷힌다
+    rerender(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} focus onSelectPlace={onPlace} />);
+    expect(document.querySelector(".thmap-dim")).toBeNull();
+    expect(document.querySelector(".thmap-dot")).toBeNull();
+    expect(document.querySelector(".thmap-lift")?.childElementCount).toBe(0);
+  });
+
+  it("keeps the whole country in frame with zoom off but still fades the neighbours and dots the pick", () => {
+    // 넓은 화면: 지도가 넉넉해 다가가지 않는다. 움직임 없이 바로 제자리를 보도록 rAF 를 뺀다
+    const width = vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(800);
+    const height = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(600);
+    vi.stubGlobal("requestAnimationFrame", undefined);
+    const viewBox = () => (document.querySelector(".thmap-svg") as SVGSVGElement).getAttribute("viewBox");
+    try {
+      const { rerender } = render(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} focus zoom={false} />);
+      const whole = viewBox();
+      rerender(
+        <PolicyRegionMap counts={counts} onSelect={() => undefined} selected="전남" focus zoom={false} places={[{ name: "완도", count: 2 }]} />,
+      );
+      expect(viewBox()).toBe(whole);
+      expect(region("경기").classList.contains("thmap-dim")).toBe(true);
+      expect(document.querySelectorAll(".thmap-dot")).toHaveLength(1);
+      // 다가가기가 켜 있으면(좁은 화면) 같은 선택에 틀이 그 도로 좁아진다
+      cleanup();
+      render(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected="전남" focus />);
+      expect(viewBox()).not.toBe(whole);
+    } finally {
+      vi.unstubAllGlobals();
+      height.mockRestore();
+      width.mockRestore();
+    }
+  });
+
+  it("tells the page when empty sea is tapped with nothing picked", () => {
+    const onBackground = vi.fn();
+    render(<PolicyRegionMap counts={counts} onSelect={() => undefined} selected={null} onBackground={onBackground} />);
+    fireEvent.click(document.querySelector(".thmap-wrap") as HTMLElement);
+    expect(onBackground).toHaveBeenCalled();
+    fireEvent.click(region("전남"));
+    expect(onBackground).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the selection on Escape and on a tap on empty sea", () => {
     const onSelect = vi.fn();
     render(<PolicyRegionMap counts={counts} onSelect={onSelect} selected="전남" />);
     fireEvent.keyDown(region("전남"), { key: "Escape" });
     expect(onSelect).toHaveBeenLastCalledWith(null);
-    fireEvent.click(document.querySelector(".thmap-svg > rect") as SVGRectElement);
+    onSelect.mockClear();
+    fireEvent.click(document.querySelector(".thmap-svg") as SVGSVGElement);
     expect(onSelect).toHaveBeenLastCalledWith(null);
+  });
+
+  it("picks a region from the keyboard", () => {
+    const onSelect = vi.fn();
+    render(<PolicyRegionMap counts={counts} onSelect={onSelect} selected={null} />);
+    expect(region("전남").getAttribute("tabindex")).toBe("0");
+    fireEvent.keyDown(region("전남"), { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith("전남");
   });
 });

@@ -47,7 +47,7 @@ export function ItineraryListPage() {
   };
 
   return (
-    <section className="screen with-tabs prototype-trip-list-screen">
+    <section className="screen with-tabs prototype-trip-list-screen desktop-wide">
       <div className="prototype-screen-head">
         <div>
           <h1>내 일정</h1>

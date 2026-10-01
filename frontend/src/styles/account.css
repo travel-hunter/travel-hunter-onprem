@@ -1,0 +1,885 @@
+/* 내 정보 · 프로필 편집 창 · 로그인(시안 v49) - pages/MyPage.tsx · components/ProfileEditSheet.tsx · pages/AuthPages.tsx.
+   색은 토큰만: 강조는 청록 하나, 마감 칩은 상태색, 카카오·구글 단추만 각 회사 색.
+   넓은 화면(1024px~)은 내 정보 두 단(왼쪽 프로필·설정, 오른쪽 목록), 로그인은 사진 왼쪽 + 입력 오른쪽. */
+
+.acct-sheet button:focus-visible,
+.acct-sheet input:focus-visible,
+.mp-screen a:focus-visible,
+.mp-screen button:focus-visible,
+.lg-screen a:focus-visible,
+.lg-screen button:focus-visible {
+  outline: 2px solid var(--gray-900);
+  outline-offset: 2px;
+}
+
+/* ---------- 프로필 편집 창: 폰은 아래 시트, 넓은 화면은 가운데 창 ---------- */
+.acct-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.acct-sheet {
+  width: min(100%, 560px);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  display: grid;
+  gap: 16px;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  border-radius: 22px 22px 0 0;
+  background: var(--white);
+}
+
+.acct-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.acct-sheet-head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.acct-sheet-head h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.acct-sheet-head p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--gray-600);
+}
+
+.acct-icon-btn {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--gray-900);
+  cursor: pointer;
+}
+
+.acct-main,
+.lg-screen .lg-main {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--primary-500);
+  color: var(--white);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.acct-main:hover:not(:disabled),
+.lg-screen .lg-main:hover:not(:disabled) {
+  background: var(--primary-600);
+}
+
+.acct-main:disabled,
+.lg-screen .lg-main:disabled {
+  background: var(--gray-200);
+  color: var(--gray-600);
+  cursor: default;
+  opacity: 1;
+}
+
+.lg-screen .lg-main {
+  margin-top: 4px;
+}
+
+.pe-field {
+  display: grid;
+  gap: 8px;
+}
+
+.pe-field label,
+.pe-group legend {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.pe-nick {
+  display: flex;
+  gap: 8px;
+}
+
+.pe-nick input {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--gray-300);
+  border-radius: 12px;
+  background: var(--white);
+  color: var(--gray-900);
+  font: inherit;
+  font-size: 16px;
+}
+
+.pe-suggest {
+  flex: none;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--gray-300);
+  border-radius: 12px;
+  background: var(--white);
+  color: var(--gray-900);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pe-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pe-group legend {
+  margin-bottom: 8px;
+  padding: 0;
+}
+
+.pe-group legend i {
+  margin-left: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  font-style: normal;
+  color: var(--gray-600);
+}
+
+.pe-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pe-chip {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--gray-300);
+  border-radius: 22px;
+  background: var(--white);
+  color: var(--gray-900);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pe-chip[aria-pressed="true"] {
+  border-color: var(--primary-500);
+  background: var(--primary-50);
+  color: var(--primary-600);
+  font-weight: 700;
+}
+
+.pe-chip:disabled:not([aria-pressed="true"]) {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------- 내 정보 ---------- */
+/* 폰: 문서 순서 그대로 한 줄 - 프로필 → 활동 → 목록 → 설정 → 회원 탈퇴(화면 순서 = 낭독·Tab 순서).
+   넓은 화면은 같은 문서를 grid 영역으로 두 단에 놓는다(아래 @media).
+   app.css 가 이 파일보다 늦게 실리고 같은 무게면 이긴다(.screen.with-tabs { display: block } 등) - 겹치는 규칙은 한 단 더 붙인다 */
+.screen.with-tabs.mp-screen {
+  display: flex;
+  flex-direction: column;
+  background: var(--gray-50);
+}
+
+.mp-screen > * {
+  flex-shrink: 0;
+}
+
+.mp-top {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--gray-200);
+  background: var(--white);
+}
+
+.mp-top h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.mp-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 12px 16px 0;
+  padding: 18px 16px;
+  border-radius: 16px;
+  background: var(--white);
+}
+
+.mp-avatar {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 28px;
+  background: var(--primary-50);
+  color: var(--primary-600);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.mp-who {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.mp-screen .mp-who .profile-name {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.mp-mail {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  color: var(--gray-600);
+}
+
+.mp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mp-tags li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--gray-100);
+  color: var(--gray-700);
+  font-size: 13px;
+}
+
+.mp-edit {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--gray-300);
+  border-radius: 22px;
+  background: var(--white);
+  color: var(--gray-900);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.mp-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 10px 16px 0;
+  border-radius: 16px;
+  background: var(--white);
+}
+
+.mp-stat {
+  min-height: 76px;
+  display: grid;
+  place-content: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--gray-900);
+  font: inherit;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.mp-stat + .mp-stat {
+  border-left: 1px solid var(--gray-200);
+}
+
+.mp-stat b {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--primary-500);
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-stat span {
+  font-size: 13px;
+  color: var(--gray-700);
+}
+
+.mp-sec {
+  margin-top: 20px;
+  scroll-margin-top: 12px;
+}
+
+.mp-sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px 6px 20px;
+}
+
+.mp-sec-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.mp-sec-head h2 span {
+  margin-left: 2px;
+  font-weight: 500;
+  color: var(--gray-600);
+}
+
+.mp-sec-head a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  color: var(--primary-500);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.mp-list {
+  margin: 0 16px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--white);
+  list-style: none;
+}
+
+.mp-pol {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--gray-100);
+}
+
+.mp-pol:first-child {
+  border-top: 0;
+}
+
+.mp-pol-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0 10px;
+  padding: 12px 8px 12px 12px;
+  color: var(--gray-900);
+  text-decoration: none;
+}
+
+.mp-pol-open .benefit-tile {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+}
+
+.mp-pol-open .benefit-tile svg {
+  width: 23px;
+  height: 23px;
+}
+
+.mp-pol-body {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mp-pol-where {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--gray-600);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-pol-where b {
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.mp-pol-title {
+  font-size: 15px;
+  font-weight: 500;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.mp-pol-head {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--primary-500);
+}
+
+.mp-dday {
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mp-dday.urgent {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+}
+
+.mp-dday.soon {
+  background: var(--status-draft-bg);
+  color: var(--status-draft-text);
+}
+
+.mp-dday.later,
+.mp-dday.always {
+  background: var(--gray-100);
+  color: var(--gray-700);
+  font-weight: 600;
+}
+
+.mp-heart {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin-right: 4px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--color-brand);
+  cursor: pointer;
+}
+
+.mp-heart:disabled {
+  opacity: 0.5;
+}
+
+.mp-empty {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  margin: 0 16px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--white);
+}
+
+.mp-empty b {
+  font-size: 15px;
+  color: var(--gray-900);
+}
+
+.mp-empty span {
+  font-size: 14px;
+  color: var(--gray-600);
+}
+
+.mp-empty-go {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 0 20px;
+  border-radius: 14px;
+  background: var(--primary-500);
+  color: var(--white);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.mp-screen .mp-menu.ds-settings-menu {
+  display: block; /* app.css 의 .ds-settings-menu(grid + 간격)를 이긴다 - 줄 사이는 선 하나 */
+  margin: 20px 16px 0;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--white);
+}
+
+.mp-row {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
+  color: var(--gray-900);
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mp-row + .mp-row {
+  border-top: 1px solid var(--gray-100);
+}
+
+.mp-row-icon {
+  display: grid;
+  color: var(--gray-600);
+}
+
+.mp-row-label {
+  flex: 1;
+}
+
+.mp-row-go {
+  color: var(--gray-500);
+}
+
+.mp-quit {
+  align-self: center;
+  min-height: 44px;
+  margin: 12px 0 8px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--gray-600);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+@media (min-width: 1024px) {
+  .acct-sheet-backdrop {
+    align-items: center;
+  }
+
+  .acct-sheet {
+    width: 520px;
+    max-height: calc(100dvh - 80px);
+    padding: 22px 22px 24px;
+    border-radius: 20px;
+  }
+
+  /* 판은 홈과 같은 비율(시안 1280 의 1040 = 81.25%) */
+  .screen.with-tabs.mp-screen.desktop-wide {
+    display: grid;
+    grid-template-columns: 340px minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    grid-template-areas:
+      "top top"
+      "hero lists"
+      "stats lists"
+      "menu lists"
+      "quit lists";
+    align-content: start; /* 판의 남는 높이를 줄 사이에 나누지 않는다 - 목록이 길면 마지막 줄이 받는다 */
+    align-items: start;
+    column-gap: 28px;
+    width: 81.25%;
+    margin: 0 auto;
+    background: transparent;
+  }
+
+  .mp-screen.desktop-wide > .mp-top {
+    grid-area: top;
+    padding: 20px 0 12px;
+    border: 0;
+    background: transparent;
+  }
+
+  .mp-screen.desktop-wide > .mp-hero {
+    grid-area: hero;
+  }
+
+  .mp-screen.desktop-wide > .mp-stats {
+    grid-area: stats;
+  }
+
+  .mp-screen.desktop-wide > .mp-menu {
+    grid-area: menu;
+  }
+
+  .mp-screen.desktop-wide > .mp-quit {
+    grid-area: quit;
+  }
+
+  .mp-screen.desktop-wide > .mp-lists {
+    grid-area: lists;
+  }
+
+  .mp-screen.desktop-wide .mp-hero,
+  .mp-screen.desktop-wide .mp-stats,
+  .mp-screen.desktop-wide .mp-menu,
+  .mp-screen.desktop-wide .mp-list,
+  .mp-screen.desktop-wide .mp-empty {
+    margin-right: 0;
+    margin-left: 0;
+    border: 1px solid var(--gray-200);
+  }
+
+  .mp-screen.desktop-wide .mp-hero {
+    flex-wrap: wrap;
+    margin-top: 0;
+  }
+
+  .mp-screen.desktop-wide .mp-lists > .mp-sec:first-child {
+    margin-top: 0;
+  }
+
+  .mp-screen.desktop-wide .mp-sec-head {
+    padding-right: 0;
+    padding-left: 2px;
+  }
+
+  .mp-screen.desktop-wide > .mp-quit {
+    align-self: start; /* 폰의 align-self: center(가로 가운데)가 grid 에선 세로 가운데가 된다 */
+    justify-self: center;
+    margin: 12px 0 0;
+  }
+}
+
+/* ---------- 로그인 ---------- */
+/* app.css 의 .public-container.prototype-login-container .screen.white.prototype-login-screen 이 늦게 실려 같은 무게면 진다 */
+.public-container.prototype-login-container .screen.white.prototype-login-screen.lg-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding: 0;
+  background: var(--white);
+  color: var(--gray-900);
+}
+
+.lg-photo {
+  position: relative;
+  flex: none;
+  height: 196px;
+  background: var(--gray-100) center / cover no-repeat;
+}
+
+.lg-photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.5));
+}
+
+.lg-say {
+  position: absolute;
+  bottom: 28px;
+  left: 20px;
+  z-index: 1;
+  margin: 0;
+  color: var(--white);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+}
+
+.lg-credit {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  z-index: 1;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.lg-body {
+  flex: 1 0 auto;
+  display: flex;
+  justify-content: center;
+  padding: 22px 20px calc(28px + env(safe-area-inset-bottom));
+}
+
+.ds-auth-form-shell.lg-shell {
+  display: block; /* 공용 .ds-auth-form-shell 은 grid 라 남는 높이를 줄 사이에 나눠 벌어졌다 */
+  width: min(100%, 400px);
+}
+
+.lg-brand {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--color-brand);
+}
+
+.lg-sub {
+  margin: 4px 0 18px;
+  font-size: 15px;
+  color: var(--gray-700);
+}
+
+.lg-form {
+  display: grid;
+  gap: 14px;
+}
+
+.lg-field {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gray-900);
+}
+
+.lg-field input {
+  min-height: 50px;
+  padding: 0 14px;
+  border: 1px solid var(--gray-300);
+  border-radius: 12px;
+  background: var(--white);
+  color: var(--gray-900);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.lg-field input:focus {
+  border-color: var(--primary-500);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.18);
+}
+
+.lg-screen .lg-error {
+  margin: 0;
+  text-align: left;
+  font-size: 14px;
+  color: var(--status-danger-text);
+}
+
+.lg-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  margin-top: 8px;
+  color: var(--gray-600);
+}
+
+.lg-links button {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--gray-700);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.lg-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 14px;
+  font-size: 13px;
+  color: var(--gray-600);
+}
+
+.lg-or::before,
+.lg-or::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--gray-200);
+}
+
+.lg-social {
+  display: grid;
+  gap: 10px;
+}
+
+.lg-social a {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.lg-social .kakao {
+  background: #fee500;
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.lg-social .google {
+  border: 1px solid #dadce0;
+  background: #fff;
+  color: #1f1f1f;
+}
+
+/* 회원가입·비밀번호 찾기 위 줄: 로고 대신 화면 이름 */
+.acct-top-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--gray-900);
+  text-align: center;
+}
+
+@media (min-width: 1024px) {
+  .public-container.prototype-login-container:has(.lg-screen) {
+    width: 100%;
+    max-width: none;
+    box-shadow: none;
+  }
+
+  .public-container.prototype-login-container .screen.white.prototype-login-screen.lg-screen {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  }
+
+  .lg-photo {
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .lg-say {
+    bottom: 56px;
+    left: 48px;
+    font-size: 32px;
+  }
+
+  .lg-body {
+    align-items: center;
+    padding: 48px;
+  }
+}

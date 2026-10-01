@@ -2,27 +2,28 @@
 
 ## Current Status
 
-- Merge-ready: 로그 장기 보관을 cron 대신 compose 컨테이너(`logarchive`)로 옮긴다(`feature/log-archive-container`). 설정이 저장소에 있어 팀이 보고, 배포하면 함께 뜬다. 보관 위치(개발서버 D:)·형식·`trace --dir` 조회는 그대로. 계획: `docs/superpowers/plans/2026-09-28-pull-logs-to-local.md` (rev7).
-- Scope: `compose.yaml` 에 profile `logarchive` 서비스(개발서버에서만 켬), `scripts/pull_logs.py` 에 볼륨 직접 읽기(`--source-dir`)와 스트리밍 압축, `.env.example`, 운영 문서 `docs/deployment-cicd/log-archive-runbook.md`. 앱·Caddy·API·DB 변경 없음.
-- 개발서버는 지금 cron 으로 돌고 있다(2026-09-29 등록). 이 PR 머지·배포 후 컨테이너로 넘기고 crontab 을 지운다.
-- 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
+- Merge-ready: 디자인 시안(v40~v49) 화면 개편(`feature/screen-redesign`, 커밋 15개). 일정·홈·정책 탭·정책 상세·내 정보·로그인과 넓은 화면(1024px~) 배치,
+  주색 청록, 홈 배너(위키미디어 공용 사진)·시군 카드. 계획: `docs/superpowers/plans/2026-09-30-mockup-v40-app-apply.md` · `2026-09-30-desktop-layout.md` ·
+  `2026-09-30-home-banner-and-place-cards.md` · `2026-10-01-my-login-redesign.md`, 사진 출처 `docs/photo-sourcing/`.
+- Scope: frontend 와 문서만. backend·API 계약·DB·env 변경 없음.
+- 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로). 사진 수집 기준(`feature/photo-collection-criteria`, backend + Alembic 0046)은 별도 PR 로 나중에.
 
 ## Recent Validation
 
-- PASS: backend full suite 1,171 passed, 19 skipped(Linux 백엔드 이미지). 볼륨 직접 읽기 테스트는 실제 파일로(이름 바꾸기 회전, 목록과 읽기 사이 회전, 사라진 파일, 링크·줄바꿈 이름, cron 상태 이어받기).
-- PASS: 변이 — 기존 27개 + 직접 읽기 7개(inode 재확인, 사라진 이름, 링크, fullmatch, 목록 중 사라짐, `--source-dir` 전환, 볼륨 없음)를 각각 되돌리면 테스트가 실패한다. 링크·특수 이름은 Linux 이미지에서 확인.
-- PASS: `docker compose config` — profile 끔(서비스 없음)·켬(서비스 있음)·`COMPOSE_PROFILES=` 빈 값(끔), `compose.local.yaml`. 환경값은 출력하지 않았다.
-- PASS: 로컬 실제 실행 — 로컬 볼륨을 붙여 첫 회차, 재생성 후 새 줄만(0.3KB), `stop` 1초(TERM 처리로 잠금이 남지 않음), `--profile logarchive rm -sf` 로 제거.
-- PASS: 권한 줄이기(rev8) 로컬 확인 — 네트워크 장치 `lo` 뿐·외부 접속 `Network unreachable`, `CapEff` 0, `NoNewPrivs` 1, 루트 파일시스템 쓰기 거부, `/archive` 쓰기 가능. 이 상태에서 0600 Caddy 로그 읽기, 지난달 조각 압축, `stop` 2초, 재생성 후 중복 없음, 제거까지 정상. 진짜 `.env` 는 쓰지 않았다(가짜 값 임시 env, 확인 후 삭제).
-- PASS: 개발서버 사전 확인(읽기 전용) — Compose v5.1.4/Jenkins v5.3.1, 배포는 호스트 에이전트에서 `/home/deploy/travel-hunter-onprem` 기준, 컨테이너에 `/mnt/d` 바인드 가능.
-- PASS: Python 3.10·3.11 두 스크립트 `--help`, `git diff --check`, 변경 파일 U+FFFD·제어문자 0건.
-- BASELINE: Windows 호스트 venv 의 `test_stay_discount_semantics_snapshot.py` 1건(임시 폴더 ACL), frontend vitest 2건(`home.test.tsx`, `trip-create.test.tsx`) — develop 동일. 이 브랜치는 프런트 변경 없음.
-- NOT RUN: 개발서버 컨테이너 전환 — `.env.dev` 수정·crontab 삭제는 서버 쓰기라 머지 후 승인 받아 진행.
+- PASS: `npm run typecheck`, `npm run test:mojibake`, `npx vitest run` 44파일 480개, `npm run build`.
+- PASS: `npm run test:e2e:containers` 13/13(로컬 4173/8000, db·backend·frontend 세 컨테이너 모두 루트 작업 트리 출처).
+- PASS: 4173 헤드리스 실측 - 360·390·1024·1440·1920 가로 넘침 없음, 1920 은 1440 과 같은 모양, 홈 시군 카드 사진 배율 0.31~0.36, 정책 탭 불러오는 동안에도 넓은 틀.
+- PASS: `git diff --check`, 변경 파일 U+FFFD 0건, diff 의 비밀값·로컬 경로·서버 주소 검색 0건.
+- PASS: 코드 리뷰(정책 탭·홈·일정·계정 네 영역, BASE `c02a330`) - 결함 19건(데이터 지움 1: 프로필 편집 창을 서버 프로필 전에 열면 빈 값 저장) 모두 고침(`9b5cea9`), 고친 부분 재검토.
+- PASS: 2차 검토(다른 화면 회귀 · 데이터 로직 · 시험 정합성) - 결함 7건 고침(일정 수정 경고·403 색, 넓은 화면 일정 아래 고정 줄, 시군 고른 뒤 칩 건수, '바다가는 달' 종류 등), 빠진 시험 보강(뒤로 기록 · 시군 카드 대표 규칙 · 편집 창 대기 · 해 넘기는 일정 · 시트 끌기/휠), 문서의 로컬 경로·비공개 링크 제거.
+- PASS: 사용자 4173 확인(2026-10-01, "전체적으로 만족").
+- NOT RUN: backend 시험 - 이 브랜치는 backend 변경 없음.
 
 ## Active Risks
 
 ### 로그 장기 보관(PR #84 + `logarchive` 컨테이너)
 
+- 개발서버는 cron 으로 돌던 보관을 컨테이너로 넘기고 crontab 을 지워야 한다(#85 머지 후, 서버 쓰기라 승인 받아 진행 - 진행 여부 확인 필요).
 - 보관본은 같은 PC 의 다른 디스크(D:)다. WSL·Docker 고장은 견디지만 PC 다운·D: 고장은 못 막는다. 다음 단계는 다른 기계(NAS)나 S3 로 한 번 더 복사.
 - 개발 배포가 D: 에 의존한다. `/mnt/d` 가 없으면 `logarchive` 가 못 떠 `up --wait` 가 실패한다.
 - `logarchive` 는 root 로 돈다(Caddy 접근 로그가 0600). 대신 네트워크 없음·특수 권한 없음·권한 상승 금지·읽기 전용으로 묶었다. 개발서버 D: 는 drvfs 라 소유자를 저장하지 않는다.
@@ -30,6 +31,17 @@
 - profile 로 꺼진 서비스는 `--remove-orphans` 로 안 지워진다. 끌 때는 `--profile logarchive rm -sf logarchive`.
 - 5분 주기다. 볼륨 보관 한도(스트림당 200MB)를 넘길 만큼 멈춰 있으면 그 사이는 잃는다. `docker logs` 로 회차 기록을 본다.
 - AWS 로 옮기면 빼 오는 곳이 CloudWatch 로 바뀐다(ASG·private subnet). 보관 형식은 그대로 둔다.
+
+### 화면 개편(`feature/screen-redesign`)
+
+- 로컬 4173 은 루트 `.env` 의 `VITE_ADMIN_BASE_URL` 이 4173 이라 관리자 주소로 보여, 로그인의 가입·비밀번호 찾기·카카오·구글 입구가 숨는다. 실제 사용자 주소에선 보인다(vitest 로 확인).
+- 예전 클래스(`prototype-stat-card`·`prototype-menu-row`·`ds-favorite-policy-*` 등) CSS 는 이제 안 쓰이지만 지우지 않았다 - 죽은 CSS 정리는 따로(화면 상태별 확인 먼저).
+- 홈 배너 사진은 전남·숙박·제휴·환급·교통 다섯 장뿐이다. 사진이 없는 지역 장은 색 바탕. CC BY · BY-SA 사진의 출처 문구는 화면에서 빼면 안 된다.
+- 홈 시군 카드 사진은 수집 사진(TourAPI)이다. 시군 사이 겹침·부적절 사진은 사진 수집 기준 PR 이 머지되고 개발서버에서 다시 수집해야 준다.
+- 넓은 화면 판은 가운데 최대 1440px(정책 탭 지도만 전체 폭). 시안 캔버스(1280)보다 넓은 화면은 시안으로 정한 적이 없다.
+- 수집 데이터 확인 필요: 합천 반값여행(`travelmonth-102`)은 마감 2026-10-11 인데 본문 신청 기간은 07-31 에 끝났고, 금액도 본문 최대 50만원 · 카드 20만원으로 다르다. 홈 마감 칸 첫 장에 나온다.
+- 반값여행 묶음 머리의 공통 문구(`PROGRAM_GROUP_COPY`)는 고정 문구라 지역마다 조건이 다르면 그 지역을 틀리게 말한다. 장흥처럼 '관광지 2개소 또는 1개소 + 가맹점' 조건은 목록 줄에 첫 숫자만 나온다.
+- e2e 의 수동 장소 저장 확인은 예전부터 낡아(추가 시트에서 직접 입력이 빠짐) 이번에 걷어 냈다 - 편집 모드 경로로 다시 세울 것.
 
 ### 역추적 로그(PR #83)
 
@@ -76,9 +88,6 @@
   자동 스크롤 제동은 `autoScrollBrakedRef` 로 한 번만 `autoScrollBrakeTick` 을 올려 dnd-kit 의
   `canScroll` 정체성을 바꾸는 구조다. 날짜 전환 시 그 상태가 어떻게 되는지가 다음 확인 지점이다 —
   `ItineraryDetailPage.tsx:2439` 의 타이머 effect 와 `:2149` 의 `canScroll`.
-
-- **상세의 `여행기간 수정` 시트는 열 방법이 없다.** `openDateEditor` 가 어디서도 호출되지 않는다.
-  HEAD 이전부터 그렇다. 공통 달력으로 교체만 해뒀고, 진입점을 만들지 시트를 지울지는 제품 판단이다.
 
 - **권역 배정은 판단이 갈릴 수 있다.** 빠짐·중복만 테스트로 막았다(9개 시도 190개 단위가 정확히 분할).
   옮기려면 `backend/app/data/administrative_areas.py` 의 `ADMINISTRATIVE_GROUPS_BY_SIDO` 한 곳만 고치면 되고,

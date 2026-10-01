@@ -66,12 +66,12 @@ export function AppliedPolicyLinksPage() {
         <IconButton label="마이페이지로 돌아가기" to="/mypage">
           <ChevronLeft size={22} />
         </IconButton>
-        <h1>신청 정책</h1>
+        <h1>담은 혜택</h1>
         <div />
       </div>
 
       <div className="content stack padded prototype-applied-policies-content">
-        <section className="prototype-applied-policy-hero" aria-label="신청 정책 요약">
+        <section className="prototype-applied-policy-hero" aria-label="담은 혜택 요약">
           <span>내 일정에 담긴 정책</span>
           <h2>일정과 연결한 정책을 모아봤어요</h2>
           <p>정책을 눌러 상세 조건을 확인하고, 연결된 일정을 눌러 바로 이동할 수 있습니다.</p>
@@ -83,11 +83,11 @@ export function AppliedPolicyLinksPage() {
           </div>
         </section>
 
-        {isLoading && <LoadingState label="신청 정책을 불러오는 중입니다" />}
+        {isLoading && <LoadingState label="담은 혜택을 불러오는 중입니다" />}
         {!isLoading && error && <ErrorState message={error} action={<LinkButton to="/mypage" variant="line">마이페이지로 돌아가기</LinkButton>} />}
         {!isLoading && !error && items.length === 0 && (
           <EmptyState
-            eyebrow="신청 정책"
+            eyebrow="담은 혜택"
             title="아직 일정에 담긴 정책이 없어요"
             body="정책 상세에서 내 일정에 담으면 이곳에서 일정별로 확인할 수 있습니다."
             action={<LinkButton to="/policies" variant="primary">정책 찾아보기</LinkButton>}

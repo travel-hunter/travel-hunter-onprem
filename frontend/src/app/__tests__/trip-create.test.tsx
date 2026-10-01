@@ -184,7 +184,7 @@ describe("Travel Hunter app — trip creation", () => {
       );
       await user.click(screen.getByRole("button", { name: "다음" }));
       expect(
-        screen.getByRole("heading", { name: "여행 정보를 한 번에 확인해요" }),
+        screen.getByRole("heading", { name: /여행 정보를 확인해요$/ }),
       ).toBeInTheDocument();
       expect(
         screen.getByRole("heading", { name: "일정 제목" }),
@@ -458,7 +458,7 @@ describe("Travel Hunter app — trip creation", () => {
 
       expect(
         await screen.findByRole("heading", {
-          name: "여행 정보를 한 번에 확인해요",
+          name: /여행 정보를 확인해요$/,
         }),
       ).toBeInTheDocument();
       expect(
@@ -750,7 +750,7 @@ describe("Travel Hunter app — trip creation", () => {
 
       expect(
         await screen.findByRole("heading", {
-          name: "여행 정보를 한 번에 확인해요",
+          name: /여행 정보를 확인해요$/,
         }),
       ).toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: /변경/ }));
@@ -867,7 +867,7 @@ describe("Travel Hunter app — trip creation", () => {
       );
       await user.click(screen.getByRole("button", { name: "다음" }));
       expect(
-        screen.getByRole("heading", { name: "여행 정보를 한 번에 확인해요" }),
+        screen.getByRole("heading", { name: /여행 정보를 확인해요$/ }),
       ).toBeInTheDocument();
       const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
       await user.clear(titleInput);
@@ -929,7 +929,7 @@ describe("Travel Hunter app — trip creation", () => {
       expect(document.body).not.toHaveTextContent("공식 수집 혜택");
       expect(
         await screen.findByRole("heading", {
-          name: "여행 정보를 한 번에 확인해요",
+          name: /여행 정보를 확인해요$/,
         }),
       ).toBeInTheDocument();
       expect(
@@ -972,7 +972,7 @@ describe("Travel Hunter app — trip creation", () => {
       await waitFor(() => expect(nextButton).toBeEnabled());
       await user.click(nextButton);
       expect(
-        screen.getByRole("heading", { name: "여행 정보를 한 번에 확인해요" }),
+        screen.getByRole("heading", { name: /여행 정보를 확인해요$/ }),
       ).toBeInTheDocument();
       const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
       await user.clear(titleInput);
@@ -1050,7 +1050,7 @@ describe("Travel Hunter app — trip creation", () => {
       await user.click(screen.getByRole("button", { name: "다음" }));
 
       expect(
-        screen.getByText("출발일과 도착일을 고릅니다."),
+        screen.getByRole("heading", { name: "여행 기간" }),
       ).toBeInTheDocument();
 
       await user.click(screen.getByTestId("trip-date-range-trigger"));

@@ -1193,7 +1193,8 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     const css = readFileSync("src/styles/app.css", "utf8");
 
     // 뒤로가기 버튼은 left 14px 에 20px 이다. 왼쪽 여백이 34px 보다 작으면 글이 버튼에 깔린다.
-    const hero = /\.prototype-trip-detail-hero\s*\{([^}]*)\}/s.exec(css)?.[1] ?? "";
+    // 줄 머리에서 시작하는 기본 규칙만 본다(넓은 화면 @media 안의 덮어쓰기는 들여 써 있다).
+    const hero = /^\.prototype-trip-detail-hero\s*\{([^}]*)\}/ms.exec(css)?.[1] ?? "";
     const padding = /padding:\s*([^;]+);/.exec(hero)?.[1] ?? "";
     const left = Number(padding.trim().split(/\s+/)[3]?.replace("px", ""));
     expect(left).toBeGreaterThanOrEqual(34);
@@ -1430,9 +1431,10 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(
         screen.getByRole("region", { name: "연결된 정책" }),
       ).toBeInTheDocument();
+      // 빈 '연결된 정책' 은 정책 탭의 이 일정 시도 지도로 보낸다(부산 전체 → place=부산).
       expect(document.querySelector(".benefit-banner")).toHaveAttribute(
         "href",
-        "/policies",
+        "/policies?place=%EB%B6%80%EC%82%B0&sheet=1",
       );
       expect(
         screen.getByRole("region", { name: "이 일정에 어울리는 정책" }),
@@ -2263,6 +2265,84 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(
         within(recommendedRegion).queryByText("KTX 청년 여행 할인"),
       ).not.toBeInTheDocument();
+      expect(
+        within(recommendedRegion).getByRole("link", { name: /정책 탭에서 더 보기/ }),
+      ).toHaveAttribute("href", "/policies?place=%EB%B6%80%EC%82%B0&sheet=1");
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
+  it("opens the existing trip date editor from the hero and shows a past trip as 다녀옴", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "61",
+      title: "부산 기간 수정 여행",
+      currentUserRole: "owner",
+      days: { 1: [], 2: [] },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/61");
+
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "기간 바꾸기" }));
+      expect(screen.getByRole("dialog", { name: "여행기간 수정" })).toBeInTheDocument();
+      expect(document.querySelector(".prototype-detail-dday-chip")).toHaveTextContent("다녀옴");
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
+  it("fills the date editor from the server dates for a trip that crosses the new year", async () => {
+    // 보이는 글은 끝 날짜에 연도가 없다('2026.12.30 - 01.02') - 그 글을 읽으면 끝이 2026-01-02 로 시작보다 앞섰다
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "63",
+      title: "해넘이 여행",
+      currentUserRole: "owner",
+      dates: "2026.12.30 - 01.02",
+      startDate: "2026-12-30",
+      endDate: "2027-01-02",
+      days: { 1: [], 2: [], 3: [], 4: [] },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/63");
+
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "기간 바꾸기" }));
+      const dialog = screen.getByRole("dialog", { name: "여행기간 수정" });
+      expect(within(dialog).getByTestId("trip-date-range-summary")).toHaveTextContent("2026-12-30 ~ 2027-01-02");
+      expect(within(dialog).getByTestId("trip-date-range-trigger")).toHaveTextContent("4일");
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
+  it("hides the date editor opener from viewers", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "62",
+      title: "부산 보기 전용 여행",
+      currentUserRole: "viewer",
+      days: { 1: [] },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/62");
+
+      await screen.findAllByText("부산 보기 전용 여행");
+      expect(screen.queryByRole("button", { name: "기간 바꾸기" })).not.toBeInTheDocument();
     } finally {
       getTripSpy.mockRestore();
     }
@@ -2295,9 +2375,10 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(
         within(recommendedRegion).getByText("이 일정에 어울리는 정책이 없어요"),
       ).toBeInTheDocument();
+      // 옛 권역 id(busan-all)도 지역 이름("부산 전체")으로 시도를 읽어 정책 탭 부산 지도로 보낸다.
       expect(
-        within(recommendedRegion).getByText("정책 확인"),
-      ).toBeInTheDocument();
+        within(recommendedRegion).getByRole("link", { name: /정책 탭에서 찾기/ }),
+      ).toHaveAttribute("href", "/policies?place=%EB%B6%80%EC%82%B0&sheet=1");
     } finally {
       getTripSpy.mockRestore();
     }

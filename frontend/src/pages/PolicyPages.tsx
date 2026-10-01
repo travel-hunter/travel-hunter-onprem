@@ -5,17 +5,39 @@ import { appDataApi, type ApplicationGuide, type ApplicationGuideRound, type Lin
 import { useAsyncResource } from "../api/useAsyncResource";
 import { useSession } from "../app/session";
 import { PolicyListCard } from "../components/cards";
-import { Button, EmptyState, ErrorState, IconButton, LinkButton, LoadingState, SurfaceCard, Tag, Toast } from "../components/ui";
-import { getDeadlinePolicies, getPolicyPhoto, getPolicyVisual } from "../data/displayConfig";
-import { PolicyHeroPhoto } from "../components/policyPhoto";
+import { Button, EmptyState, ErrorState, IconButton, LinkButton, LoadingState, Tag, Toast } from "../components/ui";
+import { getDeadlinePolicies, getPolicyPhoto } from "../data/displayConfig";
 import { PolicyRegionMap } from "../components/map/PolicyRegionMap";
 import { PolicyMapSheet } from "../components/map/PolicyMapSheet";
-import { cityOf, groupByProgram, NATIONWIDE_REGION } from "../utils/policyPrograms";
+import { cityOf, NATIONWIDE_REGION } from "../utils/policyPrograms";
 import { REGION_NAMES, type RegionCounts } from "../components/map/regionMapEngine";
+import { BrowseChips, PolicySearchPanel, RegionSummaryCard } from "../components/map/PolicyMapPanels";
+import { browseDepthOf, browseView, chipCounts, lowerBrowseState, matchesBrowseFilter, programName, readBrowseState, writeBrowseState, type BrowseFilter, type BrowseState } from "../components/map/policyBrowse";
+import { useBrowseHistory } from "../components/map/useBrowseHistory";
+import { MAP_FILLS } from "../components/map/regionMapEngine";
+import { deskBrowseDepthOf } from "../components/map/policyBrowse";
+import { useIsDesktop } from "../lib/useMediaQuery";
+import { useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { Maximize2 } from "lucide-react";
 import "../styles/policy-map.css";
-import { daysUntilPolicyDeadline, dday, formatPolicyDeadlineNotice, formatPolicyDeadlineTag, formatPolicyPeriodSummary, isDigitalTourismResidentCardPolicy, isSafePolicyDeadline } from "../utils";
+import { daysUntilPolicyDeadline, dday, formatPolicyDeadlineTag, isDigitalTourismResidentCardPolicy, isSafePolicyDeadline, tripStatus } from "../utils";
 import { canUsePolicyActions } from "../utils/policyCapabilities";
 import { shareLinkWithFallback } from "../utils/share";
+import { ExternalLink } from "lucide-react";
+import { benefitTypeOf } from "../components/benefitTile";
+import {
+  PolicyBenefitSection,
+  PolicyDetailFacts,
+  PolicyDetailHead,
+  PolicyDetailHero,
+  PolicyDocumentsSection,
+  PolicyNotesSection,
+  PolicyPeriodSection,
+  PolicySourceLine,
+  PolicyTargetSection,
+} from "../components/policyDetailParts";
+import { policyDetailText, policyPlaceAndProgram } from "../utils/policyDetailText";
 
 type TripSheetStatus = "closed" | "loading" | "empty" | "ready" | "submitting" | "error" | "success";
 
@@ -246,11 +268,6 @@ function getCategoryHighlights(policies: Policy[]) {
     .filter((item): item is { category: DiscoveryPolicyCategory; policy: Policy } => Boolean(item.policy));
 }
 
-function getPolicyAmountDetail(policy: Policy) {
-  if (policy.summary) return policy.summary;
-  return `${policy.amount} 혜택을 받을 수 있는지 공식 안내에서 최종 확인해 주세요.`;
-}
-
 function isGenericBenefitAmount(amount: string | null | undefined) {
   const normalized = normalizeBenefitText(amount ?? "");
   return normalized === "" || normalized === "혜택 제공" || normalized === "확인 필요" || normalized === "정책 확인";
@@ -262,349 +279,8 @@ function getPolicyAmountLabel(policy: Policy) {
   return `${policy.category} 혜택`;
 }
 
-type PolicyBenefitItem = string | {
-  text: string;
-  url?: string;
-};
-
-type PolicyBenefitSection = {
-  title: string;
-  items: PolicyBenefitItem[];
-};
-
-type PolicyRequirementSection = {
-  title: string;
-  items: Array<{
-    label: string;
-    description: string;
-  }>;
-};
-
 function normalizeBenefitText(text: string) {
   return text.replace(/\s+/g, " ").trim();
-}
-
-function normalizeBenefitTextWithLineBreaks(text: string) {
-  return text
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((part) => normalizeBenefitText(part))
-    .filter(Boolean)
-    .join("\n");
-}
-
-function splitBenefitSummary(summary: string) {
-  return normalizeBenefitText(summary)
-    .replace(/\s*·\s*/g, "\n")
-    .replace(/\s*(※)/g, "\n$1")
-    .replace(/\s+(\d+\.\s*)/g, "\n$1")
-    .split("\n")
-    .flatMap(splitTrailingPeriodText)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function splitTrailingPeriodText(item: string) {
-  const match = item.match(/^(.+?)\s+((?:\d{2}|\d{4})년\s+\d{1,2}월.+)$/);
-  if (!match) return [item];
-  return [match[1], match[2]];
-}
-
-function isExplicitPeriodBenefitItem(item: string) {
-  return /^기간[:：]|^(?:\d{2}|\d{4})년\s+\d{1,2}월|^\d{1,2}월\d{0,2}일/.test(item);
-}
-
-function isPeriodBenefitItem(item: string) {
-  return /기간|매주|주말|평일|사전예약|이용일|예약/.test(item);
-}
-
-function isConditionBenefitItem(item: string) {
-  return /제시|캡쳐|캡처|조건|대상|확인|필요|결제|사용 완료|참여자/.test(item);
-}
-
-function isNoticeBenefitItem(item: string) {
-  if (item.startsWith("※") && !/제시|캡쳐|캡처/.test(item)) return true;
-  return /^(유의|제외|중복|한정|문의)/.test(item);
-}
-
-function isDiscountBenefitItem(item: string) {
-  return /할인|지원|무료|캐시백|환급|정상가|실구매가|원|%|포인트/.test(item);
-}
-
-function pushLimited(target: string[], item: string) {
-  if (!target.includes(item) && target.length < 5) target.push(item);
-}
-
-function structuredDetailItems(policy: Policy, section: keyof NonNullable<Policy["structuredDetail"]>) {
-  const items = policy.structuredDetail?.[section];
-  return Array.isArray(items) ? items : [];
-}
-
-function structuredText(...values: Array<string | null | undefined>) {
-  return values.map((value) => normalizeBenefitText(value ?? "")).find(Boolean) ?? "";
-}
-
-function structuredBenefitText(...values: Array<string | null | undefined>) {
-  return values.map((value) => normalizeBenefitTextWithLineBreaks(value ?? "")).find(Boolean) ?? "";
-}
-
-function isStructuredUsageConditionItem(item: NonNullable<Policy["structuredDetail"]>["supportContent"][number]) {
-  return structuredText(item.title, item.label) === "혜택 적용 조건";
-}
-
-function normalizedStructuredBenefitTitle(title: string) {
-  if (!title || title === "혜택" || title === "지원내용") return "핵심 혜택";
-  return title;
-}
-
-function safeStructuredBenefitUrl(url: string | null | undefined) {
-  const trimmed = normalizeBenefitText(url ?? "");
-  if (!trimmed) return undefined;
-  try {
-    const parsed = new URL(trimmed);
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function policyBenefitItemText(item: PolicyBenefitItem) {
-  return typeof item === "string" ? item : item.text;
-}
-
-function policyBenefitItemKey(item: PolicyBenefitItem) {
-  return typeof item === "string" ? item : `${item.text}-${item.url ?? ""}`;
-}
-
-function policyBenefitSectionKey(section: PolicyBenefitSection) {
-  return `${section.title}-${section.items.map(policyBenefitItemText).join("|")}`;
-}
-
-function splitPopularBenefitText(text: string) {
-  const normalized = text.replace(/\r\n?/g, "\n");
-  const match = /^(\p{Extended_Pictographic}️?\s+[^:：]+)[:：]\s*([\s\S]+)$/u.exec(normalized);
-  if (!match) return null;
-  const [description, ...placeParts] = match[2]
-    .split("\n")
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (!description) return null;
-  return { title: match[1].trim(), description, placeDescription: placeParts.join(" ") };
-}
-
-function renderPolicyBenefitText(text: string) {
-  const popularBenefit = splitPopularBenefitText(text);
-  if (!popularBenefit) return text;
-  return (
-    <span className="policy-benefit-link-copy">
-      <span className="policy-benefit-link-title">{popularBenefit.title}</span>
-      <span className="policy-benefit-link-description">{popularBenefit.description}</span>
-      {popularBenefit.placeDescription ? (
-        <span className="policy-benefit-link-place-description">{popularBenefit.placeDescription}</span>
-      ) : null}
-    </span>
-  );
-}
-
-function renderPolicyBenefitItem(item: PolicyBenefitItem) {
-  if (typeof item === "string") return renderPolicyBenefitText(item);
-  if (!item.url) return renderPolicyBenefitText(item.text);
-  return (
-    <a className="policy-benefit-link" href={item.url} rel="noreferrer" target="_blank">
-      {renderPolicyBenefitText(item.text)}
-    </a>
-  );
-}
-
-function normalizeBenefitDisplayComparison(value: string) {
-  return normalizeBenefitTextWithLineBreaks(value)
-    .replace(/\s*혜택(?:\s*(?:제공|지원))?\s*$/, "")
-    .replace(/\s+/g, "")
-    .trim();
-}
-
-function isTopAmountDuplicate(itemText: string, amountLabel: string) {
-  const rawItem = normalizeBenefitTextWithLineBreaks(itemText);
-  if (!/혜택(?:\s*(?:제공|지원))?\s*$/.test(rawItem)) return false;
-  const item = normalizeBenefitDisplayComparison(rawItem);
-  const amount = normalizeBenefitDisplayComparison(amountLabel);
-  return Boolean(item && amount && item === amount);
-}
-
-function getStructuredBenefitSections(policy: Policy): PolicyBenefitSection[] {
-  const sections: PolicyBenefitSection[] = [];
-  const sectionIndex = new Map<string, number>();
-  const amountLabel = getPolicyAmountLabel(policy);
-
-  for (const item of structuredDetailItems(policy, "supportContent")) {
-    if (isStructuredUsageConditionItem(item)) continue;
-    const text = structuredBenefitText(item.amount, item.description, item.value);
-    if (!text || isTopAmountDuplicate(text, amountLabel)) continue;
-
-    const title = normalizedStructuredBenefitTitle(structuredText(item.title, item.label));
-    const url = safeStructuredBenefitUrl(item.url);
-    const benefitItem: PolicyBenefitItem = url ? { text, url } : text;
-    const existingIndex = sectionIndex.get(title);
-    if (existingIndex === undefined) {
-      sectionIndex.set(title, sections.length);
-      sections.push({ title, items: [benefitItem] });
-    } else {
-      sections[existingIndex].items.push(benefitItem);
-    }
-  }
-
-  return sections;
-}
-
-function getPeriodTypeFallbackLabel(type: string | undefined) {
-  switch (type) {
-    case "application":
-      return "신청 기간";
-    case "issue":
-      return "쿠폰 발급 기간";
-    case "usage":
-      return "사용 기간";
-    default:
-      return "기간 안내";
-  }
-}
-
-function getStructuredPeriodSections(policy: Policy): PolicyBenefitSection[] {
-  return structuredDetailItems(policy, "periods")
-    .map<PolicyBenefitSection | null>((item) => {
-      const title = structuredText(item.title, item.label, getPeriodTypeFallbackLabel(item.type));
-      const dateRange = [item.startDate, item.endDate].filter(Boolean).join(" ~ ");
-      const description = structuredText(item.description, dateRange);
-      return description ? { title, items: [description] } : null;
-    })
-    .filter((section): section is PolicyBenefitSection => Boolean(section));
-}
-
-function getStructuredRequirementSections(policy: Policy): PolicyRequirementSection[] {
-  const conditions = structuredDetailItems(policy, "applicationTarget")
-    .map((item) => {
-      const label = structuredText(item.description, item.value, item.title, item.label);
-      return label ? { label, description: "" } : null;
-    })
-    .filter((item): item is { label: string; description: string } => Boolean(item));
-  const usageConditions = structuredDetailItems(policy, "supportContent")
-    .filter(isStructuredUsageConditionItem)
-    .map((item) => {
-      const label = structuredText(item.description, item.value);
-      return label ? { label, description: "" } : null;
-    })
-    .filter((item): item is { label: string; description: string } => Boolean(item));
-  return [
-    { title: "신청대상", items: conditions },
-    { title: "혜택 적용 조건", items: usageConditions },
-  ].filter((section) => section.items.length > 0);
-}
-
-function getStructuredDocumentItems(policy: Policy) {
-  return structuredDetailItems(policy, "requiredDocuments")
-    .map((item) => structuredText(item.description, item.title, item.label, item.value))
-    .filter(Boolean);
-}
-
-function getStructuredNoticeSections(policy: Policy): PolicyBenefitSection[] {
-  const notices = structuredDetailItems(policy, "notes")
-    .map((item) => structuredText(item.description, item.value, item.title, item.label))
-    .filter(Boolean);
-  return notices.length > 0 ? [{ title: "비고", items: notices }] : [];
-}
-
-function getPolicyBenefitSections(policy: Policy): PolicyBenefitSection[] {
-  const benefitItems: string[] = [];
-  const periodItems: string[] = [];
-  const conditionItems: string[] = [];
-  const noticeItems: string[] = [];
-
-  for (const item of splitBenefitSummary(getPolicyAmountDetail(policy))) {
-    if (isGenericBenefitAmount(policy.amount) && /혜택(?:을)?\s*(?:제공|제공합니다)/.test(item)) {
-      pushLimited(benefitItems, item);
-    } else if (isExplicitPeriodBenefitItem(item)) {
-      pushLimited(periodItems, item);
-    } else if (isNoticeBenefitItem(item)) {
-      pushLimited(noticeItems, item);
-    } else if (isConditionBenefitItem(item)) {
-      pushLimited(conditionItems, item);
-    } else if (isPeriodBenefitItem(item)) {
-      pushLimited(periodItems, item);
-    } else if (isDiscountBenefitItem(item)) {
-      pushLimited(benefitItems, item);
-    } else {
-      pushLimited(noticeItems, item);
-    }
-  }
-
-  if (benefitItems.length === 0) {
-    const fallbackItem = isGenericBenefitAmount(policy.amount)
-      ? normalizeBenefitText(policy.summary || getPolicyAmountLabel(policy))
-      : `${policy.amount} 혜택`;
-    pushLimited(benefitItems, fallbackItem);
-  }
-
-  return [
-    { title: "핵심 혜택", items: benefitItems },
-    { title: "운영 기간", items: periodItems },
-    { title: "이용 조건", items: conditionItems },
-    { title: "유의사항", items: noticeItems },
-  ].filter((section) => section.items.length > 0);
-}
-
-function requirementDescription(item: string, policy: Policy) {
-  if (/디지털관광주민증/.test(item)) return `${policy.region} 디지털관광주민증 발급 대상에 해당하는지 확인하세요.`;
-  if (/제휴\s*카드|카드/.test(item)) return "제휴 카드로 결제한 건에 한해 혜택이 적용됩니다.";
-  const paymentRegion = item.match(/^(.+?)\s*결제/);
-  if (paymentRegion) return `${paymentRegion[1].trim()} 지역 결제 또는 대상 가맹점 이용 건을 기준으로 적용됩니다.`;
-  if (/방문|관광지/.test(item)) return "방문 또는 이용 조건을 충족하는지 공식 안내에서 확인하세요.";
-  if (/월|한도/.test(item)) return "월별 할인/캐시백 한도 내에서 혜택이 적용됩니다.";
-  if (/온라인|예약/.test(item)) return "온라인 예약 또는 결제 완료 후 혜택 적용 여부를 확인하세요.";
-  if (/사용\s*완료|이용\s*완료/.test(item)) return "예약/구매 후 실제 사용 완료 건을 기준으로 혜택이 인정될 수 있습니다.";
-  if (/공식|공고|안내|확인/.test(item)) return "공식 안내에서 세부 조건과 최신 공지를 확인하세요.";
-  if (/캡처|캡쳐|제시|증빙|서류/.test(item)) return "현장 또는 신청 단계에서 요구하는 증빙을 준비하세요.";
-  if (/국내|여행자|시민|주민|거주|청년|가족|관광객|만\s*\d|세/.test(item)) return `${policy.region} 여행 또는 이용 대상에 해당하는지 확인하세요.`;
-  return "상세 기준은 공식 안내에서 최종 확인하세요.";
-}
-
-function classifyRequirement(item: string) {
-  if (/디지털관광주민증/.test(item)) return "target";
-  if (/공식|공고|안내|확인|캡처|캡쳐|제시|증빙|서류|문의|필요/.test(item)) return "notice";
-  if (/카드|결제|한도|예약|쿠폰|가맹점|이용|사용|구매|온라인|오프라인|탑승|입장|방문|관광지|월/.test(item)) return "usage";
-  if (/국내|여행자|시민|주민|거주|청년|가족|관광객|대상|만\s*\d|세/.test(item)) return "target";
-  return "notice";
-}
-
-function pushRequirement(target: PolicyRequirementSection["items"], item: string, policy: Policy) {
-  if (target.some((existing) => existing.label === item)) return;
-  target.push({ label: item, description: requirementDescription(item, policy) });
-}
-
-function getPolicyRequirementSections(policy: Policy): PolicyRequirementSection[] {
-  const targetItems: PolicyRequirementSection["items"] = [];
-  const usageItems: PolicyRequirementSection["items"] = [];
-  const noticeItems: PolicyRequirementSection["items"] = [];
-
-  for (const item of policy.requirements) {
-    const category = classifyRequirement(item);
-    if (category === "target") {
-      pushRequirement(targetItems, item, policy);
-    } else if (category === "usage") {
-      pushRequirement(usageItems, item, policy);
-    } else {
-      pushRequirement(noticeItems, item, policy);
-    }
-  }
-
-  return [
-    { title: "신청대상", items: targetItems },
-    { title: "혜택 적용 조건", items: usageItems },
-    { title: "비고", items: noticeItems },
-  ].filter((section) => section.items.length > 0);
-}
-
-function getPolicyPeriodLabel(policy: Policy) {
-  return formatPolicyPeriodSummary(policy);
 }
 
 function guideDate(value: string | null): string | null {
@@ -655,8 +331,8 @@ function ApplicationRoundSteps({ guide, round }: { guide: ApplicationGuide; roun
 /** Island support procedure by round: past rounds collapsed, the current one open with its deadline, upcoming announced. */
 function ApplicationGuideSection({ guide }: { guide: ApplicationGuide }) {
   return (
-    <section className="section-block application-guide" aria-label="신청 절차" role="region">
-      <h3>🧭 신청 절차</h3>
+    <section className="policy-detail-section application-guide" aria-label="신청 절차" role="region">
+      <h2>신청 절차</h2>
       {guide.rounds.map((round) => {
         if (round.status === "past") {
           return (
@@ -693,23 +369,6 @@ function ApplicationGuideSection({ guide }: { guide: ApplicationGuide }) {
   );
 }
 
-function getDeadlineTagLabel(policy: Policy) {
-  return formatPolicyDeadlineTag(policy);
-}
-
-function getDeadlineTagTone(policy: Policy) {
-  return isDigitalTourismResidentCardPolicy(policy) ? "green" : "warning";
-}
-
-function getDeadlineWarningText(policy: Policy) {
-  return formatPolicyDeadlineNotice(policy);
-}
-
-function getPolicyDisplayTag(policy: Policy) {
-  if (policy.tag === "공식 수집" || policy.tag === "내부 정책" || policy.tag === "external") return policy.category;
-  return policy.tag;
-}
-
 type PolicyApplicationCta =
   | { kind: "apply"; label: string; url: string }
   | { kind: "official"; label: string; url: string }
@@ -743,7 +402,7 @@ function getPolicyControlsHelpText(policy: Policy) {
 }
 
 export function PolicyListPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const categoryParam = searchParams.get("category");
   const regionParam = searchParams.get("region");
   const periodParam = searchParams.get("period");
@@ -762,15 +421,32 @@ export function PolicyListPage() {
     savedOnly: showSavedOnly,
   });
   const [searchTerm, setSearchTerm] = useState("");
-  /* 지도 화면의 상태는 URL 에 둔다. 컴포넌트 상태로 두면 정책 상세에 들어갔다 뒤로 왔을 때
-     화면이 다시 만들어지며 지도 홈으로 초기화된다 - 고른 지역도 목록도 사라졌다.
-     알약을 누르면 목록(view=list), 지역을 고르면 place - 둘 다 히스토리에 쌓아
-     뒤로가기가 한 단계씩 되짚게 한다. 시트 열림(sheet)만 덮어쓴다(아래 writeViewParams). */
-  const mapView: "map" | "list" = searchParams.get("view") === "list" ? "list" : "map";
-  /* 지도에서 고른 지역. 필터가 아니다 - 지도를 눌렀다고 검색 결과가 줄어들면 안 된다.
-     그래서 필터가 쓰는 region 이 아니라 place 를 쓴다. */
-  const mapRegion = searchParams.get("place");
-  const isSheetOpen = searchParams.get("sheet") === "1";
+  /* 지도 화면의 상태(고른 지역·시군·사업·칩·시트 자리·돋보기)는 전부 URL 에 둔다. 컴포넌트 상태로 두면
+     정책 상세에 들어갔다 뒤로 왔을 때 화면이 다시 만들어지며 처음으로 돌아간다.
+     지역은 필터가 아니다 - 지도를 눌렀다고 검색 결과가 줄어들면 안 되므로 필터의 region 이 아니라 place 를 쓴다.
+     층이 늘 때만 기록을 쌓아 뒤로가기가 한 층씩 되짚는다(useBrowseHistory). */
+  const browse = readBrowseState(searchParams);
+  /* 넓은 화면(1024px~)은 지도 옆에 목록 패널이 늘 서 있다 - 시트 자리는 층이 아니고, 줄을 누르면 패널이 상세가 된다 */
+  const isDesktop = useIsDesktop();
+  const navigate = useNavigate();
+  const browseHistory = useBrowseHistory(isDesktop ? deskBrowseDepthOf : browseDepthOf);
+  const { go: goBrowse, back: backBrowse } = browseHistory;
+  const setBrowse = (next: BrowseState) => goBrowse(writeBrowseState(searchParams, next));
+  /* 지도·칩·검색으로 옮기면 패널 상세는 목록으로 돌아간다 */
+  const base: BrowseState = { ...browse, detail: null };
+  const openDetail = (policy: Policy) => setBrowse({ ...browse, detail: policy.slug, search: false });
+  /* 좁은 화면에서 넓은 화면 주소(detail=…)로 오면 상세 페이지로 */
+  useEffect(() => {
+    if (!isDesktop && browse.detail) navigate(`/policies/${browse.detail}`, { replace: true });
+  }, [isDesktop, browse.detail, navigate]);
+  /* 검색창은 맨 위 하나(2026-09-30 사용자 결정). 지도 화면에서 누르면 지역·혜택 검색 칸이 열리고
+     친 글자는 그 칸의 찾을 말이 된다. 칸이 닫히면 비운다. */
+  const [panelQuery, setPanelQuery] = useState("");
+  useEffect(() => {
+    if (!browse.search) setPanelQuery("");
+  }, [browse.search]);
+  /* 시트가 선 자리의 윗변 - 지도가 그 위쪽에 그림을 맞춘다 */
+  const [coverTop, setCoverTop] = useState<number | null>(null);
   const { savedSlugs, addSavedSlug, removeSavedSlug } = useSession();
   const { data: policies, error, isLoading } = useAsyncResource(() => appDataApi.listPolicies(), []);
   const regionFilters = useMemo(() => {
@@ -778,13 +454,18 @@ export function PolicyListPage() {
     return [allFilter, ...Array.from(new Set(regions)).sort((left, right) => left.localeCompare(right, "ko"))];
   }, [policies]);
   const groupedRegionFilters = useMemo(() => getAvailableRegionsByGroup(regionFilters), [regionFilters]);
+  /* 위 칩(혜택 형태)과 검색에서 고른 사업이 걸린 정책 - 지도 건수·목록·시군 점이 다 이것을 센다 */
+  const browsePolicies = useMemo(
+    () => (policies ?? []).filter((policy) => matchesBrowseFilter(policy, browse.filter) && (!browse.program || programName(policy) === browse.program)),
+    [policies, browse.filter, browse.program],
+  );
   /* 지도에 줄 건수. 전국 정책은 세지 않는다 - 하나에 17곳이 다 켜지면 "어디에 정책이 있나"가
-     사라지고, 지역 건수가 12건씩 부풀었다. 전국은 홈 카드가 따로 보여준다.
+     사라지고, 지역 건수가 12건씩 부풀었다. 전국은 지도 왼쪽 위 '전국 공통'이 따로 센다.
      own 과 total 이 같아졌지만 엔진 계약(RegionCount)은 그대로 둔다. */
   const regionCounts = useMemo<RegionCounts>(() => {
     const counts: RegionCounts = {};
     if (!policies) return counts;
-    for (const policy of policies) {
+    for (const policy of browsePolicies) {
       if (policy.region === NATIONWIDE_REGION) continue;
       const entry = counts[policy.region] ?? (counts[policy.region] = { own: 0, total: 0 });
       entry.own += 1;
@@ -795,7 +476,7 @@ export function PolicyListPage() {
       entry.total = entry.own;
     }
     return counts;
-  }, [policies]);
+  }, [policies, browsePolicies]);
   const appliedFilters = useMemo<PolicyFilterState>(() => ({
     category: selectedCategory,
     region: selectedRegion,
@@ -848,46 +529,68 @@ export function PolicyListPage() {
     setSelectedAmount(isAmountFilter(nextAmount) ? nextAmount : "전체");
   }, [searchParams]);
 
+  const filterParams = (filters: PolicyFilterState) => {
+    const next = new URLSearchParams(searchParams);
+    if (filters.category === allFilter) next.delete("category");
+    else next.set("category", filters.category);
+    if (filters.region === allFilter) next.delete("region");
+    else next.set("region", filters.region);
+    if (filters.period === "전체") next.delete("period");
+    else next.set("period", filters.period);
+    if (filters.amount === "전체") next.delete("amount");
+    else next.set("amount", filters.amount);
+    if (filters.savedOnly) next.set("saved", "1");
+    else next.delete("saved");
+    return next;
+  };
+  /* 필터 목록은 지도 층 밖 화면이다. 지도에서 처음 걸면 한 칸 쌓고(기기 뒤로가기가 지도로), 목록에서 바꾸면 덮어쓴다.
+     예전처럼 상태 없이 쌓으면 화면 안 ‹ 가 그 칸을 '앞 화면이 연 주소'로 보고 필터 목록으로 되감았다 */
   const writeFilterParams = (filters: PolicyFilterState) => {
-    setSearchParams((params) => {
-      const next = new URLSearchParams(params);
-      if (filters.category === allFilter) next.delete("category");
-      else next.set("category", filters.category);
-      if (filters.region === allFilter) next.delete("region");
-      else next.set("region", filters.region);
-      if (filters.period === "전체") next.delete("period");
-      else next.set("period", filters.period);
-      if (filters.amount === "전체") next.delete("amount");
-      else next.set("amount", filters.amount);
-      if (filters.savedOnly) next.set("saved", "1");
-      else next.delete("saved");
-      return next;
-    });
+    const next = filterParams(filters);
+    const keys = ["category", "region", "period", "amount", "saved"];
+    const filtered = keys.some((key) => searchParams.has(key));
+    // 시트에서 다 풀어 적용하면 ✕ 와 같다 - 쌓아 둔 칸을 되감아 빈 기록 칸을 남기지 않는다
+    if (filtered && !keys.some((key) => next.has(key))) browseHistory.unwind(next);
+    else if (filtered) browseHistory.replace(next.toString());
+    else browseHistory.push(next);
   };
 
-  /* 지도 화면 상태를 URL 에 쓴다. replace 는 히스토리를 남기지 않는다 -
-     시트를 여닫을 때마다 항목이 쌓이면 뒤로가기를 여러 번 눌러야 상세에서 빠져나온다. */
-  const writeViewParams = (
-    changes: { place?: string | null; view?: "map" | "list"; sheet?: boolean },
-    options?: { replace?: boolean },
-  ) => {
-    setSearchParams((params) => {
-      const next = new URLSearchParams(params);
-      if ("place" in changes) {
-        if (changes.place) next.set("place", changes.place);
-        else next.delete("place");
-      }
-      if (changes.view) {
-        if (changes.view === "list") next.set("view", "list");
-        else next.delete("view");
-      }
-      if ("sheet" in changes) {
-        if (changes.sheet) next.set("sheet", "1");
-        else next.delete("sheet");
-      }
-      return next;
-    }, options);
+  /* ── 지도 화면 조작 ─────────────────────────────────────────── */
+  /* 교통은 지역 혜택이 없다(모두 전국 공통) - 지역을 고르면 교통 칩을 푼다 */
+  const dropMove = (region: string | null) => (region && region !== NATIONWIDE_REGION && browse.filter === "move" ? null : browse.filter);
+  /* 지도에서 지역을 누르면(엔진이 이미 같은 지역 다시 누르기를 풀기로 바꿔 준다). 지도 중심이면 목록을 올려 함께 보인다 */
+  const selectRegion = (region: string | null) =>
+    setBrowse({ ...base, region, city: null, filter: dropMove(region), sheet: browse.sheet === "low" ? "mid" : browse.sheet, search: false });
+  /* 돋보기의 지역 칸 - 이미 고른 지역을 다시 누르면 푼다 */
+  const toggleRegion = (region: string) => {
+    const next = browse.region === region ? null : region;
+    setBrowse({ ...base, region: next, city: null, filter: dropMove(next), sheet: "mid", search: false });
   };
+  const pickPlace = (region: string, city: string) =>
+    setBrowse({ ...base, region, city, filter: dropMove(region), sheet: "mid", search: false });
+  const pickProgram = (program: string) =>
+    setBrowse({ ...base, program, region: null, city: null, sheet: "mid", search: false });
+  /* 시군 점: 다시 누르면 도 전체. 지도 중심에서 고르면 목록을 올려 3분할로 */
+  const pickCity = (city: string | null) =>
+    setBrowse({ ...base, city, sheet: city && browse.sheet === "low" ? "mid" : browse.sheet });
+  const pickFilter = (filter: BrowseFilter | null) => {
+    /* 교통은 모두 전국 공통이라 지도에서 고를 게 없다 - 위 칩에서 고르면 지역을 풀고 한 페이지 목록으로 */
+    if (filter === "move") setBrowse({ ...base, filter, region: null, city: null, sheet: "full" });
+    else setBrowse({ ...base, filter });
+  };
+  const toggleNation = () =>
+    setBrowse({ ...base, region: browse.region === NATIONWIDE_REGION ? null : NATIONWIDE_REGION, city: null, sheet: browse.sheet === "low" ? "mid" : browse.sheet });
+  const openNation = () => setBrowse({ ...base, region: NATIONWIDE_REGION, city: null, sheet: browse.sheet === "low" ? "mid" : browse.sheet });
+  /* 빈 바다: 고른 뒤면 처음 화면으로, 처음 화면(반반)이면 지도를 보고 싶다는 뜻 - 목록을 내린다.
+     넓은 화면은 목록이 늘 옆에 있어 내릴 게 없다 */
+  const mapBackground = () => {
+    if (!isDesktop && browse.sheet === "mid" && !browse.region) setBrowse({ ...base, sheet: "low" });
+  };
+  /* 목록 머리의 '전체 지역' · '○○ 전체' */
+  const clearBrowse = () =>
+    setBrowse(browse.city ? { ...base, city: null } : { ...base, region: null, city: null, program: null });
+  const lowered = lowerBrowseState(browse, isDesktop);
+  const stepBack = () => backBrowse(lowered ? writeBrowseState(searchParams, lowered) : null);
 
   const openFilterSheet = () => {
     setDraftFilters(appliedFilters);
@@ -920,56 +623,145 @@ export function PolicyListPage() {
     setShowSavedOnly(false);
     setSearchTerm("");
     setDraftFilters(nextFilters);
-    writeFilterParams(nextFilters);
+    browseHistory.unwind(filterParams(nextFilters));
     setIsFilterSheetOpen(false);
   };
 
-  /* 고른 지역의 정책. 그 지역 것만 - 전국은 홈 카드 몫이다. */
-  const mapRegionPolicies = useMemo(() => {
-    if (!mapRegion || !policies) return [];
-    return policies.filter((policy) => policy.region === mapRegion);
-  }, [policies, mapRegion]);
-  const mapPhotoAttributions = useMemo(
-    () => Array.from(new Set(
-      mapRegionPolicies.flatMap((policy) => {
-        const photo = getPolicyPhoto(policy);
-        return photo?.attribution ? [photo.attribution] : [];
-      }),
-    )),
-    [mapRegionPolicies],
+  /* 시트 목록: 모든 지역 · 전국 공통 · 고른 지역(시군) */
+  const browseList = useMemo(
+    () => browseView(browsePolicies, browse.region, browse.city, browse.filter),
+    [browsePolicies, browse.region, browse.city, browse.filter],
   );
-  const selectedRegionGroups = useMemo(
-    () => (mapRegion ? groupByProgram(mapRegionPolicies) : []),
-    [mapRegion, mapRegionPolicies],
-  );
-  const selectedRegionCityCount = useMemo(() => {
-    if (!mapRegion) return 0;
-    return new Set(mapRegionPolicies.filter((policy) => policy.region === mapRegion).map(cityOf).filter(Boolean)).size;
-  }, [mapRegion, mapRegionPolicies]);
-  const selectedRegionTotal = mapRegion ? regionCounts[mapRegion]?.total ?? 0 : 0;
-  /* 지도 위 표시는 세 줄을 안 넘긴다. 종류가 셋까지면 다 적고, 넷을 넘으면 큰 둘만 적고
-     나머지는 "외 N종"으로 묶는다 - 지도를 가리는 카드가 되면 지도를 보는 뜻이 없다.
-     selectedRegionGroups 는 건수 내림차순이라 앞 둘이 곧 큰 둘이다. */
-  const pillGroups = selectedRegionGroups.length <= 3 ? selectedRegionGroups : selectedRegionGroups.slice(0, 2);
-  const pillRestGroups = selectedRegionGroups.slice(pillGroups.length);
-  const pillRestTotal = pillRestGroups.reduce((sum, group) => sum + group.items.length, 0);
-  /* 시안의 지도 화면은 지도·안내문·시트뿐이고 그 밑에 목록이 없다. 필터나 검색어가 걸리면
+  const chips = useMemo(() => chipCounts(policies ?? [], browse.region, browse.program, browse.city), [policies, browse.region, browse.program, browse.city]);
+  /* 지도 왼쪽 위 '전국 공통 N' - 칩·사업이 걸린 수. 지역 카드의 '전국 공통 혜택 N건 보기'는 전부 */
+  const nationCount = useMemo(() => browsePolicies.filter((policy) => policy.region === NATIONWIDE_REGION).length, [browsePolicies]);
+  const allNationCount = useMemo(() => (policies ?? []).filter((policy) => policy.region === NATIONWIDE_REGION).length, [policies]);
+  /* 고른 도 안의 시군 점(혜택 건수). 제목 앞 [시군] 으로 센다 */
+  const mapPlaces = useMemo(() => {
+    const region = browse.region;
+    if (!region || region === NATIONWIDE_REGION) return [];
+    const counts = new Map<string, number>();
+    for (const policy of browsePolicies) {
+      const city = policy.region === region ? cityOf(policy) : null;
+      if (city) counts.set(city, (counts.get(city) ?? 0) + 1);
+    }
+    return Array.from(counts, ([name, count]) => ({ name, count }));
+  }, [browsePolicies, browse.region]);
+  /* 지도 화면은 지도·칩·시트뿐이고 그 밑에 목록이 없다. 필터나 검색어가 걸리면
      결과가 갈 곳이 없으므로 그때는 원래 목록 화면으로 간다. 지도 선택은 필터가 아니라
      여기 안 들어온다 - 지역을 눌러도 결과 건수가 그대로다. */
   const isNarrowed = searchTerm.trim() !== "" || selectedCategory !== allFilter
     || selectedRegion !== allFilter || selectedPeriod !== "전체"
     || selectedAmount !== "전체" || showSavedOnly;
-  const showMap = mapView === "map" && !isNarrowed;
-  const showRegionList = mapView === "list" && !!mapRegion && !isNarrowed;
-  const mapHint = !mapRegion
-    ? "지역을 누르면 그곳 정책을 모아 봅니다"
-    : selectedRegionTotal > 0
-      ? `${mapRegion} 선택됨 · 표시를 누르면 목록으로`
-      : `${mapRegion}에는 아직 등록된 정책이 없어요`;
+  const showMap = !isNarrowed;
+  const panelOpen = showMap && browse.search;
+  const fullTextCount = useMemo(() => {
+    const q = panelQuery.trim();
+    return q ? (policies ?? []).filter((policy) => matchesPolicySearch(policy, q)).length : 0;
+  }, [policies, panelQuery]);
+  /* 검색 칸의 '모두 보기': 예전 검색창처럼 정책 글 전체에서 찾은 목록으로 간다 */
+  const showAllMatches = () => {
+    setSearchTerm(panelQuery.trim());
+    setBrowse({ ...browse, search: false });
+  };
   const draftFilterSummary = getAppliedFilterSummary(draftFilters, "");
 
+  /* Esc = 화면 안 ‹ 와 같은 한 층. 지도 안(지역 선택 풀기)·필터 시트는 제 일을 한다 */
+  useEffect(() => {
+    if (!showMap || isFilterSheetOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !lowered) return;
+      // 담기 창 같은 대화창이 떠 있으면 그 창의 일이다 - 뒤의 상세까지 닫지 않는다
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      if ((event.target as Element | null)?.closest?.(".thmap-host")) return;
+      stepBack();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
+
+  /* 지도 화면의 세 조각 - 지도 칸 · 목록 · 검색 칸. 좁은 화면은 지도 위에 목록 시트와 검색 칸을 겹치고,
+     넓은 화면은 지도 오른쪽 패널에 목록을 세우고 검색 칸·정책 상세를 그 위에 덮는다(아래 목록은 스크롤 자리째 남는다) */
+  const ready = !isLoading && !error && Boolean(policies && policies.length > 0);
+  /* 넓은 틀은 화면 폭만으로 정한다 - 불러오는 동안에도. ready 까지 기다리면 그 사이 좁은 화면 틀이 그려졌다가 바뀐다(10/1).
+     지도·패널(split)만 정책이 온 뒤에 그린다 */
+  const deskMap = isDesktop && showMap;
+  const split = deskMap && ready;
+  const detailPolicy = split && browse.detail ? (policies ?? []).find((policy) => policy.slug === browse.detail) ?? null : null;
+  const stage = ready && showMap && policies ? (
+    <div className="thmap-stage">
+      {/* 넓은 화면은 지도가 넉넉해 다가가지 않는다 - 전국 틀 그대로 고른 도를 띄우고 시군 점을 찍는다 */}
+      <PolicyRegionMap
+        counts={regionCounts}
+        onSelect={selectRegion}
+        selected={browse.region}
+        focus
+        zoom={!isDesktop}
+        showCounts
+        coverTop={isDesktop ? null : coverTop}
+        sheetLow={!isDesktop && browse.sheet === "low"}
+        places={mapPlaces}
+        selectedPlace={browse.city}
+        onSelectPlace={pickCity}
+        onBackground={mapBackground}
+      />
+      {browse.region && browse.region !== NATIONWIDE_REGION ? (
+        <RegionSummaryCard
+          policies={policies}
+          region={browse.region}
+          filter={browse.filter}
+          nationCount={allNationCount}
+          onFilter={(filter) => setBrowse({ ...base, filter })}
+          onNation={openNation}
+        />
+      ) : (
+        <button className="thmap-nation" type="button" aria-pressed={browse.region === NATIONWIDE_REGION} onClick={toggleNation}>
+          <span className="dot" aria-hidden="true" />전국 공통 <b>{nationCount}</b>
+        </button>
+      )}
+      {/* 땅 색 = 혜택 건수. 지역을 고르면 지도가 좁아지니 범례보다 지도가 먼저다 */}
+      {!browse.region && (
+        <div className="thmap-legend" aria-hidden="true">
+          적음<span>{MAP_FILLS.slice(1).map((fill) => <i key={fill} style={{ background: fill }} />)}</span>많음
+        </div>
+      )}
+    </div>
+  ) : null;
+  const sheet = ready ? (
+    <PolicyMapSheet
+      /* 넓은 화면 패널은 필터 창이 떠도 그 뒤에 그대로 선다(비우면 빈 패널이 비친다) */
+      enabled={showMap && (isDesktop || !isFilterSheetOpen)}
+      mode={isDesktop ? "panel" : "sheet"}
+      view={browseList}
+      stop={browse.sheet}
+      region={browse.region}
+      scopeKey={`${browse.region}|${browse.city}|${browse.program}|${browse.filter}`}
+      showBack={Boolean(browse.region || browse.program)}
+      clearLabel={browse.city ? `${browse.region} 전체` : browse.region ? "전체 지역" : null}
+      onStop={(stop) => setBrowse({ ...browse, sheet: stop })}
+      onBack={stepBack}
+      onClear={clearBrowse}
+      onNation={openNation}
+      onRest={setCoverTop}
+      onOpen={isDesktop ? openDetail : undefined}
+    />
+  ) : null;
+  const search = ready && panelOpen && policies ? (
+    <PolicySearchPanel
+      policies={policies}
+      region={browse.region}
+      query={panelQuery}
+      fullTextCount={fullTextCount}
+      onShowAll={showAllMatches}
+      onPickRegion={toggleRegion}
+      onPickPlace={pickPlace}
+      onPickProgram={pickProgram}
+    />
+  ) : null;
+  const panelCover = split && Boolean(search || browse.detail);
+
   return (
-    <section className="screen with-tabs prototype-policy-list-screen">
+    <section className={deskMap ? "screen with-tabs prototype-policy-list-screen desktop-wide" : "screen with-tabs prototype-policy-list-screen"}>
       <div className="prototype-policy-toolbar">
         {/* 제목 줄을 걷어내고 검색줄부터 시작한다 - 지도가 그만큼 커진다. 제목은 화면에서만 빼고
             남긴다: 화면 낭독기와 아래 h2(지역 목록)의 뿌리가 되는 유일한 h1 이다.
@@ -978,7 +770,38 @@ export function PolicyListPage() {
 
         <div className="prototype-policy-search-row">
           <Search aria-hidden="true" size={20} />
-          <input id="policy-list-search" aria-label="정책 검색" onChange={(event) => setSearchTerm(event.target.value)} placeholder="정책명, 지역, 혜택 검색" type="search" value={searchTerm} />
+          <input
+            id="policy-list-search"
+            aria-label="정책 검색"
+            aria-controls={panelOpen ? "policy-search-panel" : undefined}
+            aria-expanded={showMap ? panelOpen : undefined}
+            autoComplete="off"
+            enterKeyHint="search"
+            onChange={(event) => {
+              // 지도 화면에서 치면 늘 검색 칸으로(초점이 남은 채 칸이 닫혔어도 다시 연다). 목록 화면은 예전처럼 글 전체 검색
+              if (!showMap) return setSearchTerm(event.target.value);
+              if (!browse.search) setBrowse({ ...base, search: true });
+              setPanelQuery(event.target.value);
+            }}
+            onFocus={() => {
+              if (showMap && !browse.search) setBrowse({ ...base, search: true });
+            }}
+            onKeyDown={(event) => {
+              // 한글 조합을 끝내는 Enter(맥 크롬은 두 번 온다)와 빈 찾을 말은 첫 결과를 누르지 않는다
+              if (!panelOpen || event.key !== "Enter" || event.nativeEvent.isComposing) return;
+              event.preventDefault();
+              if (!panelQuery.trim()) return;
+              document.querySelector<HTMLButtonElement>("#policy-search-panel button")?.click();
+            }}
+            placeholder={panelOpen ? "지역이나 혜택 이름 (예: 여수, 반값)" : "정책명, 지역, 혜택 검색"}
+            type="search"
+            value={panelOpen ? panelQuery : searchTerm}
+          />
+          {panelOpen ? (
+            <button className="prototype-search-close" onClick={() => setBrowse({ ...browse, search: false })} type="button">
+              닫기
+            </button>
+          ) : (
           <div className="prototype-filter-controls">
             <button aria-label="필터 열기" className="prototype-filter-icon-button" onClick={openFilterSheet} type="button">
               <SlidersHorizontal aria-hidden="true" size={20} />
@@ -990,57 +813,49 @@ export function PolicyListPage() {
               <button aria-label="필터 초기화" className="prototype-filter-reset-chip" onClick={resetFilters} type="button">✕</button>
             )}
           </div>
+          )}
         </div>
+        {/* 지도 화면의 위 칩: 혜택 형태. 칩을 고르면 지도 건수와 목록이 같이 바뀐다 */}
+        {!isLoading && !error && policies && policies.length > 0 && showMap && (
+          <BrowseChips counts={chips} filter={browse.filter} program={browse.program} onFilter={pickFilter} onClearProgram={() => setBrowse({ ...base, program: null })} />
+        )}
       </div>
-      {!isLoading && !error && policies && (
+      {/* 건수 줄은 검색·필터 목록에만 - 지도 화면은 목록 머리가 건수를 말한다 */}
+      {!isLoading && !error && policies && !showMap && (
         <div className="prototype-policy-result-row" aria-live="polite">
           전체 {policies.length}개 중 {visiblePolicies.length}개 표시
         </div>
       )}
-      {/* 바다가 깔리는 칸. 지도와 안내문을 품고 탭바 바로 위까지 내려간다. */}
-      {!isLoading && !error && policies && policies.length > 0 && showMap && (
-        <div className="thmap-stage">
-          <PolicyRegionMap
-            counts={regionCounts}
-            onSelect={(region) => writeViewParams({ place: region, view: region ? mapView : "map" })}
-            selected={mapRegion}
-            renderPill={(region) => selectedRegionTotal > 0 ? (
-              <button
-                className="thmap-pill"
-                type="button"
-                aria-label={`${region} 정책 ${selectedRegionTotal}건 보기`}
-                onClick={() => writeViewParams({ view: "list" })}
-              >
-                {/* 지역 이름은 안 쓴다 - 바로 밑 땅에 이름표가 이미 있다. 이모지만으로는 무슨
-                    정책인지 알 수 없어 종류 이름을 적는다. 읽는 이름(aria-label)에는 지역이 남는다. */}
-                {pillGroups.map((group) => (
-                  <span className="thmap-pill-row" key={group.key}>
-                    <i aria-hidden="true">{getPolicyVisual(group.items[0]).emoji}</i>
-                    <em>{group.label}</em>
-                    <b>{group.items.length}</b>
-                  </span>
-                ))}
-                {pillRestGroups.length > 0 && (
-                  <span className="thmap-pill-more">외 {pillRestGroups.length}종 <b>{pillRestTotal}</b>건</span>
-                )}
-              </button>
-            ) : null}
-          />
-          <p className="thmap-hint" aria-live="polite">{mapHint}</p>
-        </div>
-      )}
-      {!isLoading && !error && policies && policies.length > 0 && showRegionList && (
-        <div className="thmap-list-head">
-          <button className="thmap-back" type="button" aria-label="지도로" onClick={() => writeViewParams({ view: "map" })}>‹</button>
-          <div>
-            <h2>{mapRegion}</h2>
-            <p>정책 {mapRegionPolicies.length}건 · 시·군 {selectedRegionCityCount}곳</p>
+      {/* 바다가 깔리는 칸. 좁은 화면은 지도가 목록 뒤로 탭바 위까지 꽉 차 있고, 목록이 비운 만큼 드러난다.
+          넓은 화면은 지도(남는 폭) + 오른쪽 목록 패널 420px */}
+      {split ? (
+        <div className="thmap-split">
+          {stage}
+          <div className="thmap-panel">
+            <PanelUnderlay covered={panelCover}>{sheet}</PanelUnderlay>
+            {search}
+            {!search && browse.detail && (
+              detailPolicy ? (
+                <PolicyPanelDetail
+                  policy={detailPolicy}
+                  isSaved={savedSlugs.has(detailPolicy.slug)}
+                  onBack={stepBack}
+                  onToggleSave={handleToggleSave}
+                />
+              ) : (
+                <div className="thmap-pdetail thmap-pdetail-missing" role="status">
+                  <p>이 정책은 지금 목록에 없어요.</p>
+                  <Link className="policy-detail-secondary" to={`/policies/${browse.detail}`}>상세 페이지에서 보기</Link>
+                  <button className="thmap-clear" type="button" onClick={stepBack}>목록으로</button>
+                </div>
+              )
+            )}
           </div>
         </div>
-      )}
+      ) : stage}
       {isLoading && <LoadingState label="정책을 불러오는 중입니다" />}
       {error && <ErrorState message={error} action={<LinkButton to="/home" variant="line">홈으로 가기</LinkButton>} />}
-      {!isLoading && !error && visiblePolicies.length === 0 && !showMap && !showRegionList && (
+      {!isLoading && !error && visiblePolicies.length === 0 && !showMap && (
         <EmptyState
           eyebrow="정책 탐색"
           title={hasActiveFilters ? "검색 조건에 맞는 정책이 없어요" : "등록된 정책이 아직 없어요"}
@@ -1048,28 +863,7 @@ export function PolicyListPage() {
           action={hasActiveFilters ? <Button onClick={resetFilters}>전체 보기</Button> : <LinkButton to="/home" variant="line">홈으로 가기</LinkButton>}
         />
       )}
-      {!isLoading && !error && showRegionList && (
-        <div className="list">
-          {selectedRegionGroups.map((group) => (
-            <div key={group.key}>
-              <div className="thmap-grp">
-                <span className="thmap-gico" style={{ background: getPolicyVisual(group.items[0]).from }} aria-hidden="true">{getPolicyVisual(group.items[0]).emoji}</span>
-                <h4>{group.label}</h4><em>{group.items.length}건</em>
-              </div>
-              <div className="list">
-                {group.items.map((policy) => (
-                  <PolicyListCard key={policy.id} policy={policy} isSaved={savedSlugs.has(policy.slug)} onToggleSave={handleToggleSave} />
-                ))}
-              </div>
-            </div>
-          ))}
-          {/* 지도에서 고른 지역 목록에는 그 목록에 실제로 보이는 사진 출처만 붙인다. */}
-          {mapPhotoAttributions.map((attribution) => (
-            <p className="policy-list-photo-credit" key={attribution}>{attribution}</p>
-          ))}
-        </div>
-      )}
-      {!isLoading && !error && visiblePolicies.length > 0 && !showMap && !showRegionList && (
+      {!isLoading && !error && visiblePolicies.length > 0 && !showMap && (
         <div className="list">
           {visiblePolicies.map((policy) => (
             <PolicyListCard key={policy.id} policy={policy} isSaved={savedSlugs.has(policy.slug)} onToggleSave={handleToggleSave} />
@@ -1080,16 +874,8 @@ export function PolicyListPage() {
         </div>
       )}
 
-      {!isLoading && !error && policies && policies.length > 0 && (
-        <PolicyMapSheet
-          enabled={showMap && !isFilterSheetOpen}
-          open={isSheetOpen}
-          onOpenChange={(next) => writeViewParams({ sheet: next }, { replace: true })}
-          policies={policies}
-          savedSlugs={savedSlugs}
-          onToggleSave={handleToggleSave}
-        />
-      )}
+      {!split && sheet}
+      {!split && search}
 
       {isFilterSheetOpen && (
         <div className="prototype-filter-sheet-layer" role="presentation">
@@ -1174,6 +960,227 @@ export function PolicyListPage() {
   );
 }
 
+/* 넓은 화면 패널의 목록. 검색 칸·정책 상세가 위를 덮어도 목록은 그대로 두어 펼친 묶음과 스크롤 자리를 지킨다.
+   덮인 동안은 누르거나 읽히지 않게 inert(React 18 은 속성 이름을 모른다 - 직접 단다). 덮을 때 초점이 목록 안에
+   있었으면(상세를 연 줄) 걷힐 때 그리로 돌려준다 */
+function PanelUnderlay({ covered, children }: { covered: boolean; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const lastFocus = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    if (covered) {
+      const active = document.activeElement;
+      lastFocus.current = active instanceof HTMLElement && box.contains(active) ? active : null;
+    }
+    box.toggleAttribute("inert", covered);
+    if (!covered && lastFocus.current?.isConnected) lastFocus.current.focus({ preventScroll: true });
+  }, [covered]);
+  return (
+    <div className="thmap-panel-list" ref={ref} aria-hidden={covered || undefined}>
+      {children}
+    </div>
+  );
+}
+
+/* 정책을 일정에 담는 흐름(일정 고르기 창). 큰 상세와 넓은 화면 목록 패널의 상세가 같이 쓴다.
+   알림은 부르는 쪽이 띄우므로 onNotice 로 넘긴다. */
+function usePolicyTripSheet(policy: Policy | null | undefined, onNotice: (message: string | null) => void) {
+  const navigate = useNavigate();
+  const { addPolicy } = useSession();
+  const [sheetStatus, setSheetStatus] = useState<TripSheetStatus>("closed");
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
+  const [sheetError, setSheetError] = useState("");
+
+  const addToTrip = async () => {
+    if (!policy) return;
+    onNotice(null);
+    setSheetError("");
+    setSelectedTrip(null);
+    setSheetStatus("loading");
+    try {
+      // 담을 곳은 아직 끝나지 않은 일정만(2026-09-30 사용자 결정). 날짜를 못 읽는 일정은 숨기지 않는다.
+      const availableTrips = (await appDataApi.listTrips()).filter(
+        (trip) => tripStatus(trip.startDate, trip.endDate)?.tone !== "past",
+      );
+      setTrips(availableTrips);
+      setSheetStatus(availableTrips.length > 0 ? "ready" : "empty");
+    } catch {
+      setSheetError("일정 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
+      setSheetStatus("error");
+    }
+  };
+
+  const attachPolicyToTrip = async (trip: Trip) => {
+    if (!policy) return;
+    setSelectedTrip(trip);
+    setSheetError("");
+    setSheetStatus("submitting");
+    try {
+      await appDataApi.addPolicyToTrip(trip.id, policy.slug);
+      setSheetStatus("success");
+      onNotice("선택한 일정에 혜택을 담았어요.");
+      addPolicy(policy.slug);
+    } catch (attachError) {
+      setSheetError(policyTripErrorMessage(attachError));
+      setSheetStatus("error");
+    }
+  };
+
+  const closeTripSheet = () => {
+    if (sheetStatus === "submitting") return;
+    setSheetStatus("closed");
+  };
+
+  const viewSelectedTrip = () => {
+    if (!selectedTrip || !policy) return;
+    const linkedPolicy: LinkedTripPolicy = {
+      slug: policy.slug,
+      title: policy.title,
+      amount: policy.amount,
+      region: policy.region,
+      category: policy.category,
+      tag: policy.tag,
+      // 서버 응답이 아직 이 정책을 안 담고 있어도 일정 카드의 버튼이 공식 사이트로 나갈 수 있게
+      officialUrl: policy.officialUrl ?? null,
+      applyUrl: policy.applyUrl ?? null,
+    };
+    navigate(`/trips/${selectedTrip.id}`, { state: { linkedPolicy } });
+  };
+
+  return { sheetStatus, trips, selectedTrip, sheetError, addToTrip, attachPolicyToTrip, closeTripSheet, viewSelectedTrip };
+}
+
+/* 넓은 화면 목록 패널의 정책 상세. 목록이 이미 받은 정책을 그대로 보인다(따로 불러오지 않는다).
+   사진 위 단추는 상세 페이지와 같은 자리(‹ · 크게 보기 · 저장 · 공유). 주 버튼 '내 일정에 담기'는 지도 화면을
+   떠나지 않고 일정 고르기 창을 바로 연다(시안 v41). 창은 body 로 띄워 패널 틀에 갇히지 않게 한다. */
+function PolicyPanelDetail({
+  policy,
+  isSaved,
+  onBack,
+  onToggleSave,
+}: {
+  policy: Policy;
+  isSaved: boolean;
+  onBack: () => void;
+  onToggleSave: (policy: Policy) => Promise<void>;
+}) {
+  const kind = benefitTypeOf(policy);
+  const text = policyDetailText(policy);
+  const cta = getPolicyApplicationCta(policy);
+  const canSave = canUsePolicyActions(policy);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const { isPolicyAdded } = useSession();
+  const tripSheet = usePolicyTripSheet(policy, setNotice);
+  /* 다른 정책을 열면 맨 위부터, 초점은 ‹ 로(연 줄은 아래 목록과 함께 inert 가 된다) */
+  useEffect(() => {
+    bodyRef.current?.scrollTo?.(0, 0);
+    bodyRef.current?.querySelector<HTMLElement>(".overlay-nav .icon-btn")?.focus({ preventScroll: true });
+    setNotice(null);
+  }, [policy.slug]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+  const toggleSave = () =>
+    onToggleSave(policy).catch(() =>
+      setNotice(isSaved ? "정책 저장을 해제하지 못했어요. 잠시 후 다시 시도해 주세요." : "정책을 저장하지 못했어요. 잠시 후 다시 시도해 주세요."),
+    );
+  const share = async () => {
+    try {
+      const method = await shareLinkWithFallback({
+        title: policy.title,
+        text: `${policy.title} 정책을 트래블헌터에서 확인해 보세요.`,
+        url: `${window.location.origin}/policies/${policy.slug}`,
+      });
+      setNotice(method === "share" ? "정책 링크를 공유했어요." : "정책 링크를 복사했어요.");
+    } catch {
+      setNotice("정책 링크를 공유하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    }
+  };
+  return (
+    <section className="thmap-pdetail" aria-label={`${programName(policy)} 상세`}>
+      <div className="thmap-pdetail-body" ref={bodyRef}>
+        <PolicyDetailHero kind={kind} policy={policy}>
+          <div className="overlay-nav">
+            <IconButton label="목록으로" onClick={onBack}>
+              <ChevronLeft size={20} />
+            </IconButton>
+            <div className="row">
+              <IconButton label="크게 보기" to={`/policies/${policy.slug}`}>
+                <Maximize2 size={18} />
+              </IconButton>
+              <button aria-label="저장" aria-pressed={isSaved} className="icon-btn" disabled={!canSave} onClick={() => void toggleSave()} type="button">
+                <Heart size={18} fill={isSaved ? "currentColor" : "none"} />
+              </button>
+              <IconButton label="공유" onClick={() => void share()}>
+                <Share2 size={18} />
+              </IconButton>
+            </div>
+          </div>
+        </PolicyDetailHero>
+        <div className="thmap-pdetail-main">
+          <PolicyDetailHead kind={kind} policy={policy} />
+          <PolicyDetailFacts
+            amountLabel={policy.cardSummary && !isGenericBenefitAmount(policy.cardSummary) ? policy.cardSummary : getPolicyAmountLabel(policy)}
+            kind={kind}
+            policy={policy}
+            text={text}
+          />
+          <PolicyBenefitSection policy={policy} text={text} />
+          <PolicyPeriodSection policy={policy} text={text} />
+          {policy.applicationGuide && policy.applicationGuide.rounds.length > 0 && (
+            <ApplicationGuideSection guide={policy.applicationGuide} />
+          )}
+          <PolicyTargetSection policy={policy} text={text} />
+          <PolicyDocumentsSection policy={policy} text={text} />
+          <PolicyNotesSection text={text} />
+          <PolicySourceLine policy={policy} text={text} />
+        </div>
+      </div>
+      <div className="thmap-pdetail-bar">
+        {notice && <Toast>{notice}</Toast>}
+        {cta.kind !== "unavailable" && (
+          <a className="policy-detail-secondary" href={cta.url} rel="noopener noreferrer" target="_blank">
+            {cta.label}
+            <ExternalLink aria-hidden="true" size={16} />
+          </a>
+        )}
+        <button
+          className="policy-detail-primary"
+          disabled={!canSave}
+          onClick={canSave ? () => void tripSheet.addToTrip() : undefined}
+          type="button"
+        >
+          {isPolicyAdded(policy.slug) ? "일정에 담김" : "내 일정에 담기"}
+        </button>
+      </div>
+      {tripSheet.sheetStatus !== "closed" &&
+        createPortal(
+          <div className="policy-trip-window">
+            <TripSelectSheet
+              error={tripSheet.sheetError}
+              onClose={tripSheet.closeTripSheet}
+              onSelectTrip={tripSheet.attachPolicyToTrip}
+              onViewTrip={tripSheet.viewSelectedTrip}
+              policyRegion={policy.region}
+              policyRegionQuery={getPolicyTripRegionQuery(policy)}
+              policySlug={policy.slug}
+              policyTitle={policy.title}
+              selectedTrip={tripSheet.selectedTrip}
+              status={tripSheet.sheetStatus}
+              trips={tripSheet.trips}
+            />
+          </div>,
+          document.body,
+        )}
+    </section>
+  );
+}
+
 function PolicyPreviewList({ policies }: { policies: Policy[] }) {
   return (
     <div className="policy-preview-list">
@@ -1239,72 +1246,27 @@ function PolicyDiscoveryBlocks({ policies, onSelectCategory }: { policies: Polic
 export function PolicyDetailPage() {
   const { policyId } = useParams();
   const navigate = useNavigate();
-  const { addPolicy, isPolicyAdded, savedSlugs, addSavedSlug, removeSavedSlug } = useSession();
+  const { isPolicyAdded, savedSlugs, addSavedSlug, removeSavedSlug } = useSession();
   const { data: policyData, error, isLoading } = useAsyncResource(() => appDataApi.getPolicy(policyId), [policyId]);
   const policy = policyData as Policy;
   const [notice, setNotice] = useState<string | null>(null);
-  const [sheetStatus, setSheetStatus] = useState<TripSheetStatus>("closed");
-  const [trips, setTrips] = useState<Trip[]>([]);
-  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
-  const [sheetError, setSheetError] = useState("");
+  const { sheetStatus, trips, selectedTrip, sheetError, addToTrip, attachPolicyToTrip, closeTripSheet, viewSelectedTrip } =
+    usePolicyTripSheet(policy, setNotice);
   const [isSavingPolicy, setIsSavingPolicy] = useState(false);
+  // 넓은 화면(1024px 이상)은 두 단: 왼쪽 본문 카드 + 오른쪽 고정 카드(요약·담기). 좁은 화면은 그대로
+  const isDesktop = useIsDesktop();
 
-  const addToTrip = async () => {
-    if (!policy) return;
-    setNotice(null);
-    setSheetError("");
-    setSelectedTrip(null);
-    setSheetStatus("loading");
-    try {
-      const availableTrips = await appDataApi.listTrips();
-      setTrips(availableTrips);
-      setSheetStatus(availableTrips.length > 0 ? "ready" : "empty");
-    } catch {
-      setSheetError("일정 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
-      setSheetStatus("error");
-    }
-  };
+  // 알림은 아래 버튼 줄 위에 잠깐만 뜬다 - 계속 남으면 버튼 줄이 두 겹이 된다
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
-  const attachPolicyToTrip = async (trip: Trip) => {
-    if (!policy) return;
-    setSelectedTrip(trip);
-    setSheetError("");
-    setSheetStatus("submitting");
-    try {
-      await appDataApi.addPolicyToTrip(trip.id, policy.slug);
-      setSheetStatus("success");
-      setNotice("선택한 일정에 혜택을 담았어요.");
-      addPolicy(policy.slug);
-    } catch (attachError) {
-      setSheetError(policyTripErrorMessage(attachError));
-      setSheetStatus("error");
-    }
-  };
-
-  const closeTripSheet = () => {
-    if (sheetStatus === "submitting") return;
-    setSheetStatus("closed");
-  };
-
-  const viewSelectedTrip = () => {
-    if (!selectedTrip) return;
-    const linkedPolicy: LinkedTripPolicy = {
-      slug: policy.slug,
-      title: policy.title,
-      amount: policy.amount,
-      region: policy.region,
-      category: policy.category,
-      tag: policy.tag,
-      // 서버 응답이 아직 이 정책을 안 담고 있어도 일정 카드의 버튼이 공식 사이트로 나갈 수 있게
-      officialUrl: policy.officialUrl ?? null,
-      applyUrl: policy.applyUrl ?? null,
-    };
-    navigate(`/trips/${selectedTrip.id}`, { state: { linkedPolicy } });
-  };
-
+  // 불러오는 동안에도 넓은 틀을 써서 다 불러온 뒤 폭이 튀지 않게 한다(.desktop-wide 는 1024px 이상에서만 뜻이 있다)
   if (isLoading) {
     return (
-      <section className="screen detail prototype-policy-detail-screen">
+      <section className="screen detail prototype-policy-detail-screen desktop-wide">
         <div className="detail-body">
           <LoadingState label="정책 상세를 불러오는 중입니다" />
         </div>
@@ -1314,7 +1276,7 @@ export function PolicyDetailPage() {
 
   if (error || !policy) {
     return (
-      <section className="screen detail prototype-policy-detail-screen">
+      <section className="screen detail prototype-policy-detail-screen desktop-wide">
         <div className="detail-body">
           <ErrorState message={error ?? "정책 정보를 찾지 못했어요."} action={<LinkButton to="/policies" variant="line">정책 목록으로</LinkButton>} />
         </div>
@@ -1323,19 +1285,8 @@ export function PolicyDetailPage() {
   }
 
   const applicationCta = getPolicyApplicationCta(policy);
-  const visual = getPolicyVisual(policy);
-  const heroPhoto = getPolicyPhoto(policy);
-  const structuredBenefitSections = getStructuredBenefitSections(policy);
-  const structuredPeriodSections = getStructuredPeriodSections(policy);
-  const structuredRequirementSections = getStructuredRequirementSections(policy);
-  const structuredDocumentItems = getStructuredDocumentItems(policy);
-  const benefitSections = structuredBenefitSections.length > 0 ? structuredBenefitSections : getPolicyBenefitSections(policy);
-  const periodSections = structuredPeriodSections;
-  const requirementSections = structuredRequirementSections.length > 0
-    ? structuredRequirementSections
-    : getPolicyRequirementSections(policy);
-  const documentItems = structuredDocumentItems.length > 0 ? structuredDocumentItems : policy.documents;
-  const noticeSections = getStructuredNoticeSections(policy);
+  const benefitKind = benefitTypeOf(policy);
+  const detailText = policyDetailText(policy);
   const canUsePolicyControls = canUsePolicyActions(policy);
   const policyControlsHelpId = "policy-detail-controls-help";
   const policyApplicationHelpId = "policy-detail-application-help";
@@ -1375,216 +1326,159 @@ export function PolicyDetailPage() {
     }
   };
 
-  return (
-    <section className="screen detail prototype-policy-detail-screen">
-      <div className="hero" style={{ background: `linear-gradient(145deg, ${visual.from}, ${visual.to})` }}>
-        {heroPhoto && <PolicyHeroPhoto photo={heroPhoto} />}
-        <div className="overlay-nav">
-          <IconButton label="뒤로" onClick={() => navigate(-1)}>
-            <ChevronLeft size={20} />
-          </IconButton>
-          <div className="row">
-            <button
-              aria-describedby={!canUsePolicyControls ? policyControlsHelpId : undefined}
-              aria-label="저장"
-              className="icon-btn"
-              disabled={isSavingPolicy || !canUsePolicyControls}
-              onClick={savePrototypePolicy}
-              type="button"
-            >
-              <Heart size={18} fill={isPolicySaved ? "currentColor" : "none"} />
-            </button>
-            <IconButton label="공유" onClick={sharePrototypePolicyLink}>
-              <Share2 size={18} />
-            </IconButton>
-          </div>
-        </div>
-        {!heroPhoto && <div className="hero-label" aria-hidden="true">{visual.emoji}</div>}
-      </div>
-
-      <div className="detail-body">
-        <div className="title-block">
-          <div className="row">
-            <Tag>{getPolicyDisplayTag(policy)}</Tag>
-            <Tag tone={getDeadlineTagTone(policy)}>{getDeadlineTagLabel(policy)}</Tag>
-          </div>
-          <h1>{policy.title}</h1>
-          <div className="meta">
-            {policy.org} 주관 · {policy.region}
-          </div>
-        </div>
-
-      <div className="policy-detail-actions">
-        {!canUsePolicyControls && (
-          <p className="helper-text" id={policyControlsHelpId}>
-            {policyControlsHelpText}
-          </p>
-        )}
-        {applicationCta.kind === "unavailable" && (
-          <p className="helper-text" id={policyApplicationHelpId}>
-            {applicationCta.disabledNotice}
-          </p>
-        )}
+  const backButton = (
+    <IconButton label="뒤로" onClick={() => navigate(-1)}>
+      <ChevronLeft size={20} />
+    </IconButton>
+  );
+  const saveAndShare = (
+    <div className="row">
+      <button
+        aria-describedby={!canUsePolicyControls ? policyControlsHelpId : undefined}
+        aria-label="저장"
+        className="icon-btn"
+        disabled={isSavingPolicy || !canUsePolicyControls}
+        onClick={savePrototypePolicy}
+        type="button"
+      >
+        <Heart size={18} fill={isPolicySaved ? "currentColor" : "none"} />
+      </button>
+      <IconButton label="공유" onClick={sharePrototypePolicyLink}>
+        <Share2 size={18} />
+      </IconButton>
+    </div>
+  );
+  /* 받는 것: 카드와 같은 문구(검토를 거친 cardSummary)를 먼저, 뜻 없는 말이면 금액 */
+  const facts = (
+    <PolicyDetailFacts
+      amountLabel={
+        policy.cardSummary && !isGenericBenefitAmount(policy.cardSummary) ? policy.cardSummary : getPolicyAmountLabel(policy)
+      }
+      kind={benefitKind}
+      policy={policy}
+      text={detailText}
+    />
+  );
+  const sections = (
+    <>
+      <PolicyBenefitSection policy={policy} text={detailText} />
+      <PolicyPeriodSection policy={policy} text={detailText} />
+      {policy.applicationGuide && policy.applicationGuide.rounds.length > 0 && (
+        <ApplicationGuideSection guide={policy.applicationGuide} />
+      )}
+      <PolicyTargetSection policy={policy} text={detailText} />
+      <PolicyDocumentsSection policy={policy} text={detailText} />
+      <PolicyNotesSection text={detailText} />
+      <PolicySourceLine policy={policy} text={detailText} />
+    </>
+  );
+  const tripSheet = (
+    <TripSelectSheet
+      error={sheetError}
+      onClose={closeTripSheet}
+      onSelectTrip={attachPolicyToTrip}
+      onViewTrip={viewSelectedTrip}
+      policyRegion={policy.region}
+      policyRegionQuery={getPolicyTripRegionQuery(policy)}
+      policySlug={policy.slug}
+      policyTitle={policy.title}
+      selectedTrip={selectedTrip}
+      status={sheetStatus}
+      trips={trips}
+    />
+  );
+  /* 공식 안내는 조용한 보조, 주 버튼은 '내 일정에 담기' 하나. 좁은 화면은 탭바 자리의 버튼 줄, 넓은 화면은 오른쪽 카드 안 */
+  const actions = (
+    <div className={isDesktop ? "policy-detail-actions policy-detail-side-actions" : "policy-detail-actions policy-detail-bar"}>
+      {notice && <Toast>{notice}</Toast>}
+      {!canUsePolicyControls && (
+        <p className="helper-text" id={policyControlsHelpId}>
+          {policyControlsHelpText}
+        </p>
+      )}
+      {applicationCta.kind === "unavailable" && (
+        <p className="helper-text" id={policyApplicationHelpId}>
+          {applicationCta.disabledNotice}
+        </p>
+      )}
+      {applicationCta.kind !== "unavailable" ? (
+        <a className="policy-detail-secondary" href={applicationCta.url} rel="noopener noreferrer" target="_blank">
+          {applicationCta.label}
+          <ExternalLink aria-hidden="true" size={16} />
+        </a>
+      ) : (
         <button
-          aria-describedby={!canUsePolicyControls ? policyControlsHelpId : undefined}
-          className="btn secondary"
-          disabled={!canUsePolicyControls}
-          onClick={canUsePolicyControls ? addToTrip : undefined}
+          aria-describedby={policyApplicationHelpId}
+          className="policy-detail-secondary"
+          disabled
+          title={applicationCta.disabledNotice}
           type="button"
         >
-          {isPolicyInTrip ? "일정에 담김" : "📅 내 일정에 담기"}
+          {applicationCta.label}
         </button>
-        {applicationCta.kind !== "unavailable" ? (
-          <a className={applicationCta.kind === "apply" ? "btn primary" : "btn secondary"} href={applicationCta.url} rel="noreferrer" target="_blank">
-            {applicationCta.label}
-          </a>
-        ) : (
-          <button
-            aria-describedby={policyApplicationHelpId}
-            className="btn secondary"
-            disabled
-            title={applicationCta.disabledNotice}
-            type="button"
-          >
-            {applicationCta.label}
-          </button>
-        )}
-      </div>
-
-        <section
-          className="section-block"
-          aria-label="지원내용"
-          role="region"
-        >
-          <h3>💰 지원내용</h3>
-          <div className="highlight-box">
-            <div className="price">{getPolicyAmountLabel(policy)}</div>
-            <div className="policy-benefit-grid">
-              {benefitSections.map((section) => (
-                <SurfaceCard
-                  tone={section.title.includes("혜택") ? "benefit" : "default"}
-                  className={`policy-benefit-group${section.title.includes("혜택") ? " policy-benefit-group--core" : ""}`}
-                  key={policyBenefitSectionKey(section)}
-                >
-                  <div className="policy-benefit-title">{section.title}</div>
-                  <ul>
-                    {section.items.map((item) => (
-                      <li key={policyBenefitItemKey(item)}>{renderPolicyBenefitItem(item)}</li>
-                    ))}
-                  </ul>
-                </SurfaceCard>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {periodSections.length > 0 ? (
-          <section className="section-block">
-            <h3>📅 기간</h3>
-            <div className="policy-benefit-grid">
-              {periodSections.map((section) => (
-                <SurfaceCard className="policy-benefit-group" key={policyBenefitSectionKey(section)}>
-                  <div className="policy-benefit-title">{section.title}</div>
-                  <ul className="policy-period-list">
-                    {section.items.map((item) => (
-                      <li key={policyBenefitItemKey(item)}>{renderPolicyBenefitItem(item)}</li>
-                    ))}
-                  </ul>
-                </SurfaceCard>
-              ))}
-            </div>
-            <div className="warning-text">{getDeadlineWarningText(policy)}</div>
-          </section>
-        ) : (
-          <section className="section-block">
-            <h3>📅 기간</h3>
-            <div>{getPolicyPeriodLabel(policy)}</div>
-            <div className="warning-text">{getDeadlineWarningText(policy)}</div>
-          </section>
-        )}
-
-        {(policy.eligibleIslandCount ?? 0) > 0 && policy.eligibleIslandsOfficialUrl && (
-          <section className="section-block" aria-label="대상 섬">
-            <h3>🏝 대상 섬</h3>
-            <div>대상 섬 {policy.eligibleIslandCount}곳</div>
-            <a className="text-link" href={policy.eligibleIslandsOfficialUrl} rel="noreferrer" target="_blank">
-              대상 섬 공식 안내
-            </a>
-          </section>
-        )}
-
-        {policy.applicationGuide && policy.applicationGuide.rounds.length > 0 && (
-          <ApplicationGuideSection guide={policy.applicationGuide} />
-        )}
-
-        {requirementSections.length > 0 && (
-          <section className="section-block">
-            <div className="policy-requirement-grid">
-              {requirementSections.map((section) => (
-                <SurfaceCard tone={section.title.includes("확인") ? "draft" : "default"} className="policy-requirement-group" key={section.title}>
-                  <h3>{section.title === "신청대상" ? "👥 " : section.title === "혜택 적용 조건" ? "💳 " : "🔎 "}{section.title}</h3>
-                  <ul className="bullet-list policy-requirement-list">
-                    {section.items.map((item) => (
-                      <li key={`${item.label}-${item.description}`}>
-                        <span className="bullet">✓</span>
-                        <span>
-                          <strong>{item.label}</strong>
-                          {item.description && <em>{item.description}</em>}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </SurfaceCard>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {documentItems.length > 0 && (
-          <section className="section-block">
-            <h3>📄 필요서류</h3>
-            <div className="check-list">
-              {documentItems.map((document) => (
-                <div className="check-item" key={document}>
-                  <span className="policy-doc-icon" aria-hidden="true">📄</span>
-                  <span>{document}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {noticeSections.length > 0 && (
-          <section className="section-block">
-            <h3>🔎 비고</h3>
-            <ul className="bullet-list">
-              {noticeSections.flatMap((section) => section.items).map((item) => (
-                <li key={policyBenefitItemKey(item)}><span className="bullet">✓</span><span>{renderPolicyBenefitItem(item)}</span></li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {notice && <Toast>{notice}</Toast>}
-      </div>
-
-
-      <TripSelectSheet
-        error={sheetError}
-        onClose={closeTripSheet}
-        onSelectTrip={attachPolicyToTrip}
-        onViewTrip={viewSelectedTrip}
-        policyRegion={policy.region}
-        policyRegionQuery={getPolicyTripRegionQuery(policy)}
-        policySlug={policy.slug}
-        policyTitle={policy.title}
-        selectedTrip={selectedTrip}
-        status={sheetStatus}
-        trips={trips}
-      />
-    </section>
+      )}
+      <button
+        aria-describedby={!canUsePolicyControls ? policyControlsHelpId : undefined}
+        className="policy-detail-primary"
+        disabled={!canUsePolicyControls}
+        onClick={canUsePolicyControls ? addToTrip : undefined}
+        type="button"
+      >
+        {isPolicyInTrip ? "일정에 담김" : "내 일정에 담기"}
+      </button>
+    </div>
   );
 
+  // 넓은 화면(시안 v41 '큰 상세'): 왼쪽 본문 카드, 오른쪽 고정 카드(받는 것·기간·받는 방법 + 담기). 담기 창은 가운데 창
+  if (isDesktop) {
+    return (
+      <section className="screen detail prototype-policy-detail-screen desktop-wide policy-detail-desk">
+        <article className="policy-detail-main">
+          <div className="policy-detail-toprow">
+            {backButton}
+            <span className="policy-detail-toptitle">{policyPlaceAndProgram(policy.title).program}</span>
+            {saveAndShare}
+          </div>
+          <PolicyDetailHero kind={benefitKind} policy={policy}>
+            {null}
+          </PolicyDetailHero>
+          <div className="detail-body">
+            <PolicyDetailHead kind={benefitKind} policy={policy} />
+            {sections}
+          </div>
+        </article>
+        <aside aria-label="요약과 담기" className="policy-detail-side">
+          <div className="policy-detail-card">
+            {facts}
+            {actions}
+          </div>
+        </aside>
+        {tripSheet}
+      </section>
+    );
+  }
+
+  return (
+    <section className="screen detail prototype-policy-detail-screen">
+      <PolicyDetailHero kind={benefitKind} policy={policy}>
+        <div className="overlay-nav">
+          {backButton}
+          {saveAndShare}
+        </div>
+      </PolicyDetailHero>
+
+      <div className="detail-body">
+        <PolicyDetailHead kind={benefitKind} policy={policy} />
+        {facts}
+        {sections}
+      </div>
+
+      {/* 탭바 자리의 버튼 줄 */}
+      {actions}
+
+      {tripSheet}
+    </section>
+  );
 }
 
 function TripSelectSheet({
@@ -1615,16 +1509,16 @@ function TripSelectSheet({
   if (status === "closed") return null;
   const isSubmitting = status === "submitting";
   const newTripPath = getPolicyTripCreatePath(policySlug, policyRegionQuery, policyRegion);
+  // 담기를 서버가 거절하면(지역 불일치 409·숙박 할인 중복 409) 그 일정 줄 아래에 까닭을 적고 나머지는 그대로 고를 수 있다.
+  // 지역이 맞는지는 서버만 판단한다 - 화면이 미리 거르지 않는다.
+  const failedTripId = status === "error" ? selectedTrip?.id ?? null : null;
+  const showList = status === "ready" || status === "submitting" || (failedTripId !== null && trips.length > 0);
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <section className="trip-select-sheet" role="dialog" aria-modal="true" aria-label="일정 선택" onClick={(event) => event.stopPropagation()}>
         <div className="sheet-head">
-          <div>
-            <Tag tone="primary">일정 담기</Tag>
-            <h2>혜택을 담을 일정을 선택하세요</h2>
-            <p className="meta">선택한 일정에서 정책 혜택과 예상 절감액을 함께 확인할 수 있어요.</p>
-          </div>
+          <h2>어느 일정에 담을까요?</h2>
           <button className="icon-btn" disabled={isSubmitting} onClick={onClose} type="button" aria-label="닫기">
             ×
           </button>
@@ -1634,47 +1528,54 @@ function TripSelectSheet({
 
         {status === "empty" && (
           <EmptyState
-            title="아직 담을 일정이 없어요"
-            body="먼저 여행 일정을 만들면 이 혜택을 바로 연결할 수 있어요."
+            title="다가오는 일정이 없어요"
+            body="새 일정을 만들면 이 혜택을 바로 담을 수 있어요."
             action={<Link className="btn primary full" to={newTripPath}>새 일정 만들기</Link>}
           />
         )}
 
-        {(status === "ready" || status === "submitting") && (
-          <div className="trip-select-list">
-            {trips.map((trip) => (
-              <button className="trip-select-row" disabled={isSubmitting} key={trip.id} onClick={() => onSelectTrip(trip)} type="button">
-                <div>
-                  <strong>{trip.title}</strong>
-                  <div className="meta">
-                    {trip.dates} · {trip.people.length}명 · 예상 절감 {trip.expectedSaving}
-                  </div>
-                </div>
-                <span className="btn sm secondary">{selectedTrip?.id === trip.id && isSubmitting ? "담는 중" : "선택"}</span>
-              </button>
-            ))}
-            <Link className="btn line full" to={newTripPath}>
-              새 일정에 담기
-            </Link>
+        {status === "error" && failedTripId === null && (
+          <div className="sheet-actions">
+            <ErrorState message={error} />
           </div>
         )}
 
-        {status === "error" && (
-          <div className="sheet-actions">
-            <ErrorState message={error} />
-            {trips.length > 0 && (
-              <div className="trip-select-list">
-                {trips.map((trip) => (
-                  <button className="trip-select-row" key={trip.id} onClick={() => onSelectTrip(trip)} type="button">
+        {showList && (
+          <div className="trip-select-list">
+            {trips.map((trip) => {
+              const failed = trip.id === failedTripId;
+              const linked = trip.linkedPolicies?.some((linkedPolicy) => linkedPolicy.slug === policySlug);
+              return (
+                <div className="trip-select-item" key={trip.id}>
+                  <button
+                    aria-describedby={failed ? `trip-select-error-${trip.id}` : undefined}
+                    className="trip-select-row"
+                    disabled={isSubmitting}
+                    onClick={() => onSelectTrip(trip)}
+                    type="button"
+                  >
                     <div>
-                      <strong>{trip.title}</strong>
+                      <strong>
+                        {trip.title}
+                        {linked && <span className="trip-select-linked">담음</span>}
+                      </strong>
                       <div className="meta">{trip.dates}</div>
                     </div>
-                    <span className="btn sm secondary">다시 선택</span>
+                    <span className="btn sm secondary">
+                      {selectedTrip?.id === trip.id && isSubmitting ? "담는 중" : failed ? "다시 선택" : "선택"}
+                    </span>
                   </button>
-                ))}
-              </div>
-            )}
+                  {failed && (
+                    <p className="trip-select-row-error" id={`trip-select-error-${trip.id}`} role="alert">
+                      {error}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+            <Link className="btn line full" to={newTripPath}>
+              새 일정에 담기
+            </Link>
           </div>
         )}
 

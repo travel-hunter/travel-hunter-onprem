@@ -89,6 +89,25 @@ export function daysUntilPolicyDeadline(deadline: string | null | undefined, now
   ) / MILLISECONDS_PER_DAY;
 }
 
+export type TripStatus = { tone: "past" | "now" | "urgent" | "soon"; label: string };
+
+/* 일정 목록·상세의 상태 칩. 지난 여행을 "D+108" 로 세면 읽히지 않아 "다녀옴" 으로 접는다. */
+export function tripStatus(startDate: string, endDate: string, now = new Date()): TripStatus | null {
+  const untilStart = daysUntilPolicyDeadline(startDate, now);
+  const untilEnd = daysUntilPolicyDeadline(endDate, now);
+  if (untilStart === null || untilEnd === null) return null;
+  if (untilEnd < 0) return { tone: "past", label: "다녀옴" };
+  if (untilStart < 0) return { tone: "now", label: "여행 중" };
+  if (untilStart === 0) return { tone: "now", label: "오늘 출발" };
+  return { tone: untilStart <= 7 ? "urgent" : "soon", label: `D-${untilStart}` };
+}
+
+/* "0원" 은 혜택이 없다는 뜻이라 보여 주지 않는다. */
+export function hasPolicySaving(expectedSaving: string | undefined): boolean {
+  const value = expectedSaving?.trim();
+  return Boolean(value && !value.startsWith("0"));
+}
+
 export function dday(deadline: string | null | undefined) {
   const days = daysUntilPolicyDeadline(deadline);
   if (days === null) return UNKNOWN_DEADLINE_LABEL;

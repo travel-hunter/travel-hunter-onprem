@@ -93,6 +93,9 @@ import {
   readDraft,
   saveDraft,
 } from "../../utils/draftStorage";
+import { REGION_NAMES } from "../../components/map/regionMapEngine";
+import { hasPolicySaving, tripStatus } from "../../utils";
+import { DESKTOP_MEDIA_QUERY } from "../../lib/useMediaQuery";
 import { FriendInvitePanel } from "./FriendInvitePanel";
 import { DraftRestoreNotice } from "./_shared";
 
@@ -182,9 +185,19 @@ function formatStayLabel(dayCount: number): string {
   return `${Math.max(dayCount - 1, 0)}박 ${dayCount}일`;
 }
 
-function hasPolicySaving(expectedSaving: string | undefined): boolean {
-  const value = expectedSaving?.trim();
-  return Boolean(value && !value.startsWith("0"));
+/* 정책 탭에서 이 일정의 시도를 골라 둔 지도로 보낸다. `whole:`·`admin:` id 는 시도를 품고 있고,
+   옛 권역 id(busan-all 등)는 지역 이름 첫 낱말("부산 전체")로 읽는다. 못 읽으면 정책 탭 첫 화면. */
+function tripPoliciesPath(trip: Pick<Trip, "travelAreaId" | "region">): string {
+  let sido: string | undefined;
+  try {
+    sido = /^(?:whole|admin):([^:]+)/.exec(decodeURIComponent(trip.travelAreaId ?? ""))?.[1];
+  } catch {
+    sido = undefined;
+  }
+  sido ??= trip.region.trim().split(/\s+/)[0];
+  return sido && REGION_NAMES.includes(sido)
+    ? `/policies?${new URLSearchParams({ place: sido, sheet: "1" })}`
+    : "/policies";
 }
 
 function linkedTripPoliciesForDisplay(
@@ -221,6 +234,18 @@ function formatDayDateLabel(dates: string, dayNumber: number): string {
   return `${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
 }
 
+type DayEdgeRect = Pick<DOMRect, "left" | "right" | "top" | "height">;
+
+/* 끌기 중 날짜 넘기기 띠의 자리: 세로는 스크롤 틀, 가로는 넓은 화면(1024px~)이면 타임라인 칸.
+   넓은 화면의 스크롤 틀은 창 전체 폭(1440 넘으면 양옆 여백 포함)이고 타임라인 오른쪽에 지도가 있어
+   틀 끝에 띠를 두면 지도를 가로질러 끌어야 다음 날로 넘어갔다 */
+function dayEdgeRect(container: HTMLElement): DayEdgeRect {
+  const box = container.getBoundingClientRect();
+  const lane = document.querySelector<HTMLElement>("[data-itinerary-timeline]")?.getBoundingClientRect();
+  if (!lane || !window.matchMedia?.(DESKTOP_MEDIA_QUERY).matches) return box;
+  return { left: lane.left, right: lane.right, top: box.top, height: box.height };
+}
+
 function parseTripDateInputs(dates: string): { startDate: string; endDate: string } | null {
   const match = /^(\d{4})\.(\d{2})\.(\d{2})\s*-\s*(?:(\d{4})\.)?(\d{2})\.(\d{2})/.exec(dates);
   if (!match) return null;
@@ -238,28 +263,6 @@ function dayCountFromDateInputs(startDate: string, endDate: string): number | nu
   const end = new Date(`${endDate}T00:00:00`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
   return Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
-}
-
-function formatTripDday(dates: string): string {
-  const match = /^(\d{4})\.(\d{2})\.(\d{2})/.exec(dates);
-  if (!match) return "D-day";
-  const start = new Date(
-    Number(match[1]),
-    Number(match[2]) - 1,
-    Number(match[3]),
-  );
-  const today = new Date();
-  const todayDate = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate(),
-  );
-  const diffDays = Math.ceil(
-    (start.getTime() - todayDate.getTime()) / 86_400_000,
-  );
-  if (diffDays > 0) return `D-${diffDays}`;
-  if (diffDays === 0) return "D-day";
-  return `D+${Math.abs(diffDays)}`;
 }
 
 function getPlaceEmoji(place: ItineraryPlace): string {
@@ -2002,7 +2005,7 @@ export function ItineraryDetailPage() {
   const tripRegionEmojiLabel = trip
     ? getTripRegionEmojiFromTitle(trip.title)
     : "🧳";
-  const tripDdayLabel = trip ? formatTripDday(trip.dates) : "D-day";
+  const tripStatusChip = trip ? tripStatus(trip.startDate, trip.endDate) : null;
   const dateEditorDayCount = dateEditor
     ? dayCountFromDateInputs(dateEditor.startDate, dateEditor.endDate)
     : null;
@@ -2463,7 +2466,7 @@ export function ItineraryDetailPage() {
   /* 이동영역 표시를 그린다. 매 포인터 이동마다 리렌더하면 무거우므로
      상태가 아니라 DOM 을 직접 만진다. 색은 쓰지 않고 어둠과 화살표로만 알린다. */
   const paintDayEdges = useCallback(
-    (rect: DOMRect, pointerX: number | null) => {
+    (rect: DayEdgeRect, pointerX: number | null) => {
       const left = dayEdgeLeftRef.current;
       const right = dayEdgeRightRef.current;
       if (!left || !right) return;
@@ -2517,7 +2520,7 @@ export function ItineraryDetailPage() {
     const startContainer = document.querySelector<HTMLElement>(".app-container");
     if (startContainer) {
       paintDayEdges(
-        startContainer.getBoundingClientRect(),
+        dayEdgeRect(startContainer),
         placeDragPointerRef.current?.x ?? null,
       );
     }
@@ -2526,13 +2529,14 @@ export function ItineraryDetailPage() {
       const pointer = placeDragPointerRef.current;
       if (!container) return;
       if (!pointer) {
-        paintDayEdges(container.getBoundingClientRect(), null);
+        paintDayEdges(dayEdgeRect(container), null);
         zone = 0;
         nextAt = 0;
         return;
       }
       const rect = container.getBoundingClientRect();
-      paintDayEdges(rect, pointer.x);
+      const lane = dayEdgeRect(container);
+      paintDayEdges(lane, pointer.x);
 
       /* 자동 스크롤 제동. dnd-kit 은 한 번 시작한 스크롤을 멈출 판정을
          포인터가 멈춰 있는 동안 다시 하지 않는다. 여기서 직접 붙잡는다. */
@@ -2558,8 +2562,8 @@ export function ItineraryDetailPage() {
       }
       const next = resolveDayEdgeZone({
         pointerX: pointer.x,
-        left: rect.left,
-        right: rect.right,
+        left: lane.left,
+        right: lane.right,
       });
       if (next === 0) {
         zone = 0;
@@ -2574,8 +2578,8 @@ export function ItineraryDetailPage() {
       if (Date.now() < nextAt) return;
       const depth = resolveDayEdgeDepth({
         pointerX: pointer.x,
-        left: rect.left,
-        right: rect.right,
+        left: lane.left,
+        right: lane.right,
         zone: next,
       });
       shiftVisibleDay(next);
@@ -2612,7 +2616,11 @@ export function ItineraryDetailPage() {
 
   const openDateEditor = () => {
     if (!trip) return;
-    const parsedDates = parseTripDateInputs(trip.dates);
+    /* 서버가 주는 ISO 날짜를 먼저 쓴다. 보이는 글('2026.12.30 - 01.02')은 끝 날짜에 연도가 없어
+       해를 넘기는 일정이 끝 < 시작으로 읽혔다 */
+    const parsedDates = trip.startDate && trip.endDate
+      ? { startDate: trip.startDate.slice(0, 10), endDate: trip.endDate.slice(0, 10) }
+      : parseTripDateInputs(trip.dates);
     if (!parsedDates) {
       setNotice("현재 여행기간을 읽지 못했어요. 새로고침 후 다시 시도해 주세요.");
       return;
@@ -3928,7 +3936,7 @@ export function ItineraryDetailPage() {
 
   if (isLoading) {
     return (
-      <section className="screen with-tabs prototype-trip-detail-screen">
+      <section className="screen with-tabs prototype-trip-detail-screen desktop-wide">
         <LoadingState label="일정 상세를 불러오는 중입니다" />
       </section>
     );
@@ -3936,7 +3944,7 @@ export function ItineraryDetailPage() {
 
   if (error || !trip) {
     return (
-      <section className="screen with-tabs prototype-trip-detail-screen">
+      <section className="screen with-tabs prototype-trip-detail-screen desktop-wide">
         <ErrorState
           message={error ?? "일정 정보를 찾지 못했어요."}
           action={
@@ -3953,7 +3961,7 @@ export function ItineraryDetailPage() {
     <section
       className={
         [
-          "screen with-tabs prototype-trip-detail-screen",
+          "screen with-tabs prototype-trip-detail-screen desktop-wide",
           canEditTrip ? "" : "readonly-trip",
           isPreviewActive ? "recommendation-preview-active" : "",
         ]
@@ -3971,9 +3979,25 @@ export function ItineraryDetailPage() {
       />
       <div className="prototype-trip-detail-hero">
         <div className="prototype-trip-hero-copy">
-          <span className="prototype-detail-dday-chip">{tripDdayLabel}</span>
+          {tripStatusChip && (
+            <span className={`prototype-detail-dday-chip ${tripStatusChip.tone}`}>
+              {tripStatusChip.label}
+            </span>
+          )}
           <h1>{trip.title}</h1>
-          <p>📅 {trip.dates}</p>
+          <p>
+            📅 {trip.dates}
+            {/* 여행기간 수정 창은 있었는데 여는 버튼이 없었다(2026-09-04 계획서 기록). */}
+            {canEditTrip && (
+              <button
+                className="prototype-trip-hero-dates"
+                onClick={openDateEditor}
+                type="button"
+              >
+                기간 바꾸기
+              </button>
+            )}
+          </p>
         </div>
         <div className="prototype-trip-hero-icon" aria-hidden="true">
           {tripRegionEmojiLabel}
@@ -4116,7 +4140,7 @@ export function ItineraryDetailPage() {
             );
           })
         ) : (
-          <Link className="benefit-banner" to="/policies">
+          <Link className="benefit-banner" to={tripPoliciesPath(trip)}>
             <span className="benefit-banner-icon" aria-hidden="true">
               💴
             </span>
@@ -4129,7 +4153,7 @@ export function ItineraryDetailPage() {
               <div className="meta">
                 {hasLinkedPolicyFallback
                   ? `${trip?.expectedSaving ?? "혜택 확인"} · 정책 목록에서 확인`
-                  : "정책 상세에서 일정을 연결할 수 있어요"}
+                  : "정책 탭에서 혜택을 골라 이 일정에 담을 수 있어요"}
               </div>
             </div>
             <span className="benefit-banner-arrow" aria-hidden="true">
@@ -4143,27 +4167,41 @@ export function ItineraryDetailPage() {
         className="trip-benefit-grid"
         aria-label="이 일정에 어울리는 정책"
       >
-        <h2>💡 이 일정에 어울리는 정책</h2>
+        <h2>
+          💡 이 일정에 어울리는 정책
+          {recommendedPolicies.length > 0 && (
+            <span className="linked-policy-summary">{recommendedPolicies.length}건</span>
+          )}
+        </h2>
+        {/* 담기는 정책 탭에서 한다. 여기는 서버 추천(담기 규칙과 같은 판별) 몇 장과 정책 탭 길만 둔다. */}
         <div className="prototype-matching-policy-rail">
           {recommendedPolicies.length > 0 ? (
-            recommendedPolicies.map((policy) => (
+            <>
+              {recommendedPolicies.map((policy) => (
+                <Link
+                  className="prototype-matching-policy-card"
+                  key={policy.slug}
+                  to={`/policies/${policy.slug}`}
+                >
+                  <div className="matching-card-head">
+                    <span aria-hidden="true">💡</span>
+                    <em>{policy.amount || "정책 확인"}</em>
+                  </div>
+                  <strong>{policy.title}</strong>
+                </Link>
+              ))}
               <Link
-                className="prototype-matching-policy-card"
-                key={policy.slug}
-                to={`/policies/${policy.slug}`}
+                className="prototype-matching-policy-card more"
+                to={tripPoliciesPath(trip)}
               >
-                <div className="matching-card-head">
-                  <span aria-hidden="true">💡</span>
-                  <em>{policy.amount || "정책 확인"}</em>
-                </div>
-                <strong>{policy.title}</strong>
+                <strong>정책 탭에서 더 보기 ›</strong>
               </Link>
-            ))
+            </>
           ) : (
-            <Link className="prototype-matching-policy-card" to="/policies">
+            <Link className="prototype-matching-policy-card" to={tripPoliciesPath(trip)}>
               <div className="matching-card-head">
                 <span aria-hidden="true">💡</span>
-                <em>정책 확인</em>
+                <em>정책 탭에서 찾기</em>
               </div>
               <strong>이 일정에 어울리는 정책이 없어요</strong>
             </Link>
@@ -4819,7 +4857,8 @@ function PrototypeTripMap({
           <polyline
             points={routePoints}
             fill="none"
-            stroke="#ff5e5b"
+            /* 속성값에는 CSS 변수가 안 먹는 브라우저가 있어 style 로 준다 */
+            style={{ stroke: "var(--primary-500)" }}
             strokeWidth=".9"
             strokeDasharray="2.5,1.5"
             opacity=".85"

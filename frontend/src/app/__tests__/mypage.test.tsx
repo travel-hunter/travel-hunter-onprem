@@ -21,7 +21,7 @@ import {
   examplePolicyPath,
   examplePolicySlug,
   examplePolicyTitle,
-  getPreviewTrip,
+  getUpcomingPreviewTrip,
   getPreviewUser,
   testEmail,
 } from "../../test/fixtures";
@@ -166,7 +166,7 @@ describe("Travel Hunter app — my page", () => {
       const savedSummary = await screen.findByLabelText("나의 활동 요약");
       const favoritePolicyStat = within(savedSummary)
         .getByText("즐겨찾기")
-        .closest(".prototype-stat-card") as HTMLElement;
+        .closest(".mp-stat") as HTMLElement;
       await waitFor(() =>
         expect(within(favoritePolicyStat).getByText("1")).toBeInTheDocument(),
       );
@@ -182,7 +182,7 @@ describe("Travel Hunter app — my page", () => {
       const updatedSummary = await screen.findByLabelText("나의 활동 요약");
       const updatedFavoritePolicyStat = within(updatedSummary)
         .getByText("즐겨찾기")
-        .closest(".prototype-stat-card") as HTMLElement;
+        .closest(".mp-stat") as HTMLElement;
       await waitFor(() =>
         expect(within(updatedFavoritePolicyStat).getByText("0")).toBeInTheDocument(),
       );
@@ -200,60 +200,40 @@ describe("Travel Hunter app — my page", () => {
     cleanup();
     renderAppRoute("/mypage");
     await waitFor(() => expect(getLink(examplePolicyPath)).toBeInTheDocument());
-    expect(screen.getAllByText("마이").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("내 정보").length).toBeGreaterThan(0);
     expect(screen.queryByText("프로필")).not.toBeInTheDocument();
     expect(screen.getByText("내 일정")).toBeInTheDocument();
     expect(screen.getByText("즐겨찾기")).toBeInTheDocument();
-    expect(screen.getByText("신청 정책")).toBeInTheDocument();
+    // 앱이 세는 것은 일정에 담은 혜택이라 '신청 정책' 대신 '담은 혜택'(시안 v49)
+    expect(screen.getByText("담은 혜택")).toBeInTheDocument();
+    expect(screen.queryByText("신청 정책")).not.toBeInTheDocument();
     expect(screen.getByText(/즐겨찾기 정책/)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /알림 설정/ }),
     ).not.toBeInTheDocument();
-    expect(document.querySelector(".ds-profile-panel")).toBeTruthy();
-    expect(
-      document.querySelector(".prototype-profile-badge"),
-    ).toHaveTextContent("🧳");
-    expect(document.querySelector(".prototype-mypage-screen")).toHaveClass(
-      "prototype-mypage-screen",
-    );
-    expect(document.querySelector(".ds-settings-menu")).toBeTruthy();
+    // 이모지 대신 닉네임 첫 글자(홈 머리와 같다)
+    const avatar = document.querySelector(".mp-avatar");
+    expect(avatar?.textContent?.trim()).toHaveLength(1);
+    expect(avatar).not.toHaveTextContent("🧳");
+    expect(document.querySelector(".prototype-mypage-screen")).toHaveClass("mp-screen");
     const settingsMenu = document.querySelector(".ds-settings-menu") as HTMLElement;
+    // 로그아웃은 보통 줄, 회원 탈퇴는 설정 줄이 아니라 맨 아래 작은 글자
     expect(within(settingsMenu).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual([
-      "공지사항 / FAQ›",
-      "이용약관›",
-      "개인정보처리방침›",
-      "비밀번호 관리›",
-      "회원 탈퇴›",
-      "로그아웃›",
+      "공지사항 / FAQ",
+      "이용약관",
+      "개인정보처리방침",
+      "비밀번호 관리",
+      "로그아웃",
     ]);
-    const favoriteCard = document.querySelector(".ds-favorite-policy-card");
-    expect(favoriteCard).toBeTruthy();
-    expect(
-      favoriteCard
-        ?.querySelector(".ds-favorite-policy-thumb")
-        ?.textContent?.trim(),
-    ).toMatch(/[🚌🛏️🗺️💸🎊📌]/);
-    expect(
-      favoriteCard
-        ?.querySelector(".ds-favorite-policy-thumb")
-        ?.textContent?.trim(),
-    ).not.toBe("혜");
-    expect(
-      favoriteCard?.querySelector(".ds-favorite-policy-copy"),
-    ).toBeTruthy();
-    expect(
-      within(favoriteCard as HTMLElement).getByRole("button", {
-        name: "저장 해제",
-      }),
-    ).toHaveClass("ds-favorite-policy-remove");
-    const menuIcons = [
-      ...document.querySelectorAll(".prototype-menu-icon"),
-    ].map((icon) => icon.textContent?.trim() ?? "");
-    expect(menuIcons).toEqual(["", "", "", "", "", ""]);
+    expect(screen.getByRole("button", { name: "회원 탈퇴" })).toHaveClass("mp-quit");
+    const favoriteRow = document.querySelector("#my-favorites .mp-pol");
+    expect(favoriteRow).toBeTruthy();
+    expect(favoriteRow?.querySelector(".benefit-tile")).toBeTruthy();
+    expect(favoriteRow?.querySelector(".mp-dday")).toBeTruthy();
 
     await userEvent.setup().click(
-      within(favoriteCard as HTMLElement).getByRole("button", {
-        name: "저장 해제",
+      within(favoriteRow as HTMLElement).getByRole("button", {
+        name: `${examplePolicyTitle} 즐겨찾기 해제`,
       }),
     );
 
@@ -309,12 +289,10 @@ describe("Travel Hunter app — my page", () => {
         ).toBeInTheDocument(),
       );
       expect(
-        screen.getByText(
-          "관심 있는 혜택의 하트를 눌러두면 여기에서 다시 확인할 수 있어요.",
-        ),
+        screen.getByText("혜택 상세에서 하트를 누르면 여기에 모여요."),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("link", { name: "정책 보러가기" }),
+        screen.getByRole("link", { name: "정책 보러 가기" }),
       ).toHaveAttribute("href", "/policies");
       expect(
         document.querySelector(`a[href="${examplePolicyPath}"]`),
@@ -336,19 +314,19 @@ describe("Travel Hunter app — my page", () => {
       renderAppRoute("/mypage");
 
       await waitFor(() =>
-        expect(document.querySelector(".ds-favorite-policy-card")).toBeTruthy(),
+        expect(document.querySelector("#my-favorites .mp-pol")).toBeTruthy(),
       );
       expect(
-        document.querySelectorAll(".ds-favorite-policy-card"),
+        document.querySelectorAll("#my-favorites .mp-pol"),
       ).toHaveLength(1);
-      expect(screen.getByText("즐겨찾기 정책 (1)")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "즐겨찾기 정책 1" })).toBeInTheDocument();
     } finally {
       listSavedPoliciesSpy.mockRestore();
     }
   });
 
   it("refreshes the my page applied policy summary after policy linking on another route", async () => {
-    const trip = getPreviewTrip();
+    const trip = getUpcomingPreviewTrip();
     const user = userEvent.setup();
 
     await login();
@@ -357,18 +335,19 @@ describe("Travel Hunter app — my page", () => {
     const listSavedPoliciesSpy = vi
       .spyOn(appDataApi, "listSavedPolicies")
       .mockResolvedValue([]);
+    // 담은 혜택은 서버 목록으로 센다 - 담은 뒤에는 서버가 그 정책을 돌려준다
+    let linked = false;
     const listAppliedPoliciesSpy = vi
       .spyOn(appDataApi, "listAppliedPolicies")
-      .mockResolvedValue([]);
+      .mockImplementation(async () => (linked ? [examplePolicyDetail] : []));
     const listTripsSpy = vi
       .spyOn(appDataApi, "listTrips")
       .mockResolvedValue([trip]);
     const addPolicyToTripSpy = vi
       .spyOn(appDataApi, "addPolicyToTrip")
-      .mockResolvedValue({
-        tripId: trip.id,
-        policyId: examplePolicySlug,
-        added: true,
+      .mockImplementation(async () => {
+        linked = true;
+        return { tripId: trip.id, policyId: examplePolicySlug, added: true };
       });
 
     try {
@@ -395,8 +374,8 @@ describe("Travel Hunter app — my page", () => {
 
       const summary = await screen.findByLabelText("나의 활동 요약");
       const appliedPolicyStat = within(summary)
-        .getByText("신청 정책")
-        .closest(".prototype-stat-card") as HTMLElement;
+        .getByText("담은 혜택")
+        .closest(".mp-stat") as HTMLElement;
       await waitFor(() =>
         expect(within(appliedPolicyStat).getByText("1")).toBeInTheDocument(),
       );
@@ -410,7 +389,7 @@ describe("Travel Hunter app — my page", () => {
 
   it("removes trip detail unlinked policies from the my page applied summary", async () => {
     const trip: Trip = {
-      ...getPreviewTrip(),
+      ...getUpcomingPreviewTrip(),
       linkedPolicies: [],
     };
     const user = userEvent.setup();
@@ -484,8 +463,8 @@ describe("Travel Hunter app — my page", () => {
 
       const summary = await screen.findByLabelText("나의 활동 요약");
       const appliedPolicyStat = within(summary)
-        .getByText("신청 정책")
-        .closest(".prototype-stat-card") as HTMLElement;
+        .getByText("담은 혜택")
+        .closest(".mp-stat") as HTMLElement;
       await waitFor(() =>
         expect(within(appliedPolicyStat).getByText("0")).toBeInTheDocument(),
       );
@@ -504,7 +483,7 @@ describe("Travel Hunter app — my page", () => {
     renderAppRoute("/mypage");
 
     await waitFor(() =>
-      expect(screen.getAllByText("마이").length).toBeGreaterThan(0),
+      expect(screen.getAllByText("내 정보").length).toBeGreaterThan(0),
     );
     expect(
       screen.queryByRole("button", { name: /알림 설정/ }),
@@ -523,7 +502,7 @@ describe("Travel Hunter app — my page", () => {
     const user = userEvent.setup();
 
     await waitFor(() =>
-      expect(screen.getAllByText("마이").length).toBeGreaterThan(0),
+      expect(screen.getAllByText("내 정보").length).toBeGreaterThan(0),
     );
 
     await user.click(screen.getByRole("button", { name: /공지사항 \/ FAQ/ }));
@@ -572,17 +551,27 @@ describe("Travel Hunter app — my page", () => {
       .mockResolvedValue(nextUser);
     let getCurrentUserSpy: { mockRestore: () => void } | null = null;
 
+    let getProfileSpy: { mockRestore: () => void } | null = null;
+
     try {
       await login();
       cleanup();
+      // 서버 프로필 응답을 붙잡아 둔다 - 오기 전엔 편집을 못 열고(빈 자리값으로 저장돼 지워지지 않게), 온 뒤의 값에서 시작한다
+      const heldProfiles: Array<(profile: { preferredRegions: string[]; style: string; budget: string }) => void> = [];
+      getProfileSpy = vi
+        .spyOn(appDataApi, "getProfile")
+        .mockImplementation(() => new Promise((resolve) => { heldProfiles.push(resolve); }));
       renderAppRoute("/mypage");
       const user = userEvent.setup();
 
-      await user.click(await screen.findByRole("button", { name: "편집" }));
+      const editButton = await screen.findByRole("button", { name: "편집" });
+      expect(editButton).toBeDisabled();
+      await waitFor(() => expect(heldProfiles.length).toBeGreaterThan(0));
+      heldProfiles.forEach((resolve) => resolve({ preferredRegions: ["부산"], style: "맛집", budget: "1인 30만원 이하" }));
+      await waitFor(() => expect(editButton).toBeEnabled());
+      await user.click(editButton);
       const dialog = screen.getByRole("dialog", { name: "프로필 편집" });
       expect(dialog).toBeInTheDocument();
-      const preferencePreview = within(dialog).getByLabelText("현재 추천 기준");
-      expect(preferencePreview).toBeInTheDocument();
       const nicknameInput = within(dialog).getByRole("textbox", {
         name: "닉네임",
       });
@@ -594,18 +583,17 @@ describe("Travel Hunter app — my page", () => {
         .mockResolvedValue(nextUser);
 
       const regionButton = await within(dialog).findByRole("button", { name: targetRegion });
-      expect(regionButton).toHaveClass("preferred-region-card");
-      expect(regionButton.closest(".preferred-region-grid")).toBeTruthy();
+      expect(regionButton).toHaveClass("pe-chip");
       await user.click(regionButton);
-      expect(preferencePreview).toHaveTextContent(targetRegion);
+      expect(regionButton).toHaveAttribute("aria-pressed", "true");
       const styleButton = within(dialog).getByRole("button", { name: nextProfile.style });
-      expect(styleButton).toHaveClass("preference-choice-card");
+      expect(styleButton).toHaveClass("pe-chip");
       await user.click(styleButton);
       const budgetButton = within(dialog).getByRole("button", { name: nextProfile.budget });
-      expect(budgetButton).toHaveClass("preference-choice-card");
+      expect(budgetButton).toHaveClass("pe-chip");
       await user.click(budgetButton);
       await user.click(
-        within(dialog).getByRole("button", { name: "저장하기" }),
+        within(dialog).getByRole("button", { name: "저장" }),
       );
 
       await waitFor(() =>
@@ -613,8 +601,13 @@ describe("Travel Hunter app — my page", () => {
           nickname: nextUser.nickname,
         }),
       );
+      // 서버 프로필(부산)에 고른 지역이 더해진다 - 빈 초안으로 덮으면 ["강원"] 만 남는다
       await waitFor(() =>
-        expect(updateProfileSpy).toHaveBeenCalledWith(nextProfile),
+        expect(updateProfileSpy).toHaveBeenCalledWith({
+          preferredRegions: ["부산", targetRegion],
+          style: nextProfile.style,
+          budget: nextProfile.budget,
+        }),
       );
       await waitFor(() =>
         expect(
@@ -626,6 +619,7 @@ describe("Travel Hunter app — my page", () => {
     } finally {
       updateNicknameSpy.mockRestore();
       getCurrentUserSpy?.mockRestore();
+      getProfileSpy?.mockRestore();
       updateProfileSpy.mockRestore();
     }
   });
@@ -643,7 +637,10 @@ describe("Travel Hunter app — my page", () => {
       renderAppRoute("/mypage");
       const user = userEvent.setup();
 
-      await user.click(await screen.findByRole("button", { name: "편집" }));
+      // 서버 프로필을 받기 전엔 편집을 못 연다(빈 자리값으로 저장돼 지워지지 않게) - 켜질 때까지 기다린다
+      const editButton = await screen.findByRole("button", { name: "편집" });
+      await waitFor(() => expect(editButton).toBeEnabled());
+      await user.click(editButton);
       const dialog = screen.getByRole("dialog", { name: "프로필 편집" });
       const nicknameInput = within(dialog).getByRole("textbox", {
         name: "닉네임",
@@ -652,7 +649,7 @@ describe("Travel Hunter app — my page", () => {
       await user.clear(nicknameInput);
       await user.type(nicknameInput, "가");
       await user.click(
-        within(dialog).getByRole("button", { name: "저장하기" }),
+        within(dialog).getByRole("button", { name: "저장" }),
       );
       expect(
         await within(dialog).findByText(
@@ -663,7 +660,7 @@ describe("Travel Hunter app — my page", () => {
       expect(updateProfileSpy).not.toHaveBeenCalled();
 
       await user.click(
-        within(dialog).getByRole("button", { name: "랜덤 닉네임 추천" }),
+        within(dialog).getByRole("button", { name: "추천 받기" }),
       );
       await waitFor(() => expect(nicknameInput).toHaveValue("반짝여행자123"));
     } finally {
@@ -684,10 +681,13 @@ describe("Travel Hunter app — my page", () => {
       renderAppRoute("/mypage");
       const user = userEvent.setup();
 
-      await user.click(await screen.findByRole("button", { name: "편집" }));
+      // 서버 프로필을 받기 전엔 편집을 못 연다(빈 자리값으로 저장돼 지워지지 않게) - 켜질 때까지 기다린다
+      const editButton = await screen.findByRole("button", { name: "편집" });
+      await waitFor(() => expect(editButton).toBeEnabled());
+      await user.click(editButton);
       const dialog = screen.getByRole("dialog", { name: "프로필 편집" });
       await user.click(
-        within(dialog).getByRole("button", { name: "랜덤 닉네임 추천" }),
+        within(dialog).getByRole("button", { name: "추천 받기" }),
       );
 
       expect(
@@ -702,7 +702,7 @@ describe("Travel Hunter app — my page", () => {
 
   it("shows one trip title in the my page trip summary", async () => {
     const trip: Trip = {
-      ...getPreviewTrip(),
+      ...getUpcomingPreviewTrip(),
       id: "101",
       title: "부산 맛집 여행",
     };
@@ -722,7 +722,7 @@ describe("Travel Hunter app — my page", () => {
       );
       const tripStat = within(summary)
         .getByText("내 일정")
-        .closest(".prototype-stat-card");
+        .closest(".mp-stat");
       expect(tripStat).not.toBeNull();
       await waitFor(() =>
         expect(
@@ -736,9 +736,9 @@ describe("Travel Hunter app — my page", () => {
 
   it("shows the trip count in the my page stats", async () => {
     const trips: Trip[] = [
-      { ...getPreviewTrip(), id: "101", title: "부산 맛집 여행" },
-      { ...getPreviewTrip(), id: "102", title: "강원 2일 여행" },
-      { ...getPreviewTrip(), id: "103", title: "제주 3일 여행" },
+      { ...getUpcomingPreviewTrip(), id: "101", title: "부산 맛집 여행" },
+      { ...getUpcomingPreviewTrip(), id: "102", title: "강원 2일 여행" },
+      { ...getUpcomingPreviewTrip(), id: "103", title: "제주 3일 여행" },
     ];
 
     await login();
@@ -756,7 +756,7 @@ describe("Travel Hunter app — my page", () => {
       );
       const tripStat = within(summary)
         .getByText("내 일정")
-        .closest(".prototype-stat-card");
+        .closest(".mp-stat");
       expect(tripStat).not.toBeNull();
       await waitFor(() =>
         expect(
@@ -819,8 +819,8 @@ describe("Travel Hunter app — my page", () => {
 
       const summary = await screen.findByLabelText("나의 활동 요약");
       const appliedPolicyStat = within(summary)
-        .getByText("신청 정책")
-        .closest(".prototype-stat-card") as HTMLElement;
+        .getByText("담은 혜택")
+        .closest(".mp-stat") as HTMLElement;
       expect(appliedPolicyStat).toBeTruthy();
       await waitFor(() =>
         expect(within(appliedPolicyStat).getByText("2")).toBeInTheDocument(),
@@ -846,7 +846,7 @@ describe("Travel Hunter app — my page", () => {
       );
       const tripStat = within(summary)
         .getByText("내 일정")
-        .closest(".prototype-stat-card");
+        .closest(".mp-stat");
       expect(tripStat).not.toBeNull();
       await waitFor(() =>
         expect(
@@ -874,13 +874,13 @@ describe("Travel Hunter app — my page", () => {
       const passwordButton = within(settingsMenu).getByRole("button", {
         name: /비밀번호 관리/,
       });
-      const withdrawalButton = within(settingsMenu).getByRole("button", {
-        name: /회원 탈퇴/,
-      });
+      // 회원 탈퇴는 설정 줄 밖, 맨 아래 작은 글자(시안 v49) - 빨강은 탈퇴 창 안에서만
+      expect(within(settingsMenu).queryByRole("button", { name: /회원 탈퇴/ })).not.toBeInTheDocument();
+      const withdrawalButton = screen.getByRole("button", { name: "회원 탈퇴" });
 
-      expect(passwordButton).toHaveClass("prototype-menu-row");
+      expect(passwordButton).toHaveClass("mp-row");
       expect(passwordButton).not.toHaveClass("danger");
-      expect(withdrawalButton).toHaveClass("prototype-menu-row", "danger");
+      expect(withdrawalButton).toHaveClass("mp-quit");
       expect(screen.queryByRole("region", { name: "비밀번호 관리" })).not.toBeInTheDocument();
       expect(screen.queryByRole("region", { name: "회원 탈퇴" })).not.toBeInTheDocument();
       expect(screen.queryByRole("dialog", { name: "비밀번호 관리" })).not.toBeInTheDocument();

@@ -1,10 +1,14 @@
 :root {
   --font-sans: Inter, Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
-  --primary-700: #c73532;
-  --primary-600: #e84845;
-  --primary-500: #ff5e5b;
-  --primary-100: #ffe5e4;
-  --primary-50: #fff5f4;
+  /* 주색 청록(2026-09-30 사용자 결정, 시안 v40). 500 은 버튼 바탕·강조 글자 - 흰 글자 5.5:1.
+     반투명이 필요하면 rgba(var(--primary-rgb), a). 코랄은 로고·작은 점에만 --color-brand 로 남긴다. */
+  --primary-700: #094c47;
+  --primary-600: #0b5f58;
+  --primary-500: #0f766e;
+  --primary-100: #ccece6;
+  --primary-50: #f0faf8;
+  --primary-rgb: 15, 118, 110;
+  --color-brand: #e84845;
   --secondary-600: #d9365b;
   --secondary-500: #ff4b6e;
   --secondary-100: #fff0f4;

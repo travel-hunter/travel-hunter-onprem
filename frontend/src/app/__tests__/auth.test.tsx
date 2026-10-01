@@ -43,10 +43,11 @@ describe("Travel Hunter app — auth & routing", () => {
       screen.getByRole("link", { name: "구글로 시작하기" }),
     ).toBeInTheDocument();
     expect(document.querySelector(".ds-auth-form-shell")).toBeTruthy();
-    expect(document.querySelector(".brand-mark-compass")).toBeTruthy();
-    expect(
-      document.querySelector(".prototype-login-logo"),
-    ).not.toHaveTextContent("TH");
+    // 시안 v49: 로고 칸 대신 여행 사진 한 장 + 브랜드 글자. 사진 출처는 사진에 붙고, 가입·찾기 입구가 보인다
+    expect(document.querySelector(".lg-photo")).toBeTruthy();
+    expect(document.querySelector(".lg-credit")).toHaveTextContent("CC BY");
+    expect(screen.getByRole("button", { name: "회원가입" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "비밀번호 찾기" })).toBeInTheDocument();
     expect(document.querySelector("main")).toHaveClass(
       "prototype-login-layout",
     );

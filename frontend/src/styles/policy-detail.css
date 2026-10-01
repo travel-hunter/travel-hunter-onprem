@@ -1,0 +1,706 @@
+/* 정책 상세(시안 v27) - components/policyDetailParts.tsx 와 PolicyDetailPage 의 아래 버튼 줄.
+   색은 토큰만 쓴다(주색 청록, 브랜드 코랄은 '오늘' 표식에만). app.css 뒤에 읽히므로 같은 세기로 덮는다. */
+
+/* 상세에서는 탭바를 가리고 그 자리에 버튼 줄을 둔다(새 일정 만들기와 같은 방식) */
+.service-layout:has(.prototype-policy-detail-screen) .bottom-tabs {
+  display: none;
+}
+
+/* .screen.detail 의 overflow: hidden 은 스크롤 상자를 새로 만들어 아래 버튼 줄의 sticky 를 죽인다.
+   clip 은 모서리만 자르고 스크롤 상자를 만들지 않는다. 내용이 짧아도 버튼 줄이 바닥에 붙게 세로 flex */
+.prototype-policy-detail-screen.screen.detail {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+  /* 한글이 음절마다 끊기지 않게("환급받 / 을") 낱말 단위로 줄을 바꾼다. 긴 주소·링크는 아래 anywhere 가 쪼갠다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.prototype-policy-detail-screen .policy-detail-hero {
+  height: 212px;
+  min-height: 212px;
+  background-color: var(--gray-100);
+  background-position: center;
+  background-size: cover;
+}
+
+/* 전국 공통처럼 지역 사진이 없으면 가운데 큰 그림 칸 */
+.prototype-policy-detail-screen .policy-detail-hero > .benefit-tile {
+  width: 88px;
+  height: 88px;
+  border-radius: 24px;
+}
+
+.prototype-policy-detail-screen .policy-detail-hero > .benefit-tile svg {
+  width: 50px;
+  height: 50px;
+  stroke-width: 1.5;
+}
+
+.prototype-policy-detail-screen .overlay-nav .icon-btn {
+  width: 44px;
+  height: 44px;
+}
+
+.prototype-policy-detail-screen .policy-detail-head {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 4px;
+}
+
+.policy-detail-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--gray-600);
+  font-size: 14px;
+}
+
+.policy-detail-eyebrow b {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.prototype-policy-detail-screen .policy-detail-head h1 {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.policy-detail-org {
+  margin: 0;
+  color: var(--gray-600);
+  font-size: 13px;
+}
+
+.policy-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.policy-detail-kind,
+.policy-detail-dday {
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--gray-100);
+  color: var(--gray-700);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.policy-detail-dday.urgent {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+  font-weight: 700;
+}
+
+.policy-detail-ended {
+  display: grid;
+  gap: 2px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--gray-100);
+  color: var(--gray-700);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.policy-detail-ended b {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.policy-detail-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 16px 0 0;
+  border-top: 1px solid var(--gray-200);
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.policy-detail-facts.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.policy-detail-facts > div {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 8px 12px 0;
+}
+
+.policy-detail-facts > div + div {
+  padding-left: 12px;
+  border-left: 1px solid var(--gray-200);
+}
+
+.policy-detail-facts dt {
+  color: var(--gray-600);
+  font-size: 12px;
+}
+
+.policy-detail-facts dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  /* 세 칸이 좁아 "마감"이 "마 / 감"으로 갈렸다. 낱말 단위로 줄을 바꾸고, 긴 낱말만 쪼갠다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.policy-detail-facts dd.amount {
+  color: var(--primary-500);
+}
+
+.policy-detail-section {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.prototype-policy-detail-screen .policy-detail-section h2 {
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.prototype-policy-detail-screen .policy-detail-section h3 {
+  margin: 14px 0 8px;
+  color: var(--gray-600);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.policy-detail-p {
+  margin: 0 0 8px;
+  color: var(--gray-700);
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+
+.policy-detail-p b {
+  color: var(--ink);
+}
+
+.policy-detail-list,
+.policy-detail-steps,
+.policy-detail-picks {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.policy-detail-list {
+  gap: 8px;
+}
+
+.policy-detail-list li {
+  position: relative;
+  padding-left: 14px;
+  color: var(--gray-700);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.policy-detail-list li::before {
+  position: absolute;
+  top: 0.68em;
+  left: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gray-300);
+  content: "";
+}
+
+.policy-detail-list.strong li {
+  color: var(--ink);
+}
+
+.policy-detail-list.muted li {
+  color: var(--gray-600);
+  font-size: 13.5px;
+}
+
+.policy-detail-steps {
+  gap: 10px;
+  counter-reset: policy-step;
+}
+
+.policy-detail-steps li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  color: var(--gray-700);
+  font-size: 14.5px;
+  line-height: 1.5;
+  counter-increment: policy-step;
+}
+
+.policy-detail-steps li::before {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--primary-50);
+  color: var(--primary-500);
+  font-size: 12.5px;
+  font-weight: 700;
+  content: counter(policy-step);
+}
+
+.policy-detail-picks li + li {
+  border-top: 1px dashed var(--gray-200);
+}
+
+.policy-detail-pick {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 18px;
+  align-items: start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 0;
+  color: inherit;
+}
+
+.policy-detail-picks li:first-child .policy-detail-pick {
+  padding-top: 2px;
+}
+
+.policy-detail-pick:active {
+  background: var(--gray-50);
+}
+
+.policy-detail-pick > svg {
+  margin-top: 3px;
+  color: var(--gray-500);
+}
+
+.pick-category {
+  margin-top: 1px;
+  padding: 2px 0;
+  border-radius: 8px;
+  background: var(--gray-100);
+  color: var(--gray-700);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.pick-body {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  font-size: 14.5px;
+}
+
+.pick-benefit {
+  color: var(--primary-500);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.pick-note {
+  color: var(--gray-600);
+  font-size: 13px;
+}
+
+.policy-detail-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 8px;
+  padding: 0 14px;
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  background: var(--white);
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.policy-detail-link > svg {
+  flex: none;
+  color: var(--gray-500);
+}
+
+.policy-detail-ok {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  color: var(--status-confirmed-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.policy-detail-miss {
+  margin: 0;
+  color: var(--gray-600);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.policy-detail-miss a,
+.policy-detail-source a {
+  color: var(--primary-500);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.policy-detail-standard {
+  margin: 10px 0 0;
+  color: var(--gray-600);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.policy-detail-source {
+  margin: 0;
+  padding: 16px 0 8px;
+  color: var(--gray-600);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+/* 기간 막대: 오늘을 세로선으로. 날짜 글은 막대 아래에 따로 적어 막대 없이도 읽힌다 */
+.policy-timeline {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  padding-top: 22px;
+}
+
+.policy-timeline-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 0;
+}
+
+.policy-timeline-label {
+  color: var(--gray-700);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.policy-timeline-track {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--gray-100);
+}
+
+.policy-timeline-track i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 5px;
+  background: var(--primary-500);
+  opacity: 0.75;
+}
+
+.policy-timeline-dates {
+  grid-column: 2;
+  color: var(--gray-600);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.policy-timeline-today {
+  position: absolute;
+  top: 0;
+  bottom: 18px;
+  width: 0;
+  border-left: 2px solid var(--color-brand);
+}
+
+/* '오늘' 표시는 브랜드 코랄(작은 점·표식에만 쓰는 색) */
+.policy-timeline-today b {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--color-brand);
+  color: var(--white);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.policy-timeline-today.right b {
+  border-radius: 8px 0 8px 8px;
+  transform: translateX(-100%);
+}
+
+.policy-timeline-today.left b {
+  border-radius: 0 8px 8px 8px;
+  transform: none;
+}
+
+/* 아래 버튼 줄: 공식 안내(조용한 보조) + 내 일정에 담기(주 버튼 하나) */
+.prototype-policy-detail-screen .policy-detail-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: auto 0 0;
+  padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--gray-200);
+  background: var(--white);
+}
+
+.prototype-policy-detail-screen .policy-detail-bar .toast,
+.prototype-policy-detail-screen .policy-detail-bar .helper-text {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.policy-detail-primary,
+.policy-detail-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 52px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.policy-detail-primary {
+  flex: 1 1 160px;
+  background: var(--color-action-primary);
+  color: var(--white);
+}
+
+.policy-detail-primary:hover:not(:disabled) {
+  background: var(--color-action-primary-hover);
+}
+
+.policy-detail-primary:disabled {
+  background: var(--gray-200);
+  color: var(--gray-600);
+  cursor: default;
+}
+
+.policy-detail-secondary {
+  flex: 0 1 auto;
+  padding: 0 16px;
+  border: 1px solid var(--gray-300);
+  background: var(--white);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.policy-detail-secondary:disabled {
+  color: var(--gray-500);
+  cursor: default;
+}
+
+.policy-detail-primary:focus-visible,
+.policy-detail-secondary:focus-visible,
+.policy-detail-link:focus-visible,
+.policy-detail-pick:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* 일정 담기 창: 담기를 서버가 거절하면(지역 불일치·숙박 할인 중복) 그 일정 줄 바로 아래에 까닭을 적는다 */
+.trip-select-row .trip-select-linked {
+  margin-left: 6px;
+  color: var(--gray-500);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.trip-select-item {
+  display: grid;
+  gap: 6px;
+}
+
+.trip-select-row-error {
+  margin: 0 2px;
+  color: var(--status-danger-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+@media (min-width: 768px) {
+  .prototype-policy-detail-screen .policy-detail-hero {
+    height: 260px;
+    min-height: 260px;
+  }
+}
+
+/* 넓은 화면(1024px 이상, 시안 v41 '큰 상세'). PolicyDetailPage 가 useIsDesktop() 일 때만 .policy-detail-desk 로 그린다:
+   왼쪽 본문 카드(위 줄·사진·머리·절들) + 오른쪽 고정 카드(받는 것·기간·받는 방법 + 담기). 담기 창은 가운데 창. */
+@media (min-width: 1024px) {
+  .prototype-policy-detail-screen.screen.detail.policy-detail-desk {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(300px, 32.2%, 480px);
+    align-items: start;
+    gap: 28px;
+    /* app.css 의 900px 이상 '.screen.detail { max-width: 920px }' 를 풀고, 시안 비율대로 화면의 87.5% 판(옆 여백 32px)에 모은다.
+       회색 바탕은 화면 끝까지 - 판은 padding 으로 만든다(padding 의 % 는 화면 폭 기준) */
+    max-width: none;
+    margin: 0;
+    padding: 20px calc(6.25% + 32px) 48px;
+    border: 0;
+    border-radius: 0;
+    background: var(--gray-50);
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .policy-detail-main {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--gray-200);
+    border-radius: 18px;
+    background: var(--white);
+  }
+
+  .policy-detail-toprow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 12px 8px;
+  }
+
+  .policy-detail-toptitle {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--gray-600);
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .policy-detail-toprow .icon-btn {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--gray-700);
+  }
+
+  .policy-detail-toprow .icon-btn:hover:not(:disabled) {
+    background: var(--gray-100);
+  }
+
+  .prototype-policy-detail-screen.policy-detail-desk .policy-detail-hero {
+    height: 300px;
+    min-height: 300px;
+    margin: 0 20px;
+    border-radius: 14px;
+  }
+
+  .prototype-policy-detail-screen.policy-detail-desk .detail-body {
+    padding: 22px 28px 8px;
+  }
+
+  .prototype-policy-detail-screen.policy-detail-desk .policy-detail-head h1 {
+    font-size: 28px;
+  }
+
+  /* 오른쪽 고정 카드: 스크롤 상자는 .app-container 라 그 안에서 붙는다 */
+  .policy-detail-side {
+    position: sticky;
+    top: 20px;
+    min-width: 0;
+  }
+
+  .policy-detail-card {
+    overflow: hidden;
+    border: 1px solid var(--gray-200);
+    border-radius: 18px;
+    background: var(--white);
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+  }
+
+  .policy-detail-card .policy-detail-facts,
+  .policy-detail-card .policy-detail-facts.two {
+    grid-template-columns: minmax(0, 1fr);
+    margin: 0;
+    border: 0;
+  }
+
+  .policy-detail-card .policy-detail-facts > div {
+    padding: 14px 18px;
+  }
+
+  .policy-detail-card .policy-detail-facts > div + div {
+    padding-left: 18px;
+    border-left: 0;
+    border-top: 1px solid var(--gray-200);
+  }
+
+  .policy-detail-card .policy-detail-facts dd {
+    font-size: 16px;
+  }
+
+  /* 주 버튼이 위, 공식 안내가 아래(DOM 은 보조 → 주 순서라 뒤집는다). 알림·도움말은 버튼 아래 */
+  .policy-detail-side-actions {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 8px;
+    padding: 16px 18px 18px;
+    border-top: 1px solid var(--gray-200);
+  }
+
+  .policy-detail-side-actions .policy-detail-primary,
+  .policy-detail-side-actions .policy-detail-secondary {
+    flex: none;
+    width: 100%;
+  }
+
+  .policy-detail-side-actions .toast,
+  .policy-detail-side-actions .helper-text {
+    margin: 0;
+  }
+
+  /* 일정 담기 창: 아래에서 올라오는 시트 대신 가운데 창. 정책 탭 패널 상세는 창을 body 로 띄우며 .policy-trip-window 로 감싼다 */
+  .policy-detail-desk .sheet-backdrop,
+  .policy-trip-window .sheet-backdrop {
+    align-items: center;
+    justify-items: center;
+    padding: 24px;
+  }
+
+  .policy-detail-desk .trip-select-sheet,
+  .policy-trip-window .trip-select-sheet {
+    width: min(100%, 440px);
+    max-height: min(80dvh, 640px);
+    padding: 20px;
+    border-radius: 18px;
+    box-shadow: 0 22px 70px rgba(15, 23, 42, 0.24);
+  }
+}

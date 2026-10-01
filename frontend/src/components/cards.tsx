@@ -1,16 +1,18 @@
-import { Heart } from "lucide-react";
+import { Heart, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Policy, Trip } from "../api";
 import { getPolicyMoodIcon, getPolicyMoodTone, getPolicyPhoto, getTripRegionEmojiFromTitle } from "../data/displayConfig";
 import { PolicyThumbPhoto } from "./policyPhoto";
-import { formatPolicyDeadlineTag, formatPolicyPeriodSummary } from "../utils";
+import { formatPolicyDeadlineTag, formatPolicyPeriodSummary, hasPolicySaving, isDigitalTourismResidentCardPolicy, tripStatus, type TripStatus } from "../utils";
 import { canUsePolicyActions } from "../utils/policyCapabilities";
 import { SurfaceCard, Tag } from "./ui";
 
 function compactPolicyPeriod(policy: Policy) {
   return formatPolicyPeriodSummary(policy);
 }
+
+const TRIP_STATUS_TONE = { past: "gray", now: "green", urgent: "danger", soon: "primary" } as const satisfies Record<TripStatus["tone"], string>;
 
 function tripRegionEmoji(trip: Trip) {
   return getTripRegionEmojiFromTitle(trip.title);
@@ -69,7 +71,8 @@ export function PolicyListCard({
           <div className="policy-list-badges">
             {/* 카드에는 승인·검증된 문구만. 없으면 알약을 그리지 않는다 - amount 로 되돌아가면 오염 문장이 다시 뜬다 */}
             {policy.cardSummary ? <span>{policy.cardSummary}</span> : null}
-            <em>{formatPolicyDeadlineTag(policy)}</em>
+            {/* 정책 탭 안의 짧은 칩은 주민증을 '상시'로(2026-09-30 사용자 결정). 상세 기간 칸만 '상시 발급' */}
+            <em>{isDigitalTourismResidentCardPolicy(policy) ? "상시" : formatPolicyDeadlineTag(policy)}</em>
           </div>
           <h3>{policy.title}</h3>
           <div className="policy-list-meta">
@@ -111,6 +114,10 @@ export function ItineraryCard({
   const dayCount = Object.keys(trip.days).length || 1;
   const participantNames = tripParticipantNames(trip);
   const participantCount = participantNames.length;
+  const canEdit = trip.currentUserRole !== "viewer";
+  const status = tripStatus(trip.startDate, trip.endDate);
+  const recommendedCount = trip.recommendedPolicies.length;
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
     <SurfaceCard as="article" className="itinerary-card">
@@ -124,18 +131,59 @@ export function ItineraryCard({
           <Link className="itinerary-title-link" to={detailPath}>
             <h4>{trip.title}</h4>
           </Link>
-          <div className="itinerary-actions itinerary-card-management">
-            {trip.currentUserRole !== "viewer" && (
-              <Link className="itinerary-card-edit" to={editPath} aria-label={`${trip.title} 편집`}>
-                편집
-              </Link>
-            )}
-            {onDelete && (
-              <button className="trip-delete-btn" disabled={isDeleting} onClick={() => onDelete(trip)} type="button">
-                {isDeleting ? "삭제 중" : "삭제"}
+          {/* 편집·삭제는 자주 안 쓰는데 카드마다 버튼 둘이 제일 눈에 띄었다. ⋯ 하나로 접는다.
+              밖으로 초점이 나가거나 Esc 면 닫힌다. */}
+          {(canEdit || onDelete) && (
+            <div
+              className="itinerary-actions itinerary-card-menu"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsMenuOpen(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setIsMenuOpen(false);
+              }}
+            >
+              <button
+                aria-expanded={isMenuOpen}
+                aria-label={`${trip.title} 편집·삭제`}
+                className="itinerary-card-menu-toggle"
+                onClick={() => setIsMenuOpen((open) => !open)}
+                type="button"
+              >
+                <MoreHorizontal size={20} aria-hidden="true" />
               </button>
-            )}
-          </div>
+              {/* 넓은 화면(1024px 이상)에서는 가운데 창으로 뜬다 - 바탕을 누르면 닫히고 창에 일정 이름이 붙는다.
+                  좁은 화면에선 바탕·이름이 CSS 로 숨어 지금처럼 카드 옆 작은 목록이다. */}
+              {isMenuOpen && (
+                <button
+                  aria-hidden="true"
+                  className="itinerary-card-menu-scrim"
+                  onClick={() => setIsMenuOpen(false)}
+                  tabIndex={-1}
+                  type="button"
+                />
+              )}
+              {isMenuOpen && (
+                <div className="itinerary-card-menu-list">
+                  <strong className="itinerary-card-menu-title">{trip.title}</strong>
+                  {canEdit && <Link to={editPath}>일정 편집</Link>}
+                  {onDelete && (
+                    <button
+                      className="danger"
+                      disabled={isDeleting}
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        onDelete(trip);
+                      }}
+                      type="button"
+                    >
+                      {isDeleting ? "삭제 중" : "일정 삭제"}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <Link to={detailPath}>
           <div className="meta">
@@ -160,7 +208,9 @@ export function ItineraryCard({
             </div>
           </div>
           <div className="itinerary-policy-row">
-            <Tag tone="benefit">예상 혜택 {trip.expectedSaving}</Tag>
+            {status && <Tag tone={TRIP_STATUS_TONE[status.tone]}>{status.label}</Tag>}
+            {recommendedCount > 0 && <Tag tone="benefit">추천 혜택 {recommendedCount}건</Tag>}
+            {hasPolicySaving(trip.expectedSaving) && <Tag tone="benefit">예상 혜택 {trip.expectedSaving}</Tag>}
           </div>
         </Link>
       </div>

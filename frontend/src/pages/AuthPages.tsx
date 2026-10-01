@@ -5,8 +5,10 @@ import { appDataApi, type SignupVerifyResponse } from "../api";
 import { getPostAuthPath } from "../app/onboarding";
 import { shouldShowPublicAuthActions } from "../app/adminHost";
 import { useSession } from "../app/session";
+import { HERO_PHOTOS } from "../components/heroPhotos";
 import { AuthFormShell, BrandMark } from "../components/patterns";
 import { Button, IconButton, LinkButton } from "../components/ui";
+import "../styles/account.css";
 
 function getSafeRedirect(searchParams: URLSearchParams) {
   const redirect = searchParams.get("redirect");
@@ -330,31 +332,39 @@ export function LoginPage() {
   const oauthRedirect = redirect ?? "/home";
   const showPublicAuthActions = shouldShowPublicAuthActions();
 
+  /* 시안 v49: 위(넓은 화면은 왼쪽)에 여행 사진 한 장, 아래 브랜드 글자 · 입력 · 가입·찾기 · 카카오·구글.
+     가입·찾기·소셜 입구는 관리자 주소에서만 숨긴다(shouldShowPublicAuthActions). 주 버튼은 청록(흰 글자 대비 5.5:1) */
+  const photo = HERO_PHOTOS["region:전남"];
   return (
-    <section className="screen white prototype-login-screen">
-      <div className="prototype-status-bar" aria-hidden="true" />
-      <div className="prototype-login-content">
-        <AuthFormShell title="트래블헌터" body="숨은 여행 혜택을 사냥하세요">
+    <section className="screen white prototype-login-screen lg-screen">
+      <div className="lg-photo" style={{ backgroundImage: `url(${photo.src})` }}>
+        <p className="lg-say">
+          숨은 여행 혜택을
+          <br />
+          지도에서 찾아요
+        </p>
+        <span className="lg-credit">{photo.credit}</span>
+      </div>
+      <div className="lg-body">
+        <div className="ds-auth-form-shell lg-shell">
+          <h1 className="lg-brand">트래블헌터</h1>
+          <p className="lg-sub">숨은 여행 혜택을 사냥하세요</p>
 
-        <form className="prototype-login-form" onSubmit={submit}>
-          <label className="prototype-field">
-            <span>
-              이메일 <strong>*</strong>
-            </span>
-            <input name="email" type="email" placeholder="이메일을 입력하세요" autoComplete="email" />
+        <form className="lg-form" onSubmit={submit}>
+          <label className="lg-field">
+            <span>이메일</span>
+            <input name="email" type="email" placeholder="name@example.com" autoComplete="email" />
           </label>
-          <label className="prototype-field">
-            <span>
-              비밀번호 <strong>*</strong>
-            </span>
-            <input name="password" type="password" placeholder="비밀번호를 입력하세요" autoComplete="current-password" />
+          <label className="lg-field">
+            <span>비밀번호</span>
+            <input name="password" type="password" placeholder="비밀번호" autoComplete="current-password" />
           </label>
           {error && (
-            <p className="prototype-login-error" role="alert">
+            <p className="lg-error prototype-login-error" role="alert">
               {error}
             </p>
           )}
-          <button className="prototype-login-submit" disabled={isSubmitting} type="submit">
+          <button className="lg-main prototype-login-submit" disabled={isSubmitting} type="submit">
             {isSubmitting ? (
               <>
                 <span className="prototype-login-spinner" aria-hidden="true" />
@@ -368,28 +378,26 @@ export function LoginPage() {
 
         {showPublicAuthActions && (
           <>
-        <div className="prototype-login-links">
+        <div className="lg-links">
           <button type="button" onClick={() => navigate(withRedirect("/forgot-password", redirect))}>
             비밀번호 찾기
           </button>
-          <span>·</span>
+          <span aria-hidden="true">·</span>
           <button type="button" onClick={() => navigate(withRedirect("/signup", redirect))}>
             회원가입
           </button>
         </div>
 
-        <div className="prototype-login-divider">
-          <span>또는</span>
-        </div>
+        <p className="lg-or">또는</p>
 
-        <div className="prototype-login-socials">
-          <a className="prototype-social kakao" href={getOAuthStartPath("kakao", oauthRedirect)}>
+        <div className="lg-social">
+          <a className="kakao" href={getOAuthStartPath("kakao", oauthRedirect)}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="#3C1E1E" aria-hidden="true">
               <path d="M12 3C7.03 3 3 6.36 3 10.5c0 2.6 1.69 4.9 4.26 6.27-.19.7-.67 2.54-.77 2.94-.12.49.18.48.38.35.16-.1 2.5-1.69 3.51-2.37.53.08 1.08.12 1.62.12 4.97 0 9-3.36 9-7.5S16.97 3 12 3z" />
             </svg>
             카카오로 시작하기
           </a>
-          <a className="prototype-social google" href={getOAuthStartPath("google", oauthRedirect)}>
+          <a className="google" href={getOAuthStartPath("google", oauthRedirect)}>
             <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
@@ -402,7 +410,7 @@ export function LoginPage() {
 
           </>
         )}
-        </AuthFormShell>
+        </div>
       </div>
     </section>
   );
@@ -460,10 +468,7 @@ export function SignupPage() {
         <IconButton label="뒤로" to="/">
           <ChevronLeft size={20} />
         </IconButton>
-        <h1 className="prototype-auth-top-title prototype-auth-brand-title">
-          <BrandMark />
-          <span className="sr-only">회원가입</span>
-        </h1>
+        <h1 className="acct-top-title">회원가입</h1>
         <span />
       </div>
       <AuthFormShell title="이메일 인증 후 비밀번호를 설정해요" body="먼저 이메일 소유를 확인하고, 인증 링크에서 비밀번호를 입력하면 가입이 완료돼요." showBrandMark={false}>
@@ -838,10 +843,7 @@ export function ForgotPasswordPage() {
         <IconButton label="로그인" to={withRedirect("/login", redirect)}>
           <ChevronLeft size={20} />
         </IconButton>
-        <h1 className="prototype-auth-top-title prototype-auth-brand-title">
-          <BrandMark />
-          <span className="sr-only">비밀번호 찾기</span>
-        </h1>
+        <h1 className="acct-top-title">비밀번호 찾기</h1>
         <span />
       </div>
       <AuthFormShell title="비밀번호 재설정 링크를 받을 이메일을 입력하세요" body="계정이 있는 이메일이면 30분 동안 사용할 수 있는 재설정 링크를 보내드려요." showBrandMark={false}>

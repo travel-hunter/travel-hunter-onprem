@@ -1,14 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { createPolicyRegionMap, type PolicyRegionMapHandle, type RegionCounts } from "./regionMapEngine";
+import { createPolicyRegionMap, type PolicyRegionMapHandle, type RegionCounts, type RegionMapPlace } from "./regionMapEngine";
 
 /* 지도 칸은 화면에 남은 높이를 그대로 쓴다. 그림 비율은 더 이상 높이를 정하지 않는다 -
-   엔진이 viewBox 를 칸 비율에 맞추므로(regionMapEngine 의 fitVB) 어떤 높이를 줘도 빈 띠 없이
+   엔진이 viewBox 를 칸 비율에 맞추므로(regionMapEngine 의 target) 어떤 높이를 줘도 빈 띠 없이
    꽉 찬다. 그래서 기기마다 다른 것은 지도 크기가 아니라 바다 폭이다.
    스크롤은 window 가 아니라 .app-container 안에서 일어나고(768px 부터는 상단 내비 밑에
    74px 내려앉는다) 그 높이가 곧 화면이다. 탭바·시트 손잡이 몫은 .screen 의
    padding-bottom 이 이미 갖고 있어(폰 100, 데스크톱 40) 그대로 빼면 스크롤이 안 생긴다.
    HINT 는 지도 밑 안내문 한 줄 자리다. */
 const HINT = 30, MIN_H = 220;
+/* 시트에 가려 이보다 적게 보이면(px) 지도를 다시 맞추지 않는다 */
+const MIN_VISIBLE = 60;
 function fitHeight(host: HTMLElement) {
   const scroller = host.closest(".app-container");
   const boxTop = scroller ? scroller.getBoundingClientRect().top : 0;
@@ -41,11 +43,36 @@ export function PolicyRegionMap({
   selected,
   onSelect,
   renderPill,
+  focus = false,
+  zoom = true,
+  showCounts = false,
+  coverTop = null,
+  sheetLow = false,
+  places,
+  selectedPlace = null,
+  onSelectPlace,
+  onBackground,
 }: {
   counts: RegionCounts;
   selected: string | null;
   onSelect: (region: string | null) => void;
   renderPill?: (region: string) => ReactNode;
+  /** 고른 지역으로 다가가고 둘레를 옅게 눌러 둔다(정책 탭 지도) */
+  focus?: boolean;
+  /** focus 에서 다가가기만 끈다(넓은 화면) - 전국 틀 그대로 둘레 흐림·시군 점만 */
+  zoom?: boolean;
+  /** 이름표 옆에 건수 */
+  showCounts?: boolean;
+  /** 지도 아래쪽을 덮는 시트의 윗변(화면 y). 그 위쪽에 그림을 맞춘다 */
+  coverTop?: number | null;
+  /** 시트가 머리만 남긴 지도 중심 자리 */
+  sheetLow?: boolean;
+  /** 고른 지역 안의 시·군 점 */
+  places?: readonly RegionMapPlace[];
+  selectedPlace?: string | null;
+  onSelectPlace?: (place: string | null) => void;
+  /** 아무것도 안 고른 채 빈 바다를 누르면 */
+  onBackground?: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<PolicyRegionMapHandle | null>(null);
@@ -53,6 +80,19 @@ export function PolicyRegionMap({
   const selectedRef = useRef(selected);
   onSelectRef.current = onSelect;
   selectedRef.current = selected;
+  const onPlaceRef = useRef(onSelectPlace);
+  onPlaceRef.current = onSelectPlace;
+  /* 다시 그릴 때(건수가 바뀌면) 새 엔진에 그대로 다시 건다 */
+  const viewRef = useRef({ coverTop, sheetLow, places, selectedPlace });
+  viewRef.current = { coverTop, sheetLow, places, selectedPlace };
+  const applyView = (handle: PolicyRegionMapHandle) => {
+    const host = hostRef.current, current = viewRef.current;
+    if (!host) return;
+    const visible = current.coverTop === null ? null : current.coverTop - host.getBoundingClientRect().top;
+    /* 목록이 한 페이지로 올라가 지도가 거의 안 보이면 다시 맞추지 않는다 - 내려올 때 제자리에서 드러나야 한다 */
+    if (visible === null || visible >= MIN_VISIBLE) handle.setView({ visible, low: current.sheetLow });
+    handle.setPlaces(current.places ?? [], current.selectedPlace);
+  };
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
   const marksRef = useRef<HTMLDivElement | null>(null);
   /* 알약이 카드만큼 커져서 동쪽·서쪽 끝 지역에서는 지도 밖으로 흘러나간다. 그려진 크기를 재서
@@ -74,7 +114,12 @@ export function PolicyRegionMap({
     if (!host) return;
     /* StrictMode 는 효과를 두 번 돌린다 - 앞 것을 비우지 않으면 지도가 둘이 된다. */
     host.replaceChildren();
-    const handle = createPolicyRegionMap(host, counts, (name) => onSelectRef.current(name));
+    const handle = createPolicyRegionMap(host, counts, (name) => onSelectRef.current(name), {
+      focus,
+      zoom,
+      showCounts,
+      onPlace: (place) => onPlaceRef.current?.(place),
+    });
     handle.setSelected(selectedRef.current);
     handleRef.current = handle;
     /* 높이를 정한 다음 엔진에 다시 맞추라고 이른다 - 엔진은 칸 비율을 보고 viewBox 를 잡는데
@@ -84,6 +129,7 @@ export function PolicyRegionMap({
       handle.resize();
     };
     size();
+    applyView(handle);
     window.addEventListener("resize", size);
     /* 창 크기만으로는 놓치는 변화가 있다 - 회전, 주소창 여닫힘, 시트가 밀어내는 폭.
        칸 자체를 본다. 잇달아 들어오면 마지막 것만 처리한다(물마루를 다시 심는 값이다). */
@@ -102,7 +148,12 @@ export function PolicyRegionMap({
       handle.destroy();
       handleRef.current = null;
     };
-  }, [counts]);
+  }, [counts, focus, zoom, showCounts]);
+
+  /* 시트가 자리에 서면 그 위쪽에 맞춰 다가가고, 고른 지역의 시·군 점을 다시 찍는다 */
+  useEffect(() => {
+    if (handleRef.current) applyView(handleRef.current);
+  }, [coverTop, sheetLow, places, selectedPlace, selected]);
 
   useEffect(() => {
     const handle = handleRef.current;
@@ -116,13 +167,12 @@ export function PolicyRegionMap({
   }, [selected, counts]);
 
   const pill = selected && renderPill ? renderPill(selected) : null;
-  /* 지도 밖 빈 곳을 누르면 선택이 풀린다. 엔진 안의 배경 사각형은 viewBox 안만 덮어서,
-     화면이 짧아 좌우에 여백이 생기면 그 띠에서는 안 먹었다. 지도 칸 전체를 여기서 받는다.
-     지역·이름표·알약 위에서 난 클릭은 제 일을 하고 여기까지 올라오니 걸러낸다. */
+  /* 빈 바다를 누르면 선택이 풀린다(아무것도 안 골랐으면 onBackground). 지도 칸 전체를 여기서 받는다.
+     지역·작은 지역 누르기 범위·시군 점·알약 위에서 난 클릭은 제 일을 하고 여기까지 올라오니 걸러낸다. */
   const clearOnOutside = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!selected) return;
-    if ((event.target as Element).closest(".thmap-rg, .thmap-lbl, .thmap-marks")) return;
-    onSelect(null);
+    if ((event.target as Element).closest(".thmap-rg, .thmap-hit, .thmap-marks, .thmap-dot")) return;
+    if (selected) onSelect(null);
+    else onBackground?.();
   };
   return (
     <div className="thmap-wrap" onClick={clearOnOutside}>

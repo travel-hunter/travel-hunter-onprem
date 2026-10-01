@@ -22,24 +22,33 @@ import {
   examplePolicySlug,
   examplePolicyTitle,
   getPreviewTrip,
+  getUpcomingPreviewTrip,
   getPreviewUser,
   testEmail,
   testIsoDateFromToday,
   testPassword,
 } from "../../test/fixtures";
 import { getLink, goBack, login, renderAppRoute, routeLocation } from "../../test/renderAppRoute";
+import { DESKTOP_MEDIA_QUERY } from "../../lib/useMediaQuery";
 
-/* 지도 화면엔 지도 밑 목록이 없다(시안 그대로). 카드는 시트 손잡이 → 타일을 거쳐야 보인다.
-   타일 이름은 "경남 1건 · …" 꼴 - 지도의 "경남 정책 1건" 버튼과 구분하려고 지역 뒤에 숫자를 건다. */
-async function openSheetTile(user: ReturnType<typeof userEvent.setup>, tile: RegExp) {
-  const grab = await waitFor(() => {
-    const button = document.querySelector(".thmap-grab");
-    expect(button).toBeTruthy();
-    return button as HTMLButtonElement;
-  });
-  await user.click(grab);
-  const sheet = document.querySelector(".thmap-sheet") as HTMLElement;
-  await user.click(within(sheet).getByRole("button", { name: tile }));
+/* 지도 화면: 지도 뒤로 목록 시트가 반반으로 선다. 목록 머리가 지금 목록의 이름과 건수를 말한다
+   ("모든 지역 3건", "전남 1건"). 건수 줄(전체 N개 중 M개)은 검색·필터 목록에만 있다. */
+const sheetTitle = () => document.querySelector(".thmap-title")?.textContent?.replace(/\s+/g, " ").trim() ?? null;
+async function waitForSheet(title: string) {
+  await waitFor(() => expect(sheetTitle()).toBe(title));
+}
+/* 넓은 화면(1024px~). jsdom 에는 matchMedia 가 없어 앱이 늘 좁은 화면으로 본다 - 부른 시험 동안만 넓다고 답한다 */
+function stubDesktop() {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query === DESKTOP_MEDIA_QUERY,
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  }));
 }
 
 describe("Travel Hunter app — policies & trip picker", () => {
@@ -109,19 +118,18 @@ describe("Travel Hunter app — policies & trip picker", () => {
       renderAppRoute("/policies");
       const user = userEvent.setup();
 
-      // 지도 화면 - 카드는 없고 건수 줄과 지도만 있다
-      await waitFor(() =>
-        expect(document.body).toHaveTextContent("전체 3개 중 3개 표시"),
-      );
+      // 지도 화면 - 목록 카드 대신 지도와 그 뒤 목록 시트(한 줄씩)
+      await waitForSheet("모든 지역 3건");
       expect(document.querySelector(".thmap-host")).toBeTruthy();
-      expect(screen.queryByText("강릉 숙박 할인권")).not.toBeInTheDocument();
+      expect(document.querySelectorAll(".policy-list-card")).toHaveLength(0);
+      expect(document.querySelector(".prototype-policy-result-row")).toBeNull();
 
       await user.click(screen.getByRole("button", { name: "필터 열기" }));
       let filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       await user.click(within(filterDialog).getByRole("button", { name: "부산" }));
       await user.click(within(filterDialog).getByRole("button", { name: "지역할인" }));
-      // 초안은 적용 전이라 건수가 그대로다
-      expect(document.body).toHaveTextContent("전체 3개 중 3개 표시");
+      // 초안은 적용 전이라 지도 화면 그대로다
+      expect(document.querySelector(".thmap-host")).toBeTruthy();
       await user.click(within(filterDialog).getByRole("button", { name: "필터 적용하기" }));
 
       await waitFor(() =>
@@ -135,11 +143,9 @@ describe("Travel Hunter app — policies & trip picker", () => {
       filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       await user.click(within(filterDialog).getByRole("button", { name: "초기화" }));
       await user.click(within(filterDialog).getByRole("button", { name: "필터 적용하기" }));
-      await waitFor(() =>
-        expect(document.body).toHaveTextContent("전체 3개 중 3개 표시"),
-      );
+      await waitForSheet("모든 지역 3건");
       expect(document.querySelector(".thmap-host")).toBeTruthy();
-      expect(screen.queryByText("부산 카드 캐시백")).not.toBeInTheDocument();
+      expect(document.querySelectorAll(".policy-list-card")).toHaveLength(0);
     } finally {
       listPoliciesSpy.mockRestore();
     }
@@ -172,11 +178,18 @@ describe("Travel Hunter app — policies & trip picker", () => {
     try {
       await login();
       cleanup();
-      renderAppRoute("/policies");
-      await openSheetTile(userEvent.setup(), /^경남\s*\d/);
+      // 정책 탭 안의 짧은 칩은 지도 목록 줄도 검색 목록 카드도 '상시'(시안 v40, 2026-09-30 사용자 결정)
+      renderAppRoute("/policies?place=경남");
+      await waitForSheet("경남 1건");
+      expect(within(document.querySelector(".thmap-sheet") as HTMLElement).getByText("상시")).toBeInTheDocument();
 
-      expect(await screen.findByText("[밀양] 디지털관광주민증 혜택")).toBeInTheDocument();
-      expect(document.body).toHaveTextContent("상시 발급");
+      // 검색 목록 카드
+      const user = userEvent.setup();
+      await user.type(screen.getByRole("searchbox", { name: "정책 검색" }), "밀양");
+      // 지도 화면의 검색창은 지역·혜택 검색 칸을 연다. 글 전체 검색 목록은 칸 끝의 '모두 보기'
+      await user.click(await screen.findByRole("button", { name: /‘밀양’ 들어간 정책 \d+건 모두 보기/ }));
+      const card = (await screen.findByText("[밀양] 디지털관광주민증 혜택")).closest("article") as HTMLElement;
+      expect(card.querySelector(".policy-list-badges em")).toHaveTextContent(/^상시$/);
       expect(document.body).toHaveTextContent("경남 · 제휴처별 운영기간 확인");
       expect(document.body).not.toHaveTextContent("마감일 확인 필요");
       expect(document.body).not.toHaveTextContent("경남 · ~");
@@ -213,14 +226,20 @@ describe("Travel Hunter app — policies & trip picker", () => {
     try {
       await login();
       cleanup();
-      renderAppRoute("/policies");
-      // 전국 정책은 지역 타일에 섞이지 않는다 - 홈 '전국 혜택' 카드 몫이다
-      await openSheetTile(userEvent.setup(), /^강원\s*\d/);
+      // 고른 지역 목록에 전국 정책은 섞이지 않는다 - 끝에 '전국 공통 혜택 N건' 한 줄로 잇는다
+      renderAppRoute("/policies?place=강원");
+      await waitForSheet("강원 1건");
+      const sheet = document.querySelector(".thmap-sheet") as HTMLElement;
+      expect(within(sheet).getByText("기간 미확인 목록 정책")).toBeInTheDocument();
+      expect(within(sheet).queryByText("마감일만 확인된 목록 정책")).toBeNull();
+      expect(within(sheet).getByRole("button", { name: "전국 공통 혜택 1건도 여기서 쓸 수 있어요" })).toBeInTheDocument();
 
-      expect(await screen.findByText("기간 미확인 목록 정책")).toBeInTheDocument();
-      expect(screen.queryByText("마감일만 확인된 목록 정책")).toBeNull();
-      expect(document.body).not.toHaveTextContent("전국 · 2026.12.31 마감");
-      expect(document.body).toHaveTextContent("강원");
+      // 검색 목록 카드에는 시작일 모름 문구가 없다
+      const user = userEvent.setup();
+      await user.type(screen.getByRole("searchbox", { name: "정책 검색" }), "목록 정책");
+      await user.click(await screen.findByRole("button", { name: /‘목록 정책’ 들어간 정책 \d+건 모두 보기/ }));
+      expect(await screen.findByText("마감일만 확인된 목록 정책")).toBeInTheDocument();
+      expect(document.body).toHaveTextContent("전국 · 2026.12.31 마감");
       expect(document.body).not.toHaveTextContent("시작일 확인 필요");
     } finally {
       listPoliciesSpy.mockRestore();
@@ -263,16 +282,14 @@ describe("Travel Hunter app — policies & trip picker", () => {
       renderAppRoute("/policies");
       const user = userEvent.setup();
 
-      await waitFor(() =>
-        expect(document.body).toHaveTextContent("전체 3개 중 3개 표시"),
-      );
+      await waitForSheet("모든 지역 3건");
       expect(screen.getByRole("button", { name: "필터 열기" })).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "필터 열기" }));
       let filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       await user.click(within(filterDialog).getByRole("button", { name: "부산" }));
       await user.click(within(filterDialog).getByRole("button", { name: "지역할인" }));
-      expect(document.body).toHaveTextContent("전체 3개 중 3개 표시");
+      expect(document.querySelector(".thmap-host")).toBeTruthy();
 
       await user.click(within(filterDialog).getByRole("button", { name: "필터 닫기" }));
       await waitFor(() =>
@@ -280,7 +297,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
       );
 
       // 초안을 버렸으니 지도 화면 그대로, 건수도 그대로
-      expect(document.body).toHaveTextContent("전체 3개 중 3개 표시");
+      await waitForSheet("모든 지역 3건");
       expect(document.querySelector(".thmap-host")).toBeTruthy();
       expect(screen.getByRole("button", { name: "필터 열기" })).toBeInTheDocument();
 
@@ -374,9 +391,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
       renderAppRoute("/policies");
       const user = userEvent.setup();
 
-      await waitFor(() =>
-        expect(document.body).toHaveTextContent("전체 12개 중 12개 표시"),
-      );
+      await waitForSheet("모든 지역 12건");
       await user.click(screen.getByRole("button", { name: "필터 열기" }));
       const filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       const regionFilter = within(filterDialog).getByRole("group", { name: "지역 필터" });
@@ -391,7 +406,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await user.click(
         within(filterDialog).getByRole("button", { name: "광주" }),
       );
-      expect(document.body).toHaveTextContent("전체 12개 중 12개 표시");
+      expect(document.querySelector(".thmap-host")).toBeTruthy();
       await user.click(within(filterDialog).getByRole("button", { name: "필터 적용하기" }));
 
       // 지역 필터도 다른 필터와 같이 목록 화면으로 간다 - 지도는 필터를 안 비춘다
@@ -425,57 +440,48 @@ describe("Travel Hunter app — policies & trip picker", () => {
       const user = userEvent.setup();
 
       await waitFor(() => expect(mapRegion("전남")).toBeTruthy());
-      // 지도 화면엔 카드가 없다 - 선택은 안내 줄과 알약으로 보인다
+      await waitForSheet("모든 지역 2건");
+      // 지도 화면엔 목록 카드가 없다 - 목록은 지도 뒤 시트의 한 줄들이다
       expect(document.querySelectorAll(".policy-list-card")).toHaveLength(0);
+      const sheet = () => document.querySelector(".thmap-sheet") as HTMLElement;
 
-      // 지역을 눌러도 필터는 그대로다 - URL 도 건수도 안 바뀐다
+      // 지역을 눌러도 필터는 그대로다 - 고른 지역은 URL 의 place, 필터 region 은 안 붙는다
       await user.click(mapRegion("전남") as SVGGElement);
       await waitFor(() => expect(mapRegion("전남")?.classList.contains("thmap-on")).toBe(true));
-      expect(document.body).toHaveTextContent("전남 선택됨 · 표시를 누르면 목록으로");
-      expect(screen.getByRole("button", { name: "전남 정책 1건 보기" })).toBeInTheDocument();
-      // 고른 지역은 URL 에 남는다(뒤로가기 복원용). 필터 파라미터는 여전히 안 붙는다
+      expect(screen.getByRole("region", { name: "전남 요약" })).toHaveTextContent(/전라남도\s*1건/);
+      await waitForSheet("전남 1건");
+      expect(within(sheet()).getByText("전남 해안 혜택")).toBeInTheDocument();
       expect(new URLSearchParams(routeLocation().search).get("place")).toBe("전남");
       expect(new URLSearchParams(routeLocation().search).get("region")).toBeNull();
-      expect(document.body).toHaveTextContent("전체 2개 중 2개 표시");
       expect(screen.queryByRole("button", { name: "필터 초기화" })).not.toBeInTheDocument();
 
+      // 다른 지역으로 옮기는 건 같은 층 - 목록만 바뀐다
       await user.click(mapRegion("광주") as SVGGElement);
       await waitFor(() => expect(mapRegion("광주")?.classList.contains("thmap-on")).toBe(true));
       expect(mapRegion("전남")?.classList.contains("thmap-on")).toBe(false);
-      await waitFor(() => expect(screen.getByRole("button", { name: "광주 정책 1건 보기" })).toBeInTheDocument());
-      expect(screen.queryByRole("button", { name: "전남 정책 1건 보기" })).not.toBeInTheDocument();
+      await waitForSheet("광주 1건");
+      expect(within(sheet()).getByText("광주 도심 혜택")).toBeInTheDocument();
+      expect(within(sheet()).queryByText("전남 해안 혜택")).not.toBeInTheDocument();
       expect(new URLSearchParams(routeLocation().search).get("place")).toBe("광주");
 
-      // 지도 아래 안내 줄과, 솟은 지역 머리 위 알약. 알약을 누르면 지도가 내려가고 지역 목록이 된다
-      expect(document.body).toHaveTextContent("광주 선택됨 · 표시를 누르면 목록으로");
-      await user.click(screen.getByRole("button", { name: "광주 정책 1건 보기" }));
-      await waitFor(() => expect(document.querySelector(".thmap-host")).toBeNull());
-      expect(screen.getByRole("heading", { level: 2, name: "광주" })).toBeInTheDocument();
-      expect(document.body).toHaveTextContent("정책 1건 · 시·군 0곳");
-      expect(document.body).toHaveTextContent("광주 도심 혜택");
-      expect(screen.queryByText("전남 해안 혜택")).not.toBeInTheDocument();
-      // 목록 화면에서는 시트가 없다 - 목록 위에 겹치면 안 된다
-      expect(document.querySelector(".thmap-sheet")).toBeNull();
-      await user.click(screen.getByRole("button", { name: "지도로" }));
-      await waitFor(() => expect(document.querySelector(".thmap-host")).toBeTruthy());
-      expect(mapRegion("광주")?.classList.contains("thmap-on")).toBe(true);
-      // 지도 화면으로 돌아오면 시트가 손잡이만 내민 채 대기한다
-      const grab = screen.getAllByRole("button").find((button) => button.classList.contains("thmap-grab"));
-      expect(grab?.textContent?.replace(/\s+/g, "")).toBe("정책2건·시도2곳");
-      expect(grab).toHaveAttribute("aria-expanded", "false");
+      // 목록을 한 페이지로 올리면 기록이 쌓이고, 뒤로 한 번이면 반반으로 돌아온다
+      await user.click(screen.getByRole("button", { name: "목록 펼치기" }));
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("sheet")).toBe("full"));
+      goBack();
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("sheet")).toBeNull());
+      expect(new URLSearchParams(routeLocation().search).get("place")).toBe("광주");
 
       // 지도 밖 빈 곳을 누르면 선택이 풀린다
       await user.click(document.querySelector(".thmap-wrap") as HTMLElement);
       await waitFor(() => expect(mapRegion("광주")?.classList.contains("thmap-on")).toBe(false));
-      expect(document.body).toHaveTextContent("지역을 누르면 그곳 정책을 모아 봅니다");
-      expect(document.body).toHaveTextContent("전체 2개 중 2개 표시");
+      await waitForSheet("모든 지역 2건");
     } finally {
       policyListSpy.mockRestore();
     }
   });
 
-  it("caps the map marker at three lines and folds the rest into one line", async () => {
-    // 한 지역에 정책 종류가 넷이면 지도 위 표시가 네 줄이 된다 - 지도를 가리면 안 된다
+  it("sums up the picked region on the map card and filters by its kinds", async () => {
+    // 고른 지역이 어떤 곳인지: 무슨 혜택 위주인지, 몇 곳에 있는지 - 형태 단추는 위 칩과 같은 거르기다
     const fourKinds: Policy[] = [
       { ...examplePolicyDetail, id: "k1", slug: "k1", title: "[영광] 디지털관광주민증 혜택", region: "전남" },
       { ...examplePolicyDetail, id: "k2", slug: "k2", title: "[완도] 디지털관광주민증 혜택", region: "전남" },
@@ -495,14 +501,17 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await waitFor(() => expect(document.querySelector('.thmap-rg[data-region="전남"]')).toBeTruthy());
       await user.click(document.querySelector('.thmap-rg[data-region="전남"]') as unknown as Element);
 
-      await waitFor(() => expect(document.querySelector(".thmap-pill")).toBeTruthy());
-      // 큰 둘만 이름을 적고 나머지 둘은 한 줄로 묶는다
-      expect(document.querySelectorAll(".thmap-pill-row")).toHaveLength(2);
-      expect(screen.getByText("디지털관광주민증 혜택")).toBeInTheDocument();
-      expect(screen.getByText("대한민국 반값여행 지원")).toBeInTheDocument();
-      const more = document.querySelector(".thmap-pill-more") as HTMLElement;
-      expect(more.textContent?.replace(/\s+/g, "")).toBe("외2종2건");
-      expect(screen.queryByText("남도 기차 여행 할인")).not.toBeInTheDocument();
+      const card = await screen.findByRole("region", { name: "전남 요약" });
+      expect(card).toHaveTextContent(/전라남도\s*7건/);
+      expect(card).toHaveTextContent("제휴 할인 위주 · 7개 시군");
+      const kinds = within(card).getByRole("group", { name: "이 지역 혜택 종류로 거르기" });
+      expect(within(kinds).getAllByRole("button").map((button) => button.textContent)).toEqual(["제휴 할인 3", "환급 2", "숙박 1", "교통 1"]);
+      await user.click(within(kinds).getByRole("button", { name: "환급 2" }));
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("type")).toBe("refund"));
+      await waitForSheet("전남 2건");
+      // 위 칩도 같이 눌린다
+      const chips = screen.getByRole("group", { name: "혜택 형태" });
+      expect(within(chips).getByRole("button", { name: /^환급/ })).toHaveAttribute("aria-pressed", "true");
     } finally {
       policyListSpy.mockRestore();
     }
@@ -645,20 +654,22 @@ describe("Travel Hunter app — policies & trip picker", () => {
       renderAppRoute("/policies");
       const user = userEvent.setup();
 
-      await waitFor(() =>
-        expect(document.body).toHaveTextContent("전체 3개 중 3개 표시"),
-      );
-      // 검색어가 들어가면 지도 화면이 목록 화면으로 바뀐다 - 셋 다 "할인"이라 다 남는다
+      await waitForSheet("모든 지역 3건");
+      // 지도 화면의 검색창은 지역·혜택 검색 칸을 열고, 칸 끝 '모두 보기'가 글 전체 검색 목록으로 바꾼다
+      // - 셋 다 "할인"이라 다 남는다
       const searchInput = screen.getByPlaceholderText("정책명, 지역, 혜택 검색");
       await user.type(searchInput, "할인");
+      await user.click(await screen.findByRole("button", { name: "‘할인’ 들어간 정책 3건 모두 보기 ›" }));
       await waitFor(() =>
         expect(document.querySelector(".policy-list-card:first-child a")?.textContent).toContain("강릉 KTX 할인"),
       );
       expect(document.body).toHaveTextContent("전체 3개 중 3개 표시");
       expect(document.querySelector(".thmap-host")).toBeNull();
 
+      // 지우면 지도 화면으로 돌아가고, 다시 치면 검색 칸이 다시 열린다
       await user.clear(searchInput);
       await user.type(searchInput, "부산");
+      await user.click(await screen.findByRole("button", { name: "‘부산’ 들어간 정책 1건 모두 보기 ›" }));
 
       await waitFor(() =>
         expect(document.body).toHaveTextContent("전체 3개 중 1개 표시"),
@@ -719,9 +730,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
       renderAppRoute("/policies");
       const user = userEvent.setup();
 
-      await waitFor(() =>
-        expect(document.body).toHaveTextContent("전체 2개 중 2개 표시"),
-      );
+      await waitForSheet("모든 지역 2건");
       await user.click(screen.getByRole("button", { name: "필터 열기" }));
       let filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
       await user.click(within(filterDialog).getByRole("button", { name: "교통" }));
@@ -845,17 +854,20 @@ describe("Travel Hunter app — policies & trip picker", () => {
     try {
       await login();
       cleanup();
-      renderAppRoute("/policies");
-      await openSheetTile(userEvent.setup(), /^부산\s*\d/);
-
-      await waitFor(() =>
-        expect(getLink("/policies/travelmonth-58")).toBeInTheDocument(),
-      );
+      renderAppRoute("/policies?place=부산");
+      // 지도 목록 한 줄
+      await waitForSheet("부산 1건");
+      expect(getLink("/policies/travelmonth-58")).toBeInTheDocument();
       expect(document.body).toHaveTextContent("부산 공식 캐시백");
       expect(document.body).not.toHaveTextContent("공식 수집");
       expect(document.body).not.toHaveTextContent("external");
+
+      // 검색 목록 카드 - 즐겨찾기는 카드에 있다
+      const searchUser = userEvent.setup();
+      await searchUser.type(screen.getByRole("searchbox", { name: "정책 검색" }), "캐시백");
+      await searchUser.click(await screen.findByRole("button", { name: /‘캐시백’ 들어간 정책 \d+건 모두 보기/ }));
       expect(
-        screen.getByRole("button", { name: /부산 공식 캐시백 즐겨찾기/ }),
+        await screen.findByRole("button", { name: /부산 공식 캐시백 즐겨찾기/ }),
       ).toBeInTheDocument();
       expect(savePolicySpy).not.toHaveBeenCalled();
     } finally {
@@ -865,7 +877,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
   });
 
   it("opens the policy trip picker, attaches a policy, and links to the selected trip", async () => {
-    const previewTrip = getPreviewTrip();
+    const previewTrip = getUpcomingPreviewTrip();
     const user = userEvent.setup();
     const loginSpy = vi
       .spyOn(appDataApi, "login")
@@ -960,7 +972,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
       .mockResolvedValue(dgtourPolicy);
     const listTripsSpy = vi
       .spyOn(appDataApi, "listTrips")
-      .mockResolvedValue([{ ...getPreviewTrip(), id: "301", title: "기존 전남 일정" }]);
+      .mockResolvedValue([{ ...getUpcomingPreviewTrip(), id: "301", title: "기존 전남 일정" }]);
 
     try {
       await login();
@@ -983,17 +995,23 @@ describe("Travel Hunter app — policies & trip picker", () => {
     }
   });
 
-  it("shows all saved trips in the policy trip picker", async () => {
+  it("shows only trips that have not ended in the policy trip picker", async () => {
     const trips: Trip[] = [
       {
         ...getPreviewTrip(),
+        id: "200",
+        title: "지난 제주 여행",
+        days: { 1: [] },
+      },
+      {
+        ...getUpcomingPreviewTrip(),
         id: "201",
         title: "부산 야호",
         dates: "2026.07.04 - 07.08",
         days: { 1: [] },
       },
       {
-        ...getPreviewTrip(),
+        ...getUpcomingPreviewTrip(),
         id: "202",
         title: "경주 야호",
         dates: "2026.05.18 - 05.20",
@@ -1021,6 +1039,8 @@ describe("Travel Hunter app — policies & trip picker", () => {
       );
       await screen.findByText("부산 야호");
       expect(screen.getByText("경주 야호")).toBeInTheDocument();
+      // 끝난 여행(2026-06)은 담을 곳으로 보이지 않는다.
+      expect(screen.queryByText("지난 제주 여행")).not.toBeInTheDocument();
       expect(document.querySelectorAll(".trip-select-row")).toHaveLength(2);
       expect(screen.getByRole("link", { name: "새 일정에 담기" })).toHaveAttribute(
         "href",
@@ -1035,7 +1055,7 @@ describe("Travel Hunter app — policies & trip picker", () => {
   it("keeps the trip-attached state scoped to the selected policy", async () => {
     const originalGetPolicy = appDataApi.getPolicy.bind(appDataApi);
     const previewTrip = {
-      ...getPreviewTrip(),
+      ...getUpcomingPreviewTrip(),
       id: "policy-scope-trip",
       title: "제주 3일 여행",
     };
@@ -1135,25 +1155,28 @@ describe("Travel Hunter app — policies & trip picker", () => {
       renderAppRoute("/policies");
       const user = userEvent.setup();
 
-      // 지도 → 지역 선택 → 목록. 둘 다 URL 에 남아 뒤로가기가 한 단계씩 되짚는다
+      // 지도 → 지역 선택 → 한 페이지. 셋 다 URL 에 남는다
       await waitFor(() => expect(mapRegion("전남")).toBeTruthy());
       await user.click(mapRegion("전남") as SVGGElement);
-      await user.click(await screen.findByRole("button", { name: "전남 정책 1건 보기" }));
-      expect(await screen.findByRole("heading", { level: 2, name: "전남" })).toBeInTheDocument();
-      expect(new URLSearchParams(routeLocation().search).get("view")).toBe("list");
+      await waitForSheet("전남 1건");
+      await user.click(screen.getByRole("button", { name: "목록 펼치기" }));
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("sheet")).toBe("full"));
 
-      // 카드로 들어갔다 뒤로 오면 지도 홈이 아니라 이 목록으로 돌아온다
-      await user.click(document.querySelector(".policy-list-card-link") as HTMLElement);
+      // 목록 줄로 들어갔다 뒤로 오면 지도 처음이 아니라 이 목록으로 돌아온다
+      await user.click(document.querySelector(".thmap-row-link") as HTMLElement);
       await waitFor(() => expect(routeLocation().pathname).toBe("/policies/map-jeonnam"));
       goBack();
       await waitFor(() => expect(routeLocation().pathname).toBe("/policies"));
-      expect(await screen.findByRole("heading", { level: 2, name: "전남" })).toBeInTheDocument();
-      expect(document.querySelector(".thmap-host")).toBeNull();
+      await waitForSheet("전남 1건");
+      expect(document.querySelector(".thmap-sheet")).toHaveClass("thmap-at-full");
 
-      // 한 번 더 뒤로 가면 지도로
+      // 뒤로는 한 층씩: 한 페이지 → 반반 → (화면 안 ‹) 모든 지역
       goBack();
-      await waitFor(() => expect(document.querySelector(".thmap-host")).toBeTruthy());
-      expect(new URLSearchParams(routeLocation().search).get("view")).toBeNull();
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("sheet")).toBeNull());
+      expect(document.querySelector(".thmap-sheet")).toHaveClass("thmap-at-mid");
+      await user.click(screen.getByRole("button", { name: "뒤로" }));
+      await waitForSheet("모든 지역 1건");
+      expect(new URLSearchParams(routeLocation().search).get("place")).toBeNull();
     } finally {
       policyListSpy.mockRestore();
     }
@@ -1167,11 +1190,157 @@ describe("Travel Hunter app — policies & trip picker", () => {
     try {
       await login();
       cleanup();
-      // 새로고침·북마크도 같은 길을 쓴다
+      // 새로고침·북마크도 같은 길을 쓴다. 예전 '지역 목록 화면' 주소(view=list)는 한 페이지 목록으로 연다
       renderAppRoute("/policies?place=전남&view=list");
-      expect(await screen.findByRole("heading", { level: 2, name: "전남" })).toBeInTheDocument();
-      expect(document.querySelector(".thmap-host")).toBeNull();
+      await waitForSheet("전남 1건");
+      expect(document.querySelector(".thmap-sheet")).toHaveClass("thmap-at-full");
       expect(document.body).toHaveTextContent("전남 해안 혜택");
+    } finally {
+      policyListSpy.mockRestore();
+    }
+  });
+
+  it("drops the region and opens one page when the 교통 chip is picked, since transport is nationwide", async () => {
+    const policies: Policy[] = [
+      { ...examplePolicyDetail, id: "yg", slug: "yg", title: "[영광] 디지털관광주민증 혜택", region: "전남" },
+      { ...examplePolicyDetail, id: "rail", slug: "rail", title: "내일로패스 할인", region: "전국", category: "교통" },
+    ];
+    const policyListSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies?place=전남");
+      await waitForSheet("전남 1건");
+      const user = userEvent.setup();
+      await user.click(within(screen.getByRole("group", { name: "혜택 형태" })).getByRole("button", { name: /^교통/ }));
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("type")).toBe("move"));
+      const params = new URLSearchParams(routeLocation().search);
+      expect(params.get("place")).toBeNull();
+      expect(params.get("sheet")).toBe("full");
+      await waitForSheet("모든 지역 1건");
+    } finally {
+      policyListSpy.mockRestore();
+    }
+  });
+
+  it("finds a city from the magnifier, lists only it, and steps back one layer at a time", async () => {
+    const policies: Policy[] = [
+      { ...examplePolicyDetail, id: "yg", slug: "yg", title: "[영광] 디지털관광주민증 혜택", region: "전남" },
+      { ...examplePolicyDetail, id: "wd", slug: "wd", title: "[완도] 디지털관광주민증 혜택", region: "전남" },
+    ];
+    const policyListSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+      await waitForSheet("모든 지역 2건");
+      const user = userEvent.setup();
+      // 검색창은 맨 위 하나 - 누르면 지역·혜택 검색 칸이 열리고 '필터' 자리에 '닫기'
+      const searchbox = screen.getByRole("searchbox", { name: "정책 검색" });
+      await user.click(searchbox);
+      const panel = await screen.findByRole("region", { name: "지역·혜택 검색 결과" });
+      expect(screen.queryByRole("button", { name: "지역·혜택 검색" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "필터 열기" })).toBeNull();
+      expect(screen.getByRole("button", { name: "닫기" })).toBeInTheDocument();
+      // 비워 두면 지역 사진 칸 - 혜택 많은 순
+      expect(within(panel).getAllByRole("button", { pressed: false })[0]).toHaveTextContent("전라남도혜택 2건");
+      await user.type(searchbox, "완도");
+      await user.click(within(panel).getByRole("button", { name: /완도.*전남 · 혜택 1건/ }));
+      await waitForSheet("완도 1건");
+      expect(screen.queryByRole("region", { name: "지역·혜택 검색 결과" })).toBeNull();
+      expect(screen.getByRole("button", { name: "필터 열기" })).toBeInTheDocument();
+      const params = new URLSearchParams(routeLocation().search);
+      expect([params.get("place"), params.get("city")]).toEqual(["전남", "완도"]);
+      expect(screen.getByRole("button", { name: "전남 전체" })).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "뒤로" }));
+      await waitForSheet("전남 2건");
+      await user.click(screen.getByRole("button", { name: "뒤로" }));
+      await waitForSheet("모든 지역 2건");
+    } finally {
+      policyListSpy.mockRestore();
+    }
+  });
+
+  it("on wide screens keeps the list in a panel beside the map and opens a policy there", async () => {
+    const policies: Policy[] = [
+      { ...examplePolicyDetail, id: "yg", slug: "yg", title: "[영광] 디지털관광주민증 혜택", region: "전남" },
+    ];
+    const policyListSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
+    const listTripsSpy = vi
+      .spyOn(appDataApi, "listTrips")
+      .mockResolvedValue([{ ...getUpcomingPreviewTrip(), id: "301", title: "전남 담기 여행" }]);
+    const panelList = () => document.querySelector(".thmap-panel-list");
+    stubDesktop();
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+      await waitForSheet("모든 지역 1건");
+      const user = userEvent.setup();
+      // 목록은 지도 오른쪽 패널에 늘 서 있다 - 끌 손잡이도 펼치기 단추도 없다
+      expect(document.querySelector(".prototype-policy-list-screen")).toHaveClass("desktop-wide");
+      expect(document.querySelector(".thmap-split .thmap-panel .thmap-sheet")).toHaveClass("thmap-at-panel");
+      expect(document.querySelector(".thmap-handle")).toBeNull();
+      expect(screen.queryByRole("button", { name: "목록 펼치기" })).toBeNull();
+
+      // 지역을 고르면 요약 카드와 시군 점(다가가지는 않는다 - PolicyRegionMap 시험)
+      await user.click(document.querySelector('.thmap-rg[data-region="전남"]') as SVGGElement);
+      await waitForSheet("전남 1건");
+      expect(document.querySelector('.thmap-dot[data-place="영광"]')).toBeTruthy();
+
+      // 줄을 누르면 패널이 그 정책의 상세가 된다. 주소에 남아 뒤로가 목록으로 돌아온다
+      await user.click(document.querySelector(".thmap-row-link") as HTMLElement);
+      const detail = await screen.findByRole("region", { name: /상세$/ });
+      expect(routeLocation().pathname).toBe("/policies");
+      expect(new URLSearchParams(routeLocation().search).get("detail")).toBe("yg");
+      expect(panelList()).toHaveAttribute("inert");
+      // 초점은 상세의 ‹ 로 갔다가, 목록으로 돌아오면 연 줄로 돌아온다
+      expect(within(detail).getByRole("button", { name: "목록으로" })).toHaveFocus();
+      expect(within(detail).getByRole("link", { name: "크게 보기" })).toHaveAttribute("href", "/policies/yg");
+      // 주 버튼은 지도 화면을 떠나지 않고 일정 고르기 창을 바로 연다. 창은 패널 밖(body)에 뜬다
+      await user.click(within(detail).getByRole("button", { name: "내 일정에 담기" }));
+      const tripWindow = await screen.findByRole("dialog", { name: "일정 선택" });
+      expect(tripWindow.closest(".policy-trip-window")).toBeTruthy();
+      expect(tripWindow.closest(".thmap-panel")).toBeNull();
+      expect(await within(tripWindow).findByText("전남 담기 여행")).toBeInTheDocument();
+      expect(routeLocation().pathname).toBe("/policies");
+      await user.click(within(tripWindow).getByRole("button", { name: "닫기" }));
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "일정 선택" })).toBeNull());
+      await user.click(within(detail).getByRole("button", { name: "목록으로" }));
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("detail")).toBeNull());
+      expect(screen.queryByRole("region", { name: /상세$/ })).toBeNull();
+      expect(panelList()).not.toHaveAttribute("inert");
+      expect(document.querySelector(".thmap-row-link")).toHaveFocus();
+      await waitForSheet("전남 1건");
+
+      await user.click(document.querySelector(".thmap-row-link") as HTMLElement);
+      await screen.findByRole("region", { name: /상세$/ });
+      goBack();
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("detail")).toBeNull());
+      await waitForSheet("전남 1건");
+
+      // 맨 위 검색창의 지역·혜택 검색 칸도 패널 안에서 열린다
+      await user.click(screen.getByRole("searchbox", { name: "정책 검색" }));
+      const search = await screen.findByRole("region", { name: "지역·혜택 검색 결과" });
+      expect(search.closest(".thmap-panel")).toBeTruthy();
+      expect(panelList()).toHaveAttribute("inert");
+    } finally {
+      vi.unstubAllGlobals();
+      policyListSpy.mockRestore();
+      listTripsSpy.mockRestore();
+    }
+  });
+
+  it("sends a wide-screen panel address to the policy page on a phone", async () => {
+    const policies: Policy[] = [
+      { ...examplePolicyDetail, id: "yg", slug: "yg", title: "[영광] 디지털관광주민증 혜택", region: "전남" },
+    ];
+    const policyListSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies?place=전남&detail=yg");
+      await waitFor(() => expect(routeLocation().pathname).toBe("/policies/yg"));
     } finally {
       policyListSpy.mockRestore();
     }

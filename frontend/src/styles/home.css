@@ -1,0 +1,699 @@
+/* 홈 (시안 v40). 가로 줄은 폰에서 옆으로 넘긴다. 768px 부터는 줄을 접어 격자로 펼친다 -
+   마우스로는 가로 스크롤을 찾기 어렵다. 색은 앱 토큰만 쓴다(지도 단계 색만 예외 - 아래 .home-map-card). */
+.prototype-home-greeting b {
+  color: var(--primary-700);
+  font-variant-numeric: tabular-nums;
+}
+
+.prototype-home-greeting .home-urgent {
+  color: var(--status-danger-text);
+}
+
+.home-banner {
+  display: flex;
+  align-items: center;
+  margin: 0 var(--app-page-gutter) 18px;
+  border: 1px solid var(--primary-100);
+  border-radius: 14px;
+  background: var(--primary-50);
+}
+
+.home-banner-go {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px 2px 8px 16px;
+  font-size: 14px;
+}
+
+.home-banner-go b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.home-banner-go span {
+  flex: none;
+  color: var(--primary-700);
+  font-weight: 700;
+}
+
+.home-banner-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  color: var(--gray-500);
+}
+
+/* 홈 맨 위 배너(시안 v45): 가운데 장 하나를 좁게(폰 80%) 두고, 앞뒤 장은 작고 흐리게 뒤에 겹쳐 양옆으로 비친다.
+   장의 자리는 data-pos(0 가운데, ±1 옆, x 숨김) - HomeHeroBanner.tsx. 장마다 혜택 형태 색이라 넘어가는 게 보인다. */
+.family-place {
+  --tb: var(--primary-50);
+  --tf: var(--primary-100);
+  --ts: var(--primary-700);
+}
+
+.home-hero {
+  position: relative;
+  height: 150px; /* 사진이 보이게 시안 v48 높이 */
+  margin: 0 0 18px;
+  overflow: hidden;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.home-hero-slide {
+  position: absolute;
+  top: 4px;
+  bottom: 8px;
+  left: 50%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 80%;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--tf);
+  border-radius: 16px;
+  background: var(--tb);
+  color: var(--ink);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.1);
+  opacity: 0;
+  transform: translateX(-50%) scale(0.8);
+  transition:
+    transform 0.45s ease,
+    opacity 0.45s ease;
+  -webkit-user-drag: none;
+}
+
+.home-hero-slide[data-pos="0"] {
+  z-index: 3;
+  opacity: 1;
+  transform: translateX(-50%);
+}
+
+.home-hero-slide[data-pos="1"],
+.home-hero-slide[data-pos="-1"] {
+  --peek: 17%;
+
+  z-index: 2;
+  opacity: 0.55;
+  transform: translateX(-50%) translateX(var(--peek)) scale(0.88);
+}
+
+.home-hero-slide[data-pos="-1"] {
+  transform: translateX(-50%) translateX(calc(var(--peek) * -1)) scale(0.88);
+}
+
+.home-hero-slide .benefit-tile,
+.home-hero-pin {
+  --tb: var(--white);
+
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+}
+
+.home-hero-slide .benefit-tile svg {
+  width: 30px;
+  height: 30px;
+}
+
+.home-hero-pin {
+  display: grid;
+  flex: none;
+  place-items: center;
+  background: var(--white);
+  color: var(--ts);
+}
+
+.home-hero-copy {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.home-hero-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ts);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.home-hero-eyebrow > span:last-child,
+.home-hero-copy b,
+.home-hero-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-hero-copy b {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.home-hero-sub {
+  color: var(--gray-700);
+  font-size: 13.5px;
+}
+
+.home-hero-go {
+  flex: none;
+  color: var(--ts);
+  font-size: 22px;
+}
+
+/* 장 바탕 사진(시안 v48, heroPhotos.ts). 왼쪽부터 어둡게 눌러 흰 글씨가 읽히게 하고, 오른쪽 아래에 출처 */
+.home-hero-slide.photo {
+  border-color: transparent;
+  background:
+    linear-gradient(90deg, rgba(15, 23, 42, 0.78), rgba(15, 23, 42, 0.5) 55%, rgba(15, 23, 42, 0.18)),
+    var(--ph) center / cover no-repeat;
+  color: var(--white);
+}
+
+.home-hero-slide.photo .home-hero-eyebrow,
+.home-hero-slide.photo .home-hero-go {
+  color: var(--white);
+}
+
+.home-hero-slide.photo .home-hero-sub {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.home-hero-credit {
+  position: absolute;
+  right: 12px;
+  bottom: 7px;
+  max-width: calc(100% - 24px);
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 멈춤(WCAG 2.2.2): 화면에는 안 보이고, 키보드 초점이 가면 가운데 장 오른쪽 아래에 나타난다 */
+.home-hero-pause {
+  position: absolute;
+  right: calc(10% + 10px);
+  bottom: 14px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  background: var(--ink);
+  color: var(--white);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.home-hero-pause:not(:focus-visible) {
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-hero-slide {
+    transition: none;
+  }
+}
+
+.home-section {
+  margin-bottom: 22px;
+}
+
+.home-row {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  padding: 4px var(--app-page-gutter) 6px;
+  overflow-x: auto;
+  list-style: none;
+  scroll-padding-inline: var(--app-page-gutter);
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.home-row::-webkit-scrollbar {
+  display: none;
+}
+
+.home-row > li {
+  display: flex;
+  flex: none;
+  scroll-snap-align: start;
+}
+
+.home-empty {
+  margin: 0 var(--app-page-gutter);
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--gray-50);
+  color: var(--gray-600);
+  font-size: 14px;
+}
+
+/* 마감이 가까운 혜택: 그림 칸 · 마감 · 사업 이름 · 받는 것 · 어디 */
+.home-deadline-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto 1fr;
+  gap: 4px 8px;
+  width: 232px;
+  min-height: 152px;
+  padding: 14px;
+  border: 1px solid var(--gray-200);
+  border-radius: 16px;
+  background: var(--white);
+  color: var(--ink);
+}
+
+.home-deadline-badge {
+  align-self: start;
+  justify-self: end;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.home-deadline-badge.urgent {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+}
+
+.home-deadline-badge.soon {
+  background: var(--status-draft-bg);
+  color: var(--status-draft-text);
+}
+
+.home-deadline-badge.later,
+.home-deadline-badge.always {
+  background: var(--gray-100);
+  color: var(--gray-700);
+  font-weight: 500;
+}
+
+.home-deadline-card strong {
+  display: -webkit-box;
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.home-deadline-summary,
+.home-deadline-where {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-deadline-summary {
+  color: var(--primary-700);
+  font-weight: 600;
+}
+
+.home-deadline-where {
+  align-self: end;
+  color: var(--gray-600);
+}
+
+/* 혜택이 많은 지역: 지도 표지 한 장 + 지역 사진 카드 */
+.home-map-card,
+.home-region-card {
+  width: 136px;
+  height: 178px;
+  border-radius: 16px;
+}
+
+/* 지도 색은 정책 탭 지도(policy-map.css)와 같은 단계다 - ColorBrewer BuGn 에서 바다와 겹치는
+   가장 옅은 칸을 뺀 다섯 단계 + 0건 회색. 두 곳 값을 같이 고칠 것(토큰 정리 때 한 곳으로 모은다). */
+.home-map-card {
+  --home-map-sea: #eef1f4;
+  --home-map-0: #e2e5ea;
+  --home-map-1: #ccece6;
+  --home-map-2: #99d8c9;
+  --home-map-3: #66c2a4;
+  --home-map-4: #2ca25f;
+  --home-map-5: #006d2c;
+
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 4px;
+  padding: 8px 10px 12px;
+  border: 1px solid var(--gray-200);
+  background: var(--home-map-sea);
+  color: var(--ink);
+}
+
+.home-map {
+  display: block;
+  width: 100%;
+  height: 120px;
+}
+
+.home-map path {
+  stroke: var(--white);
+  stroke-linejoin: round;
+  stroke-width: 0.6;
+}
+
+.home-map .lv0 {
+  fill: var(--home-map-0);
+}
+
+.home-map .lv1 {
+  fill: var(--home-map-1);
+}
+
+.home-map .lv2 {
+  fill: var(--home-map-2);
+}
+
+.home-map .lv3 {
+  fill: var(--home-map-3);
+}
+
+.home-map .lv4 {
+  fill: var(--home-map-4);
+}
+
+.home-map .lv5 {
+  fill: var(--home-map-5);
+}
+
+.home-map-card b,
+.home-region-card b {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.home-map-card i,
+.home-region-card i {
+  display: block;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.home-map-card i {
+  color: var(--gray-600);
+}
+
+.home-region-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 12px;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--gray-700);
+  color: var(--white);
+}
+
+.home-region-photo {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 아래쪽을 어둡게 눌러 흰 글자가 사진 위에서도 읽히게 한다 */
+.home-region-card::after {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0) 35%, rgba(15, 23, 42, 0.76));
+  content: "";
+}
+
+.home-region-card b {
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.home-region-card i {
+  opacity: 0.94;
+}
+
+/* 시군 카드(시안 v43~44): 맨 아래 줄은 누르면 열리는 혜택. 글이 낱말 가운데서 끊기지 않게 */
+.home-region-card {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.home-region-card .home-region-lead {
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+/* 그 시군만 쓰는 사진이 없는 곳 - 같은 사진을 되풀이하지 않고 혜택 그림과 그 형태 색 바탕 */
+.home-region-card.nophoto {
+  background: var(--tb);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--tf);
+}
+
+.home-region-card.nophoto::after {
+  display: none;
+}
+
+.home-region-card.nophoto .benefit-tile {
+  --tb: var(--white);
+
+  margin-bottom: auto;
+}
+
+.home-region-card.nophoto i {
+  color: var(--gray-700);
+  opacity: 1;
+}
+
+.home-photo-credit {
+  margin: 6px var(--app-page-gutter) 0;
+  color: var(--gray-600);
+  font-size: 11.5px;
+  text-align: right;
+}
+
+/* 전국 공통 · 일정 만들기 한 줄 카드 */
+.home-line-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  margin: 0 var(--app-page-gutter) 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--gray-200);
+  border-radius: 16px;
+  background: var(--white);
+  color: var(--ink);
+}
+
+.home-line-copy {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.home-line-copy b {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.home-line-copy i {
+  color: var(--gray-600);
+  font-size: 13px;
+  font-style: normal;
+}
+
+.home-line-go {
+  flex: none;
+  color: var(--gray-500);
+  font-size: 22px;
+}
+
+.home-hero-pause:focus-visible,
+.home-banner-go:focus-visible,
+.home-banner-close:focus-visible,
+.home-deadline-card:focus-visible,
+.home-map-card:focus-visible,
+.home-region-card:focus-visible,
+.home-line-card:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* 배너 장은 둘레가 잘리는 틀 안이라 안쪽으로 그린다 */
+.home-hero-slide:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+@media (min-width: 768px) {
+  .home-row {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+}
+
+/* 넓은 화면(1024px 이상, 시안 v41 데스크톱). 시안 비율대로 화면의 81.25% 판(옆 여백 32px)을 두 단 격자로 쓰고,
+   한 줄 카드 두 장(전국 공통 · 일정 만들기 또는 AI 추천)만 나란히, 나머지는 한 줄을 다 쓴다. 가로 넘김 줄은 격자로 편다 -
+   마감 3열, 지역 4열(지도 + 7곳으로 두 줄). 지역 카드는 시안 모양(235:200)대로 판과 함께 커진다. 옆 여백은 판이 맡으므로 gutter 는 0 으로. */
+@media (min-width: 1024px) {
+  .service-layout .prototype-home-screen.desktop-wide {
+    --app-page-gutter: 0px;
+
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 16px;
+    align-content: start;
+    width: 81.25%;
+    max-width: none;
+    margin: 0 auto;
+    padding: 0 32px 40px;
+  }
+
+  .prototype-home-screen.desktop-wide > * {
+    grid-column: 1 / -1;
+  }
+
+  /* 768px 부터 숨긴 검색 줄을 되살린다(시안). 아바타는 위 메뉴의 '내 정보'가 같은 일을 한다. */
+  .service-layout .prototype-home-screen.desktop-wide .prototype-home-search-row {
+    display: flex;
+    padding: 24px 0 4px;
+  }
+
+  .prototype-home-screen.desktop-wide .prototype-home-search-pill {
+    flex: 0 1 520px;
+    padding: 0 16px;
+  }
+
+  .prototype-home-screen.desktop-wide .prototype-home-avatar {
+    display: none;
+  }
+
+  .service-layout .prototype-home-screen.desktop-wide .prototype-home-greeting {
+    padding: 12px 0 20px;
+  }
+
+  .prototype-home-screen.desktop-wide .ds-section-header {
+    padding: 0 2px 4px;
+  }
+
+  .prototype-home-screen.desktop-wide .home-row {
+    display: grid;
+    gap: 12px;
+    padding: 8px 0 0;
+    overflow: visible;
+    scroll-snap-type: none;
+  }
+
+  .prototype-home-screen.desktop-wide .home-row-deadline {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .prototype-home-screen.desktop-wide .home-row-regions {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .prototype-home-screen.desktop-wide .home-row-regions > :nth-child(n + 9) {
+    display: none;
+  }
+
+  .prototype-home-screen.desktop-wide .home-row > li > * {
+    flex: 1;
+    width: auto;
+  }
+
+  .prototype-home-screen.desktop-wide .home-deadline-card {
+    min-height: 156px;
+  }
+
+  .prototype-home-screen.desktop-wide .home-map-card,
+  .prototype-home-screen.desktop-wide .home-region-card {
+    height: auto;
+    aspect-ratio: 235 / 200;
+  }
+
+  .prototype-home-screen.desktop-wide .home-map {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .prototype-home-screen.desktop-wide .home-hero {
+    height: 176px;
+  }
+
+  .prototype-home-screen.desktop-wide .home-hero-slide {
+    --peek: 26%;
+
+    width: 60%;
+    padding: 18px 24px;
+  }
+
+  .prototype-home-screen.desktop-wide .home-hero-slide[data-pos="1"] {
+    transform: translateX(-50%) translateX(var(--peek)) scale(0.9);
+  }
+
+  .prototype-home-screen.desktop-wide .home-hero-slide[data-pos="-1"] {
+    transform: translateX(-50%) translateX(calc(var(--peek) * -1)) scale(0.9);
+  }
+
+  .prototype-home-screen.desktop-wide .home-hero-pause {
+    right: calc(20% + 12px);
+  }
+
+  .prototype-home-screen.desktop-wide > .home-line-card,
+  .prototype-home-screen.desktop-wide > .home-ai-block {
+    grid-column: auto;
+    align-self: start;
+    margin: 2px 0 10px;
+  }
+}
+
+/* '내 관심 지역 혜택' 머리의 '관심 지역 바꾸기'(시안 v49) - 다른 칸의 '전체 보기' 링크와 같은 글자 모양 */
+.home-section-action {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-action-primary);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}

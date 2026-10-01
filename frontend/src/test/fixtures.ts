@@ -1,4 +1,5 @@
 import type { Policy, TravelAreaRecommendationResponse, Trip, User } from "../api";
+import { getKstDateInputValue } from "../utils/dateDefaults";
 
 export const testEmail = "test.user@example.com";
 export const testPassword = "password123";
@@ -30,9 +31,15 @@ export const examplePolicyDetail: Policy = {
   sourceType: "external",
 };
 
+/* 앱은 남은 날을 한국 날짜로 센다(utils daysUntilPolicyDeadline). UTC 로 만들면 한국 0~9시에 하루 어긋나 'D-20' 같은 비교가 그 시간에만 떨어진다 */
 export function testIsoDateFromToday(daysFromToday: number) {
-  const date = new Date(Date.now() + daysFromToday * 86_400_000);
-  return date.toISOString().slice(0, 10);
+  return getKstDateInputValue(new Date(Date.now() + daysFromToday * 86_400_000));
+}
+
+/* 정책 상세의 담기 창은 끝나지 않은 일정만 보여 준다. 기본 미리보기 일정(2026-06)은 이미 지났으므로
+   담기를 시험할 때는 이 일정을 쓴다. 날짜 글자(dates)는 화면 표시용이라 그대로 둔다. */
+export function getUpcomingPreviewTrip(): Trip {
+  return { ...getPreviewTrip(), startDate: "2099-06-12", endDate: "2099-06-13" };
 }
 
 export function getPreviewTrip(): Trip {
