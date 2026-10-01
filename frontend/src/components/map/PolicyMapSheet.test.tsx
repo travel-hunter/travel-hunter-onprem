@@ -183,6 +183,59 @@ describe("PolicyMapSheet", () => {
     }
   });
 
+  /* 지운 옛 시험(휠 열기·튕기기·목록 끌어내리기)이 지키던 코드가 세 자리 시트에도 남아 있어 지금 동작으로 다시 지킨다 */
+  const pointerOn = (target: HTMLElement) => (type: string, clientY: number, timeStamp = 0) => {
+    const event = new Event(type, { bubbles: true });
+    Object.defineProperties(event, { clientY: { value: clientY }, pointerId: { value: 1 }, button: { value: 0 }, timeStamp: { value: timeStamp } });
+    fireEvent(target, event);
+  };
+
+  it("swallows only the click right after a drag - the next real click works", async () => {
+    const tall = vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    try {
+      const { onStop } = mount();
+      const pointer = pointerOn(document.querySelector(".thmap-head") as HTMLElement);
+      pointer("pointerdown", 500, 0);
+      pointer("pointermove", 200, 200);
+      pointer("pointerup", 200, 400);
+      expect(onStop).toHaveBeenCalledTimes(1);
+      // 끌기 끝에 click 이 안 따라온 경우(터치 등): 막기 표시는 다음 틱에 풀린다
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fireEvent.click(screen.getByRole("button", { name: "목록 펼치기" }));
+      expect(onStop).toHaveBeenCalledTimes(2);
+    } finally {
+      tall.mockRestore();
+    }
+  });
+
+  it("moves the sheet with the wheel over its head and settles at a stop", () => {
+    const tall = vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    try {
+      const { onStop } = mount();
+      fireEvent.wheel(document.querySelector(".thmap-head") as HTMLElement, { deltaY: 2000 });
+      expect(onStop).toHaveBeenLastCalledWith("full");
+    } finally {
+      tall.mockRestore();
+    }
+  });
+
+  it("lets the list be pulled down at one page when it is scrolled to the top", () => {
+    const tall = vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    try {
+      const { onStop } = mount({ stop: "full" });
+      const list = document.querySelector(".thmap-list") as HTMLElement;
+      expect(list.scrollTop).toBe(0);
+      const pointer = pointerOn(list);
+      pointer("pointerdown", 150, 0);
+      pointer("pointermove", 650, 200);
+      pointer("pointerup", 650, 400);
+      expect(onStop).toHaveBeenCalled();
+      expect(onStop).not.toHaveBeenLastCalledWith("full");
+    } finally {
+      tall.mockRestore();
+    }
+  });
+
   it("keeps the list scrolling in place at half height - the wheel over the list does not move the sheet", () => {
     const { onStop } = mount();
     const list = document.querySelector(".thmap-list") as HTMLElement;

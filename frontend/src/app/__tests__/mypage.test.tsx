@@ -551,14 +551,23 @@ describe("Travel Hunter app — my page", () => {
       .mockResolvedValue(nextUser);
     let getCurrentUserSpy: { mockRestore: () => void } | null = null;
 
+    let getProfileSpy: { mockRestore: () => void } | null = null;
+
     try {
       await login();
       cleanup();
+      // 서버 프로필 응답을 붙잡아 둔다 - 오기 전엔 편집을 못 열고(빈 자리값으로 저장돼 지워지지 않게), 온 뒤의 값에서 시작한다
+      const heldProfiles: Array<(profile: { preferredRegions: string[]; style: string; budget: string }) => void> = [];
+      getProfileSpy = vi
+        .spyOn(appDataApi, "getProfile")
+        .mockImplementation(() => new Promise((resolve) => { heldProfiles.push(resolve); }));
       renderAppRoute("/mypage");
       const user = userEvent.setup();
 
-      // 서버 프로필을 받기 전엔 편집을 못 연다(빈 자리값으로 저장돼 지워지지 않게) - 켜질 때까지 기다린다
       const editButton = await screen.findByRole("button", { name: "편집" });
+      expect(editButton).toBeDisabled();
+      await waitFor(() => expect(heldProfiles.length).toBeGreaterThan(0));
+      heldProfiles.forEach((resolve) => resolve({ preferredRegions: ["부산"], style: "맛집", budget: "1인 30만원 이하" }));
       await waitFor(() => expect(editButton).toBeEnabled());
       await user.click(editButton);
       const dialog = screen.getByRole("dialog", { name: "프로필 편집" });
@@ -592,15 +601,13 @@ describe("Travel Hunter app — my page", () => {
           nickname: nextUser.nickname,
         }),
       );
-      // 편집 창은 서버 프로필을 받은 뒤에 열린다 - 원래 관심 지역에 고른 지역이 더해진다(빈 초안으로 덮지 않는다)
+      // 서버 프로필(부산)에 고른 지역이 더해진다 - 빈 초안으로 덮으면 ["강원"] 만 남는다
       await waitFor(() =>
-        expect(updateProfileSpy).toHaveBeenCalledWith(
-          expect.objectContaining({
-            preferredRegions: expect.arrayContaining([targetRegion]),
-            style: nextProfile.style,
-            budget: nextProfile.budget,
-          }),
-        ),
+        expect(updateProfileSpy).toHaveBeenCalledWith({
+          preferredRegions: ["부산", targetRegion],
+          style: nextProfile.style,
+          budget: nextProfile.budget,
+        }),
       );
       await waitFor(() =>
         expect(
@@ -612,6 +619,7 @@ describe("Travel Hunter app — my page", () => {
     } finally {
       updateNicknameSpy.mockRestore();
       getCurrentUserSpy?.mockRestore();
+      getProfileSpy?.mockRestore();
       updateProfileSpy.mockRestore();
     }
   });

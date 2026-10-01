@@ -154,9 +154,11 @@ export function browseView(
   return { title, count: own.length, sub, entries: groupEntries(own), empty: null, nationMore: nation.length };
 }
 
-/* 칩 옆 건수. 고른 지역·사업 안에서 센다 */
-export function chipCounts(policies: Policy[], region: string | null, program: string | null) {
-  const base = policies.filter((policy) => (!region || policy.region === region) && (!program || programName(policy) === program));
+/* 칩 옆 건수. 고른 지역(시군까지)·사업 안에서 센다 - 목록과 같은 범위여야 칩을 눌러 빈 목록이 안 나온다 */
+export function chipCounts(policies: Policy[], region: string | null, program: string | null, city: string | null = null) {
+  const base = policies.filter(
+    (policy) => (!region || policy.region === region) && (!city || cityOf(policy) === city) && (!program || programName(policy) === program),
+  );
   return new Map(BROWSE_FILTERS.map((f) => [f.key, base.filter((policy) => matchesBrowseFilter(policy, f.key)).length]));
 }
 

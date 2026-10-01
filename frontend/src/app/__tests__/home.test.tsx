@@ -323,6 +323,42 @@ describe("Travel Hunter app — home", () => {
     }
   });
 
+  it("opens a place's own benefit before one whose page is shared by many places, and ranks ties by the earliest deadline", async () => {
+    const shared = "https://stay-sale.example/"; // 숙박세일처럼 여러 시군이 첫 화면 하나를 나눠 쓴다
+    const policies: Policy[] = [
+      policy({ id: "ta-stay", title: "[태안] 숙박세일 페스타 숙박 할인", region: "충남", category: "숙박", deadline: testIsoDateFromToday(5), officialUrl: shared }),
+      policy({ id: "ta-refund", title: "[태안] 대한민국 반값여행 지원", region: "충남", deadline: testIsoDateFromToday(20), officialUrl: "https://taean.example/" }),
+      policy({ id: "ta-card", title: "[태안] 디지털관광주민증 혜택", region: "충남", deadline: "", officialUrl: "https://card.example/taean" }),
+      policy({ id: "gj-stay", title: "[거제] 숙박세일 페스타 숙박 할인", region: "경남", category: "숙박", deadline: testIsoDateFromToday(5), officialUrl: shared }),
+      policy({ id: "gj-card", title: "[거제] 디지털관광주민증 혜택", region: "경남", deadline: "", officialUrl: "https://card.example/geoje" }),
+      policy({ id: "gh-refund", title: "[고흥] 대한민국 반값여행 지원", region: "전남", deadline: testIsoDateFromToday(10), officialUrl: "https://goheung.example/" }),
+      policy({ id: "gh-stay", title: "[고흥] 숙박세일 페스타 숙박 할인", region: "전남", category: "숙박", deadline: testIsoDateFromToday(30), officialUrl: shared }),
+    ];
+    const listPoliciesSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
+    const getProfileSpy = withoutPreferredRegions();
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/home");
+
+      const regionSection = await screen.findByRole("region", { name: "혜택이 많은 지역" });
+      const cards = within(regionSection)
+        .getAllByRole("link")
+        .filter((link) => link.classList.contains("home-region-card"));
+      // 거제·고흥은 둘 다 2건 - 순위는 안 지난 가장 빠른 마감(거제 숙박세일 D-5 < 고흥 D-10). 대표 혜택(거제는 주민증)과 따로 센다
+      expect(cards.map((card) => card.querySelector("b")?.textContent)).toEqual(["태안", "거제", "고흥"]);
+      // 태안: 마감이 더 빠른 숙박세일(나눠 쓰는 안내) 대신 그 시군 전용 안내가 있는 반값여행
+      expect(cards[0]).toHaveAttribute("href", "/policies/ta-refund");
+      // 거제: 전용 안내는 주민증뿐(상시)
+      expect(cards[1]).toHaveAttribute("href", "/policies/gj-card");
+      expect(cards[2]).toHaveAttribute("href", "/policies/gh-refund");
+    } finally {
+      getProfileSpy.mockRestore();
+      listPoliciesSpy.mockRestore();
+    }
+  });
+
   it("shows closing-soon benefits nationwide first, then the preferred regions' own row", async () => {
     const policies: Policy[] = [
       policy({ id: "b1", title: "부산 늦은 혜택", region: "부산", deadline: testIsoDateFromToday(90) }),

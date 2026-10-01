@@ -94,6 +94,9 @@ describe("HomeHeroBanner", () => {
       return 0;
     });
     expect(screen.getByRole("link", { name: /첫째/ })).toHaveAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight");
+    // Alt+← · → 는 브라우저 앞뒤 이동이다 - 가로채지 않는다
+    fireEvent.keyDown(hero, { key: "ArrowRight", altKey: true });
+    expect(center()).toContain("첫째");
     fireEvent.keyDown(hero, { key: "ArrowRight" });
     expect(center()).toContain("둘째");
     expect(screen.getByRole("link", { name: /둘째/ })).toHaveFocus();

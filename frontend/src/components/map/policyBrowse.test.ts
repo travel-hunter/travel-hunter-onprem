@@ -67,6 +67,8 @@ describe("policy tab browse model", () => {
     expect(counts.get("partner")).toBe(2);
     expect(counts.get("move")).toBe(0);
     expect(chipCounts(policies, null, null).get("move")).toBe(1);
+    // 시군을 고르면 그 시군 안에서 센다 - 목록과 같은 범위(도 전체를 세면 칩을 눌러 빈 목록이 나왔다)
+    expect(chipCounts(policies, "전남", null, "완도").get(null)).toBe(1);
   });
 
   it("marks deadlines by urgency and keeps the app's always-issued label for resident cards", () => {

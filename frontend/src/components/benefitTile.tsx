@@ -21,12 +21,13 @@ export const BENEFIT_TYPES: Record<BenefitTileKind, { label: string; family: Ben
   nation: { label: "전국 공통", family: "move" },
 };
 
-export function benefitTypeOf(policy: Pick<Policy, "title" | "category">): BenefitType {
+export function benefitTypeOf(policy: Pick<Policy, "title" | "category"> & { cardSummary?: string | null }): BenefitType {
   const { title, category } = policy;
   if (/반값여행/.test(title)) return "refund";
   if (/디지털관광주민증/.test(title)) return "partner";
   if (category === "숙박" || /숙박/.test(title)) return "stay";
-  if (/렌터카|자동차|운전/.test(title)) return "car";
+  // 받는 것(카드 요약)도 본다 - '바다가는 달'은 제목만 보면 배지만 실제는 렌터카 쿠폰이다
+  if (/렌터카|자동차|운전/.test(`${title} ${policy.cardSummary ?? ""}`)) return "car";
   if (/열차|내일로|기차/.test(title)) return "train";
   if (/항공|비행기/.test(title)) return "plane";
   if (/바다|섬|여객선|배편/.test(title)) return "ship";

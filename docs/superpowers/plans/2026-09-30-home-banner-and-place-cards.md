@@ -1,6 +1,6 @@
 # 홈 배너 · 시군 카드 · 정책 탭 전체 폭
 
-시안: https://claude.ai/artifact/BAPGExyD8otfWpH6aqxVZF v42(배너) · v43~44(시군 카드). 브랜치 `feature/home-banner-places`(`feature/desktop-layout` 위).
+시안: 디자인 시안(담당자 비공개 페이지) v42(배너) · v43~44(시군 카드). 브랜치 `feature/home-banner-places`(`feature/desktop-layout` 위).
 
 ## 정한 것 (2026-09-30 사용자 결정)
 

@@ -1,6 +1,6 @@
 # 시안 v40(홈·정책·일정) 앱 반영 계획
 
-시안: https://claude.ai/artifact/BAPGExyD8otfWpH6aqxVZF (v40). 소스 보존: `D:\travel-hunter-review\2026-09-29-service-audit\policy-tab-mock\`.
+시안: 디자인 시안(담당자 비공개 페이지) (v40). 시안 소스는 저장소 밖에 보존.
 목표: 시안을 실제 React 앱에 옮기고, 로컬 4173(빌드본)에서 사용자가 화면별로 테스트한다.
 
 ## 원칙

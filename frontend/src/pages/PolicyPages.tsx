@@ -632,7 +632,7 @@ export function PolicyListPage() {
     () => browseView(browsePolicies, browse.region, browse.city, browse.filter),
     [browsePolicies, browse.region, browse.city, browse.filter],
   );
-  const chips = useMemo(() => chipCounts(policies ?? [], browse.region, browse.program), [policies, browse.region, browse.program]);
+  const chips = useMemo(() => chipCounts(policies ?? [], browse.region, browse.program, browse.city), [policies, browse.region, browse.program, browse.city]);
   /* 지도 왼쪽 위 '전국 공통 N' - 칩·사업이 걸린 수. 지역 카드의 '전국 공통 혜택 N건 보기'는 전부 */
   const nationCount = useMemo(() => browsePolicies.filter((policy) => policy.region === NATIONWIDE_REGION).length, [browsePolicies]);
   const allNationCount = useMemo(() => (policies ?? []).filter((policy) => policy.region === NATIONWIDE_REGION).length, [policies]);

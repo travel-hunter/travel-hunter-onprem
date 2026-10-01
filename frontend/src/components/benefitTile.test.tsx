@@ -8,6 +8,9 @@ describe("benefit tile", () => {
     expect(benefitTypeOf({ title: "[강화] 디지털관광주민증 혜택", category: "지역할인" })).toBe("partner");
     expect(benefitTypeOf({ title: "숙박세일 페스타", category: "이벤트" })).toBe("stay");
     expect(benefitTypeOf({ title: "제주 한옥 체험", category: "숙박" })).toBe("stay");
+    // 받는 것(카드 요약)도 본다 - '바다가는 달'은 제목엔 바다지만 렌터카 쿠폰이다
+    expect(benefitTypeOf({ title: "바다가는 달", category: "이벤트", cardSummary: "카모아 렌터카 2만원 쿠폰" })).toBe("car");
+    expect(benefitTypeOf({ title: "바다가는 달", category: "이벤트" })).toBe("ship");
     expect(benefitTypeOf({ title: "섬 여행 렌터카 할인", category: "교통" })).toBe("car");
     expect(benefitTypeOf({ title: "내일로패스 할인", category: "교통" })).toBe("train");
     expect(benefitTypeOf({ title: "국내선 항공권 할인", category: "교통" })).toBe("plane");

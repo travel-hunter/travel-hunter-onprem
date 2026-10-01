@@ -9698,8 +9698,8 @@ a.prototype-stat-card:active {
   justify-self: center;
   border-radius: 999px;
   padding: 8px 12px;
-  background: #fff3f2;
-  color: var(--primary-600);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
   font-weight: 950;
 }
 
@@ -11469,7 +11469,7 @@ a.prototype-stat-card:active {
   padding: 14px 16px;
   border: 1px solid #f5c2c0;
   border-radius: 14px;
-  background: var(--primary-50);
+  background: var(--status-danger-bg); /* 저장 전 경고 - 주색(청록)이 아니라 오류색 */
   color: #7a271a;
   font-size: 14px;
 }
@@ -12079,4 +12079,20 @@ a.prototype-stat-card:active {
 .prototype-applied-trip-status {
   color: #0f766e;
   font-weight: 600;
+}
+
+/* 넓은 화면 일정 상세(두 단)의 아래 고정 줄(추천 미리보기 · 편집 모드)은 왼쪽 타임라인 칸 아래에 둔다.
+   창 가운데 760/820px 에 두면 타임라인과 지도 칸에 걸쳤다. 판(1440 상한의 92.2%)·지도 칸(41.2%, 최소 360px)·칸 사이 24px 와 같은 계산 */
+@media (min-width: 1024px) {
+  .service-layout:has(.prototype-trip-detail-screen.desktop-wide) {
+    --trip-board: calc(min(100vw, 1440px) * 0.922);
+    --trip-lane: calc(var(--trip-board) - max(360px, var(--trip-board) * 0.412) - 24px);
+  }
+
+  .service-layout:has(.prototype-trip-detail-screen.desktop-wide) .recommendation-preview-action-bar,
+  .service-layout:has(.prototype-trip-detail-screen.desktop-wide) .edit-mode-bar {
+    left: calc((100vw - var(--trip-board)) / 2);
+    width: var(--trip-lane);
+    transform: none;
+  }
 }

@@ -2297,6 +2297,35 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
+  it("fills the date editor from the server dates for a trip that crosses the new year", async () => {
+    // 보이는 글은 끝 날짜에 연도가 없다('2026.12.30 - 01.02') - 그 글을 읽으면 끝이 2026-01-02 로 시작보다 앞섰다
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "63",
+      title: "해넘이 여행",
+      currentUserRole: "owner",
+      dates: "2026.12.30 - 01.02",
+      startDate: "2026-12-30",
+      endDate: "2027-01-02",
+      days: { 1: [], 2: [], 3: [], 4: [] },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/63");
+
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "기간 바꾸기" }));
+      const dialog = screen.getByRole("dialog", { name: "여행기간 수정" });
+      expect(within(dialog).getByTestId("trip-date-range-summary")).toHaveTextContent("2026-12-30 ~ 2027-01-02");
+      expect(within(dialog).getByTestId("trip-date-range-trigger")).toHaveTextContent("4일");
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
   it("hides the date editor opener from viewers", async () => {
     const trip: Trip = {
       ...getPreviewTrip(),
