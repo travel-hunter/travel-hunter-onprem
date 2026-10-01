@@ -9,8 +9,8 @@ docs/superpowers/plans/2026-10-01-photo-collection-criteria.md). 지역 사진·
 
 from __future__ import annotations
 
+import re
 import struct
-from collections.abc import Callable
 
 import httpx
 
@@ -34,6 +34,10 @@ FACILITY_WORDS = (
     "매립장",
     "소각장",
 )
+# '청사'는 관공서 건물 - 해운대 '청사포'(바닷가 마을)는 빼지 않는다
+FACILITY_PATTERNS = tuple(
+    (word, re.compile(re.escape(word) + ("(?!포)" if word == "청사" else ""))) for word in FACILITY_WORDS
+)
 SIZE_PROBE_BYTES = 131_071
 
 
@@ -52,7 +56,7 @@ def metadata_rejections(*, title: str, image_url: str | None, copyright_type: st
         reasons.append("no-image")
     if copyright_type not in COPYRIGHT_LABELS:
         reasons.append(f"copyright:{copyright_type or 'none'}")
-    word = next((word for word in FACILITY_WORDS if word in title), None)
+    word = next((word for word, pattern in FACILITY_PATTERNS if pattern.search(title)), None)
     if word:
         reasons.append(f"facility:{word}")
     return reasons
@@ -96,22 +100,48 @@ def image_size(data: bytes) -> tuple[int, int] | None:
     return None
 
 
-class ImageSizeProbe:
-    """사진 머리 128KB 만 받아 크기를 잰다. 같은 주소는 한 번만 - 후보를 순서대로 하나씩 볼 때만 부른다."""
+class ImageProbeError(RuntimeError):
+    """사진 서버에 닿지 못했다(시간 초과 · 연결 실패 · 5xx · 429). 기준 미달이 아니다 - 그 대상은 이번 실행에서
+    건너뛰고(수집 스크립트가 실패로 센다) 있던 줄은 그대로 둔다. 기준 미달로 보면 첫 실행에 사진 서버가 잠깐 느려도
+    멀쩡한 줄이 한꺼번에 숨겨진다."""
 
-    def __init__(self, http_get: Callable[..., httpx.Response] = httpx.get, timeout: float = 10.0) -> None:
-        self._http_get = http_get
+
+class ImageSizeProbe:
+    """사진 앞 128KB 만 받아 크기를 잰다. 같은 주소는 한 번만 - 후보를 순서대로 하나씩 볼 때만 부른다.
+
+    - 서버가 Range 를 무시하고 200 으로 다 보내도 128KB 에서 끊는다. 주소 넘김(3xx)은 따라간다.
+    - 4xx(사진 없음 등)는 그 후보만 탈락(None → size:unknown). 머리를 읽지 못한 형식(WEBP·GIF 등)도 None.
+    - 그 밖의 연결 문제는 ImageProbeError - 캐시하지 않아 다음 실행에 다시 본다.
+    """
+
+    def __init__(self, client: httpx.Client | None = None, timeout: float = 10.0) -> None:
+        self._client = client
         self._timeout = timeout
         self._cache: dict[str, tuple[int, int] | None] = {}
+
+    def _head(self, url: str) -> bytes:
+        stream = (self._client or httpx).stream
+        with stream(
+            "GET", url, headers={"Range": f"bytes=0-{SIZE_PROBE_BYTES}"}, timeout=self._timeout, follow_redirects=True
+        ) as response:
+            response.raise_for_status()
+            data = bytearray()
+            for chunk in response.iter_bytes():
+                data += chunk
+                if len(data) > SIZE_PROBE_BYTES:
+                    break
+            return bytes(data[: SIZE_PROBE_BYTES + 1])
 
     def __call__(self, url: str) -> tuple[int, int] | None:
         if url not in self._cache:
             try:
-                response = self._http_get(
-                    url, headers={"Range": f"bytes=0-{SIZE_PROBE_BYTES}"}, timeout=self._timeout
-                )
-                response.raise_for_status()
-                self._cache[url] = image_size(response.content)
-            except httpx.HTTPError:
-                self._cache[url] = None
+                self._cache[url] = image_size(self._head(url))
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if 400 <= status < 500 and status != 429:
+                    self._cache[url] = None
+                else:
+                    raise ImageProbeError(f"size probe {status}: {url}") from exc
+            except httpx.HTTPError as exc:
+                raise ImageProbeError(f"size probe failed: {url}: {type(exc).__name__}") from exc
         return self._cache[url]

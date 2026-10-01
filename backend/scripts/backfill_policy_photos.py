@@ -7,6 +7,9 @@ use the region/city fallback at API response time.
 사진은 수집 기준(app/services/photo_criteria.py, 지역 사진과 같은 기준)을 거친다(2026-10-01): 그 시군 관광지(시군 코드)에서
 저작권 유형 · 시설 · 겹침 · 가로/크기를 통과한 첫 곳. 이미 쓴 사진은 다시 쓰지 않는다. 기준 이전에 넣은 줄(저작권 유형 없음)과
 다른 정책과 같은 사진을 쓰는 줄은 다시 고르고, 맞는 곳이 없으면 숨긴다(응답은 시군 사진 차례).
+사진 서버에 닿지 못하면(ImageProbeError) 그 정책은 실패로 세고 있던 줄을 둔다 - 다음 실행에 다시 본다.
+Pixabay 대체 사진은 뺐다(2026-10-01): 주소가 임시라 며칠 뒤 죽었고(9/17 꺼 둠) 이 기준을 거치지 않았다.
+자체 보관(2026-09-17-policy-photo-managed-storage.md)과 함께 되살릴 때는 이 기준과 겹침 금지를 거친다.
 """
 
 from __future__ import annotations
@@ -27,7 +30,6 @@ if str(APP_ROOT) not in sys.path:
 from app.repositories.policies import list_active_policies_for_photo_backfill
 from app.repositories.policy_photos import get_policy_photo, upsert_policy_photo
 from app.services.photo_criteria import ImageSizeProbe, attribution_for
-from app.services.pixabay import PixabayImage, PixabayPhotoProvider
 from scripts.backfill_region_photos import (
     CITY_SPOT_ROWS,
     PROVIDER,
@@ -229,7 +231,6 @@ def run_backfill(
     policies: Sequence[object],
     dry_run: bool,
     refresh_older_than: datetime | None = None,
-    fallback_provider: PixabayPhotoProvider | None = None,
     force: bool = False,
     size_of: SizeOf | None = None,
     report: list[dict[str, object]] | None = None,
@@ -238,7 +239,6 @@ def run_backfill(
     area_code_by_region: dict[str, str | None] = {}
     sigungu_codes_by_area: dict[str, list] = {}
     tour_spots_by_location: dict[tuple[str, str], list[TourApiSpot]] = {}
-    pixabay_images_by_city: dict[str, list[PixabayImage]] = {}
     used_image_urls: set[str] = set()
     filled = refreshed = skipped = failed = emptied = 0
 
@@ -267,7 +267,8 @@ def run_backfill(
                 and existing.fetched_at >= refresh_older_than
             )
             meets_criteria = getattr(existing, "copyright_type", None) is not None  # 기준이 생긴 뒤 고른 줄
-            unique = claimed.get(existing.image_url) == policy_id
+            # 같은 실행에서 앞 정책이 이미 가져간 사진이면(쌓아 둔 claimed 는 실행 전 DB 라 모른다) 다시 고른다
+            unique = claimed.get(existing.image_url) == policy_id and existing.image_url not in used_image_urls
             if is_fresh and meets_criteria and unique:
                 used_image_urls.add(existing.image_url)
                 skipped += 1
@@ -305,17 +306,6 @@ def run_backfill(
                 rejected=rejected,
                 sigungu_code=sigungu_code,
             )
-            fallback_image = None
-            if candidate is None and fallback_provider is not None and city:
-                if city not in pixabay_images_by_city:
-                    pixabay_images_by_city[city] = fallback_provider.search_images(
-                        query=f"{city} landscape", rows=20
-                    )
-                images = pixabay_images_by_city[city]
-                fallback_image = next(
-                    (image for image in images if image.image_url not in used_image_urls),
-                    images[0] if images else None,
-                )
         except Exception as exc:
             print(f"failed policy_id={policy_id} error={exc}")
             failed += 1
@@ -337,7 +327,7 @@ def run_backfill(
                     for item, reasons in rejected[:REPORT_REJECTED_LIMIT]
                 ],
             })
-        if candidate is None and fallback_image is None:
+        if candidate is None:
             # 맞는 시군 사진이 없으면 있던 줄을 숨긴다 - 기준 이전 줄이거나(저작권 유형 없음) 다른 정책과
             # 같은 사진이다. 강제 갱신(--force)이면 늘 숨긴다. 응답은 시군 사진(region_photos) 차례가 된다.
             if not dry_run and existing is not None and existing.status == "active":
@@ -348,43 +338,24 @@ def run_backfill(
             continue
 
         if not dry_run:
-            if candidate is not None:
-                upsert_policy_photo(
-                    db,
-                    policy_id=policy_id,
-                    provider=PROVIDER,
-                    provider_content_id=candidate.spot.content_id,
-                    image_url=candidate.spot.first_image,
-                    thumbnail_url=candidate.spot.first_image2 or candidate.spot.first_image,
-                    alt_text=candidate.spot.title or str(policy.title),
-                    attribution_text=attribution_for(candidate.spot.copyright_type),
-                    copyright_type=candidate.spot.copyright_type,
-                    image_width=size[0] if size else None,
-                    image_height=size[1] if size else None,
-                    relevance_score=candidate.relevance_score,
-                    assignment_reason=candidate.assignment_reason,
-                    status="active",
-                    fetched_at=datetime.now(UTC).replace(tzinfo=None),
-                )
-            else:
-                assert fallback_image is not None
-                upsert_policy_photo(
-                    db,
-                    policy_id=policy_id,
-                    provider="pixabay",
-                    provider_content_id=fallback_image.content_id,
-                    image_url=fallback_image.image_url,
-                    thumbnail_url=fallback_image.thumbnail_url,
-                    alt_text=fallback_image.alt_text,
-                    attribution_text=fallback_image.attribution,
-                    relevance_score=100,
-                    assignment_reason="pixabay_city_fallback",
-                    status="active",
-                    fetched_at=datetime.now(UTC).replace(tzinfo=None),
-                )
-        used_image_urls.add(
-            candidate.spot.first_image if candidate is not None else fallback_image.image_url
-        )
+            upsert_policy_photo(
+                db,
+                policy_id=policy_id,
+                provider=PROVIDER,
+                provider_content_id=candidate.spot.content_id,
+                image_url=candidate.spot.first_image,
+                thumbnail_url=candidate.spot.first_image2 or candidate.spot.first_image,
+                alt_text=candidate.spot.title or str(policy.title),
+                attribution_text=attribution_for(candidate.spot.copyright_type),
+                copyright_type=candidate.spot.copyright_type,
+                image_width=size[0] if size else None,
+                image_height=size[1] if size else None,
+                relevance_score=candidate.relevance_score,
+                assignment_reason=candidate.assignment_reason,
+                status="active",
+                fetched_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+        used_image_urls.add(candidate.spot.first_image)
         if existing is None:
             filled += 1
         else:
@@ -437,11 +408,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             policies=policies,
             dry_run=args.dry_run,
             refresh_older_than=refresh_older_than,
-            # Pixabay 폴백은 끈다. API 가 주는 이미지 주소는 임시라 저장하면 며칠 뒤 죽는다 -
-            # 9/07 배정분 16건이 그렇게 전부 만료됐다. 내려받아 보관하는 길이 생기기 전까지는
-            # 시군 사진이 없으면 저장하지 않고 응답 시점의 지역 폴백에 맡긴다.
-            # (2026-09-17-policy-photo-managed-storage.md 에서 managed 저장과 함께 되살린다)
-            fallback_provider=None,
             force=args.force,
             size_of=ImageSizeProbe(),
             report=report,

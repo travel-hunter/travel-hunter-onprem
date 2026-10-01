@@ -266,7 +266,11 @@ def run_backfill(
                 existing.fetched_at is not None and existing.fetched_at >= refresh_older_than
             )
             meets_criteria = existing.copyright_type is not None  # 기준이 생긴 뒤 고른 줄
-            unique = claimed.get(existing.hero_image_url) == (sido, city)
+            # 같은 실행에서 앞 대상이 이미 가져간 사진이면(쌓아 둔 claimed 는 실행 전 DB 라 모른다) 다시 고른다
+            unique = (
+                claimed.get(existing.hero_image_url) == (sido, city)
+                and existing.hero_image_url not in used_image_urls
+            )
             if is_fresh and meets_criteria and unique:
                 used_image_urls.add(existing.hero_image_url)
                 skipped += 1

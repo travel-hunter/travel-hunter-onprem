@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from app.services.tour_api import TourApiAreaCode, TourApiSpot
-from app.services.pixabay import PixabayImage
 from scripts import backfill_policy_photos as script
 
 
@@ -158,58 +157,6 @@ def test_choose_city_photo_accepts_spot_in_resolved_sigungu() -> None:
     assert script.choose_city_photo([spot], city="부산동구", sigungu_code="7") is None
 
 
-def test_run_backfill_uses_pixabay_only_after_missing_tour_city_match(monkeypatch) -> None:
-    class FakeSession:
-        committed = False
-
-        def commit(self) -> None:
-            self.committed = True
-
-    class TourProvider:
-        def list_area_codes(self, *, area_code=None):
-            return [TourApiAreaCode(code="1", name="West")]
-
-        def list_area_spots(self, *, area_code, sigungu_code=None, rows=10):
-            return [make_spot(addr1="West Province", title="Regional park")]
-
-        def search_spots_by_keyword(self, *, keyword, rows=10):
-            return [make_spot(addr1="West Province", title="Regional park")]
-
-    class PixabayProvider:
-        calls: list[str] = []
-
-        def search_images(self, *, query, rows):
-            self.calls.append(query)
-            return [
-                PixabayImage(
-                    content_id="pix-1",
-                    image_url="https://example.test/pixabay.jpg",
-                    thumbnail_url=None,
-                    alt_text="River landscape",
-                    attribution="Photo: contributor via Pixabay",
-                )
-            ]
-
-    writes: list[dict[str, object]] = []
-    monkeypatch.setattr(script, "get_policy_photo", lambda db, **kwargs: None)
-    monkeypatch.setattr(script, "upsert_policy_photo", lambda db, **fields: writes.append(fields))
-    pixabay = PixabayProvider()
-    policy = SimpleNamespace(id=1, title="[River] campaign", region="West", city=None)
-
-    summary = script.run_backfill(
-        FakeSession(),
-        TourProvider(),
-        fallback_provider=pixabay,
-        policies=[policy],
-        dry_run=False,
-    )
-
-    assert summary == {"filled": 1, "refreshed": 0, "skipped": 0, "failed": 0, "emptied": 0}
-    assert pixabay.calls == ["River landscape"]
-    assert writes[0]["provider"] == "pixabay"
-    assert writes[0]["assignment_reason"] == "pixabay_city_fallback"
-
-
 def test_force_hides_stale_assignment_when_no_city_candidate_exists(monkeypatch) -> None:
     class FakeSession:
         def commit(self) -> None:
@@ -307,3 +254,35 @@ def test_new_assignment_records_copyright_size_and_attribution(monkeypatch) -> N
     assert writes[0]["copyright_type"] == "Type3"
     assert (writes[0]["image_width"], writes[0]["image_height"]) == (940, 626)
     assert writes[0]["attribution_text"] == "사진: 한국관광공사 · 공공누리 제3유형(변경금지)"
+
+
+def test_unreachable_image_server_keeps_the_assignment(monkeypatch) -> None:
+    from app.services.photo_criteria import ImageProbeError
+
+    class FakeSession:
+        def commit(self) -> None:
+            return None
+
+    class TourProvider:
+        def list_area_codes(self, *, area_code=None):
+            return [TourApiAreaCode(code="1", name="West")]
+
+        def list_area_spots(self, *, area_code, sigungu_code=None, rows=10):
+            return [make_spot()]
+
+        def search_spots_by_keyword(self, *, keyword, rows=10):
+            return [make_spot()]
+
+    def unreachable(url):
+        raise ImageProbeError("timeout")
+
+    old = SimpleNamespace(status="active", image_url="https://example.test/old.jpg", fetched_at=None, copyright_type=None)
+    writes: list[dict[str, object]] = []
+    monkeypatch.setattr(script, "get_policy_photo", lambda db, **kwargs: old)
+    monkeypatch.setattr(script, "upsert_policy_photo", lambda db, **fields: writes.append(fields))
+    policy = SimpleNamespace(id=1, title="[River] campaign", region="West", city=None)
+
+    summary = script.run_backfill(FakeSession(), TourProvider(), policies=[policy], dry_run=False, size_of=unreachable)
+
+    assert summary["failed"] == 1 and summary["emptied"] == 0
+    assert writes == []

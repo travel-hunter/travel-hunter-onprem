@@ -253,7 +253,7 @@ def test_city_target_lists_only_that_city_by_sigungu_code() -> None:
     assert provider.calls == [("38", "14", 30)]
 
 
-def _run(script, monkeypatch, provider, existing_rows, targets):
+def _run(script, monkeypatch, provider, existing_rows, targets, size_of=None):
     upserts: list[dict[str, object]] = []
     monkeypatch.setattr(script, "upsert_region_photo", lambda db, **fields: upserts.append(fields))
     monkeypatch.setattr(script, "get_region_photo", lambda db, **kw: existing_rows.get((kw["sido"], kw["city"])))
@@ -262,7 +262,7 @@ def _run(script, monkeypatch, provider, existing_rows, targets):
         def commit(self) -> None:
             return None
 
-    summary = script.run_backfill(Session(), provider, targets=targets, dry_run=False)
+    summary = script.run_backfill(Session(), provider, targets=targets, dry_run=False, size_of=size_of)
     return summary, upserts
 
 
@@ -307,3 +307,45 @@ def test_existing_rows_are_rechecked_when_old_or_shared(monkeypatch) -> None:
     assert upserts[0]["city"] == "완도" and upserts[0]["hero_image_url"] == "https://x.test/16.jpg"
     assert upserts[0]["copyright_type"] == "Type1"
     assert upserts[0]["attribution_text"] == "사진: 한국관광공사 · 공공누리 제1유형"
+
+
+def test_unreachable_image_server_counts_as_failure_and_keeps_the_row(monkeypatch) -> None:
+    from app.services.photo_criteria import ImageProbeError
+    from scripts import backfill_region_photos as script
+
+    class Provider:
+        def list_area_codes(self, *, area_code=None):
+            return [TourApiAreaCode(code="14", name="영광군")] if area_code else AREA_CODES
+
+        def list_area_spots(self, *, area_code, sigungu_code=None, rows=10):
+            return [make_spot(content_id="c", first_image="https://x.test/new.jpg")]
+
+    def unreachable(url):
+        raise ImageProbeError("timeout")
+
+    # 기준 이전 줄이라 다시 고르는 대상인데, 사진 서버가 안 받는다 - 숨기지 않고 실패로 센다(다음 실행에 다시)
+    old = SimpleNamespace(status="active", hero_image_url="https://x.test/old.jpg", fetched_at=None, copyright_type=None)
+    summary, upserts = _run(script, monkeypatch, Provider(), {("전남", "영광"): old}, [("전남", "영광")], size_of=unreachable)
+
+    assert summary["failed"] == 1 and summary["emptied"] == 0
+    assert upserts == []
+
+
+def test_a_skipped_row_gives_up_a_photo_taken_earlier_in_the_same_run(monkeypatch) -> None:
+    from scripts import backfill_region_photos as script
+
+    class Provider:
+        def list_area_codes(self, *, area_code=None):
+            return [TourApiAreaCode(code="14", name="영광군"), TourApiAreaCode(code="16", name="완도군")] if area_code else AREA_CODES
+
+        def list_area_spots(self, *, area_code, sigungu_code=None, rows=10):
+            x = make_spot(content_id="x", first_image="https://x.test/x.jpg")
+            return [x] if sigungu_code == "14" else [x, make_spot(content_id="y", first_image="https://x.test/y.jpg")]
+
+    # 영광은 줄이 없어 새로 고르며 X 를 가져간다. 완도는 X 를 들고 있던 새 기준 줄 - 실행 전 DB 로는 '혼자 쓰는 사진'이지만
+    # 같은 실행에서 이미 영광이 가져갔으니 건너뛰지 않고 다시 골라 Y 를 받는다
+    wando = SimpleNamespace(status="active", hero_image_url="https://x.test/x.jpg", fetched_at=None, copyright_type="Type1")
+    summary, upserts = _run(script, monkeypatch, Provider(), {("전남", "완도"): wando}, [("전남", "영광"), ("전남", "완도")])
+
+    assert summary["skipped"] == 0
+    assert [(u["city"], u["hero_image_url"]) for u in upserts] == [("영광", "https://x.test/x.jpg"), ("완도", "https://x.test/y.jpg")]
