@@ -1,0 +1,95 @@
+# 홈 배너 사진: 어디서 가져왔고 왜 골랐나 (2026-10-01)
+
+홈 맨 위 배너(시안 v45 겹침 배너)의 장마다 깔 사진을 고른 기록이다. 나중에 사진을 더 모으거나 바꿀 때
+같은 기준으로 다시 고르고 비교할 수 있게 출처·검색어·후보 전부·고른 이유를 남긴다.
+시안: https://claude.ai/artifact/BAPGExyD8otfWpH6aqxVZF v48. 앱(4173) 반영은 사용자 승인 뒤.
+
+## 왜 새로 찾았나
+
+- 처음(시안 v47)에는 수집해 둔 시군 사진(한국관광공사 TourAPI, `policy.photo`)을 장마다 깔았다.
+  사용자 확인 결과 **어울리지 않는 사진이 섞여 있었다** - 수집 사진은 그 시군의 '관광지 대표 사진'이라
+  태양광 단지·어두운 해변처럼 여행 느낌과 먼 사진이 나온다.
+- 앱에 들어 있는 도별 사진 17장(`frontend/src/assets/regions`)은 출처 기록이 저장소에 없어 새로 쓰지 않았다.
+- 사용자 결정: 웹에서 이용 조건이 분명한 사진을 찾아 쓴다.
+
+## 고르는 규칙
+
+**출처·라이선스** - 위키미디어 공용(commons.wikimedia.org)에서 아래만 쓴다.
+
+| 쓸 수 있음 | 화면 표시 | 비고 |
+|---|---|---|
+| CC0 · 퍼블릭 도메인 | 사진 이름 · 작가 · CC0 (예의상) | 조건 없음 - 가장 가볍다 |
+| CC BY x.x | 사진 이름 · 작가 · CC BY x.x | 출처 표시 필수 |
+| CC BY-SA x.x | 사진 이름 · 작가 · CC BY-SA x.x | 출처 표시 + 고친 사진(자르기·줄이기)도 같은 라이선스 |
+| 공공누리 1유형 | 출처 기관 | 한국관광공사 등 |
+
+CC BY-NC(상업 이용 불가)·ND(변경 금지)·라이선스 불명은 쓰지 않는다.
+
+**장과 사진 짝** - 시군마다 사진을 두면 그날 데이터에 따라 바뀌는 곳마다 사진이 필요해 끝이 없다. 장의 성격으로 고른다.
+
+| 배너 장 | 사진 열쇠 | 사진 성격 |
+|---|---|---|
+| 혜택이 가장 많은 지역 | `region:<도>` (17개) | 그 도를 대표하는 여행 풍경 |
+| 마감이 가장 가까운 혜택 | `theme:<refund·stay·partner·move>` | 혜택 종류 - 환급·여행상품 = 여행지 풍경, 숙박 = 숙소, 제휴 할인 = 가게·시장, 교통 = 기차·도로 |
+| 전국 공통 | `theme:move` | 교통 |
+
+맞는 사진이 없으면 사진 없이 혜택 형태 색 바탕으로 둔다(어울리지 않는 사진보다 낫다).
+
+**사진 자체 기준(점수 매긴 순서)**
+
+1. 장 성격과 맞는가 - 지역 장이면 그 도라는 것이 한눈에 보이는가
+2. 글 얹을 자리 - 배너는 왼쪽부터 어둡게 눌러 흰 글씨를 올린다. 왼쪽이 단순하거나 어두울수록 좋다
+3. 여행 느낌 - 풍경·빛·계절감. 설명용 사진(차량 연결기, 실내, 안내판)은 뺀다
+4. 라이선스 부담 - CC0 > CC BY > CC BY-SA
+5. 크기 - 가로 1200px 이상 가로 사진(데스크톱 가운데 장 ≈ 620px × 2배)
+
+## 검색과 결과
+
+도구: `tools/commons_search.py`(공용 API 검색, 라이선스·크기로 거름) → 후보 전부를
+`2026-10-01-home-banner-candidates.json` 에 남겼다(검색어, 제목, 라이선스, 작가, 크기, 원본 주소, 거른 이유).
+
+| 검색어 | 쓸 만함 / 찾음 |
+|---|---|
+| Boseong green tea field | 9 / 12 |
+| Jeonju Hanok Village rooftops | 2 / 2 |
+| KTX-Sancheon | 10 / 12 |
+| Korail ITX train | 10 / 12 |
+| Jeju coastal road | 12 / 12 |
+| Korea countryside train | 4 / 5 |
+| Hahoe Folk Village | 10 / 12 |
+| Suncheon Bay wetland reeds | 0 / 0 (검색 결과 없음 - 다음엔 'Suncheonman' 으로) |
+| KTX train landscape Korea | 0 / 0 |
+
+거른 이유: 작은 사진 8, 세로 사진 3. 라이선스로 걸린 것은 이번 검색어에선 없었다.
+
+## 눈으로 비교한 후보(8장)와 판단
+
+| # | 사진 | 라이선스 · 작가 | 판단 |
+|---|---|---|---|
+| 1 | Boseong Green Tea Field South Korea Travel Photography | CC BY 3.0 · Giuseppe Milo | **전남 지역 장으로 고름.** 노을 녹차밭 - 여행 느낌 가장 강함, 왼쪽이 어두워 글 얹기 좋음 |
+| 2 | Boseong Green Tea Field | CC BY-SA 3.0 · Jakob Reichmann | 맑은 낮 녹차밭. 무난하나 1번보다 밋밋하고 SA 부담 |
+| 3 | Boseong Green Tea Field in summer 2017 | CC BY-SA 4.0 · S Shamima Nasrin | 앞쪽 찻잎이 커서 글 자리 복잡 |
+| 4 | Jeonju- Part II - Jeonju3094 | CC0 · lumoplank | **여행비 환급(theme:refund)으로 고름.** 한옥 지붕 - '여행 가서 쓰는 돈' 느낌, CC0 |
+| 5 | Jeonju- Part I - Jeonju3120 | CC0 · lumoplank | 4번과 같은 곳, 앞쪽 주차장·차가 보여 뺌 |
+| 6 | KTX-Sancheon | CC BY-SA 4.0 · Minseong Kim | **교통(theme:move)으로 고름.** 기차가 오른쪽에 크게 - 왼쪽 글 자리 비어 있음 |
+| 7 | Korail KTX-2 | CC BY 3.0 · G43 | 위에서 내려다본 차량기지, 트럭이 같이 보여 뺌 |
+| 8 | Sinchang Windmill Coastal Road 01 | CC BY-SA 4.0 · Grapesurgeon | 정자·잔디가 주인공이라 '해안도로'가 안 읽힘 |
+
+## 고른 사진(시안 v48)
+
+| 열쇠 | 사진 | 작가 · 라이선스 | 원본 |
+|---|---|---|---|
+| `region:전남` | 보성 녹차밭 | Giuseppe Milo · CC BY 3.0 | https://commons.wikimedia.org/wiki/File:Boseong_Green_Tea_Field_South_Korea_Travel_Photography_(253061695).jpeg |
+| `theme:refund` | 전주 한옥마을 | lumoplank · CC0 | https://commons.wikimedia.org/wiki/File:Jeonju-_Part_II_-_Jeonju3094.jpg |
+| `theme:move` | KTX-산천 | Minseong Kim · CC BY-SA 4.0 | https://commons.wikimedia.org/wiki/File:KTX-Sancheon.jpg |
+
+받기·변환: `tools/hero_photos.py` - 공용 API 의 1600px 썸네일을 받아 WebP(품질 68)로 줄이고 출처 문자열을 만든다
+(한 장 200~290KB). 화면에는 장 오른쪽 아래에 `사진 이름 · 작가 · 라이선스` 를 적는다.
+
+## 앱에 넣을 때 더 할 일
+
+- 같은 규칙으로 `region:` 16곳(서울·부산·…·제주, 전남 외)과 `theme:stay` · `theme:partner` 를 더 모은다.
+  앱은 그날 데이터로 장이 바뀐다(10/1 마감 장 = 합천 외 9곳 반값여행, 지역 장 = 전남).
+- 사진 파일은 프런트 자산(`frontend/src/assets/hero/`)으로 넣고, 사진 열쇠 → 파일 · 출처 문자열 표 하나를 둔다.
+  이 문서의 '고른 사진' 표를 그 표와 같이 고친다.
+- CC BY-SA 사진을 줄이거나 자른 파일도 CC BY-SA 다 - 출처 문자열에 라이선스를 빼지 않는다.
