@@ -10,9 +10,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import threading
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from itertools import zip_longest
 
@@ -69,6 +71,7 @@ _TOUR_API_SIDO_CANDIDATES: dict[str, tuple[str, ...]] = {
 _TITLE_CITY_MARKER = re.compile(r"^\[([^\]]+)\]")
 
 SizeOf = Callable[[str], "tuple[int, int] | None"]
+logger = logging.getLogger(__name__)
 
 
 class PhotoReviewError(Exception):
@@ -343,10 +346,16 @@ def ensure_targets(db: Session, *, today: date | None = None) -> int:
 @dataclass
 class CollectSummary:
     targets_created: int = 0
+    targets_total: int = 0   # 채울 대상(검토 대기 · 후보 6장 미만)
+    targets_done: int = 0
     targets_filled: int = 0
+    targets_empty: int = 0   # 다 돌고도 후보가 0장 - 관광공사 목록에 없는 곳(이름으로 찾기)
     candidates_added: int = 0
     decided_skipped: int = 0
     probe_failures: int = 0
+
+
+Progress = Callable[[CollectSummary], None]
 
 
 def collect_candidates(
@@ -356,33 +365,152 @@ def collect_candidates(
     size_of: SizeOf | None,
     only_sido: str | None = None,
     today: date | None = None,
+    commit: bool = False,
+    progress: Progress | None = None,
 ) -> CollectSummary:
-    """검토 대기 대상마다 ('이름으로 찾기'를 뺀) 후보가 6장이 되게 채운다. 결정된 대상은 건드리지 않는다."""
+    """검토 대기 대상마다 ('이름으로 찾기'를 뺀) 후보가 6장이 되게 채운다. 결정된 대상은 건드리지 않는다.
+
+    commit=True 면 대상 하나를 채울 때마다 저장한다 - 몇 분 걸리는 첫 수집 동안 관리자의 확정이 그 대상 잠금을 기다리지 않고,
+    중간에 끊겨도 받은 만큼은 남는다(관리자 '후보 채우기' · 스크립트). progress 는 시작(0곳)과 대상 하나마다 불린다.
+    """
 
     summary = CollectSummary(targets_created=ensure_targets(db, today=today))
+    if commit:
+        db.commit()
     used = repository.all_candidate_image_urls(db)
     probe = _Probe(size_of)
     places = PlaceResolver(provider)
-    # 시군 → 그 시군 정책 → 도 전체 줄 순서. 도 전체 목록 앞쪽에 시군 대표 장소가 섞여 있어 도 줄이 먼저 가져가면 안 된다
     visible = _visible(db, today=today)
-    targets = sorted(
-        (t for t in repository.list_all_targets(db) if visible.shows(t)),
-        key=lambda t: (t.sido, t.city == SIDO_LEVEL_CITY, t.city, t.target_type != "region", t.policy_id or 0),
-    )
-    for target in targets:
-        if only_sido and target.sido != only_sido:
+    todo: list[PhotoReviewTarget] = []
+    for target in repository.list_all_targets(db):
+        if not visible.shows(target) or (only_sido and target.sido != only_sido):
             continue
         if target.status != "pending":
             summary.decided_skipped += 1
-            continue
-        have = sum(1 for c in target.candidates if c.source != "search")
-        if have >= WANT:
-            continue
-        added = _fill(db, target, places.place(target.sido, target.city).spots(), want=WANT - have, used=used, probe=probe)
+        elif _collected(target) < WANT:
+            todo.append(target)
+    # 시군 → 그 시군 정책 → 도 전체 줄 순서. 도 전체 목록 앞쪽에 시군 대표 장소가 섞여 있어 도 줄이 먼저 가져가면 안 된다
+    todo.sort(key=lambda t: (t.sido, t.city == SIDO_LEVEL_CITY, t.city, t.target_type != "region", t.policy_id or 0))
+    summary.targets_total = len(todo)
+    if progress:
+        progress(summary)
+    for target in todo:
+        added = _fill(
+            db, target, places.place(target.sido, target.city).spots(), want=WANT - _collected(target), used=used, probe=probe
+        )
+        if commit:
+            db.commit()
         summary.candidates_added += added
         summary.targets_filled += 1 if added else 0
-    summary.probe_failures = probe.failures
+        summary.targets_empty += 0 if target.candidates else 1
+        summary.targets_done += 1
+        summary.probe_failures = probe.failures
+        if progress:
+            progress(summary)
     return summary
+
+
+def _collected(target: PhotoReviewTarget) -> int:
+    return sum(1 for c in target.candidates if c.source != "search")
+
+
+# ---------- 관리자 '후보 채우기'(v52) - 수집을 뒤에서 돌리고 화면은 진행을 묻는다 ----------
+
+
+@dataclass
+class CollectJob:
+    running: bool = False
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    summary: CollectSummary = field(default_factory=CollectSummary)
+    error: str | None = None
+
+
+# ponytail: 한 프로세스 안에서만 겹침을 막는다(uvicorn 하나로 뜬다). 워커를 늘리면 Postgres advisory lock 으로 바꾼다
+_job = CollectJob()
+_job_lock = threading.Lock()
+
+
+def _spawn(work: Callable[[], None]) -> None:
+    threading.Thread(target=work, name="photo-review-collect", daemon=True).start()
+
+
+def start_collect_job(
+    admin: User,
+    provider: TourApiPhotoProvider,
+    *,
+    size_of: SizeOf | None,
+    session_factory: Callable[[], Session],
+    spawn: Callable[[Callable[[], None]], None] = _spawn,
+) -> CollectJob:
+    """'후보 채우기': 수집을 뒤에서 돌린다. 이미 돌고 있으면 409. 끝나면 변경 이력(photo_review.collect)에 남긴다."""
+
+    global _job
+    with _job_lock:
+        if _job.running:
+            raise PhotoReviewError(409, "Photo candidate collection is already running")
+        _job = job = CollectJob(running=True, started_at=_now())
+    admin_id = int(admin.id)
+
+    def work() -> None:
+        try:
+            with session_factory() as db:
+                def report(summary: CollectSummary) -> None:
+                    job.summary = replace(summary)
+
+                summary = collect_candidates(db, provider, size_of=size_of, commit=True, progress=report)
+                from app.repositories.admin import add_audit_log
+
+                add_audit_log(
+                    db,
+                    admin_user_id=admin_id,
+                    action="photo_review.collect",
+                    target_type="photo_review",
+                    target_id="collect",
+                    summary=f"후보 채우기: 후보 {summary.candidates_added}장 · 새 대상 {summary.targets_created}곳",
+                    before_json=None,
+                    after_json={
+                        "finishedAt": _utc_iso(_now()),
+                        "candidatesAdded": summary.candidates_added,
+                        "targetsCreated": summary.targets_created,
+                        "targetsEmpty": summary.targets_empty,
+                        "probeFailures": summary.probe_failures,
+                    },
+                )
+                db.commit()
+                job.summary = replace(summary)
+        except Exception as error:   # 관광공사 오류 문구에는 키가 없다(TourApiConfigurationError 는 주소를 떼고 올린다)
+            logger.exception("Photo candidate collection failed.")
+            job.error = str(error)[:300] or type(error).__name__
+        finally:
+            job.finished_at = _now()
+            job.running = False
+
+    spawn(work)
+    return job
+
+
+def collect_status(db: Session) -> dict[str, object]:
+    from app.repositories.admin import list_audit_logs
+
+    job = _job
+    last, _total = list_audit_logs(db, action="photo_review.collect", limit=1)
+    last_run = None
+    if last:
+        after = last[0].after_json or {}
+        last_run = {"at": after.get("finishedAt") or last[0].created_at.isoformat(), "candidatesAdded": int(after.get("candidatesAdded", 0))}
+    return {
+        "running": job.running,
+        "startedAt": _utc_iso(job.started_at),
+        "finishedAt": _utc_iso(job.finished_at),
+        "done": job.summary.targets_done,
+        "total": job.summary.targets_total,
+        "candidatesAdded": job.summary.candidates_added,
+        "targetsCreated": job.summary.targets_created,
+        "targetsEmpty": job.summary.targets_empty,
+        "error": job.error,
+        "lastRun": last_run,
+    }
 
 
 # ---------- 관리자 결정 ----------
@@ -390,6 +518,12 @@ def collect_candidates(
 
 def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _utc_iso(value: datetime | None) -> str | None:
+    """UTC 로 저장한 시각을 Z 를 붙여 내보낸다 - DB 기본값(now())은 DB 시간대라 섞이면 화면 시각이 어긋난다."""
+
+    return value.isoformat(timespec="seconds") + "Z" if value else None
 
 
 def _require_target(db: Session, target_id: str, *, lock: bool = False) -> PhotoReviewTarget:
@@ -668,7 +802,7 @@ def _item(target: PhotoReviewTarget, ctx: _Context) -> dict[str, object]:
         "candidateCount": ctx.candidate_counts.get(target.id, 0),
         "photo": _photo(ctx.approved.get(target.approved_candidate_id)) if target.approved_candidate_id else None,
         "inheritedPhoto": _photo(inherited),
-        "decidedAt": target.decided_at.isoformat() if target.decided_at else None,
+        "decidedAt": _utc_iso(target.decided_at),
     }
 
 
@@ -686,10 +820,16 @@ def list_targets(db: Session, *, unit: str, status: str | None) -> dict[str, obj
     else:
         items.sort(key=lambda t: (t.sido, t.city, visible.policies[t.policy_id].title))
     ctx = _context(db, items, all_targets, visible)
+    keys = {t.target_key for t in all_targets}
+    collected = repository.count_collected(db)
     return {
         "items": [_item(target, ctx) for target in items],
         "counts": {**counts, "all": sum(counts.values())},
         "pendingTotal": sum(1 for t in shown if t.status == "pending"),
+        # '후보 채우기' 안내: 다음 수집이 새로 넣을 대상(공개됐지만 아직 대상이 아닌 정책 · 쓰이는 시군 줄)과 후보가 6장이 안 되는 대기 대상
+        "newTargets": sum(1 for pid in visible.policies if policy_key(pid) not in keys)
+        + sum(1 for sido, city in visible.uses if region_key(sido, city) not in keys),
+        "shortTargets": sum(1 for t in shown if t.status == "pending" and collected.get(t.id, 0) < WANT),
     }
 
 

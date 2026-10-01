@@ -4,6 +4,7 @@ import {
   ApiError,
   appDataApi,
   type AdminPhotoReviewCandidate,
+  type AdminPhotoReviewCollectStatus,
   type AdminPhotoReviewPhoto,
   type AdminPhotoReviewStatus,
   type AdminPhotoReviewTarget,
@@ -43,6 +44,23 @@ const kindOf = (target: AdminPhotoReviewTarget): BenefitType =>
 const credit = (copyrightType: string | null) =>
   `공공누리 ${(copyrightType && KOGL[copyrightType]) || copyrightType || "유형 미상"}`;
 
+/** 서버가 UTC(끝에 Z)로 준 시각을 브라우저 시간대로 '10/2 14:20' */
+function shortTime(iso: string | null | undefined) {
+  if (!iso) return "";
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${at.getMonth() + 1}/${at.getDate()} ${two(at.getHours())}:${two(at.getMinutes())}`;
+}
+
+const COLLECT_POLL_MS = 2000;
+
+function collectDoneMessage(status: AdminPhotoReviewCollectStatus) {
+  const empty = status.targetsEmpty ? ` · 못 채운 ${status.targetsEmpty}곳은 이름으로 찾아 주세요` : "";
+  if (!status.candidatesAdded && !status.targetsCreated) return `새로 받을 후보가 없습니다${empty}`;
+  return `후보 ${status.candidatesAdded}장을 넣었습니다 · 새 대상 ${status.targetsCreated}곳${empty}`;
+}
+
 function errorMessage(cause: unknown, fallback: string) {
   if (cause instanceof ApiError) {
     if (cause.status === 503) return "관광공사 API 가 꺼져 있어 사진을 받을 수 없습니다.";
@@ -67,6 +85,8 @@ export function AdminPhotoReviewPage() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [detailKey, setDetailKey] = useState(0);
+  const [collect, setCollect] = useState<AdminPhotoReviewCollectStatus | null>(null);
   const focusHeading = useRef(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const detailRef = useRef<HTMLDivElement>(null);
@@ -109,7 +129,35 @@ export function AdminPhotoReviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, detailKey]);
+
+  // '후보 채우기': 처음에 상태를 한 번 묻고, 도는 동안은 몇 초마다 다시 묻는다(수집은 서버가 뒤에서 돌린다)
+  useEffect(() => {
+    let cancelled = false;
+    appDataApi
+      .getAdminPhotoReviewCollect()
+      .then((status) => {
+        if (!cancelled) setCollect(status);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!collect?.running) return;
+    const timer = window.setTimeout(() => {
+      appDataApi
+        .getAdminPhotoReviewCollect()
+        .then((status) => {
+          setCollect(status);
+          if (!status.running) finishCollect(status);
+        })
+        .catch(() => setError("후보 수집 진행을 불러오지 못했습니다. 잠시 뒤 새로 고쳐 보세요."));
+    }, COLLECT_POLL_MS);
+    return () => window.clearTimeout(timer);
+  }, [collect]);
 
   useEffect(() => {
     if (detail && focusHeading.current) {
@@ -123,6 +171,29 @@ export function AdminPhotoReviewPage() {
     const timer = window.setTimeout(() => setToast(""), 2400);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  function finishCollect(status: AdminPhotoReviewCollectStatus) {
+    if (status.error) setError(`후보 수집이 멈췄습니다: ${status.error}`);
+    else setToast(collectDoneMessage(status));
+    setReloadKey((key) => key + 1);
+    setDetailKey((key) => key + 1);
+  }
+
+  async function startCollect() {
+    setError("");
+    try {
+      const status = await appDataApi.startAdminPhotoReviewCollect();
+      setCollect(status);
+      if (!status.running) finishCollect(status);   // 빈 곳이 거의 없으면 응답 전에 끝난다
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 409) {
+        setError("이미 후보를 받는 중입니다.");
+        appDataApi.getAdminPhotoReviewCollect().then(setCollect).catch(() => undefined);
+      } else {
+        setError(errorMessage(cause, "후보 수집을 시작하지 못했습니다."));
+      }
+    }
+  }
 
   function showDetail(next: AdminPhotoReviewTargetDetail) {
     setDetail(next);
@@ -212,6 +283,7 @@ export function AdminPhotoReviewPage() {
           <p>관리자</p>
           <h1>사진 검토</h1>
         </div>
+        <div className="photo-review-head-right">
         {counts && (
           <div className="photo-review-progress">
             <span>
@@ -226,6 +298,8 @@ export function AdminPhotoReviewPage() {
             </small>
           </div>
         )}
+          <CollectBox collect={collect} list={list} onStart={startCollect} />
+        </div>
       </div>
 
       <div className="photo-review-tabs">
@@ -323,6 +397,52 @@ export function AdminPhotoReviewPage() {
   );
 }
 
+function CollectBox({
+  collect,
+  list,
+  onStart,
+}: {
+  collect: AdminPhotoReviewCollectStatus | null;
+  list: AdminPhotoReviewTargetListResponse | null;
+  onStart: () => void;
+}) {
+  if (collect?.running) {
+    return (
+      <div aria-live="polite" className="photo-review-collect">
+        <button className="photo-review-ghost" disabled type="button">
+          후보 받는 중…
+        </button>
+        <small>
+          <b>
+            {collect.done}/{collect.total}곳
+          </b>{" "}
+          · 후보 {collect.candidatesAdded}장
+          <br />
+          도는 동안에도 검토할 수 있어요
+        </small>
+        <span aria-hidden="true" className="photo-review-bar mini">
+          <i className="ok" style={{ width: `${collect.total ? (collect.done / collect.total) * 100 : 0}%` }} />
+        </span>
+      </div>
+    );
+  }
+  const last = collect?.lastRun;
+  return (
+    <div aria-live="polite" className="photo-review-collect">
+      <button className="photo-review-ghost" onClick={onStart} type="button">
+        후보 채우기
+      </button>
+      <small>
+        {list?.newTargets ? <b>새로 들어올 대상 {list.newTargets}곳</b> : "새로 들어올 대상 없음"}
+        <br />
+        후보가 모자란 대상 {list?.shortTargets ?? 0}곳
+        <br />
+        {last ? `마지막 수집 ${shortTime(last.at)} · ${last.candidatesAdded.toLocaleString("ko-KR")}장` : "마지막 수집 기록 없음"}
+      </small>
+    </div>
+  );
+}
+
 function QueueThumb({ target }: { target: AdminPhotoReviewTarget }) {
   const photo = target.status === "approved" ? target.photo : target.status === "none" && target.unit === "policy" ? target.inheritedPhoto : null;
   if (photo) return <img alt="" className="photo-review-thumb" loading="lazy" src={photo.imageUrl} />;
@@ -375,7 +495,7 @@ function TargetDetail({
   const found = detail.candidates.filter((candidate) => candidate.source === "search");
   const approved = detail.candidates.find((candidate) => candidate.id === detail.photo?.candidateId);
   const keywords = Array.from(new Set(found.map((candidate) => candidate.searchKeyword).filter(Boolean)));
-  const decidedAt = detail.decidedAt ? detail.decidedAt.replace("T", " ").slice(5, 16) : "";
+  const decidedAt = shortTime(detail.decidedAt);
   return (
     <>
       <div className="photo-review-detail-head">

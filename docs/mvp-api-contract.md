@@ -1868,7 +1868,7 @@ Approve/reject writes an admin audit log (`eligible_island_catalog.approve` / `.
 
 수집(`backend/scripts/collect_photo_candidates.py`)은 시군(도 전체 포함, `unit: "region"`) · 공개 정책(`unit: "policy"`)마다 TourAPI 사진 후보만 넣는다. 관리자가 한 장을 확정해야 public `Policy.photo` 에 나온다. 시군을 확정하지 않거나 '모두 아님'이면 그 시군은 사진이 없고(frontend 는 혜택 그림), 정책을 확정하지 않거나 '모두 아님'이면 시군 사진을 그대로 쓴다. All routes require the admin role.
 
-- `GET /api/admin/photo-review/targets?unit=region|policy&status=pending|approved|none|all` → `{ items: AdminPhotoReviewTarget[], counts: { pending, approved, none, all }, pendingTotal }`. `counts` 는 그 `unit` 의 상태별 수, `pendingTotal` 은 두 단위의 검토 대기 합이다. 기본값 `unit=region`, `status=pending`.
+- `GET /api/admin/photo-review/targets?unit=region|policy&status=pending|approved|none|all` → `{ items: AdminPhotoReviewTarget[], counts: { pending, approved, none, all }, pendingTotal, newTargets, shortTargets }`. `counts` 는 그 `unit` 의 상태별 수, `pendingTotal` 은 두 단위의 검토 대기 합이다. `newTargets` 는 다음 수집이 새로 넣을 대상 수(공개됐지만 아직 대상이 아닌 정책 · 공개 정책이 쓰는 시군 줄), `shortTargets` 는 수집 후보('이름으로 찾기' 제외)가 6장이 안 되는 검토 대기 대상 수다. 숨김 · 마감된 정책과 아무 공개 정책도 쓰지 않는 시군 줄은 목록과 수에 들어가지 않는다. 기본값 `unit=region`, `status=pending`.
 - `GET /api/admin/photo-review/targets/{targetId}` → `AdminPhotoReviewTargetDetail` (`AdminPhotoReviewTarget` + `candidates: AdminPhotoReviewCandidate[]`). 없는 id 는 `404`.
 - `POST /api/admin/photo-review/targets/{targetId}/approve` `{ "candidateId": string }` → detail. 그 후보를 앱 사진 줄로 쓰고 `status: "approved"`. 그 대상의 후보가 아니면 `404`.
 - `POST /api/admin/photo-review/targets/{targetId}/none` → detail, `status: "none"`, 앱 사진 줄을 내린다.
@@ -1876,7 +1876,10 @@ Approve/reject writes an admin audit log (`eligible_island_catalog.approve` / `.
 - `POST /api/admin/photo-review/targets/{targetId}/more` → detail. 같은 후보 줄(그 시군의 관광지 · 쇼핑 · 축제, 조회순)에서 아직 어느 대상의 후보도 아닌 사진을 최대 6장 더한다.
 - `POST /api/admin/photo-review/targets/{targetId}/search` `{ "keyword": string(1~50) }` → detail. TourAPI 키워드 검색(분류 무관)에서 같은 시도 · 수집 기준 통과 · 음식점(39) · 숙박(32) 제외 사진을 최대 6장 `source: "search"` 후보로 더한다.
 
-`more` · `search` 는 결정된 대상이면 `409`(먼저 `reopen`), TourAPI 가 꺼져 있으면 `503`, TourAPI 요청 실패는 `502`. `approve` · `none` · `reopen` 은 admin audit log(`photo_review.approve` / `.none` / `.reopen`, `targetType: "photo_review_target"`, `targetId` 는 `region:전남|담양` · `policy:123`)를 남긴다.
+- `POST /api/admin/photo-review/collect` → `202` + `AdminPhotoReviewCollectStatus`. '후보 채우기': 수집(새 대상 만들기 + 후보가 6장 안 되는 검토 대기 대상 채우기)을 서버가 뒤에서 돌리고 바로 돌아온다. 대상 하나마다 저장한다. 이미 돌고 있으면 `409`, TourAPI 가 꺼져 있으면 `503`. 끝나면 admin audit log(`photo_review.collect`, `targetType: "photo_review"`, `targetId: "collect"`)를 남긴다.
+- `GET /api/admin/photo-review/collect` → `AdminPhotoReviewCollectStatus` `{ running, startedAt, finishedAt, done, total, candidatesAdded, targetsCreated, targetsEmpty, error, lastRun: { at, candidatesAdded } | null }`. 화면은 `running` 동안 몇 초마다 묻는다. `done`/`total` 은 채울 대상 중 끝난 수, `targetsEmpty` 는 다 돌고도 후보가 0장인 대상(관광공사 목록에 없는 곳 - 이름으로 찾기), `error` 는 멈춘 이유, `lastRun` 은 마지막으로 끝난 실행(변경 이력 기준, 서버를 다시 띄워도 남는다). 진행 상태는 서버 프로세스 안에 있다.
+
+`more` · `search` 는 결정된 대상이면 `409`(먼저 `reopen`), TourAPI 가 꺼져 있으면 `503`, TourAPI 요청 실패는 `502`. 사진 검토 응답의 시각(`decidedAt`, `startedAt`, `finishedAt`, `lastRun.at`)은 UTC ISO 로 끝에 `Z` 가 붙는다 - 화면이 브라우저 시간대로 바꾼다. `approve` · `none` · `reopen` 은 admin audit log(`photo_review.approve` / `.none` / `.reopen`, `targetType: "photo_review_target"`, `targetId` 는 `region:전남|담양` · `policy:123`)를 남긴다.
 
 `AdminPhotoReviewTarget`: `id`, `unit`, `status: "pending" | "approved" | "none"`, `sido`, `city`(`""` = 도 전체), `policySlug`, `policyTitle`, `policyCategory`(정책 대상만, 나머지 `null`), `benefitCount`(그 시도 · 시군의 공개 정책 수), `candidateCount`, `photo`(확정 사진), `inheritedPhoto`(정책 대상이 물려받는 확정 시군 사진, public 응답 해석과 같은 규칙), `decidedAt`. 사진은 `{ candidateId, title, imageUrl, thumbnailUrl, copyrightType }`.
 

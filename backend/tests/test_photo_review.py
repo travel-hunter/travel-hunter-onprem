@@ -26,13 +26,13 @@ from app.models import (
 from app.services import photo_review
 from app.services.photo_criteria import ImageProbeError
 from app.services.region_photos import build_region_photo_index
-from app.services.tour_api import TourApiAreaCode, TourApiSpot
+from app.services.tour_api import TourApiAreaCode, TourApiConfigurationError, TourApiSpot
 
 ID_MODELS = (Policy, PhotoReviewTarget, PhotoReviewCandidate, RegionPhoto, PolicyPhotoAssignment, AdminAuditLog)
 
 
 @pytest.fixture
-def db() -> Session:
+def factory():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(bind=engine)
     # 운영 세션과 같이 autoflush 를 끈다. BigInteger PK 는 sqlite 가 자동으로 안 매기므로 넣기 전에 매긴다.
@@ -46,11 +46,23 @@ def db() -> Session:
     for model in ID_MODELS:
         event.listen(model, "before_insert", assign_id)
     try:
-        with session_factory() as session:
-            yield session
+        yield session_factory
     finally:
         for model in ID_MODELS:
             event.remove(model, "before_insert", assign_id)
+
+
+@pytest.fixture
+def db(factory) -> Session:
+    with factory() as session:
+        yield session
+
+
+@pytest.fixture(autouse=True)
+def fresh_job():
+    photo_review._job = photo_review.CollectJob()
+    yield
+    photo_review._job = photo_review.CollectJob()
 
 
 def spot(content_id: str, *, addr: str = "전라남도 영광군 법성면", title: str | None = None, **overrides) -> TourApiSpot:
@@ -270,7 +282,7 @@ def test_a_policy_left_alone_inherits_the_city_photo_and_its_own_photo_wins(db: 
     assert index.resolve_policy(1, "전남", "영광").image_url == city.candidates[0].image_url
     item = photo_review.list_targets(db, unit="policy", status=None)["items"][0]
     assert item["inheritedPhoto"]["imageUrl"] == city.candidates[0].image_url
-    assert item["policySlug"] == "policy-1" and item["status"] == "none"
+    assert item["policySlug"] == "policy-1" and item["status"] == "none" and item["decidedAt"].endswith("Z")
 
     photo_review.reopen(db, str(policy.id), admin)
     photo_review.approve(db, str(policy.id), str(policy.candidates[0].id), admin)
@@ -384,6 +396,82 @@ def test_region_keys_normalize_cities_and_add_one_sido_row() -> None:
     assert keys == [("전남", "영광"), ("경북", "안동"), ("전남", ""), ("경북", "")]
 
 
+def test_collect_commits_each_target_and_reports_progress(db: Session) -> None:
+    add_policy(db)
+    seen: list[tuple[int, int]] = []
+
+    summary = photo_review.collect_candidates(
+        db, Provider(), size_of=landscape, commit=True, progress=lambda s: seen.append((s.targets_done, s.targets_total))
+    )
+
+    assert seen[0] == (0, summary.targets_total) and seen[-1] == (summary.targets_total, summary.targets_total)
+    assert len(seen) == summary.targets_total + 1
+    db.rollback()   # 대상마다 저장됐으니 되돌려도 남는다
+    assert len(target(db, "region:전남|영광").candidates) == 6
+
+
+def test_collect_button_runs_in_the_background_and_records_the_run(factory, db: Session) -> None:
+    add_policy(db)
+    admin = add_admin(db)
+    db.commit()
+
+    job = photo_review.start_collect_job(
+        admin, Provider(), size_of=landscape, session_factory=factory, spawn=lambda work: work()
+    )
+
+    status = photo_review.collect_status(db)
+    assert job.error is None and status["running"] is False
+    assert status["done"] == status["total"] > 0 and status["candidatesAdded"] > 0
+    assert status["lastRun"]["candidatesAdded"] == status["candidatesAdded"]
+    assert status["lastRun"]["at"].endswith("Z") and status["finishedAt"].endswith("Z")
+    log = db.scalars(select(AdminAuditLog).where(AdminAuditLog.action == "photo_review.collect")).one()
+    assert log.admin_user_id == 10 and log.after_json["targetsCreated"] == status["targetsCreated"]
+
+
+def test_collect_button_refuses_a_second_run_while_one_is_running(factory, db: Session) -> None:
+    add_policy(db)
+    admin = add_admin(db)
+    db.commit()
+    waiting: list = []
+    photo_review.start_collect_job(admin, Provider(), size_of=landscape, session_factory=factory, spawn=waiting.append)
+
+    with pytest.raises(photo_review.PhotoReviewError) as busy:
+        photo_review.start_collect_job(admin, Provider(), size_of=landscape, session_factory=factory, spawn=waiting.append)
+    assert busy.value.status_code == 409 and photo_review.collect_status(db)["running"] is True
+
+    waiting[0]()   # 첫 번째가 끝나면 다시 누를 수 있다
+    photo_review.start_collect_job(admin, Provider(), size_of=landscape, session_factory=factory, spawn=lambda work: work())
+    assert photo_review.collect_status(db)["running"] is False
+
+
+def test_a_failed_collection_is_reported_without_a_run_record(factory, db: Session) -> None:
+    add_policy(db)
+    admin = add_admin(db)
+    db.commit()
+
+    class Down(Provider):
+        def list_area_codes(self, *, area_code=None):
+            raise TourApiConfigurationError("TourAPI request failed (HTTP 503).")
+
+    photo_review.start_collect_job(admin, Down(), size_of=landscape, session_factory=factory, spawn=lambda work: work())
+
+    status = photo_review.collect_status(db)
+    assert status["running"] is False and status["error"] == "TourAPI request failed (HTTP 503)."
+    assert status["lastRun"] is None
+
+
+def test_list_tells_how_many_targets_the_next_collection_adds_and_fills(db: Session) -> None:
+    add_policy(db)
+    add_policy(db, 2, city="가상", title="[가상] 혜택")   # 시군 코드가 없어 후보를 못 받는 곳
+
+    before = photo_review.list_targets(db, unit="region", status=None)
+    assert (before["newTargets"], before["shortTargets"]) == (4, 0)   # 시군 둘 · 정책 둘
+
+    photo_review.collect_candidates(db, Provider(), size_of=landscape)
+    after = photo_review.list_targets(db, unit="region", status=None)
+    assert (after["newTargets"], after["shortTargets"]) == (0, 2)   # 가상 시군 · 가상 정책은 0장
+
+
 # ---------- 라우트 ----------
 
 client = TestClient(app)
@@ -424,6 +512,37 @@ def test_more_and_search_need_the_tour_api(monkeypatch) -> None:
         _clear()
     assert (more.status_code, found.status_code) == (503, 503)
     assert empty.status_code == 422
+
+
+def test_collect_button_route_needs_the_tour_api_and_reports_a_running_job(monkeypatch) -> None:
+    _install(object(), _user("admin"))
+    monkeypatch.setattr(admin_routes, "build_tour_api_client", lambda: None)
+    try:
+        disabled = client.post("/api/admin/photo-review/collect")
+    finally:
+        _clear()
+    assert disabled.status_code == 503
+
+    def busy(*_args, **_kwargs):
+        raise photo_review.PhotoReviewError(409, "Photo candidate collection is already running")
+
+    _install(object(), _user("admin"))
+    monkeypatch.setattr(admin_routes, "build_tour_api_client", lambda: object())
+    monkeypatch.setattr(admin_routes.photo_review, "start_collect_job", busy)
+    try:
+        running = client.post("/api/admin/photo-review/collect")
+    finally:
+        _clear()
+    assert running.status_code == 409
+
+
+def test_collect_status_route_is_admin_only() -> None:
+    _install(object(), _user("user"))
+    try:
+        response = client.get("/api/admin/photo-review/collect")
+    finally:
+        _clear()
+    assert response.status_code == 403
 
 
 def test_route_maps_service_errors_and_rolls_back(monkeypatch) -> None:

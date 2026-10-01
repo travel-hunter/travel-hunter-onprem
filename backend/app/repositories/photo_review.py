@@ -23,6 +23,17 @@ def count_candidates(db: Session, target_ids: list[int]) -> dict[int, int]:
     return {target_id: count for target_id, count in rows}
 
 
+def count_collected(db: Session) -> dict[int, int]:
+    """대상마다 수집 후보 수('이름으로 찾기' 제외) - 후보 채우기가 6장까지 채우는 기준."""
+
+    rows = db.execute(
+        select(PhotoReviewCandidate.target_id, func.count())
+        .where(PhotoReviewCandidate.source != "search")
+        .group_by(PhotoReviewCandidate.target_id)
+    ).all()
+    return {target_id: count for target_id, count in rows}
+
+
 def get_candidates(db: Session, candidate_ids: list[int]) -> dict[int, PhotoReviewCandidate]:
     if not candidate_ids:
         return {}

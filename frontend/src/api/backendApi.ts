@@ -51,6 +51,7 @@ import {
   AdminEligibleIslandSnapshot,
   AdminEligibleIslandSnapshotDetail,
   AdminEligibleIslandSnapshotListResponse,
+  AdminPhotoReviewCollectStatus,
   AdminPhotoReviewTargetDetail,
   AdminPhotoReviewTargetListResponse,
   AdminPolicyReviewCandidate,
@@ -80,6 +81,7 @@ import {
 // Code-owned catalog key: the admin UI reviews exactly one program in this version.
 const ELIGIBLE_ISLAND_CATALOG_PATH = "/api/admin/eligible-island-catalogs/island_visit_2026";
 const PHOTO_REVIEW_PATH = "/api/admin/photo-review/targets";
+const PHOTO_REVIEW_COLLECT_PATH = "/api/admin/photo-review/collect";
 
 const makeDefaultLogin = (request: LoginRequest | undefined): LoginRequest => {
   if (!request || !request.email || !request.password) {
@@ -252,4 +254,8 @@ export const backendApi: AppDataApi = {
     apiClient.post<AdminPhotoReviewTargetDetail>(`${PHOTO_REVIEW_PATH}/${targetId}/more`),
   searchAdminPhotoReviewCandidates: (targetId, keyword): Promise<AdminPhotoReviewTargetDetail> =>
     apiClient.post<AdminPhotoReviewTargetDetail>(`${PHOTO_REVIEW_PATH}/${targetId}/search`, { keyword }),
+  getAdminPhotoReviewCollect: (): Promise<AdminPhotoReviewCollectStatus> =>
+    apiClient.get<AdminPhotoReviewCollectStatus>(PHOTO_REVIEW_COLLECT_PATH),
+  startAdminPhotoReviewCollect: (): Promise<AdminPhotoReviewCollectStatus> =>
+    apiClient.post<AdminPhotoReviewCollectStatus>(PHOTO_REVIEW_COLLECT_PATH),
 };

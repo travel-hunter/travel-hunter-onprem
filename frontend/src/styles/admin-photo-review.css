@@ -50,6 +50,45 @@
   background: var(--gray-500);
 }
 
+/* 머리 오른쪽: 결정 진행 + '후보 채우기'(시안 v52) */
+.photo-review-head-right {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+}
+
+.photo-review-head-right .photo-review-progress {
+  width: 260px;
+}
+
+.photo-review-collect {
+  width: 220px;
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.photo-review-collect small {
+  color: var(--gray-600);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.photo-review-collect small b {
+  color: var(--ink);
+}
+
+.photo-review-collect .photo-review-ghost:disabled {
+  color: var(--gray-600);
+  cursor: progress;
+}
+
+.photo-review-bar.mini {
+  width: 100%;
+  height: 4px;
+}
+
 .photo-review-tabs {
   display: flex;
   flex-wrap: wrap;

@@ -371,6 +371,8 @@ class AdminPhotoReviewTargetListResponse(BaseModel):
     items: list[AdminPhotoReviewTargetItem]
     counts: AdminPhotoReviewCounts
     pendingTotal: int
+    newTargets: int
+    shortTargets: int
 
 
 class AdminPhotoReviewApproveRequest(BaseModel):
@@ -379,3 +381,21 @@ class AdminPhotoReviewApproveRequest(BaseModel):
 
 class AdminPhotoReviewSearchRequest(BaseModel):
     keyword: str = Field(min_length=1, max_length=50)
+
+
+class AdminPhotoReviewCollectLastRun(BaseModel):
+    at: str
+    candidatesAdded: int
+
+
+class AdminPhotoReviewCollectStatus(BaseModel):
+    running: bool
+    startedAt: str | None = None
+    finishedAt: str | None = None
+    done: int
+    total: int
+    candidatesAdded: int
+    targetsCreated: int
+    targetsEmpty: int
+    error: str | None = None
+    lastRun: AdminPhotoReviewCollectLastRun | None = None

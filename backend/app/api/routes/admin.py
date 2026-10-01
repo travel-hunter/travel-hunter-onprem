@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, require_admin_user
-from app.db.session import get_optional_db
+from app.db.session import get_optional_db, get_session_factory
 from app.models import User
 from app.schemas.admin import (
     AdminCollectionSourceItem,
@@ -21,6 +21,7 @@ from app.schemas.admin import (
     AdminEligibleIslandSnapshotItem,
     AdminEligibleIslandSnapshotListResponse,
     AdminPhotoReviewApproveRequest,
+    AdminPhotoReviewCollectStatus,
     AdminPhotoReviewSearchRequest,
     AdminPhotoReviewTargetDetail,
     AdminPhotoReviewTargetListResponse,
@@ -696,3 +697,29 @@ def search_photo_review_candidates(
     return _photo_review_call(
         session, lambda: photo_review.search(session, target_id, payload.keyword, provider, size_of=probe)
     )
+
+
+@router.get("/photo-review/collect", response_model=AdminPhotoReviewCollectStatus)
+def get_photo_review_collect(
+    db: Session | None = Depends(get_optional_db),
+    _current_admin: User = Depends(require_admin_user),
+) -> AdminPhotoReviewCollectStatus:
+    return AdminPhotoReviewCollectStatus(**photo_review.collect_status(_require_db(db)))
+
+
+@router.post("/photo-review/collect", response_model=AdminPhotoReviewCollectStatus, status_code=202)
+def start_photo_review_collect(
+    db: Session | None = Depends(get_optional_db),
+    current_admin: User = Depends(require_admin_user),
+) -> AdminPhotoReviewCollectStatus:
+    """'후보 채우기' - 수집을 뒤에서 돌리고 바로 돌아온다. 진행은 GET 으로 묻는다."""
+
+    session = _require_db(db)
+    provider = _tour_api_or_503()
+    try:
+        photo_review.start_collect_job(
+            current_admin, provider, size_of=ImageSizeProbe(), session_factory=lambda: get_session_factory()()
+        )
+    except photo_review.PhotoReviewError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+    return AdminPhotoReviewCollectStatus(**photo_review.collect_status(session))

@@ -9,6 +9,7 @@ import {
   AdminEligibleIslandSnapshot,
   AdminEligibleIslandSnapshotDetail,
   AdminEligibleIslandSnapshotListResponse,
+  AdminPhotoReviewCollectStatus,
   AdminPhotoReviewStatus,
   AdminPhotoReviewTargetDetail,
   AdminPhotoReviewTargetListResponse,
@@ -355,4 +356,6 @@ export type AppDataApi = {
   reopenAdminPhotoReviewTarget: (targetId: string) => Promise<AdminPhotoReviewTargetDetail>;
   fetchMoreAdminPhotoReviewCandidates: (targetId: string) => Promise<AdminPhotoReviewTargetDetail>;
   searchAdminPhotoReviewCandidates: (targetId: string, keyword: string) => Promise<AdminPhotoReviewTargetDetail>;
+  getAdminPhotoReviewCollect: () => Promise<AdminPhotoReviewCollectStatus>;
+  startAdminPhotoReviewCollect: () => Promise<AdminPhotoReviewCollectStatus>;
 };

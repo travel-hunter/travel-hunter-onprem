@@ -616,4 +616,22 @@ export type AdminPhotoReviewTargetListResponse = {
   items: AdminPhotoReviewTarget[];
   counts: { pending: number; approved: number; none: number; all: number };
   pendingTotal: number;
+  /** 다음 '후보 채우기'가 새로 넣을 대상(공개됐지만 아직 대상이 아닌 정책 · 시군 줄) */
+  newTargets: number;
+  /** 수집 후보('이름으로 찾기' 제외)가 6장이 안 되는 검토 대기 대상 */
+  shortTargets: number;
+};
+
+/** '후보 채우기' 진행. 시각은 UTC ISO(끝에 Z) */
+export type AdminPhotoReviewCollectStatus = {
+  running: boolean;
+  startedAt: string | null;
+  finishedAt: string | null;
+  done: number;
+  total: number;
+  candidatesAdded: number;
+  targetsCreated: number;
+  targetsEmpty: number;
+  error: string | null;
+  lastRun: { at: string; candidatesAdded: number } | null;
 };

@@ -1342,7 +1342,9 @@
       "requiredFields": {
         "items": "array of AdminPhotoReviewTarget",
         "counts": "{pending, approved, none, all}: number",
-        "pendingTotal": "number"
+        "pendingTotal": "number",
+        "newTargets": "number",
+        "shortTargets": "number"
       },
       "itemFields": {
         "id": "string",
@@ -1357,7 +1359,7 @@
         "candidateCount": "number",
         "photo": "AdminPhotoReviewPhoto|null",
         "inheritedPhoto": "AdminPhotoReviewPhoto|null",
-        "decidedAt": "string|null"
+        "decidedAt": "string|null (UTC ISO, ends with Z)"
       },
       "photoFields": {
         "candidateId": "string",
@@ -1531,6 +1533,46 @@
         "candidates": "array of AdminPhotoReviewCandidate"
       },
       "dbModeBehavior": "TourAPI keyword search across content types; keeps same-sido, criteria-passing, non-food (39), non-lodging (32) photos as up to 6 source=search candidates. 409/503/502 as more."
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/photo-review/collect",
+      "status": 200,
+      "authRequired": true,
+      "adminRequired": true,
+      "requiredFields": {
+        "running": "boolean",
+        "startedAt": "string|null (UTC ISO, ends with Z)",
+        "finishedAt": "string|null (UTC ISO, ends with Z)",
+        "done": "number",
+        "total": "number",
+        "candidatesAdded": "number",
+        "targetsCreated": "number",
+        "targetsEmpty": "number",
+        "error": "string|null",
+        "lastRun": "{at: string (UTC ISO, ends with Z), candidatesAdded: number}|null"
+      },
+      "dbModeBehavior": "Admin-only status of the background photo candidate collection ('후보 채우기'). lastRun comes from the latest photo_review.collect audit log."
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/photo-review/collect",
+      "status": 202,
+      "authRequired": true,
+      "adminRequired": true,
+      "requiredFields": {
+        "running": "boolean",
+        "startedAt": "string|null (UTC ISO, ends with Z)",
+        "finishedAt": "string|null (UTC ISO, ends with Z)",
+        "done": "number",
+        "total": "number",
+        "candidatesAdded": "number",
+        "targetsCreated": "number",
+        "targetsEmpty": "number",
+        "error": "string|null",
+        "lastRun": "{at: string (UTC ISO, ends with Z), candidatesAdded: number}|null"
+      },
+      "dbModeBehavior": "Starts collect_candidates in a background thread (one at a time per process) and returns immediately; commits per target; writes photo_review.collect audit log when done. 409 when already running, 503 when TourAPI is disabled."
     }
   ]
 }
