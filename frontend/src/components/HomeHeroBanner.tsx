@@ -1,7 +1,8 @@
 import { Pause, Play } from "lucide-react";
-import { useEffect, useRef, useState, type FocusEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useMediaQuery } from "../lib/useMediaQuery";
+import type { HeroPhoto } from "./heroPhotos";
 
 export type HomeHeroSlide = {
   key: string;
@@ -12,6 +13,8 @@ export type HomeHeroSlide = {
   eyebrow: ReactNode;
   title: string;
   sub: string;
+  /* 장 바탕 사진(시안 v48, heroPhotos.ts). 없으면 혜택 형태 색 바탕 */
+  photo?: HeroPhoto;
 };
 
 export const HERO_INTERVAL_MS = 5500;
@@ -90,12 +93,13 @@ export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
         return (
           <Link
             aria-hidden={center ? undefined : true}
-            className={`home-hero-slide family-${slide.family}`}
+            className={`home-hero-slide family-${slide.family}${slide.photo ? " photo" : ""}`}
             data-pos={Math.abs(pos) <= 1 ? pos : "x"}
             draggable={false}
             key={slide.key}
             // 옆에 비친 장을 누르면 그 장의 화면으로 가지 않고 가운데로 온다
             onClick={center ? undefined : (event) => { event.preventDefault(); setIndex(i); }}
+            style={slide.photo ? ({ "--ph": `url(${slide.photo.src})` } as CSSProperties) : undefined}
             tabIndex={center ? undefined : -1}
             to={slide.to}
           >
@@ -108,6 +112,8 @@ export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
             <span className="home-hero-go" aria-hidden="true">
               ›
             </span>
+            {/* 출처(사진 · 작가 · 라이선스) - CC BY · CC BY-SA 조건이라 빼지 않는다 */}
+            {slide.photo && <span className="home-hero-credit">{slide.photo.credit}</span>}
           </Link>
         );
       })}

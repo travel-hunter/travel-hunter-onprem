@@ -86,10 +86,16 @@ CC BY-NC(상업 이용 불가)·ND(변경 금지)·라이선스 불명은 쓰지
 받기·변환: `tools/hero_photos.py` - 공용 API 의 1600px 썸네일을 받아 WebP(품질 68)로 줄이고 출처 문자열을 만든다
 (한 장 200~290KB). 화면에는 장 오른쪽 아래에 `사진 이름 · 작가 · 라이선스` 를 적는다.
 
-## 앱에 넣을 때 더 할 일
+## 앱에 넣은 것(2026-10-01)
+
+- 파일: `frontend/src/assets/hero/` - boseong-green-tea.webp(227KB) · jeonju-hanok.webp(196KB) · ktx-sancheon.webp(160KB),
+  가로 1280px WebP(품질 64). 받기: `python tools/hero_photos.py --out-dir ../../../frontend/src/assets/hero`.
+- 표: `frontend/src/components/heroPhotos.ts` - 사진 열쇠 → 파일 · 출처 문자열. 혜택 종류 → 주제는 `heroThemeOf`.
+  사진을 바꾸거나 더하면 이 표, `tools/hero_photos.py` 의 PICKS, 이 문서의 '고른 사진' 표를 같이 고친다.
+- 화면: 장 오른쪽 아래에 출처 문자열. 열쇠에 사진이 없으면 그 장은 혜택 형태 색 바탕.
+
+## 더 할 일
 
 - 같은 규칙으로 `region:` 16곳(서울·부산·…·제주, 전남 외)과 `theme:stay` · `theme:partner` 를 더 모은다.
-  앱은 그날 데이터로 장이 바뀐다(10/1 마감 장 = 합천 외 9곳 반값여행, 지역 장 = 전남).
-- 사진 파일은 프런트 자산(`frontend/src/assets/hero/`)으로 넣고, 사진 열쇠 → 파일 · 출처 문자열 표 하나를 둔다.
-  이 문서의 '고른 사진' 표를 그 표와 같이 고친다.
+  앱은 그날 데이터로 장이 바뀐다(10/1 마감 장 = 합천 외 9곳 반값여행, 지역 장 = 전남 - 지금 세 장으로 다 채워진다).
 - CC BY-SA 사진을 줄이거나 자른 파일도 CC BY-SA 다 - 출처 문자열에 라이선스를 빼지 않는다.

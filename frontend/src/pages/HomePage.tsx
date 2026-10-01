@@ -27,6 +27,7 @@ import {
   benefitTypeOf,
 } from "../components/benefitTile";
 import { HomeHeroBanner, type HomeHeroSlide } from "../components/HomeHeroBanner";
+import { HERO_PHOTOS, heroThemeOf } from "../components/heroPhotos";
 import { KOREA_REGION_SHAPES } from "../components/map/koreaRegionShapes";
 import { HomeSectionHeader } from "../components/patterns";
 import { ErrorState, LoadingState } from "../components/ui";
@@ -441,7 +442,8 @@ function HomeRegionMap({ counts }: { counts: Record<string, number> }) {
 }
 
 /* 홈 맨 위 배너의 장들. 넣을 내용은 개발서버에서 보고 정할 임시(2026-09-30) - 지금 데이터로만 만든다:
-   가장 가까운 마감 · 혜택이 가장 많은 지역 · 전국 공통. 내용을 바꿀 때는 이 함수만 고친다. */
+   가장 가까운 마감 · 혜택이 가장 많은 지역 · 전국 공통. 내용을 바꿀 때는 이 함수만 고친다.
+   장 바탕 사진은 장의 성격으로 고른다(heroPhotos.ts) - 마감 장은 혜택 종류, 지역 장은 그 도, 전국 장은 교통. */
 function buildHeroSlides(
   closingGroups: DeadlineGroup[],
   regionCounts: Record<string, number>,
@@ -465,6 +467,7 @@ function buildHeroSlides(
       ),
       title: closingGroups[0].key,
       sub: head ?? BENEFIT_TYPES[kind].label,
+      photo: HERO_PHOTOS[`theme:${heroThemeOf(kind)}`],
     });
   }
   const [top] = Object.entries(regionCounts).sort((left, right) => right[1] - left[1]);
@@ -483,6 +486,7 @@ function buildHeroSlides(
       eyebrow: <span>혜택이 가장 많은 지역</span>,
       title: `${summary.fullName} ${top[1]}건`,
       sub: summary.kinds.map((kind) => `${label(kind.key)} ${kind.count}`).join(" · "),
+      photo: HERO_PHOTOS[`region:${top[0]}`],
     });
   }
   if (nationwide.length > 0) {
@@ -496,6 +500,7 @@ function buildHeroSlides(
       sub: Array.from(new Set(nationwide.map((policy) => BENEFIT_TYPES[benefitTypeOf(policy)].label)))
         .slice(0, 4)
         .join(" · "),
+      photo: HERO_PHOTOS["theme:move"],
     });
   }
   return slides;

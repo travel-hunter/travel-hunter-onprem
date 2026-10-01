@@ -556,10 +556,15 @@ body.thmap-map-view .app-container { overflow: hidden; }
     display: flex;
     flex-direction: column;
   }
-  /* 한 줄: 칩은 지도 위(왼쪽), 검색창은 결과가 뜨는 패널 바로 위(오른쪽, 패널 왼쪽 끝과 맞춘다) */
+  /* 목록 패널 폭(시안 v46: 화면의 40%). 패널과 위 검색창이 같은 값을 쓰도록 화면 폭 기준(cqw)으로 한 번만 정한다 */
+  .prototype-policy-list-screen.desktop-wide {
+    container-type: inline-size;
+    --panel-w: clamp(420px, 40cqw, 760px);
+  }
+  /* 한 줄: 칩은 지도 위(왼쪽), 검색창은 결과가 뜨는 패널 바로 위(오른쪽) - 패널 양 끝에서 16px 안쪽으로 패널과 같은 폭 */
   .prototype-policy-list-screen.desktop-wide .prototype-policy-toolbar {
     flex: none;
-    grid-template-columns: minmax(0, 1fr) calc(420px - var(--app-page-gutter, 16px));
+    grid-template-columns: minmax(0, 1fr) calc(var(--panel-w) - var(--app-page-gutter, 16px) - 16px);
     align-items: center;
     column-gap: 16px;
   }
@@ -570,7 +575,7 @@ body.thmap-map-view .app-container { overflow: hidden; }
     flex: 1 1 auto;
     min-height: 0;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) clamp(380px, 32.8%, 640px); /* 시안 비율: 목록 패널 420/1280 */
+    grid-template-columns: minmax(0, 1fr) var(--panel-w);
     word-break: keep-all;
     overflow-wrap: anywhere;
   }

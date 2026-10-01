@@ -260,6 +260,12 @@ describe("Travel Hunter app — home", () => {
         "/policies?region=전국",
       ]);
       expect(slides[0].querySelector(".home-hero-eyebrow")).toHaveTextContent("D-2전국 공통");
+      // 장 바탕 사진은 장의 성격으로: 마감 장은 혜택 종류(내일로 = 교통), 지역 장은 그 도, 전국 장은 교통
+      expect(slides.map((slide) => slide.querySelector(".home-hero-credit")?.textContent?.split(" · ")[0])).toEqual([
+        "KTX-산천",
+        "보성 녹차밭",
+        "KTX-산천",
+      ]);
       // 가운데는 첫 장, 둘째 장은 오른쪽에 비친다(누르면 가운데로)
       expect(slides[0]).toHaveAttribute("data-pos", "0");
       expect(slides[1]).toHaveAttribute("data-pos", "1");

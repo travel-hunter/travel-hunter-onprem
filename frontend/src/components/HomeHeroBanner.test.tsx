@@ -128,6 +128,18 @@ describe("HomeHeroBanner", () => {
     expect(screen.queryByRole("button", { name: "자동 넘김 멈추기" })).toBeNull();
   });
 
+  it("puts a photo behind a slide with its credit, and keeps the color when there is none", () => {
+    mount([
+      { ...slides[0], photo: { src: "/hero/jeonju.webp", credit: "전주 한옥마을 · lumoplank · CC0" } },
+      slides[1],
+    ]);
+    expect(slide("첫째")).toHaveClass("photo");
+    expect(slide("첫째").style.getPropertyValue("--ph")).toBe("url(/hero/jeonju.webp)");
+    expect(slide("첫째")).toHaveTextContent("전주 한옥마을 · lumoplank · CC0");
+    expect(slide("둘째")).not.toHaveClass("photo");
+    expect(slide("둘째").querySelector(".home-hero-credit")).toBeNull();
+  });
+
   it("draws a single slide without a pause button and nothing without slides", () => {
     mount(slides.slice(0, 1));
     expect(slide("첫째")).toHaveAttribute("data-pos", "0");
