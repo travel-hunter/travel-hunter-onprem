@@ -86,9 +86,37 @@ CC BY-NC(상업 이용 불가)·ND(변경 금지)·라이선스 불명은 쓰지
 받기·변환: `tools/hero_photos.py` - 공용 API 의 1600px 썸네일을 받아 WebP(품질 68)로 줄이고 출처 문자열을 만든다
 (한 장 200~290KB). 화면에는 장 오른쪽 아래에 `사진 이름 · 작가 · 라이선스` 를 적는다.
 
+## 숙박 · 제휴 할인 사진(2026-10-01 추가)
+
+검색: `2026-10-01-stay-partner-candidates.json`(시장·카페 등), `2026-10-01-stay-candidates.json`(한옥·숙소).
+여러 낱말 검색어('hanok guesthouse room', 'Korean pension ocean view' 등)는 0건이 많았다 - 짧은 고유명사
+('Rakkojae', 'Bukchon hanok', 'Gwangjang Market')가 잘 걸린다. 공용은 요청이 잦으면 429 로 막아 도구에 쉬기·다시 하기를 넣었다.
+비교: `tools/commons_preview.py` 로 10장을 한 장에 모아 봤다.
+
+| # | 사진 | 라이선스 · 작가 | 판단 |
+|---|---|---|---|
+| 1 | Hwangnamguan Hotel at night | CC BY-SA 3.0 · Choi2451 | **숙박(theme:stay)으로 고름.** 경주의 실제 한옥 숙소, 불 켜진 저녁이라 '묵는' 느낌. 왼쪽 위가 어두워 글 자리 좋음 |
+| 2 | Interior of a traditional Korean house | CC BY-SA 3.0 · Adbar | 박물관 같은 실내 - 숙소 느낌 아님 |
+| 3 | Simujang 20150127 05 | CC BY-SA 2.0 · 대한민국 정부(Korea.net) | 기념관 실내, 인물 초상이 걸려 있음 - 뺌 |
+| 4 | Traditional hanok houses at golden hour in Bukchon | CC BY-SA 4.0 · Basile Morin | 아름답지만 환급 사진(전주 한옥)과 겹치고 숙박과 무관 |
+| 5 | Korean pancakes and pan-fried foods at Gwangjang Market | 퍼블릭 도메인 · Bo Park(US Army) | **제휴 할인(theme:partner)으로 고름.** 지역 먹거리 할인 느낌, 라이선스 부담 없음 |
+| 6 | Gyedong-gil street with climbing plants at golden hour | CC BY-SA 4.0 · Basile Morin | 골목 풍경 - 가게·할인과 연결이 약함 |
+| 7 | Jeju cafe overlooking woljeongri beach | CC BY-SA 4.0 · Sgroey | 바다 카페 - 후보 2순위(사람이 작게 보임) |
+| 8 | Gwangjang Market | CC BY-SA 3.0 · ChongDae | 간판 글자가 많아 배너 글과 부딪힘 |
+| 9 | Bojung Cafe street view in Spring | CC BY-SA 4.0 · SungMinSeung | 벚꽃만 보이고 카페가 안 읽힘 |
+| 10 | Korea GwangjangMarket Eats 08 | CC BY-SA 2.0 · Korea.net | 얼굴이 크게 나온 상인 - 라이선스와 별개로 초상권 걱정이 있어 뺌 |
+
+추가 기준(이번에 생김): **알아볼 수 있는 사람 얼굴이 주인공인 사진은 쓰지 않는다** - CC 라이선스는 저작권만 다루고 초상권은 따로다.
+
+| 열쇠 | 사진 | 작가 · 라이선스 | 원본 |
+|---|---|---|---|
+| `theme:stay` | 경주 황남관 한옥 숙소 | Choi2451 · CC BY-SA 3.0 | https://commons.wikimedia.org/wiki/File:Hwangnamguan_Hotel_at_night.jpg |
+| `theme:partner` | 광장시장 전 | Bo Park(US Army) · 퍼블릭 도메인 | https://commons.wikimedia.org/wiki/File:Korean_pancakes_and_pan-fried_foods_at_Gwangjang_Market.jpg |
+
 ## 앱에 넣은 것(2026-10-01)
 
-- 파일: `frontend/src/assets/hero/` - boseong-green-tea.webp(227KB) · jeonju-hanok.webp(196KB) · ktx-sancheon.webp(160KB),
+- 파일: `frontend/src/assets/hero/` - boseong-green-tea.webp(227KB) · jeonju-hanok.webp(196KB) · ktx-sancheon.webp(160KB) ·
+  hwangnamguan-hanok-stay.webp(75KB) · gwangjang-market-jeon.webp(121KB),
   가로 1280px WebP(품질 64). 받기: `python tools/hero_photos.py --out-dir ../../../frontend/src/assets/hero`.
 - 표: `frontend/src/components/heroPhotos.ts` - 사진 열쇠 → 파일 · 출처 문자열. 혜택 종류 → 주제는 `heroThemeOf`.
   사진을 바꾸거나 더하면 이 표, `tools/hero_photos.py` 의 PICKS, 이 문서의 '고른 사진' 표를 같이 고친다.
@@ -96,6 +124,6 @@ CC BY-NC(상업 이용 불가)·ND(변경 금지)·라이선스 불명은 쓰지
 
 ## 더 할 일
 
-- 같은 규칙으로 `region:` 16곳(서울·부산·…·제주, 전남 외)과 `theme:stay` · `theme:partner` 를 더 모은다.
+- 같은 규칙으로 `region:` 16곳(서울·부산·…·제주, 전남 외)을 더 모은다(주제 네 가지는 다 채움).
   앱은 그날 데이터로 장이 바뀐다(10/1 마감 장 = 합천 외 9곳 반값여행, 지역 장 = 전남 - 지금 세 장으로 다 채워진다).
 - CC BY-SA 사진을 줄이거나 자른 파일도 CC BY-SA 다 - 출처 문자열에 라이선스를 빼지 않는다.

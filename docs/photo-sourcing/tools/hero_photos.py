@@ -4,12 +4,17 @@
 
     python hero_photos.py                                   # 시안용: hero_photos.json(data URI) + hero_credits.md
     python hero_photos.py --out-dir ../../../frontend/src/assets/hero   # 앱용: 1280px WebP 파일 + 출처 줄 출력
+    python hero_photos.py --out-dir ../../../frontend/src/assets/hero --only theme:stay,theme:partner   # 새 열쇠만
+
+공용은 요청이 잦으면 429 로 막는다 - 받기 사이에 쉬고, 429 면 기다렸다 다시 한다.
 """
 import argparse
 import base64
 import io
 import json
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -23,12 +28,25 @@ PICKS = {
     "region:전남": ("File:Boseong Green Tea Field South Korea Travel Photography (253061695).jpeg", "보성 녹차밭", "boseong-green-tea"),
     "theme:refund": ("File:Jeonju- Part II - Jeonju3094.jpg", "전주 한옥마을", "jeonju-hanok"),
     "theme:move": ("File:KTX-Sancheon.jpg", "KTX-산천", "ktx-sancheon"),
+    "theme:stay": ("File:Hwangnamguan Hotel at night.jpg", "경주 황남관 한옥 숙소", "hwangnamguan-hanok-stay"),
+    "theme:partner": ("File:Korean pancakes and pan-fried foods at Gwangjang Market.jpg", "광장시장 전", "gwangjang-market-jeon"),
 }
+
+
+def get(url, tries=5):
+    for attempt in range(tries):
+        try:
+            return urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60).read()
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == tries - 1:
+                raise
+            time.sleep(int(e.headers.get("Retry-After") or 0) or 5 * (attempt + 1))
+    raise RuntimeError("unreachable")
 
 
 def info(title, width):
     q = {"action": "query", "format": "json", "titles": title, "prop": "imageinfo", "iiprop": "url|extmetadata", "iiurlwidth": str(width)}
-    data = json.load(urllib.request.urlopen(urllib.request.Request("https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode(q), headers=UA), timeout=30))
+    data = json.loads(get("https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode(q)))
     return next(iter(data["query"]["pages"].values()))["imageinfo"][0]
 
 
@@ -37,7 +55,8 @@ def fetch(title, width, quality):
     meta = i["extmetadata"]
     artist = re.sub(r"<[^>]+>", "", meta.get("Artist", {}).get("value", "")).strip()
     lic = meta.get("LicenseShortName", {}).get("value", "")
-    img = Image.open(io.BytesIO(urllib.request.urlopen(urllib.request.Request(i["thumburl"], headers=UA), timeout=60).read())).convert("RGB")
+    time.sleep(1.5)
+    img = Image.open(io.BytesIO(get(i["thumburl"]))).convert("RGB")
     w, h = img.size
     if w > width:
         img = img.resize((width, round(h * width / w)), Image.LANCZOS)
@@ -49,7 +68,10 @@ def fetch(title, width, quality):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", help="앱 자산 폴더 - 주면 1280px WebP 파일로 쓴다")
+    ap.add_argument("--only", help="이 열쇠만(쉼표로 구분)")
     args = ap.parse_args()
+    if args.only:
+        PICKS = {k: v for k, v in PICKS.items() if k in args.only.split(",")}
     if args.out_dir:
         out = Path(args.out_dir)
         out.mkdir(parents=True, exist_ok=True)
