@@ -510,7 +510,7 @@ function buildHeroSlides(
   if (nationwide.length > 0) {
     slides.push({
       key: "nation",
-      to: `/policies?region=${NATIONWIDE_REGION}`,
+      to: `/policies?place=${NATIONWIDE_REGION}`,
       family: "move",
       icon: <BenefitTile kind="nation" />,
       eyebrow: <span>어느 지역을 가도 쓸 수 있어요</span>,
@@ -628,7 +628,7 @@ function NationwideLineCard({ policies }: { policies: Policy[] }) {
   return (
     <Link
       className="home-line-card"
-      to={`/policies?region=${NATIONWIDE_REGION}`}
+      to={`/policies?place=${NATIONWIDE_REGION}`}
     >
       <BenefitTile kind="nation" />
       <span className="home-line-copy">

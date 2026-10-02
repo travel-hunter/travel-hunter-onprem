@@ -258,7 +258,7 @@ describe("Travel Hunter app — home", () => {
       expect(slides.map((slide) => slide.getAttribute("href"))).toEqual([
         "/policies/nation-1",
         `/policies?${new URLSearchParams({ place: "전남", sheet: "1" })}`,
-        "/policies?region=전국",
+        "/policies?place=전국",
       ]);
       expect(slides[0].querySelector(".home-hero-eyebrow")).toHaveTextContent("D-2전국 공통");
       // 장 바탕 사진은 장의 성격으로: 마감 장은 혜택 종류(내일로 = 교통), 지역 장은 그 도, 전국 장은 교통
@@ -273,7 +273,7 @@ describe("Travel Hunter app — home", () => {
       expect(slides[0]).toHaveAttribute("data-pos", "0");
       expect(slides[1]).toHaveAttribute("data-pos", "1");
       const nationwideCard = screen.getByRole("link", { name: /전국 공통 혜택 1건/ });
-      expect(nationwideCard).toHaveAttribute("href", "/policies?region=전국");
+      expect(nationwideCard).toHaveAttribute("href", "/policies?place=전국");
       expect(nationwideCard).toHaveTextContent("기차");
     } finally {
       getProfileSpy.mockRestore();
@@ -413,7 +413,7 @@ describe("Travel Hunter app — home", () => {
       expect(within(mine).queryByText("전국 교통 혜택")).toBeNull();
       // 전국 한 줄 카드는 그대로 - 정책을 늘어놓지 않고 목록으로 보낸다
       const nationwideCard = screen.getByRole("link", { name: /전국 공통 혜택 1건/ });
-      expect(nationwideCard).toHaveAttribute("href", "/policies?region=전국");
+      expect(nationwideCard).toHaveAttribute("href", "/policies?place=전국");
       expect(within(nationwideCard).queryByText("전국 교통 혜택")).toBeNull();
     } finally {
       getProfileSpy.mockRestore();
@@ -448,7 +448,7 @@ describe("Travel Hunter app — home", () => {
 
       const list = await screen.findByRole("list", { name: "마감이 가까운 혜택 목록" });
       const nationwideCard = screen.getByRole("link", { name: /전국 공통 혜택 7건/ });
-      expect(nationwideCard).toHaveAttribute("href", "/policies?region=전국");
+      expect(nationwideCard).toHaveAttribute("href", "/policies?place=전국");
       // 카드 안에는 정책 제목이 없다
       expect(within(nationwideCard).queryByText(/전국 혜택 \d/)).toBeNull();
       // 전국도 마감이 가까운 혜택에 든다 - 여섯 장까지
@@ -456,6 +456,11 @@ describe("Travel Hunter app — home", () => {
       expect(within(list).getAllByRole("link")[0]).toHaveTextContent("전남 임박 혜택");
       // 관심 지역을 안 골랐으면 그 줄은 없다(배너가 고르기를 권한다)
       expect(screen.queryByRole("region", { name: "내 관심 지역 혜택" })).toBeNull();
+
+      // 누르면 정책 탭 지도의 '전국 공통'이 열린다. 지역 필터(region=전국)로 가면 예전 목록 화면이 떴다
+      await userEvent.setup().click(nationwideCard);
+      expect(await screen.findByRole("button", { name: /전국 공통 7/, pressed: true })).toBeInTheDocument();
+      expect(screen.queryByText(/전체 \d+개 중/)).toBeNull();
     } finally {
       getProfileSpy.mockRestore();
       listPoliciesSpy.mockRestore();

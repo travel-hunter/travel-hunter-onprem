@@ -464,7 +464,6 @@ export function PolicyListPage() {
      own 과 total 이 같아졌지만 엔진 계약(RegionCount)은 그대로 둔다. */
   const regionCounts = useMemo<RegionCounts>(() => {
     const counts: RegionCounts = {};
-    if (!policies) return counts;
     for (const policy of browsePolicies) {
       if (policy.region === NATIONWIDE_REGION) continue;
       const entry = counts[policy.region] ?? (counts[policy.region] = { own: 0, total: 0 });
@@ -684,11 +683,14 @@ export function PolicyListPage() {
      넓은 화면은 지도 오른쪽 패널에 목록을 세우고 검색 칸·정책 상세를 그 위에 덮는다(아래 목록은 스크롤 자리째 남는다) */
   const ready = !isLoading && !error && Boolean(policies && policies.length > 0);
   /* 넓은 틀은 화면 폭만으로 정한다 - 불러오는 동안에도. ready 까지 기다리면 그 사이 좁은 화면 틀이 그려졌다가 바뀐다(10/1).
-     지도·패널(split)만 정책이 온 뒤에 그린다 */
+     지도 틀도 불러오는 동안 미리 그린다 - 빈 화면에 '불러오는 중' 카드만 뜨면 예전 목록 화면처럼 보였다(10/2).
+     그동안 지도는 건수 없이 흐리고, 불러오는 표시는 목록 자리(패널 · 시트 자리)에 선다 */
+  const loadingMap = showMap && isLoading;
+  const mapOn = showMap && (ready || loadingMap);
   const deskMap = isDesktop && showMap;
-  const split = deskMap && ready;
+  const split = deskMap && mapOn;
   const detailPolicy = split && browse.detail ? (policies ?? []).find((policy) => policy.slug === browse.detail) ?? null : null;
-  const stage = ready && showMap && policies ? (
+  const stage = mapOn ? (
     <div className="thmap-stage">
       {/* 넓은 화면은 지도가 넉넉해 다가가지 않는다 - 전국 틀 그대로 고른 도를 띄우고 시군 점을 찍는다 */}
       <PolicyRegionMap
@@ -697,7 +699,7 @@ export function PolicyListPage() {
         selected={browse.region}
         focus
         zoom={!isDesktop}
-        showCounts
+        showCounts={ready}
         coverTop={isDesktop ? null : coverTop}
         sheetLow={!isDesktop && browse.sheet === "low"}
         places={mapPlaces}
@@ -705,7 +707,7 @@ export function PolicyListPage() {
         onSelectPlace={pickCity}
         onBackground={mapBackground}
       />
-      {browse.region && browse.region !== NATIONWIDE_REGION ? (
+      {!ready || !policies ? null : browse.region && browse.region !== NATIONWIDE_REGION ? (
         <RegionSummaryCard
           policies={policies}
           region={browse.region}
@@ -720,14 +722,18 @@ export function PolicyListPage() {
         </button>
       )}
       {/* 땅 색 = 혜택 건수. 지역을 고르면 지도가 좁아지니 범례보다 지도가 먼저다 */}
-      {!browse.region && (
+      {ready && !browse.region && (
         <div className="thmap-legend" aria-hidden="true">
           적음<span>{MAP_FILLS.slice(1).map((fill) => <i key={fill} style={{ background: fill }} />)}</span>많음
         </div>
       )}
     </div>
   ) : null;
-  const sheet = ready ? (
+  const sheet = loadingMap ? (
+    <div className="thmap-loading">
+      <LoadingState compact label="정책을 불러오는 중입니다" />
+    </div>
+  ) : ready ? (
     <PolicyMapSheet
       /* 넓은 화면 패널은 필터 창이 떠도 그 뒤에 그대로 선다(비우면 빈 패널이 비친다) */
       enabled={showMap && (isDesktop || !isFilterSheetOpen)}
@@ -853,7 +859,7 @@ export function PolicyListPage() {
           </div>
         </div>
       ) : stage}
-      {isLoading && <LoadingState label="정책을 불러오는 중입니다" />}
+      {isLoading && !showMap && <LoadingState label="정책을 불러오는 중입니다" />}
       {error && <ErrorState message={error} action={<LinkButton to="/home" variant="line">홈으로 가기</LinkButton>} />}
       {!isLoading && !error && visiblePolicies.length === 0 && !showMap && (
         <EmptyState

@@ -151,6 +151,22 @@ describe("Travel Hunter app — policies & trip picker", () => {
     }
   });
 
+  it("draws the map frame while policies load instead of the old full-width loading card", async () => {
+    // 응답이 늦을 때: 지도 칸이 먼저 서고 '불러오는 중'은 목록 자리에 선다. 예전엔 빈 화면에 그 카드만 떠서 예전 목록 화면처럼 보였다
+    const listPoliciesSpy = vi.spyOn(appDataApi, "listPolicies").mockReturnValue(new Promise(() => {}));
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+      const status = await screen.findByRole("status");
+      expect(status).toHaveTextContent("정책을 불러오는 중입니다");
+      expect(status.closest(".thmap-loading")).toBeTruthy();
+      expect(document.querySelector(".thmap-stage .thmap-host")).toBeTruthy();
+    } finally {
+      listPoliciesSpy.mockRestore();
+    }
+  });
+
   it("shows digital resident policies as always-issued instead of deadline-unknown on the list", async () => {
     const policies: Policy[] = [
       {
