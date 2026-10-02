@@ -1,5 +1,5 @@
 import { ChevronLeft, MapPin, Search } from "lucide-react";
-import { useLayoutEffect, useRef, type RefObject } from "react";
+import { useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import type { PlaceSearchItem, Policy } from "../../api";
 import { BenefitTile } from "../benefitTile";
 import { NATIONWIDE_REGION } from "../../utils/policyPrograms";
@@ -13,6 +13,7 @@ import {
   regionTiles,
   searchBrowse,
   type BrowseFilter,
+  type BrowseSearch,
 } from "./policyBrowse";
 
 const FAMILY: Record<BrowseFilter, string> = { stay: "stay", refund: "money", partner: "money", move: "move" };
@@ -259,7 +260,6 @@ export function PolicySearchPanel({
     return acc;
   }, {});
   const found = q ? searchBrowse(policies, q) : null;
-  const regionLine = (name: string, count: number) => `${REGION_FULL_NAMES[name]} · ${count ? `혜택 ${count}건` : "전용 혜택 없음"}`;
   /* 위치로 찾기: 지역 · 시군 이름이 안 맞을 때만(맞으면 그 줄이 먼저다 - 시안 v56) */
   const near = found && !found.regions.length && !found.places.length && places && onPickNear ? nearGroups(policies, places, q) : [];
   const searching = Boolean(found && !found.regions.length && !found.places.length && q.length >= 2 && places === null);
@@ -301,62 +301,103 @@ export function PolicySearchPanel({
             </div>
           </>
         )}
-        {found && (found.regions.length > 0 || found.places.length > 0) && (
-          <>
-            <h3>지역</h3>
-            {found.regions.map(({ region: name, count }) => (
-              <button className="thmap-sres-row" key={name} type="button" onClick={() => onPickRegion(name)}>
-                <span className="tx"><b><Marked text={name} query={q} /></b><span>{regionLine(name, count)}</span></span>
-              </button>
-            ))}
-            {found.places.map(({ place, region: name, count }) => (
-              <button className="thmap-sres-row" key={`${place}|${name}`} type="button" onClick={() => onPickPlace(name, place)}>
-                <span className="tx"><b><Marked text={place} query={q} /></b><span>{name} · 혜택 {count}건</span></span>
-              </button>
-            ))}
-          </>
-        )}
-        {found && found.programs.length > 0 && (
-          <>
-            <h3>혜택</h3>
-            {found.programs.map((program) => (
-              <button className="thmap-sres-row" key={program.name} type="button" onClick={() => onPickProgram(program.name)}>
-                <BenefitTile kind={program.type} size="sm" />
-                <span className="tx">
-                  <b><Marked text={program.name} query={q} /></b>
-                  <span>{program.nation ? "전국 공통 · 어느 지역에서나 쓸 수 있어요" : `${program.count}곳 · 고르면 지도에 있는 곳이 칠해져요`}</span>
-                </span>
-              </button>
-            ))}
-          </>
-        )}
-        {near.length > 0 && (
-          <>
-            <h3>위치로 찾기<span className="src">근처 혜택으로</span></h3>
-            {near.map((group) => (
-              <button className="thmap-sres-row" key={group.key} type="button" onClick={() => onPickNear?.(group.item, group.label, group.target)}>
-                <span className="thmap-near-ic" aria-hidden="true"><MapPin size={18} /></span>
-                <span className="tx">
-                  <b>{group.title}</b>
-                  <span>
-                    <span className="thmap-near-to">→ {group.item.sido} {group.item.city}</span> · {group.target.region === NATIONWIDE_REGION ? "전국 공통 혜택" : group.target.note ? "근처 혜택" : "혜택"} {group.target.count}건
-                  </span>
-                </span>
-              </button>
-            ))}
-          </>
-        )}
-        {searching && <p className="thmap-sres-empty">아는 장소로 찾는 중…</p>}
-        {found && !found.regions.length && !found.places.length && !found.programs.length && !fullTextCount && !near.length && !searching && (
-          <p className="thmap-sres-empty">‘{q}’에 맞는 지역 · 혜택 · 장소가 없어요.</p>
-        )}
-        {/* 이름에는 없어도 정책 글(기관·요약·조건)에 들어 있는 것까지 - 예전 검색창이 하던 일 */}
-        {found && fullTextCount > 0 && (
-          <button className="thmap-sres-all" type="button" onClick={onShowAll}>
-            ‘{q}’ 들어간 정책 {fullTextCount}건 모두 보기 ›
-          </button>
+        {found && (
+          <PolicySearchRows
+            found={found}
+            query={q}
+            fullTextCount={fullTextCount}
+            onPickRegion={onPickRegion}
+            onPickPlace={onPickPlace}
+            onPickProgram={onPickProgram}
+            onShowAll={onShowAll}
+          >
+            {near.length > 0 && (
+              <>
+                <h3>위치로 찾기<span className="src">근처 혜택으로</span></h3>
+                {near.map((group) => (
+                  <button className="thmap-sres-row" key={group.key} type="button" onClick={() => onPickNear?.(group.item, group.label, group.target)}>
+                    <span className="thmap-near-ic" aria-hidden="true"><MapPin size={18} /></span>
+                    <span className="tx">
+                      <b>{group.title}</b>
+                      <span>
+                        <span className="thmap-near-to">→ {group.item.sido} {group.item.city}</span> · {group.target.region === NATIONWIDE_REGION ? "전국 공통 혜택" : group.target.note ? "근처 혜택" : "혜택"} {group.target.count}건
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </>
+            )}
+            {searching && <p className="thmap-sres-empty">아는 장소로 찾는 중…</p>}
+            {!found.regions.length && !found.places.length && !found.programs.length && !fullTextCount && !near.length && !searching && (
+              <p className="thmap-sres-empty">‘{q}’에 맞는 지역 · 혜택 · 장소가 없어요.</p>
+            )}
+          </PolicySearchRows>
         )}
       </div>
     </div>
+  );
+}
+
+/* 찾은 지역 · 시군 · 혜택 줄과 '…모두 보기' - 정책 탭 검색 칸과 홈 검색이 같이 쓴다(시안 v56). children 은 혜택 줄과 '모두 보기' 사이 */
+export function PolicySearchRows({
+  found,
+  query,
+  fullTextCount,
+  onPickRegion,
+  onPickPlace,
+  onPickProgram,
+  onShowAll,
+  children,
+}: {
+  found: BrowseSearch;
+  query: string;
+  fullTextCount: number;
+  onPickRegion: (region: string) => void;
+  onPickPlace: (region: string, place: string) => void;
+  onPickProgram: (program: string) => void;
+  onShowAll: () => void;
+  children?: ReactNode;
+}) {
+  const q = query.trim();
+  const regionLine = (name: string, count: number) => `${REGION_FULL_NAMES[name]} · ${count ? `혜택 ${count}건` : "전용 혜택 없음"}`;
+  return (
+    <>
+      {(found.regions.length > 0 || found.places.length > 0) && (
+        <>
+          <h3>지역</h3>
+          {found.regions.map(({ region: name, count }) => (
+            <button className="thmap-sres-row" key={name} type="button" onClick={() => onPickRegion(name)}>
+              <span className="tx"><b><Marked text={name} query={q} /></b><span>{regionLine(name, count)}</span></span>
+            </button>
+          ))}
+          {found.places.map(({ place, region: name, count }) => (
+            <button className="thmap-sres-row" key={`${place}|${name}`} type="button" onClick={() => onPickPlace(name, place)}>
+              <span className="tx"><b><Marked text={place} query={q} /></b><span>{name} · 혜택 {count}건</span></span>
+            </button>
+          ))}
+        </>
+      )}
+      {found.programs.length > 0 && (
+        <>
+          <h3>혜택</h3>
+          {found.programs.map((program) => (
+            <button className="thmap-sres-row" key={program.name} type="button" onClick={() => onPickProgram(program.name)}>
+              <BenefitTile kind={program.type} size="sm" />
+              <span className="tx">
+                <b><Marked text={program.name} query={q} /></b>
+                <span>{program.nation ? "전국 공통 · 어느 지역에서나 쓸 수 있어요" : `${program.count}곳 · 고르면 지도에 있는 곳이 칠해져요`}</span>
+              </span>
+            </button>
+          ))}
+        </>
+      )}
+      {children}
+      {/* 이름에는 없어도 정책 글(기관·요약·조건)에 들어 있는 것까지 - 예전 검색창이 하던 일 */}
+      {fullTextCount > 0 && (
+        <button className="thmap-sres-all" type="button" onClick={onShowAll}>
+          ‘{q}’ 들어간 정책 {fullTextCount}건 모두 보기 ›
+        </button>
+      )}
+    </>
   );
 }

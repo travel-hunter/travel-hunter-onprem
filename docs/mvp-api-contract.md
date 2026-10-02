@@ -1286,7 +1286,7 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
 
 ### GET /places/search
 
-홈 · 정책 탭 통합 검색의 장소 찾기(시안 v56). 일정과 무관하다 - 로그인한 사용자 누구나. 카카오 로컬 키워드 검색으로 장소를 찾고, 찾을 말이 동 · 읍 · 면 · 리 · `N가`로 끝나면 카카오 주소 검색도 불러 같은 이름의 구역을 전국에서 함께 준다(`kind: "area"`, 장소보다 앞). 항목마다 서버가 주소로 지도 도(`sido`, 정책 `region` 과 같은 짧은 이름)와 시군(`city`, 정책 제목 `[시군]` 과 맞추는 짧은 이름)을 붙인다 - 주소 첫 낱말이 `전남광주통합특별시`이면 둘째 낱말이 구일 때 광주, 시 · 군일 때 전남. 가리지 못하면 `null`. 카카오가 꺼져 있거나 실패하면 빈 배열(오류 아님).
+홈 · 정책 탭 통합 검색의 장소 찾기(시안 v56). 일정과 무관하다 - 로그인한 사용자 누구나. 카카오 로컬 키워드 검색으로 장소를 찾고, 찾을 말이 동 · 읍 · 면 · 리 · `N가`로 끝나면 카카오 주소 검색도 불러 같은 이름의 구역을 전국에서 함께 준다(`kind: "area"`, 장소보다 앞). 항목마다 서버가 주소로 지도 도(`sido`, 정책 `region` 과 같은 짧은 이름)와 시군(`city`, 정책 제목 `[시군]` 과 맞추는 짧은 이름)을 붙인다 - 주소 첫 낱말이 `전남광주통합특별시`이면 둘째 낱말이 구일 때 광주, 시 · 군일 때 전남. 가리지 못하면 `null`. `category` 는 카카오 분류 전체 경로로, 일정 장소 검색(`GET /trips/{tripId}/place-search`)의 `categoryName` 과 같은 값이다 - 홈에서 일정에 담아도 같은 장소 기록이 된다. 카카오가 꺼져 있거나 실패하면 빈 배열(오류 아님).
 
 **Query**
 - `query`: string, 1-80 chars. 두 글자 미만이면 빈 배열.
@@ -1311,7 +1311,7 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
     "kind": "place",
     "id": "kakao:8193468",
     "name": "오동도",
-    "category": "섬",
+    "category": "여행 > 관광,명소 > 섬 > 섬(내륙)",
     "categoryCode": "AT4",
     "address": "전남광주통합특별시 여수시 수정동 1-1",
     "latitude": 34.744,

@@ -14,7 +14,7 @@ import { BrowseChips, PolicySearchPanel, RegionSummaryCard } from "../components
 import { BROWSE_FILTERS, browseDepthOf, browseView, chipCounts, lowerBrowseState, matchesBrowseFilter, nearOn, programName, readBrowseState, searchBrowse, writeBrowseState, type BrowseFilter, type BrowseState } from "../components/map/policyBrowse";
 import { geoToMap, nearbyCities, shortCity, type NearTarget } from "../components/map/nearby";
 import { useBrowseHistory } from "../components/map/useBrowseHistory";
-import { AMOUNT_FILTERS, conditionCount, conditionLabel, NO_CONDITIONS, PERIOD_FILTERS, setPolicyConditions, usePolicyConditions, type AmountFilter, type PeriodFilter, type PolicyConditions } from "../components/map/policyConditions";
+import { AMOUNT_FILTERS, conditionCount, conditionLabel, matchesPolicySearch, NO_CONDITIONS, PERIOD_FILTERS, setPolicyConditions, usePolicyConditions, type AmountFilter, type PeriodFilter, type PolicyConditions } from "../components/map/policyConditions";
 import { MAP_FILLS } from "../components/map/regionMapEngine";
 import { deskBrowseDepthOf } from "../components/map/policyBrowse";
 import { useIsDesktop } from "../lib/useMediaQuery";
@@ -124,27 +124,6 @@ function matchesConditions(policy: Policy, conditions: PolicyConditions, savedSl
     && matchesAmount(policy, conditions.amount)
     && (!conditions.savedOnly || savedSlugs.has(policy.slug))
     && matchesPolicySearch(policy, conditions.text);
-}
-
-function normalizedSearchText(value: string) {
-  return value.trim().toLocaleLowerCase("ko-KR");
-}
-
-function matchesPolicySearch(policy: Policy, searchTerm: string) {
-  const query = normalizedSearchText(searchTerm);
-  if (!query) return true;
-  const haystack = [
-    policy.title,
-    policy.org,
-    policy.region,
-    policy.category,
-    policy.amount,
-    policy.summary,
-    policy.tag,
-    ...policy.requirements,
-    ...policy.documents,
-  ].join(" ").toLocaleLowerCase("ko-KR");
-  return haystack.includes(query);
 }
 
 function getRecommendedPolicies(policies: Policy[]) {

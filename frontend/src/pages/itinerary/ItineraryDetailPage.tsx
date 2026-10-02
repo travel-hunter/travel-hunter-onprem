@@ -98,6 +98,7 @@ import { hasPolicySaving, tripStatus } from "../../utils";
 import { DESKTOP_MEDIA_QUERY } from "../../lib/useMediaQuery";
 import { FriendInvitePanel } from "./FriendInvitePanel";
 import { DraftRestoreNotice } from "./_shared";
+import { readPlaceParam, tripPlaceFromSearchItem } from "../../utils/placeHandoff";
 
 const defaultPlaceTime = "09:00";
 const placeMinuteStep = 10;
@@ -3022,7 +3023,8 @@ export function ItineraryDetailPage() {
     cancelPendingPlaceSearch();
   };
 
-  const openAddPlace = () => {
+  /* initial: 홈 장소 카드의 '일정에 담기'로 넘어온 장소(시안 v57) - 바구니에 담은 채 연다 */
+  const openAddPlace = (initial?: TripPlaceRequest) => {
     if (isEditMode) return;
     if (!canEditTrip) {
       showEditPermissionRequired();
@@ -3034,17 +3036,41 @@ export function ItineraryDetailPage() {
     setPlaceSearchQuery("");
     setPlaceSearchCandidates([]);
     setPlaceSearchError("");
-    setPlaceBasket([]);
+    placeBasketIdRef.current += 1;
+    setPlaceBasket(initial ? [{ ...initial, basketId: `place-basket-${placeBasketIdRef.current}` }] : []);
     setBatchPlaceRecovery({ kind: "none" });
     setPlaceEditor({ mode: "add", dayNumber: visibleDay });
     setPlaceForm({ time: "", label: "", meta: "" });
     clearPlacePreview();
+    if (initial) {
+      updatePlacePreview({
+        source: "selected",
+        place: previewFromPayload(initial, "selected", visibleDay, initial.externalPlaceId ?? initial.label),
+      });
+    }
     setPlaceSaveEligibility("empty");
     setPlaceDraftNotice("");
     setPlaceError("");
     // 시트가 moveError 도 보여주므로, 이전에 끌어 옮기다 실패한 메시지를 안고 열지 않는다.
     setMoveError("");
   };
+
+  /* 홈 장소 카드의 '일정에 담기'(시안 v57): ?addPlace= 로 넘어온 장소를 바구니에 담은 장소 추가 창으로 연다.
+     한 번 읽고 주소에서 지운다(새로 고쳐도 다시 열리지 않게). 고칠 수 없는 일정이면 openAddPlace 가 권한 안내를 띄운다 */
+  const handoffPlace = searchParams.get("addPlace");
+  useEffect(() => {
+    if (!handoffPlace || !trip) return;
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("addPlace");
+        return next;
+      },
+      { replace: true },
+    );
+    const item = readPlaceParam(handoffPlace);
+    if (item) openAddPlace(tripPlaceFromSearchItem(item));
+  }, [handoffPlace, trip?.id]);
 
   const openEditPlace = (place: ItineraryPlace) => {
     const draft =
@@ -4279,7 +4305,7 @@ export function ItineraryDetailPage() {
             <button
               className="prototype-trip-action-button prototype-trip-action-add"
               type="button"
-              onClick={openAddPlace}
+              onClick={() => openAddPlace()}
             >
               + 장소 추가
             </button>
@@ -4581,7 +4607,12 @@ export function ItineraryDetailPage() {
           }
           place={placeEditor.mode === "edit" ? placeEditor.place : null}
           readOnly={!canEditTrip}
-          onDayChange={(nextDay) => void movePlaceFromSheet(nextDay)}
+          onDayChange={(nextDay) =>
+            // 추가는 저장할 날만 고른다(시안 v57). 수정은 고르면 바로 옮긴다
+            placeEditor.mode === "add"
+              ? setPlaceEditor({ mode: "add", dayNumber: nextDay })
+              : void movePlaceFromSheet(nextDay)
+          }
           onSelectedDayRef={scrollSelectedDayIntoView}
           onDiscardDraft={discardPlaceDraft}
           onSearchInput={invalidatePlaceSearch}
@@ -5945,6 +5976,42 @@ export function PlaceEditorSheet({
     [],
   );
 
+  /* 날짜 칩 줄 - 수정은 고르면 바로 옮기고, 추가는 저장할 날을 고른다(시안 v57: 홈에서 넘어온 장소는 날을 고를 곳이 여기뿐이다) */
+  const dayPicker =
+    !readOnly && dayOptions.length > 1 ? (
+      <div className="field place-day-picker">
+        <span>날짜</span>
+        {/* 네이티브 select 는 항목 높이를 운영체제가 정해 손댈 수 없다.
+            칩 줄로 두면 칸을 넉넉히 잡고 장소 수까지 같이 보여줄 수 있다. */}
+        <div
+          aria-label="날짜 선택"
+          className="place-day-options"
+          role="radiogroup"
+          {...dayDragScroll}
+        >
+          {dayOptions.map((option) => {
+            const selected = option.dayNumber === dayNumber;
+            return (
+              <button
+                aria-checked={selected}
+                className={selected ? "place-day-chip selected" : "place-day-chip"}
+                disabled={isSaving || isMovingDay}
+                key={option.dayNumber}
+                onClick={() => onDayChange(option.dayNumber)}
+                ref={selected ? onSelectedDayRef : undefined}
+                role="radio"
+                type="button"
+              >
+                <strong>Day {option.dayNumber}</strong>
+                {option.dateLabel && <em>{option.dateLabel}</em>}
+                <i>{option.count > 0 ? `${option.count}곳` : "비어 있음"}</i>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    ) : null;
+
   const updateInputSearchQuery = (query: string) => {
     setInputSearchQuery(query);
     onSearchInput?.();
@@ -5994,6 +6061,7 @@ export function PlaceEditorSheet({
               onDiscard={onDiscardDraft}
             />
           )}
+          {mode === "add" && dayPicker}
           {mode === "add" && (
             <div className="place-search-panel">
               <label className="field">
@@ -6120,45 +6188,7 @@ export function PlaceEditorSheet({
           {mode === "edit" && place && <PlaceSheetDetail place={place} />}
           {mode === "edit" && (
             <>
-              {!readOnly && dayOptions.length > 1 && (
-                <div className="field place-day-picker">
-                  <span>날짜</span>
-                  {/* 네이티브 select 는 항목 높이를 운영체제가 정해 손댈 수 없다.
-                      칩 줄로 두면 칸을 넉넉히 잡고 장소 수까지 같이 보여줄 수 있다. */}
-                  <div
-                    aria-label="날짜 선택"
-                    className="place-day-options"
-                    role="radiogroup"
-                    {...dayDragScroll}
-                  >
-                    {dayOptions.map((option) => {
-                      const selected = option.dayNumber === dayNumber;
-                      return (
-                        <button
-                          aria-checked={selected}
-                          className={
-                            selected
-                              ? "place-day-chip selected"
-                              : "place-day-chip"
-                          }
-                          disabled={isSaving || isMovingDay}
-                          key={option.dayNumber}
-                          onClick={() => onDayChange(option.dayNumber)}
-                          ref={selected ? onSelectedDayRef : undefined}
-                          role="radio"
-                          type="button"
-                        >
-                          <strong>Day {option.dayNumber}</strong>
-                          {option.dateLabel && <em>{option.dateLabel}</em>}
-                          <i>
-                            {option.count > 0 ? `${option.count}곳` : "비어 있음"}
-                          </i>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              {dayPicker}
               <PlaceTimePicker
                 disabled={isSaving || readOnly}
                 value={form.time ?? ""}
@@ -6219,7 +6249,7 @@ export function PlaceEditorSheet({
               {isSaving
                 ? "저장 중입니다"
                 : hasPlaceBasket
-                  ? `${placeBasket.length}개 저장하기`
+                  ? `Day ${dayNumber}에 ${placeBasket.length}개 저장하기`
                   : "저장하기"}
             </Button>
           </div>

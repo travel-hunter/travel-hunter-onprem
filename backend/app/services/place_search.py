@@ -45,12 +45,12 @@ def resolve_city(second: str) -> str | None:
 def _place_item(place) -> dict[str, object]:
     words = (place.address or "").split()
     first, second = (words + ["", ""])[:2]
-    category = (place.category_name or "").split(" > ")[-1] or None
     return {
         "kind": "place",
         "id": f"kakao:{place.external_place_id}",
         "name": place.name,
-        "category": category,
+        # 일정 안 장소 검색(categoryName)과 같은 전체 경로 - 홈에서 일정에 담아도 같은 장소 기록이 된다. 화면은 마지막 칸만
+        "category": place.category_name or None,
         "categoryCode": place.category_group_code,
         "address": place.address,
         "latitude": place.latitude,

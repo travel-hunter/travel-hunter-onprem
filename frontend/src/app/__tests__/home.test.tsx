@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
   appDataApi,
+  type PlaceSearchItem,
   type Policy,
   type RegionRecommendation,
   type Trip,
@@ -19,7 +20,7 @@ import {
   getPreviewTrip,
   testIsoDateFromToday,
 } from "../../test/fixtures";
-import { login, renderAppRoute } from "../../test/renderAppRoute";
+import { login, renderAppRoute, routeLocation } from "../../test/renderAppRoute";
 
 function policy(overrides: Partial<Policy> & Pick<Policy, "id" | "title">): Policy {
   return { ...examplePolicyDetail, slug: overrides.id, ...overrides };
@@ -43,7 +44,8 @@ describe("Travel Hunter app — home", () => {
     const deadlineSection = await screen.findByRole("region", {
       name: "마감이 가까운 혜택",
     });
-    expect(document.body).toHaveTextContent("어디로 떠나세요?");
+    // 홈 검색창은 모양 · 문구 그대로 입력칸이다(시안 v56)
+    expect(screen.getByRole("searchbox", { name: "지역 · 혜택 · 장소 검색" })).toHaveAttribute("placeholder", "어디로 떠나세요?");
     expect(screen.getByLabelText("마이페이지")).toBeInTheDocument();
     expect(document.body).toHaveTextContent("안녕,");
     expect(document.body).toHaveTextContent(/지금 받을 수 있는 혜택 \d+건/);
@@ -821,6 +823,96 @@ describe("Travel Hunter app — home", () => {
     } finally {
       getProfileSpy.mockRestore();
       listRegionRecommendationsSpy.mockRestore();
+    }
+  });
+
+  it("searches places from the home search bar, opens a place card and hands the place to a trip", async () => {
+    const odongdo: PlaceSearchItem = {
+      kind: "place",
+      id: "kakao:8193468",
+      name: "오동도",
+      category: "여행 > 관광,명소 > 섬",
+      categoryCode: "AT4",
+      address: "전남광주통합특별시 여수시 수정동 1-1",
+      latitude: 34.745,
+      longitude: 127.766,
+      placeUrl: "http://place.map.kakao.com/8193468",
+      sido: "전남",
+      city: "여수",
+    };
+    const listPoliciesSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue([
+      policy({ id: "ys", title: "[여수] 숙박 할인", region: "전남" }),
+      policy({ id: "gy", title: "[광양] 숙박 할인", region: "전남" }),
+    ]);
+    const getProfileSpy = withoutPreferredRegions();
+    const searchPlacesSpy = vi.spyOn(appDataApi, "searchPlaces").mockResolvedValue([odongdo]);
+    const upcoming = (id: string, title: string, role: Trip["currentUserRole"], from: number): Trip => ({
+      ...getPreviewTrip(),
+      id,
+      title,
+      startDate: testIsoDateFromToday(from),
+      endDate: testIsoDateFromToday(from + 2),
+      days: { 1: [], 2: [], 3: [] },
+      currentUserRole: role,
+    });
+    const listTripsSpy = vi.spyOn(appDataApi, "listTrips").mockResolvedValue([
+      upcoming("301", "여수 여행", "owner", 10),
+      upcoming("302", "지난 여행", "owner", -30),
+      upcoming("303", "보기만 하는 여행", "viewer", 10),
+    ]);
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(upcoming("301", "여수 여행", "owner", 10));
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/home");
+      const user = userEvent.setup();
+      const searchbox = await screen.findByRole("searchbox", { name: "지역 · 혜택 · 장소 검색" });
+
+      // 홈 화면 그대로 검색창이 입력이 되고 그 아래가 결과다. 닫으면 홈 내용이 그대로 돌아온다
+      await user.click(searchbox);
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("q")).toBe(""));
+      expect(screen.queryByText(/안녕,/)).toBeNull();
+      await user.click(screen.getByRole("button", { name: "검색 닫기" }));
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).has("q")).toBe(false));
+      expect(await screen.findByText(/안녕,/)).toBeInTheDocument();
+
+      // 지역 · 혜택 줄과 장소 목록이 함께 - 장소는 지역 이름이 아니어도 늘 찾는다
+      await user.click(searchbox);
+      await user.type(searchbox, "오동도");
+      const row = await screen.findByRole("button", { name: /오동도.*섬/ });
+      expect(row).toHaveTextContent("혜택 1");
+      expect(searchPlacesSpy).toHaveBeenLastCalledWith("오동도", expect.anything());
+
+      // 장소 카드 - 뒤로(‹ 검색 결과)는 결과 그대로
+      await user.click(row);
+      let card = await screen.findByRole("article", { name: "오동도 장소 카드" });
+      expect(routeLocation().search).toContain("pl=");
+      expect(within(card).getByRole("link", { name: /카카오맵에서 자세히/ })).toHaveAttribute("href", "http://place.map.kakao.com/8193468");
+      const near = new URLSearchParams(within(card).getByRole("link", { name: /주변 혜택 1건 보기/ }).getAttribute("href")!.split("?")[1]);
+      expect([near.get("place"), near.get("city"), JSON.parse(near.get("near")!).name]).toEqual(["전남", "여수", "오동도"]);
+      await user.click(within(card).getByRole("button", { name: "‹ 검색 결과" }));
+      await waitFor(() => expect(screen.queryByRole("article", { name: "오동도 장소 카드" })).toBeNull());
+      expect(searchbox).toHaveValue("오동도");
+      await user.click(await screen.findByRole("button", { name: /오동도.*섬/ }));
+      card = await screen.findByRole("article", { name: "오동도 장소 카드" });
+
+      // 일정에 담기: 끝나지 않은 · 고칠 수 있는 일정만. 고르면 그 일정의 장소 추가 창이 이 장소를 바구니에 담은 채 열린다(시안 v57)
+      await user.click(within(card).getByRole("button", { name: "일정에 담기" }));
+      const picker = await within(card).findByRole("group", { name: "일정 고르기" });
+      await within(picker).findByRole("button", { name: /여수 여행/ });
+      expect(within(picker).queryByText("지난 여행")).toBeNull();
+      expect(within(picker).queryByText("보기만 하는 여행")).toBeNull();
+      await user.click(within(picker).getByRole("button", { name: /여수 여행/ }));
+      await waitFor(() => expect(routeLocation().pathname).toBe("/trips/301"));
+      const sheet = await screen.findByRole("dialog", { name: "장소 추가" });
+      expect(within(sheet).getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("오동도");
+      expect(within(sheet).getByRole("button", { name: "Day 1에 1개 저장하기" })).toBeInTheDocument();
+    } finally {
+      listPoliciesSpy.mockRestore();
+      getProfileSpy.mockRestore();
+      searchPlacesSpy.mockRestore();
+      listTripsSpy.mockRestore();
+      getTripSpy.mockRestore();
     }
   });
 });

@@ -710,3 +710,157 @@
   font-weight: 800;
   cursor: pointer;
 }
+
+/* ── 홈 통합 검색(시안 v56 · v57) ──────────────────────────────
+   검색창은 모양 그대로 입력이 되고 그 아래 자리가 결과(지역 · 혜택 줄, 장소, 장소 카드, 일정 고르기)다 */
+.home-search-pill { cursor: text; }
+.home-search-pill input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+}
+.home-search-pill input::placeholder { color: #8c8ca1; }
+.home-search-pill:focus-within { border-color: var(--primary-600); box-shadow: 0 0 0 3px var(--color-action-primary-soft); }
+.home-search-results { display: grid; gap: 4px; padding: 0 var(--app-page-gutter) 24px; }
+.home-search-head { display: flex; align-items: center; gap: 4px; margin-left: -10px; }
+.home-search-head b { font-size: 16px; }
+.home-search-back {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.home-search-body h3,
+.home-search-start h3 { margin: 12px 4px 6px; font-size: 12px; font-weight: 800; letter-spacing: 0.04em; color: var(--gray-600); }
+.home-search-body h3 .src { margin-left: 6px; font-weight: 600; letter-spacing: 0; color: var(--gray-600); }
+.home-search-examples { display: flex; flex-wrap: wrap; gap: 8px; }
+.home-search-examples button {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--gray-200);
+  border-radius: 18px;
+  background: var(--color-bg-card);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.home-search-start p { margin: 14px 4px 0; font-size: 13px; line-height: 1.5; color: var(--gray-600); }
+.home-place-row .tx { flex: 1; }
+.home-place-badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--color-action-primary-soft);
+  color: var(--primary-700);
+  font-size: 12px;
+  font-weight: 700;
+}
+.home-place-card { display: grid; gap: 8px; padding: 2px 0 8px; }
+.home-place-back {
+  justify-self: start;
+  height: 32px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--gray-600);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.home-place-cat { margin: 0; font-size: 12.5px; color: var(--gray-600); }
+.home-place-card h3 { margin: 0; font-size: 22px; font-weight: 800; }
+.home-place-addr { margin: 0; font-size: 14px; color: var(--gray-700); overflow-wrap: anywhere; }
+.home-place-map .kakao-map-view { min-height: 168px; border: 1px solid var(--gray-200); border-radius: 16px; }
+.home-place-map .kakao-map-canvas { min-height: 168px; }
+.home-place-map-fallback {
+  min-height: 168px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
+  color: var(--gray-600);
+  font-size: 13px;
+  text-align: center;
+}
+.home-place-acts { display: grid; gap: 8px; }
+.home-place-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--primary-600);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+.home-place-near {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid var(--primary-100);
+  border-radius: 14px;
+  background: var(--primary-50);
+  color: var(--primary-700);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.home-place-note { margin: 0; font-size: 13px; color: var(--gray-600); }
+.home-place-kakao { justify-self: start; font-size: 13px; color: var(--gray-700); }
+.home-trip-pick { display: grid; gap: 8px; margin-top: 4px; padding: 12px; border: 1px solid var(--gray-200); border-radius: 16px; background: var(--gray-50); }
+.home-trip-pick h4 { margin: 0; font-size: 15px; }
+.home-trip-pick-tip { margin: 0; font-size: 13px; color: var(--gray-600); }
+.home-trip-pick-row {
+  display: grid;
+  gap: 2px;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  background: var(--color-bg-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.home-trip-pick-row b { font-size: 15px; }
+.home-trip-pick-row span { font-size: 13px; color: var(--gray-600); }
+.home-trip-pick-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background: var(--color-bg-card);
+  color: inherit;
+  font-size: 15px;
+  text-decoration: none;
+}
+.home-search-results button:focus-visible,
+.home-search-results a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+@media (min-width: 1024px) {
+  /* 넓은 화면: 결과는 검색창 폭에 맞춘 한 단 */
+  .prototype-home-screen.desktop-wide .home-search-results { max-width: 640px; padding: 0 0 32px; }
+}

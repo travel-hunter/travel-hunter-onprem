@@ -61,7 +61,7 @@ def test_place_gets_the_map_region_and_city_from_its_kakao_address() -> None:
         ("성산일출봉", "제주", "서귀포"),
     ]
     first = items[0]
-    assert first["kind"] == "place" and first["id"] == "kakao:a" and first["category"] == "섬"
+    assert first["kind"] == "place" and first["id"] == "kakao:a" and first["category"] == "여행 > 관광,명소 > 섬"
     assert first["placeUrl"] == "http://place.map.kakao.com/a"
     assert kakao.calls == [("keyword", "오동도")]   # 장소 이름은 주소 검색을 부르지 않는다
 
@@ -138,7 +138,7 @@ def test_places_route_needs_login_and_returns_camel_case_items(monkeypatch) -> N
         app.dependency_overrides.pop(get_current_user, None)
     assert found.status_code == 200
     assert found.json() == [{
-        "kind": "place", "id": "kakao:1", "name": "오동도", "category": "섬", "categoryCode": "AT4",
+        "kind": "place", "id": "kakao:1", "name": "오동도", "category": "여행 > 관광,명소 > 섬", "categoryCode": "AT4",
         "address": "전남광주통합특별시 여수시 수정동 1", "latitude": 34.74, "longitude": 127.76,
         "placeUrl": "http://place.map.kakao.com/1", "sido": "전남", "city": "여수",
     }]
