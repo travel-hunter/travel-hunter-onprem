@@ -417,7 +417,7 @@ export function PolicyListPage() {
     return (policies ?? []).filter(
       (policy) =>
         matchesConditions(policy, { ...draft, text: conditions.text }, savedSlugs)
-        && matchesBrowseFilter(policy, draft.filter)
+        && matchesBrowseFilter(policy, dropMove(draft.region, draft.filter))
         && (!browse.program || programName(policy) === browse.program)
         && (!draft.region || policy.region === draft.region)
         && (!keepCity || cityOf(policy) === keepCity),
@@ -459,14 +459,20 @@ export function PolicyListPage() {
     return Array.from(counts, ([name, count]) => ({ name, count }));
   }, [browsePolicies, browse.region]);
   const panelOpen = browse.search;
+  /* 검색 칸이 세는 정책: 글 검색을 뺀 조건(마감 · 금액 · 관심만)이 걸린 것 - 칸의 숫자가 고른 뒤 목록과 맞게 */
+  const searchPolicies = useMemo(
+    () => (policies ?? []).filter((policy) => matchesConditions(policy, { ...conditions, text: "" }, savedSlugs)),
+    [policies, conditions, savedSlugs],
+  );
   const fullTextCount = useMemo(() => {
     const q = panelQuery.trim();
-    return q ? (policies ?? []).filter((policy) => matchesPolicySearch(policy, q)).length : 0;
-  }, [policies, panelQuery]);
-  /* 검색 칸의 '모두 보기': 정책 글 전체에서 그 말이 든 정책만 지도 · 목록에 남긴다(조건 - ✕ 로 푼다) */
+    return q ? searchPolicies.filter((policy) => matchesPolicySearch(policy, q)).length : 0;
+  }, [searchPolicies, panelQuery]);
+  /* 검색 칸의 '모두 보기': 정책 글 전체에서 그 말이 든 정책만 남긴다(조건 - ✕ 로 푼다). 고른 지역 · 칩 · 사업은 풀어
+     칸이 센 'N건'과 목록 건수가 같게 한다 - 글 검색은 지도 어디서 쳤든 전체에서 찾는 것이다 */
   const showAllMatches = () => {
     setPolicyConditions({ ...conditions, text: panelQuery.trim() });
-    setBrowse({ ...browse, search: false, sheet: browse.sheet === "low" ? "mid" : browse.sheet });
+    setBrowse({ ...base, region: null, city: null, program: null, filter: null, search: false, sheet: browse.sheet === "low" ? "mid" : browse.sheet });
   };
 
   /* Esc = 화면 안 ‹ 와 같은 한 층. 지도 안(지역 선택 풀기)은 제 일을 하고, 필터 창이 떠 있으면 창만 닫는다 */
@@ -557,7 +563,7 @@ export function PolicyListPage() {
   ) : null;
   const search = ready && panelOpen && policies ? (
     <PolicySearchPanel
-      policies={policies}
+      policies={searchPolicies}
       region={browse.region}
       query={panelQuery}
       fullTextCount={fullTextCount}

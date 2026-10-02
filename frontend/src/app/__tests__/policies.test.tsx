@@ -296,7 +296,8 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await user.type(screen.getByRole("searchbox", { name: "정책 검색" }), "목록 정책");
       await user.click(await screen.findByRole("button", { name: /‘목록 정책’ 들어간 정책 \d+건 모두 보기/ }));
       await waitFor(() => expect(conditionsLine()).toBe("‘목록 정책’ 검색"));
-      await waitForSheet("강원 1건");
+      // 글 검색은 전체에서 찾는다 - 고른 강원은 풀리고 두 정책이 다 나온다
+      await waitForSheet("모든 지역 2건");
       expectStillOnMap();
       expect(document.body).not.toHaveTextContent("시작일 확인 필요");
     } finally {
@@ -570,6 +571,31 @@ describe("Travel Hunter app — policies & trip picker", () => {
       expect(within(chips).getByRole("button", { name: /^환급/ })).toHaveAttribute("aria-pressed", "true");
     } finally {
       policyListSpy.mockRestore();
+    }
+  });
+
+  it("searches the whole text from any map layer so the count matches the list", async () => {
+    const policies: Policy[] = [
+      { ...examplePolicyDetail, id: "busan", slug: "busan", title: "부산 숙박 할인", region: "부산" },
+      { ...examplePolicyDetail, id: "gangwon", slug: "gangwon", title: "강원 체험 혜택", region: "강원" },
+    ];
+    const listPoliciesSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
+
+    try {
+      await login();
+      cleanup();
+      // 강원을 고른 채 '부산'으로 찾아도 칸이 센 1건이 그대로 목록에 나온다 - 고른 지역은 풀린다
+      renderAppRoute(`/policies?place=${encodeURIComponent("강원")}`);
+      await waitForSheet("강원 1건");
+      const user = userEvent.setup();
+      await user.type(screen.getByRole("searchbox", { name: "정책 검색" }), "부산");
+      await user.click(await screen.findByRole("button", { name: "‘부산’ 들어간 정책 1건 모두 보기 ›" }));
+      await waitForSheet("모든 지역 1건");
+      expect(routeLocation().search).not.toContain("place=");
+      // 글 검색만 걸려도 필터 단추가 조건이 걸렸다고 말한다(지도 중심이면 조건 줄이 가려진다)
+      expect(screen.getByRole("button", { name: "필터 열기" })).toHaveTextContent("필터 1");
+    } finally {
+      listPoliciesSpy.mockRestore();
     }
   });
 

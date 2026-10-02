@@ -42,18 +42,20 @@ export function setPolicyConditions(next: PolicyConditions) {
   listeners.forEach((listener) => listener());
 }
 
-export function usePolicyConditions(): PolicyConditions {
-  return useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    () => current,
-  );
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
-/** 필터 단추의 수 - 필터 창에서 고르는 셋만(글 검색은 목록 머리 줄이 말한다) */
-export const conditionCount = (c: PolicyConditions) => Number(c.period !== "전체") + Number(c.amount !== "전체") + Number(c.savedOnly);
+export function usePolicyConditions(): PolicyConditions {
+  return useSyncExternalStore(subscribe, () => current);
+}
+
+/** 필터 단추의 수 - 글 검색까지 센다. 목록이 내려가(휴대폰 지도 중심) 조건 줄이 가려져도 단추가 조건이 걸렸다고 말한다 */
+export const conditionCount = (c: PolicyConditions) =>
+  Number(c.period !== "전체") + Number(c.amount !== "전체") + Number(c.savedOnly) + Number(Boolean(c.text));
 
 /** 목록 머리 아래 한 줄. 걸린 게 없으면 null */
 export function conditionLabel(c: PolicyConditions): string | null {
