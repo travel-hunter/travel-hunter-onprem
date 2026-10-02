@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import PhotoReviewCandidate, PhotoReviewTarget
@@ -44,7 +45,9 @@ def get_candidates(db: Session, candidate_ids: list[int]) -> dict[int, PhotoRevi
 def get_target(db: Session, target_id: int, *, lock: bool = False) -> PhotoReviewTarget | None:
     stmt = select(PhotoReviewTarget).where(PhotoReviewTarget.id == target_id)
     if lock and db.get_bind().dialect.name == "postgresql":
-        stmt = stmt.with_for_update()
+        # FOR NO KEY UPDATE - 결정은 키가 아닌 칸만 고친다. 평범한 FOR UPDATE 면 수집이 후보를 넣을 때 외래키 검사가 거는
+        # KEY SHARE 와 부딪혀, 확정이 수집의 크기 재기가 끝날 때까지 기다렸다
+        stmt = stmt.with_for_update(key_share=True)
     return db.scalars(stmt).first()
 
 
@@ -59,10 +62,18 @@ def add_target(db: Session, **fields: object) -> PhotoReviewTarget:
     return target
 
 
-def add_candidate(db: Session, target: PhotoReviewTarget, **fields: object) -> PhotoReviewCandidate:
-    candidate = PhotoReviewCandidate(**fields)
+def add_candidate(db: Session, target: PhotoReviewTarget, **fields: object) -> PhotoReviewCandidate | None:
+    """후보 한 장. 같은 대상에 같은 사진이 이미 있으면(수집이 도는 동안 관리자가 '더 받기' · '이름으로 찾기'로 먼저 넣은 때) None -
+    그 장만 건너뛴다. 예전엔 고유키 오류가 수집 전체를 멈췄다."""
+
+    candidate = PhotoReviewCandidate(target_id=target.id, **fields)
+    try:
+        with db.begin_nested():
+            db.add(candidate)
+            db.flush()
+    except IntegrityError:
+        return None
     target.candidates.append(candidate)
-    db.flush()
     return candidate
 
 

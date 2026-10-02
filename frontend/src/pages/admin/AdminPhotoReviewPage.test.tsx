@@ -232,6 +232,8 @@ describe("admin photo review", () => {
     expect(box).toHaveTextContent("후보가 모자란 대상 1곳");
     expect(box).toHaveTextContent("899장");
 
+    // 도는 동안 고른 후보는 수집이 끝나 목록을 다시 받아도 남는다
+    await userEvent.click(screen.getByRole("radio", { name: /관광지 11/ }));
     const listCalls = listSpy.mock.calls.length;
     await userEvent.click(screen.getByRole("button", { name: "후보 채우기" }));
     expect(startSpy).toHaveBeenCalledTimes(1);
@@ -241,6 +243,26 @@ describe("admin photo review", () => {
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("후보 18장을 넣었습니다 · 새 대상 3곳 · 못 채운 1곳은 이름으로 찾아 주세요"), { timeout: 4000 });
     expect(screen.getByRole("button", { name: "후보 채우기" })).toBeEnabled();
     expect(listSpy.mock.calls.length).toBeGreaterThan(listCalls);
+    expect(screen.getByRole("radio", { name: /관광지 11/ })).toBeChecked();
+    expect(screen.getByRole("button", { name: "이 사진으로 확정" })).toBeEnabled();
+  });
+
+  it("says why an approval failed - storage or the photo download, not TourAPI", async () => {
+    installAdmin();
+    const damyang = target("1");
+    vi.spyOn(appDataApi, "listAdminPhotoReviewTargets").mockResolvedValue({ items: [damyang], counts: { pending: 1, approved: 0, none: 0, all: 1 }, pendingTotal: 1, ...extra });
+    vi.spyOn(appDataApi, "getAdminPhotoReviewTarget").mockResolvedValue(detail(damyang, [candidate("11")]));
+    vi.spyOn(appDataApi, "approveAdminPhotoReviewTarget")
+      .mockRejectedValueOnce(new ApiError("Photo storage is not configured", { status: 503, statusText: "Service Unavailable" }))
+      .mockRejectedValueOnce(new ApiError("Photo download failed: not an image", { status: 502, statusText: "Bad Gateway" }));
+
+    renderAppRoute("/admin/photo-review");
+    await screen.findByRole("heading", { name: "담양" });
+    await userEvent.click(screen.getByRole("radio", { name: /관광지 11/ }));
+    await userEvent.click(screen.getByRole("button", { name: "이 사진으로 확정" }));
+    expect(await screen.findByText("사진 보관 위치(MEDIA_ROOT)가 설정되지 않아 확정할 수 없습니다.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "이 사진으로 확정" }));
+    expect(await screen.findByText(/사진 원본을 받지 못해 확정하지 않았습니다/)).toBeInTheDocument();
   });
 
   it("says a run is already going instead of starting a second one", async () => {

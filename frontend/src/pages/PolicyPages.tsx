@@ -764,7 +764,8 @@ export function PolicyListPage() {
       onPickProgram={pickProgram}
     />
   ) : null;
-  const panelCover = split && Boolean(search || browse.detail);
+  /* 상세는 정책이 온 뒤에만 - 불러오는 동안 '목록에 없어요'가 잠깐 뜨고 불러오는 표시를 덮었다 */
+  const panelCover = split && Boolean(search || (ready && browse.detail));
 
   return (
     <section className={deskMap ? "screen with-tabs prototype-policy-list-screen desktop-wide" : "screen with-tabs prototype-policy-list-screen"}>
@@ -840,7 +841,7 @@ export function PolicyListPage() {
           <div className="thmap-panel">
             <PanelUnderlay covered={panelCover}>{sheet}</PanelUnderlay>
             {search}
-            {!search && browse.detail && (
+            {!search && ready && browse.detail && (
               detailPolicy ? (
                 <PolicyPanelDetail
                   policy={detailPolicy}

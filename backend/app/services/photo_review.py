@@ -279,9 +279,9 @@ def _fill(
         ok, size = probe.passes(spot, target.sido)
         if not ok:
             continue
-        repository.add_candidate(db, target, **_candidate_fields(spot, size=size, source="collect"))
         used.add(spot.first_image)
-        added += 1
+        if repository.add_candidate(db, target, **_candidate_fields(spot, size=size, source="collect")):
+            added += 1
     return added
 
 

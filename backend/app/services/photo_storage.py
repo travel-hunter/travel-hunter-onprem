@@ -19,6 +19,8 @@ import httpx
 from app.core.config import settings
 
 MEDIA_URL_PREFIX = "/api/media/"
+# 받는 곳은 관광공사 사진 서버뿐이다(후보 주소는 TourAPI 응답). 그 밖의 주소 · 넘겨주기는 따라가지 않는다 - 내부망 요청 막기
+ALLOWED_HOST_SUFFIX = "visitkorea.or.kr"
 MAX_BYTES = 5 * 1024 * 1024
 CONTENT_TYPES = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "gif": "image/gif"}
 
@@ -56,15 +58,28 @@ def _sniff(data: bytes) -> str | None:
     return None
 
 
+def _allowed(url: httpx.URL) -> bool:
+    host = url.host or ""
+    return url.scheme in ("http", "https") and (host == ALLOWED_HOST_SUFFIX or host.endswith("." + ALLOWED_HOST_SUFFIX))
+
+
 def store_remote_image(
     url: str, *, root: Path | None = None, client: httpx.Client | None = None, timeout: float = 10.0
 ) -> StoredImage:
     base = root or media_root()
     if base is None:
         raise PhotoStorageError("MEDIA_ROOT is not configured")
+    try:
+        parsed = httpx.URL(url)
+    except httpx.InvalidURL as error:
+        raise PhotoStorageError("invalid image URL") from error
+    if not _allowed(parsed):
+        raise PhotoStorageError("image host is not allowed")
     data = bytearray()
     try:
         with (client or httpx).stream("GET", url, timeout=timeout, follow_redirects=True) as response:
+            if not _allowed(response.url):   # 넘겨주기 끝이 다른 곳이면 받지 않는다
+                raise PhotoStorageError("image host is not allowed")
             response.raise_for_status()
             for chunk in response.iter_bytes():
                 data += chunk
@@ -79,12 +94,18 @@ def store_remote_image(
     path = f"photos/{digest[:2]}/{digest}.{ext}"
     target = base / path
     if not target.exists():
-        target.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=target.parent, suffix=".part")
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=target.parent, suffix=".part")
+        except OSError as error:
+            raise PhotoStorageError(f"cannot write media: {type(error).__name__}") from error
         try:
             with os.fdopen(fd, "wb") as handle:
                 handle.write(data)
             os.replace(tmp, target)   # 반쯤 쓴 파일이 이름을 갖지 않게
+        except OSError as error:   # 디스크 부족 · 권한 - 확정하지 않는다(502)
+            Path(tmp).unlink(missing_ok=True)
+            raise PhotoStorageError(f"cannot write media: {type(error).__name__}") from error
         except BaseException:
             Path(tmp).unlink(missing_ok=True)
             raise

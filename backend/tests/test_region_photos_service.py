@@ -103,6 +103,12 @@ def test_resolve_uses_sido_photo_only_without_city(session: Session) -> None:
     assert index.resolve("전남", "없는도시") is None
 
 
+def test_city_named_like_its_sido_is_the_sido_level_policy(session: Session) -> None:
+    # 세종처럼 시군 칸에 도 이름이 들어간 정책은 도 전체 줄을 쓴다(사진 검토의 묶기 규칙과 같다)
+    add_photo(session, sido="세종", city="", stored_path="photos/77/sejong.jpg")
+    assert build_region_photo_index(session).resolve("세종", "세종").image_url.endswith("sejong.jpg")
+
+
 def test_resolve_missing_sido_returns_none(session: Session) -> None:
     add_photo(session)
     index = build_region_photo_index(session)

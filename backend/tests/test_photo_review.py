@@ -306,6 +306,22 @@ def test_a_policy_left_alone_inherits_the_city_photo_and_its_own_photo_wins(db: 
     assert build_region_photo_index(db).resolve_policy(1, "전남", "영광").image_url == served(policy.candidates[0])
 
 
+def test_a_photo_already_on_the_target_is_skipped_instead_of_stopping_the_collection(db: Session) -> None:
+    # 수집이 도는 동안 관리자가 같은 사진을 먼저 넣은 경우 - 고유키 오류로 수집 전체가 멈추지 않고 그 장만 건너뛴다
+    add_policy(db)
+    photo_review.collect_candidates(db, Provider(), size_of=landscape)
+    city = target(db, "region:전남|영광")
+    before = len(city.candidates)
+    again = photo_review.repository.add_candidate(
+        db, city, provider="tour_api", title="같은 사진", image_url=city.candidates[0].image_url, source="collect"
+    )
+    assert again is None and len(city.candidates) == before
+    added = photo_review.repository.add_candidate(
+        db, city, provider="tour_api", title="새 사진", image_url="http://tong.visitkorea.or.kr/new.jpg", source="search"
+    )
+    assert added is not None and len(city.candidates) == before + 1
+
+
 def test_approve_keeps_nothing_when_the_download_fails(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     add_policy(db)
     admin = add_admin(db)

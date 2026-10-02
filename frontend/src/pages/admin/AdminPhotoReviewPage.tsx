@@ -61,8 +61,17 @@ function collectDoneMessage(status: AdminPhotoReviewCollectStatus) {
   return `후보 ${status.candidatesAdded}장을 넣었습니다 · 새 대상 ${status.targetsCreated}곳${empty}`;
 }
 
-function errorMessage(cause: unknown, fallback: string) {
+type StatusMessages = Partial<Record<number, string>>;
+
+/* 확정은 503 · 502 의 뜻이 다르다 - 보관 위치가 없거나 원본을 받지 못한 것(관광공사 API 와 무관) */
+const APPROVE_MESSAGES: StatusMessages = {
+  503: "사진 보관 위치(MEDIA_ROOT)가 설정되지 않아 확정할 수 없습니다.",
+  502: "사진 원본을 받지 못해 확정하지 않았습니다. 다른 후보를 고르거나 잠시 뒤 다시 시도하세요.",
+};
+
+function errorMessage(cause: unknown, fallback: string, messages: StatusMessages = {}) {
   if (cause instanceof ApiError) {
+    if (messages[cause.status]) return messages[cause.status] as string;
     if (cause.status === 503) return "관광공사 API 가 꺼져 있어 사진을 받을 수 없습니다.";
     if (cause.status === 502) return "관광공사 응답을 받지 못했습니다. 잠시 뒤 다시 시도하세요.";
     if (cause.status === 409) return "이미 결정한 대상입니다. 다시 고르기를 누른 뒤에 하세요.";
@@ -90,6 +99,8 @@ export function AdminPhotoReviewPage() {
   const focusHeading = useRef(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const detailRef = useRef<HTMLDivElement>(null);
+  const shownId = useRef<string | null>(null);
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,6 +123,7 @@ export function AdminPhotoReviewPage() {
 
   useEffect(() => {
     if (!selectedId) {
+      shownId.current = null;
       setDetail(null);
       return;
     }
@@ -120,6 +132,9 @@ export function AdminPhotoReviewPage() {
       .getAdminPhotoReviewTarget(selectedId)
       .then((response) => {
         if (cancelled) return;
+        // 같은 대상을 다시 받은 것(수집이 끝남)이면 후보만 바꾼다 - 고르던 후보 · 찾던 말 · 스크롤을 지우지 않는다
+        if (shownId.current === selectedId) return setDetail(response);
+        shownId.current = selectedId;
         showDetail(response);
         detailRef.current?.scrollTo?.({ top: 0 });
       })
@@ -154,7 +169,10 @@ export function AdminPhotoReviewPage() {
           setCollect(status);
           if (!status.running) finishCollect(status);
         })
-        .catch(() => setError("후보 수집 진행을 불러오지 못했습니다. 잠시 뒤 새로 고쳐 보세요."));
+        .catch(() => {
+          setError("후보 수집 진행을 불러오지 못했습니다. 다시 묻는 중입니다.");
+          setCollect((current) => (current ? { ...current } : current));   // 같은 상태를 새 값으로 - 몇 초 뒤 다시 묻는다
+        });
     }, COLLECT_POLL_MS);
     return () => window.clearTimeout(timer);
   }, [collect]);
@@ -180,6 +198,8 @@ export function AdminPhotoReviewPage() {
   }
 
   async function startCollect() {
+    if (starting) return;
+    setStarting(true);
     setError("");
     try {
       const status = await appDataApi.startAdminPhotoReviewCollect();
@@ -192,6 +212,8 @@ export function AdminPhotoReviewPage() {
       } else {
         setError(errorMessage(cause, "후보 수집을 시작하지 못했습니다."));
       }
+    } finally {
+      setStarting(false);
     }
   }
 
@@ -202,13 +224,13 @@ export function AdminPhotoReviewPage() {
     setSearchMiss(null);
   }
 
-  async function run(action: () => Promise<AdminPhotoReviewTargetDetail>, fallback: string) {
+  async function run(action: () => Promise<AdminPhotoReviewTargetDetail>, fallback: string, messages?: StatusMessages) {
     setBusy(true);
     setError("");
     try {
       return await action();
     } catch (cause) {
-      setError(errorMessage(cause, fallback));
+      setError(errorMessage(cause, fallback, messages));
       return null;
     } finally {
       setBusy(false);
@@ -228,6 +250,7 @@ export function AdminPhotoReviewPage() {
           ? appDataApi.approveAdminPhotoReviewTarget(detail.id, pick as string)
           : appDataApi.markAdminPhotoReviewTargetNone(detail.id),
       "결정을 저장하지 못했습니다.",
+      kind === "approve" ? APPROVE_MESSAGES : undefined,
     );
     if (!decided) return;
     const what = kind === "approve" ? "사진을 확정했습니다" : detail.unit === "region" ? "혜택 그림으로 둡니다" : "시군 사진을 그대로 씁니다";
@@ -298,7 +321,7 @@ export function AdminPhotoReviewPage() {
             </small>
           </div>
         )}
-          <CollectBox collect={collect} list={list} onStart={startCollect} />
+          <CollectBox collect={collect} list={list} onStart={startCollect} starting={starting} />
         </div>
       </div>
 
@@ -401,10 +424,12 @@ function CollectBox({
   collect,
   list,
   onStart,
+  starting,
 }: {
   collect: AdminPhotoReviewCollectStatus | null;
   list: AdminPhotoReviewTargetListResponse | null;
   onStart: () => void;
+  starting: boolean;
 }) {
   if (collect?.running) {
     return (
@@ -429,7 +454,7 @@ function CollectBox({
   const last = collect?.lastRun;
   return (
     <div aria-live="polite" className="photo-review-collect">
-      <button className="photo-review-ghost" onClick={onStart} type="button">
+      <button className="photo-review-ghost" disabled={starting} onClick={onStart} type="button">
         후보 채우기
       </button>
       <small>

@@ -606,7 +606,10 @@ def _photo_review_call(session: Session, action):
 
 
 def _tour_api_or_503():
-    provider = build_tour_api_client()
+    try:
+        provider = build_tour_api_client()
+    except TourApiConfigurationError as error:   # 켜 놓고 키를 빠뜨린 설정 - 500 이 아니라 '꺼진 것'과 같이 503
+        raise HTTPException(status_code=503, detail=str(error)) from error
     if provider is None:
         raise HTTPException(status_code=503, detail="TourAPI is disabled")
     return provider

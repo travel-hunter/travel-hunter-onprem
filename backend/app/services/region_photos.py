@@ -53,7 +53,8 @@ class RegionPhotoIndex:
     ) -> ResolvedRegionPhoto | None:
         if not region:
             return None
-        if city:
+        # 시군 칸이 도 이름과 같으면 도 전체 정책이다 - 사진 검토가 이 정책을 도 전체 줄에 묶는 규칙(_photo_key)과 맞춘다
+        if city and city != region:
             exact = self._by_key.get((region, city))
             if exact is not None:
                 return exact
