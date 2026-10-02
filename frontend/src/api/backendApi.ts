@@ -51,6 +51,9 @@ import {
   AdminEligibleIslandSnapshot,
   AdminEligibleIslandSnapshotDetail,
   AdminEligibleIslandSnapshotListResponse,
+  AdminPhotoReviewCollectStatus,
+  AdminPhotoReviewTargetDetail,
+  AdminPhotoReviewTargetListResponse,
   AdminPolicyReviewCandidate,
   AdminPolicyReviewCandidateListResponse,
   AdminExternalSourceSummaryResponse,
@@ -77,6 +80,8 @@ import {
 
 // Code-owned catalog key: the admin UI reviews exactly one program in this version.
 const ELIGIBLE_ISLAND_CATALOG_PATH = "/api/admin/eligible-island-catalogs/island_visit_2026";
+const PHOTO_REVIEW_PATH = "/api/admin/photo-review/targets";
+const PHOTO_REVIEW_COLLECT_PATH = "/api/admin/photo-review/collect";
 
 const makeDefaultLogin = (request: LoginRequest | undefined): LoginRequest => {
   if (!request || !request.email || !request.password) {
@@ -235,4 +240,22 @@ export const backendApi: AppDataApi = {
     apiClient.post<AdminEligibleIslandSnapshot>(`${ELIGIBLE_ISLAND_CATALOG_PATH}/snapshots/${snapshotId}/approve`),
   rejectAdminEligibleIslandSnapshot: (snapshotId, note): Promise<AdminEligibleIslandSnapshot> =>
     apiClient.post<AdminEligibleIslandSnapshot>(`${ELIGIBLE_ISLAND_CATALOG_PATH}/snapshots/${snapshotId}/reject`, { note }),
+  listAdminPhotoReviewTargets: (options): Promise<AdminPhotoReviewTargetListResponse> =>
+    apiClient.get<AdminPhotoReviewTargetListResponse>(`${PHOTO_REVIEW_PATH}${queryString(options)}`),
+  getAdminPhotoReviewTarget: (targetId): Promise<AdminPhotoReviewTargetDetail> =>
+    apiClient.get<AdminPhotoReviewTargetDetail>(`${PHOTO_REVIEW_PATH}/${targetId}`),
+  approveAdminPhotoReviewTarget: (targetId, candidateId): Promise<AdminPhotoReviewTargetDetail> =>
+    apiClient.post<AdminPhotoReviewTargetDetail>(`${PHOTO_REVIEW_PATH}/${targetId}/approve`, { candidateId }),
+  markAdminPhotoReviewTargetNone: (targetId): Promise<AdminPhotoReviewTargetDetail> =>
+    apiClient.post<AdminPhotoReviewTargetDetail>(`${PHOTO_REVIEW_PATH}/${targetId}/none`),
+  reopenAdminPhotoReviewTarget: (targetId): Promise<AdminPhotoReviewTargetDetail> =>
+    apiClient.post<AdminPhotoReviewTargetDetail>(`${PHOTO_REVIEW_PATH}/${targetId}/reopen`),
+  fetchMoreAdminPhotoReviewCandidates: (targetId): Promise<AdminPhotoReviewTargetDetail> =>
+    apiClient.post<AdminPhotoReviewTargetDetail>(`${PHOTO_REVIEW_PATH}/${targetId}/more`),
+  searchAdminPhotoReviewCandidates: (targetId, keyword): Promise<AdminPhotoReviewTargetDetail> =>
+    apiClient.post<AdminPhotoReviewTargetDetail>(`${PHOTO_REVIEW_PATH}/${targetId}/search`, { keyword }),
+  getAdminPhotoReviewCollect: (): Promise<AdminPhotoReviewCollectStatus> =>
+    apiClient.get<AdminPhotoReviewCollectStatus>(PHOTO_REVIEW_COLLECT_PATH),
+  startAdminPhotoReviewCollect: (): Promise<AdminPhotoReviewCollectStatus> =>
+    apiClient.post<AdminPhotoReviewCollectStatus>(PHOTO_REVIEW_COLLECT_PATH),
 };

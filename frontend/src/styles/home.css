@@ -194,16 +194,29 @@
   color: rgba(255, 255, 255, 0.9);
 }
 
-.home-hero-credit {
-  position: absolute;
-  right: 12px;
-  bottom: 7px;
-  max-width: calc(100% - 24px);
-  overflow: hidden;
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 10.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* 배너 사진 출처(시안 v53): 장마다 적지 않고 배너 아래 오른쪽 '사진 출처' 하나 → 창 */
+.home-hero-src {
+  display: flex;
+  justify-content: flex-end;
+  margin: -12px 0 12px;
+  padding: 0 var(--app-page-gutter); /* 휴대폰은 배너가 화면 끝까지 차서 다른 줄과 같은 옆 여백을 둔다(넓은 화면은 0) */
+}
+
+.home-hero-src button {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--gray-600);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.home-hero-src button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
 /* 멈춤(WCAG 2.2.2): 화면에는 안 보이고, 키보드 초점이 가면 가운데 장 오른쪽 아래에 나타난다 */

@@ -1,10 +1,12 @@
 """Region photo lookup for policy cards.
 
-The resolver is a pure in-memory index built once per request. Photos live in
-the `region_photos` table keyed by (sido, city); `city == ""` is the sido-level
-representative photo. Callers that have no DB session use
-``EMPTY_REGION_PHOTO_INDEX`` so every payload builder degrades to "no photo"
-without branching.
+The resolver is a pure in-memory index built once per request. Photos are the
+candidates an admin approved in photo review (0047): region targets are keyed by
+(sido, city) - `city == ""` is the sido-level photo - and policy targets by
+policy id. Only candidates whose original was stored on our media volume are
+served (`/api/media/...`); the resolver never hotlinks TourAPI URLs. Callers that
+have no DB session use ``EMPTY_REGION_PHOTO_INDEX`` so every payload builder
+degrades to "no photo" without branching.
 """
 
 from __future__ import annotations
@@ -18,8 +20,9 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 from app.data.travel_areas import normalize_municipality_name
-from app.repositories.policy_photos import list_active_policy_photos
-from app.repositories.region_photos import list_active_region_photos
+from app.repositories.photo_review import list_published
+from app.services.photo_criteria import attribution_for
+from app.services.photo_storage import media_url
 
 SIDO_LEVEL_CITY = ""
 
@@ -50,7 +53,8 @@ class RegionPhotoIndex:
     ) -> ResolvedRegionPhoto | None:
         if not region:
             return None
-        if city:
+        # 시군 칸이 도 이름과 같으면 도 전체 정책이다 - 사진 검토가 이 정책을 도 전체 줄에 묶는 규칙(_photo_key)과 맞춘다
+        if city and city != region:
             exact = self._by_key.get((region, city))
             if exact is not None:
                 return exact
@@ -59,6 +63,9 @@ class RegionPhotoIndex:
                 normalized_hit = self._by_key.get((region, normalized))
                 if normalized_hit is not None:
                     return normalized_hit
+            # 시군 사진이 없으면 도 대표 사진으로 넘어가지 않는다(2026-10-01 사용자 결정) - 같은 도의 여러 시군이
+            # 한 장을 나눠 써 같은 사진이 되풀이됐다. 사진 없음 → 화면은 혜택 그림.
+            return None
         return self._by_key.get((region, SIDO_LEVEL_CITY))
 
     def resolve_policy(
@@ -74,37 +81,25 @@ def build_region_photo_index(db: Session | None) -> RegionPhotoIndex:
     if db is None:
         return EMPTY_REGION_PHOTO_INDEX
     try:
-        photos = list_active_region_photos(db)
+        published = list_published(db)
     except Exception:
         # 사진은 장식이다. 조회 실패(테이블 미생성, 세션 이상 등)가
         # 정책 응답 자체를 깨뜨리면 안 되므로 "사진 없음"으로 강등한다.
-        logger.debug("region photo index unavailable; serving without photos")
+        logger.debug("photo review index unavailable; serving without photos")
         return EMPTY_REGION_PHOTO_INDEX
-    try:
-        policy_photos = list_active_policy_photos(db)
-    except Exception:
-        # A rolling deploy can briefly run the new application before the
-        # policy_photos migration.  Keep the older regional fallback alive.
-        logger.debug("policy photo assignments unavailable; using regional fallback")
-        policy_photos = []
     by_key: dict[tuple[str, str], ResolvedRegionPhoto] = {}
     by_policy_id: dict[int, ResolvedRegionPhoto] = {}
-    for photo in photos:
-        if not photo.hero_image_url:
-            continue
-        by_key[(photo.sido, photo.city)] = ResolvedRegionPhoto(
-            image_url=photo.hero_image_url,
-            thumbnail_url=photo.thumb_image_url,
-            alt=photo.content_title or f"{photo.sido} 대표 관광지",
-            attribution=photo.attribution_text,
+    for target, candidate in published:
+        photo = ResolvedRegionPhoto(
+            image_url=media_url(candidate.stored_path),
+            thumbnail_url=None,   # 관광공사 축소판은 120x80 이라 쓰지 않는다 - 화면은 원본을 줄여 쓴다
+            alt=candidate.title or f"{target.sido} 대표 관광지",
+            attribution=attribution_for(candidate.copyright_type),
         )
-    for photo in policy_photos:
-        by_policy_id[photo.policy_id] = ResolvedRegionPhoto(
-            image_url=photo.image_url,
-            thumbnail_url=photo.thumbnail_url,
-            alt=photo.alt_text,
-            attribution=photo.attribution_text,
-        )
+        if target.target_type == "policy" and target.policy_id is not None:
+            by_policy_id[target.policy_id] = photo
+        elif target.target_type == "region":
+            by_key[(target.sido, target.city)] = photo
     if not by_key and not by_policy_id:
         return EMPTY_REGION_PHOTO_INDEX
     return RegionPhotoIndex(by_key, by_policy_id)

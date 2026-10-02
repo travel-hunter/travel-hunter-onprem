@@ -686,7 +686,27 @@
   position: relative;
   flex: none;
   height: 196px;
-  background: var(--gray-100) center / cover no-repeat;
+  overflow: hidden;
+  background: var(--gray-100);
+}
+
+/* 로그인 사진 돌리기(시안 v54): 장을 겹쳐 두고 보이는 장만 천천히 밝힌다 */
+.lg-ph {
+  position: absolute;
+  inset: 0;
+  background: center / cover no-repeat;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+
+.lg-ph.on {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-ph {
+    transition: none;
+  }
 }
 
 .lg-photo::after {
@@ -707,15 +727,6 @@
   font-weight: 700;
   line-height: 1.35;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
-}
-
-.lg-credit {
-  position: absolute;
-  right: 8px;
-  bottom: 6px;
-  z-index: 1;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.88);
 }
 
 .lg-body {

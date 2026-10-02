@@ -538,6 +538,11 @@ class RegionPhoto(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="active"
     )
+    # 사진 수집 기준(0046): 저작권 유형(cpyrhtDivCd Type1·Type3) · 실제 크기 · 고른 이유. 기준 이전 줄은 비어 있다.
+    copyright_type: Mapped[str | None] = mapped_column(String(20))
+    image_width: Mapped[int | None] = mapped_column(Integer)
+    image_height: Mapped[int | None] = mapped_column(Integer)
+    selection_reason: Mapped[str | None] = mapped_column(String(30))
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
@@ -566,6 +571,10 @@ class PolicyPhotoAssignment(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="active"
     )
+    # 사진 수집 기준(0046): 저작권 유형(cpyrhtDivCd Type1·Type3) · 실제 크기. 기준 이전 줄은 비어 있다.
+    copyright_type: Mapped[str | None] = mapped_column(String(20))
+    image_width: Mapped[int | None] = mapped_column(Integer)
+    image_height: Mapped[int | None] = mapped_column(Integer)
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
@@ -573,6 +582,81 @@ class PolicyPhotoAssignment(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+
+class PhotoReviewTarget(Base):
+    """검토할 사진 대상 하나 - 시군(도 전체 포함) 또는 정책. 관리자가 확정한 후보(approved_candidate_id)가 곧 앱 사진이다(0047)."""
+
+    __tablename__ = "photo_review_targets"
+    __table_args__ = (
+        CheckConstraint("target_type IN ('region', 'policy')", name="ck_photo_review_targets_type"),
+        CheckConstraint("status IN ('pending', 'approved', 'none')", name="ck_photo_review_targets_status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # region:전남|담양 · region:전남|(도 전체) · policy:123
+    target_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    target_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    sido: Mapped[str] = mapped_column(String(50), nullable=False)
+    city: Mapped[str] = mapped_column(String(80), nullable=False, server_default="")
+    policy_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("policies.id", ondelete="CASCADE")
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
+    approved_candidate_id: Mapped[int | None] = mapped_column(BigInteger)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime)
+    decided_by_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    candidates: Mapped[list[PhotoReviewCandidate]] = relationship(
+        back_populates="target",
+        cascade="all, delete-orphan",
+        order_by="PhotoReviewCandidate.id",
+    )
+
+
+class PhotoReviewCandidate(Base):
+    """대상마다 후보 사진. source: collect(수집) · search(이름으로 찾기)."""
+
+    __tablename__ = "photo_review_candidates"
+    __table_args__ = (
+        UniqueConstraint("target_id", "image_url", name="uq_photo_review_candidates_target_image"),
+        CheckConstraint("source IN ('collect', 'search')", name="ck_photo_review_candidates_source"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    target_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("photo_review_targets.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_content_id: Mapped[str | None] = mapped_column(String(60))
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    content_type_id: Mapped[str | None] = mapped_column(String(10))
+    image_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    thumbnail_url: Mapped[str | None] = mapped_column(String(500))
+    copyright_type: Mapped[str | None] = mapped_column(String(20))
+    image_width: Mapped[int | None] = mapped_column(Integer)
+    image_height: Mapped[int | None] = mapped_column(Integer)
+    address: Mapped[str | None] = mapped_column(String(200))
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    search_keyword: Mapped[str | None] = mapped_column(String(100))
+    # 확정할 때 받아 둔 원본(MEDIA_ROOT 아래 상대 경로 · 크기 · 형식). 앱은 이 파일만 내보낸다 - 관광공사 주소를 걸지 않는다
+    stored_path: Mapped[str | None] = mapped_column(String(300))
+    byte_size: Mapped[int | None] = mapped_column(Integer)
+    content_type: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+    target: Mapped[PhotoReviewTarget] = relationship(back_populates="candidates")
 
 
 class Trip(Base):

@@ -43,9 +43,11 @@ describe("Travel Hunter app — auth & routing", () => {
       screen.getByRole("link", { name: "구글로 시작하기" }),
     ).toBeInTheDocument();
     expect(document.querySelector(".ds-auth-form-shell")).toBeTruthy();
-    // 시안 v49: 로고 칸 대신 여행 사진 한 장 + 브랜드 글자. 사진 출처는 사진에 붙고, 가입·찾기 입구가 보인다
-    expect(document.querySelector(".lg-photo")).toBeTruthy();
-    expect(document.querySelector(".lg-credit")).toHaveTextContent("CC BY");
+    // 시안 v49 · v54: 로고 칸 대신 여러 지역 사진(한 장씩 보임) + 브랜드 글자, 가입·찾기 입구.
+    // 사진 위에 출처를 적지 않는다 - CC0 · 퍼블릭 도메인이고 앱 안 '사진 출처'에 있다
+    expect(document.querySelectorAll(".lg-photo .lg-ph")).toHaveLength(8);
+    expect(document.querySelectorAll(".lg-photo .lg-ph.on")).toHaveLength(1);
+    expect(document.querySelector(".lg-photo")).not.toHaveTextContent(/CC0|퍼블릭 도메인|Bernard/);
     expect(screen.getByRole("button", { name: "회원가입" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "비밀번호 찾기" })).toBeInTheDocument();
     expect(document.querySelector("main")).toHaveClass(

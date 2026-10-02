@@ -691,3 +691,21 @@ body.thmap-map-view .app-container { overflow: hidden; }
   .thmap-pin-bar, .thmap-sbar { transition: none; }
   .thmap-pill { animation: none; }
 }
+
+/* 정책을 불러오는 동안 목록 자리에 서는 표시. 좁은 화면은 시트가 설 바닥(탭바 위)에, 넓은 화면은 오른쪽 패널 안에 */
+.thmap-loading {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--thmap-tabbar) + 16px);
+  z-index: 70;
+  width: min(calc(100vw - 32px), 360px);
+  transform: translateX(-50%);
+}
+@media (min-width: 1024px) {
+  .thmap-panel .thmap-loading {
+    position: static;
+    width: auto;
+    padding: 16px;
+    transform: none;
+  }
+}

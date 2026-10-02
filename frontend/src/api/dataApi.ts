@@ -9,6 +9,11 @@ import {
   AdminEligibleIslandSnapshot,
   AdminEligibleIslandSnapshotDetail,
   AdminEligibleIslandSnapshotListResponse,
+  AdminPhotoReviewCollectStatus,
+  AdminPhotoReviewStatus,
+  AdminPhotoReviewTargetDetail,
+  AdminPhotoReviewTargetListResponse,
+  AdminPhotoReviewUnit,
   AdminPolicyReviewCandidate,
   AdminPolicyReviewCandidateListResponse,
   AdminExternalSourceSummaryResponse,
@@ -344,4 +349,13 @@ export type AppDataApi = {
   collectAdminEligibleIslandCatalog: () => Promise<AdminEligibleIslandCollectResponse>;
   approveAdminEligibleIslandSnapshot: (snapshotId: string) => Promise<AdminEligibleIslandSnapshot>;
   rejectAdminEligibleIslandSnapshot: (snapshotId: string, note: string) => Promise<AdminEligibleIslandSnapshot>;
+  listAdminPhotoReviewTargets: (options: { unit: AdminPhotoReviewUnit; status: AdminPhotoReviewStatus | "all" }) => Promise<AdminPhotoReviewTargetListResponse>;
+  getAdminPhotoReviewTarget: (targetId: string) => Promise<AdminPhotoReviewTargetDetail>;
+  approveAdminPhotoReviewTarget: (targetId: string, candidateId: string) => Promise<AdminPhotoReviewTargetDetail>;
+  markAdminPhotoReviewTargetNone: (targetId: string) => Promise<AdminPhotoReviewTargetDetail>;
+  reopenAdminPhotoReviewTarget: (targetId: string) => Promise<AdminPhotoReviewTargetDetail>;
+  fetchMoreAdminPhotoReviewCandidates: (targetId: string) => Promise<AdminPhotoReviewTargetDetail>;
+  searchAdminPhotoReviewCandidates: (targetId: string, keyword: string) => Promise<AdminPhotoReviewTargetDetail>;
+  getAdminPhotoReviewCollect: () => Promise<AdminPhotoReviewCollectStatus>;
+  startAdminPhotoReviewCollect: () => Promise<AdminPhotoReviewCollectStatus>;
 };

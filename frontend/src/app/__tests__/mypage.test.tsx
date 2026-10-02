@@ -222,10 +222,19 @@ describe("Travel Hunter app — my page", () => {
       "공지사항 / FAQ",
       "이용약관",
       "개인정보처리방침",
+      "사진 출처",
       "비밀번호 관리",
       "로그아웃",
     ]);
     expect(screen.getByRole("button", { name: "회원 탈퇴" })).toHaveClass("mp-quit");
+    // 메뉴 '사진 출처'는 홈 배너 아래와 같은 앱 전체 창을 연다(시안 v54). 닫으면 초점이 메뉴 줄로 돌아온다
+    const credits = within(settingsMenu).getByRole("button", { name: "사진 출처" });
+    await userEvent.setup().click(credits);
+    const creditsDialog = screen.getByRole("dialog", { name: "사진 출처" });
+    expect(within(creditsDialog).getByRole("region", { name: "로그인 화면" })).toBeInTheDocument();
+    await userEvent.setup().click(within(creditsDialog).getByRole("button", { name: "닫기" }));
+    expect(screen.queryByRole("dialog", { name: "사진 출처" })).toBeNull();
+    expect(credits).toHaveFocus();
     const favoriteRow = document.querySelector("#my-favorites .mp-pol");
     expect(favoriteRow).toBeTruthy();
     expect(favoriteRow?.querySelector(".benefit-tile")).toBeTruthy();

@@ -797,10 +797,10 @@ Account linking policy:
     "sourceType": "internal",
     "actionStatus": null,
     "photo": {
-      "imageUrl": "https://tong.visitkorea.or.kr/cms/resource/example.jpg",
-      "thumbnailUrl": "https://tong.visitkorea.or.kr/cms/resource/example_thumb.jpg",
+      "imageUrl": "/api/media/photos/3f/3fa9c2d1e0b4a7f6c5d8e9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0.jpg",
+      "thumbnailUrl": null,
       "alt": "두륜산 케이블카",
-      "attribution": "사진: 한국관광공사"
+      "attribution": "사진: 한국관광공사 · 공공누리 제1유형"
     }
   }
 ]
@@ -808,7 +808,7 @@ Account linking policy:
 
 `category` 허용 값: `"교통" | "숙박" | "여행상품" | "지역할인" | "이벤트" | "기타"`
 
-`photo`는 정책 지역 대표 관광지 사진이며 optional이다(`PolicyPhoto | null`). backend가 `region_photos` 조회 테이블에서 `(policies.region, policies.city)` → 시군구 사진 → 시도 대표 사진 순으로 해석해 내려주고, 해석 실패 시 `photo`는 `null`이며 frontend는 기존 그라디언트+이모지 시각을 그대로 사용한다. 사진 원천은 한국관광공사 TourAPI(공공누리 1유형)이고 `attribution`은 항상 비어 있지 않은 출처표시 문자열이다 — frontend는 사진을 렌더할 때 이 출처를 함께 표시해야 한다. `imageUrl`은 현재 원격(`tong.visitkorea.or.kr`) URL이며, 자체 보관(S3) 전환 시에도 이 DTO 모양은 바뀌지 않는다.
+`photo`는 정책 지역 대표 관광지 사진이며 optional이다(`PolicyPhoto | null`). backend가 사진 검토에서 확정한 정책 사진 → `(policies.region, policies.city)` 시군구 사진 순으로 해석해 내려준다(`photo_review_targets` 가 고른 `photo_review_candidates`, 원본을 받아 둔 것만). 시군이 있는 정책은 그 시군 사진이 없으면 시도 대표 사진으로 넘어가지 않고 `null` 이다(2026-10-01 - 같은 도의 여러 시군이 한 장을 나눠 쓰던 것을 막는다). 시군이 없는 정책(시도 단위·전국)만 시도 대표 사진을 쓴다. 해석 실패 시 `photo`는 `null`이며 frontend는 기존 그라디언트+이모지 시각을 그대로 사용한다. 사진은 수집 기준(`backend/app/services/photo_criteria.py`: 저작권 유형 · 시설 제외 · 시군 간 겹침 금지 · 가로 800px 이상)을 거친 후보 중 관리자가 '사진 검토'에서 확정한 것만 나간다(2026-10-02, 아래 Admin photo review). 정책을 따로 확정하지 않으면 시군 사진을 그대로 쓴다. 사진 원천은 한국관광공사 TourAPI(공공누리 제1유형, 또는 원본을 고치지 않고 쓰는 조건의 제3유형 변경금지)이고 `attribution`은 항상 비어 있지 않은 출처표시 문자열이다(예: `사진: 한국관광공사 · 공공누리 제1유형`) — frontend는 사진을 렌더할 때 이 출처를 함께 표시해야 한다. `imageUrl`은 확정할 때 받아 둔 원본(다시 인코딩 · 리사이즈하지 않음)의 API 기준 상대 주소 `/api/media/photos/<해시 앞 2자>/<sha256>.<jpg|png|webp|gif>` 다(2026-10-02) - 관광공사 주소를 그대로 걸지 않는다. frontend 는 API 주소를 앞에 붙여 쓴다(`frontend/src/api/client.ts` `mediaUrl`, same-origin 이면 그대로). 이름이 내용 해시라 `Cache-Control: public, max-age=31536000, immutable` 로 나간다. `thumbnailUrl` 은 `null` 이다(관광공사 축소판은 120×80 이라 쓰지 않는다).
 `sourceType` 허용 값은 `"internal" | "external"`이며 API 호환과 내부 진단을 위해 유지한다. 사용자 화면은 `internal/external` 같은 구현 구분 문구를 노출하지 않는다. 사용자에게 노출되는 모든 정책은 정규화된 `policies` 레코드이므로 저장/일정 연결 동작을 동일하게 지원한다.
 
 `PolicyStructuredDetail` v1 섹션은 아래 다섯 배열만 표준으로 사용한다. 각 item은 화면 표시용 `title`/`label`, `description`/`value`, `amount`, `startDate`, `endDate`, 기간 의미를 나타내는 `type` 같은 문자열 필드를 느슨하게 담을 수 있다. 빈 배열은 허용하며 frontend는 빈 섹션을 숨긴다. 정책 대표 공식 안내/신청 링크는 top-level `officialUrl`/`applyUrl` CTA로 노출한다. 다만 디지털관광주민증처럼 본문 안의 개별 제휴처 상세로 직접 이동해야 하는 항목은 `structuredDetail.supportContent[*].url`에 HTTP(S) 링크를 담을 수 있다. 외부 수집 정책 상세에서 `structuredDetail`은 primary screen-ready contract다. frontend는 비어 있지 않은 `structuredDetail` 섹션을 그대로 우선 렌더링하고, 해당 섹션이 비어 있거나 누락된 경우에만 `summary`/`requirements`/`documents`/기간 값으로 section-by-section fallback을 수행한다. `requirements`는 legacy/simple fallback 재료이며, `structuredDetail.applicationTarget`이 하나라도 있으면 frontend는 `requirements`를 다시 분류하거나 조건·안내 섹션에 병합하지 않는다. 외부 source 의미 분류는 등록된 `sourceCategory` mapper만 수행하며, 미등록 source는 `contact_text`나 긴 원문을 조건으로 추측하지 않고 빈 조건으로 응답한다. `stay_discount` raw fallback은 공식 4단계 할인 조합, 필수 이용 근거, 시작·종료일이 모두 해석되는 발급·입실 기간이 완전할 때만 매핑한다. 표시용 `summary`/`amount`/`requirements`는 구조화된 지원 내용·신청 대상과 canonical 금액에서 파생하고, 불완전한 원문에는 하드코딩된 캠페인 문구를 보충하지 않는다.
@@ -1863,3 +1863,24 @@ Independent of `/api/admin/policy-review-candidates`: these endpoints never read
 - `POST /api/admin/eligible-island-catalogs/{catalogKey}/snapshots/{snapshotId}/reject` requires `{ "note": string }` (blank → `422 note_required`) and leaves the approved catalog unchanged.
 
 Approve/reject writes an admin audit log (`eligible_island_catalog.approve` / `.reject`).
+
+## Admin photo review
+
+수집(`backend/scripts/collect_photo_candidates.py`)은 시군(도 전체 포함, `unit: "region"`) · 공개 정책(`unit: "policy"`)마다 TourAPI 사진 후보만 넣는다. 관리자가 한 장을 확정해야 public `Policy.photo` 에 나온다. 시군을 확정하지 않거나 '모두 아님'이면 그 시군은 사진이 없고(frontend 는 혜택 그림), 정책을 확정하지 않거나 '모두 아님'이면 시군 사진을 그대로 쓴다. All routes require the admin role.
+
+- `GET /api/admin/photo-review/targets?unit=region|policy&status=pending|approved|none|all` → `{ items: AdminPhotoReviewTarget[], counts: { pending, approved, none, all }, pendingTotal, newTargets, shortTargets }`. `counts` 는 그 `unit` 의 상태별 수, `pendingTotal` 은 두 단위의 검토 대기 합이다. `newTargets` 는 다음 수집이 새로 넣을 대상 수(공개됐지만 아직 대상이 아닌 정책 · 공개 정책이 쓰는 시군 줄), `shortTargets` 는 수집 후보('이름으로 찾기' 제외)가 6장이 안 되는 검토 대기 대상 수다. 숨김 · 마감된 정책과 아무 공개 정책도 쓰지 않는 시군 줄은 목록과 수에 들어가지 않는다. 기본값 `unit=region`, `status=pending`.
+- `GET /api/admin/photo-review/targets/{targetId}` → `AdminPhotoReviewTargetDetail` (`AdminPhotoReviewTarget` + `candidates: AdminPhotoReviewCandidate[]`). 없는 id 는 `404`.
+- `POST /api/admin/photo-review/targets/{targetId}/approve` `{ "candidateId": string }` → detail. 그 후보의 원본을 받아 `MEDIA_ROOT` 에 두고(이미 받아 둔 후보면 그 파일을 그대로) `status: "approved"`. 그 대상의 후보가 아니면 `404`, 원본을 받지 못하면(사진 서버 오류 · 사진이 아님 · 5MB 초과) `502`, 보관 위치(`MEDIA_ROOT`)가 설정되지 않았으면 `503` - 둘 다 아무것도 바꾸지 않는다.
+- `POST /api/admin/photo-review/targets/{targetId}/none` → detail, `status: "none"`, 앱 사진에서 빠진다.
+- `POST /api/admin/photo-review/targets/{targetId}/reopen` → detail, `status: "pending"`, 앱 사진에서 빠진다.
+- `POST /api/admin/photo-review/targets/{targetId}/more` → detail. 같은 후보 줄(그 시군의 관광지 · 쇼핑 · 축제, 조회순)에서 아직 어느 대상의 후보도 아닌 사진을 최대 6장 더한다.
+- `POST /api/admin/photo-review/targets/{targetId}/search` `{ "keyword": string(1~50) }` → detail. TourAPI 키워드 검색(분류 무관)에서 같은 시도 · 수집 기준 통과 · 음식점(39) · 숙박(32) 제외 사진을 최대 6장 `source: "search"` 후보로 더한다.
+
+- `POST /api/admin/photo-review/collect` → `202` + `AdminPhotoReviewCollectStatus`. '후보 채우기': 수집(새 대상 만들기 + 후보가 6장 안 되는 검토 대기 대상 채우기)을 서버가 뒤에서 돌리고 바로 돌아온다. 대상 하나마다 저장한다. 이미 돌고 있으면 `409`, TourAPI 가 꺼져 있으면 `503`. 끝나면 admin audit log(`photo_review.collect`, `targetType: "photo_review"`, `targetId: "collect"`)를 남긴다.
+- `GET /api/admin/photo-review/collect` → `AdminPhotoReviewCollectStatus` `{ running, startedAt, finishedAt, done, total, candidatesAdded, targetsCreated, targetsEmpty, error, lastRun: { at, candidatesAdded } | null }`. 화면은 `running` 동안 몇 초마다 묻는다. `done`/`total` 은 채울 대상 중 끝난 수, `targetsEmpty` 는 다 돌고도 후보가 0장인 대상(관광공사 목록에 없는 곳 - 이름으로 찾기), `error` 는 멈춘 이유, `lastRun` 은 마지막으로 끝난 실행(변경 이력 기준, 서버를 다시 띄워도 남는다). 진행 상태는 서버 프로세스 안에 있다.
+
+`more` · `search` 는 결정된 대상이면 `409`(먼저 `reopen`), TourAPI 가 꺼져 있으면 `503`, TourAPI 요청 실패는 `502`. 사진 검토 응답의 시각(`decidedAt`, `startedAt`, `finishedAt`, `lastRun.at`)은 UTC ISO 로 끝에 `Z` 가 붙는다 - 화면이 브라우저 시간대로 바꾼다. `approve` · `none` · `reopen` 은 admin audit log(`photo_review.approve` / `.none` / `.reopen`, `targetType: "photo_review_target"`, `targetId` 는 `region:전남|담양` · `policy:123`)를 남긴다.
+
+`AdminPhotoReviewTarget`: `id`, `unit`, `status: "pending" | "approved" | "none"`, `sido`, `city`(`""` = 도 전체), `policySlug`, `policyTitle`, `policyCategory`(정책 대상만, 나머지 `null`), `benefitCount`(그 시도 · 시군의 공개 정책 수), `candidateCount`, `photo`(확정 사진), `inheritedPhoto`(정책 대상이 물려받는 확정 시군 사진, public 응답 해석과 같은 규칙), `decidedAt`. 사진은 `{ candidateId, title, imageUrl, thumbnailUrl, copyrightType }`.
+
+`AdminPhotoReviewCandidate`: `id`, `title`, `kind`(관광지 · 시장·거리 · 축제 · 문화시설 … 표시용), `contentTypeId`, `imageUrl`, `thumbnailUrl`, `copyrightType`(`Type1` · `Type3`), `width`, `height`, `address`, `source: "collect" | "search"`, `searchKeyword`. 0047 마이그레이션 전에 걸려 있던 자동 사진은 후보로 옮기지 않는다(저작권 유형을 모른다) - 화면에서 내리고 수집이 새 후보를 넣는다.

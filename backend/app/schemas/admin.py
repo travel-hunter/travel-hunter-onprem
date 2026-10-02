@@ -311,3 +311,91 @@ class AdminEligibleIslandCollectResponse(BaseModel):
     snapshotId: str | None = None
     entryCount: int
     error: str | None = None
+
+
+PhotoReviewUnit = Literal["region", "policy"]
+PhotoReviewStatus = Literal["pending", "approved", "none"]
+
+
+class AdminPhotoReviewPhoto(BaseModel):
+    candidateId: str
+    title: str
+    imageUrl: str
+    thumbnailUrl: str | None = None
+    copyrightType: str | None = None
+
+
+class AdminPhotoReviewTargetItem(BaseModel):
+    id: str
+    unit: PhotoReviewUnit
+    status: PhotoReviewStatus
+    sido: str
+    city: str
+    policySlug: str | None = None
+    policyTitle: str | None = None
+    policyCategory: str | None = None
+    benefitCount: int
+    candidateCount: int
+    photo: AdminPhotoReviewPhoto | None = None
+    inheritedPhoto: AdminPhotoReviewPhoto | None = None
+    decidedAt: str | None = None
+
+
+class AdminPhotoReviewCandidate(BaseModel):
+    id: str
+    title: str
+    kind: str
+    contentTypeId: str | None = None
+    imageUrl: str
+    thumbnailUrl: str | None = None
+    copyrightType: str | None = None
+    width: int | None = None
+    height: int | None = None
+    address: str | None = None
+    source: Literal["collect", "search"]
+    searchKeyword: str | None = None
+
+
+class AdminPhotoReviewTargetDetail(AdminPhotoReviewTargetItem):
+    candidates: list[AdminPhotoReviewCandidate]
+
+
+class AdminPhotoReviewCounts(BaseModel):
+    pending: int
+    approved: int
+    none: int
+    all: int
+
+
+class AdminPhotoReviewTargetListResponse(BaseModel):
+    items: list[AdminPhotoReviewTargetItem]
+    counts: AdminPhotoReviewCounts
+    pendingTotal: int
+    newTargets: int
+    shortTargets: int
+
+
+class AdminPhotoReviewApproveRequest(BaseModel):
+    candidateId: str = Field(min_length=1, max_length=40)
+
+
+class AdminPhotoReviewSearchRequest(BaseModel):
+    keyword: str = Field(min_length=1, max_length=50)
+
+
+class AdminPhotoReviewCollectLastRun(BaseModel):
+    at: str
+    candidatesAdded: int
+
+
+class AdminPhotoReviewCollectStatus(BaseModel):
+    running: bool
+    startedAt: str | None = None
+    finishedAt: str | None = None
+    done: int
+    total: int
+    candidatesAdded: int
+    targetsCreated: int
+    targetsEmpty: int
+    error: str | None = None
+    lastRun: AdminPhotoReviewCollectLastRun | None = None

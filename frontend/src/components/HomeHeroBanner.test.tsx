@@ -1,7 +1,13 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HERO_INTERVAL_MS, HomeHeroBanner, type HomeHeroSlide } from "./HomeHeroBanner";
+import { HERO_PHOTOS, LOGIN_PHOTOS, type HeroPhoto } from "./heroPhotos";
+
+const jeonju: HeroPhoto = {
+  src: "/hero/jeonju.webp", subject: "전주 한옥마을", author: "lumoplank", license: "CC0",
+  licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/deed.ko", page: "https://commons.wikimedia.org/wiki/File:Jeonju.jpg",
+};
 
 const slides: HomeHeroSlide[] = ["첫째", "둘째", "셋째"].map((title, i) => ({
   key: title,
@@ -153,16 +159,41 @@ describe("HomeHeroBanner", () => {
     expect(screen.queryByRole("button", { name: "자동 넘김 멈추기" })).toBeNull();
   });
 
-  it("puts a photo behind a slide with its credit, and keeps the color when there is none", () => {
-    mount([
-      { ...slides[0], photo: { src: "/hero/jeonju.webp", credit: "전주 한옥마을 · lumoplank · CC0" } },
-      slides[1],
-    ]);
+  it("puts a photo behind a slide and keeps the color when there is none", () => {
+    mount([{ ...slides[0], photo: jeonju }, slides[1]]);
     expect(slide("첫째")).toHaveClass("photo");
     expect(slide("첫째").style.getPropertyValue("--ph")).toBe("url(/hero/jeonju.webp)");
-    expect(slide("첫째")).toHaveTextContent("전주 한옥마을 · lumoplank · CC0");
+    // 출처는 장마다 적지 않는다(시안 v53) - 배너 아래 '사진 출처' 하나
+    expect(slide("첫째")).not.toHaveTextContent("lumoplank");
     expect(slide("둘째")).not.toHaveClass("photo");
-    expect(slide("둘째").querySelector(".home-hero-credit")).toBeNull();
+  });
+
+  it("opens the app-wide photo credits from one '사진 출처' button", () => {
+    vi.useRealTimers();
+    mount([{ ...slides[0], photo: jeonju }, slides[1]]);
+    const open = screen.getByRole("button", { name: "사진 출처" });
+    fireEvent.click(open);
+
+    // 앱 전체 창(시안 v54): 홈 배너 · 로그인 화면 두 묶음
+    const dialog = screen.getByRole("dialog", { name: "사진 출처" });
+    const banner = within(dialog).getByRole("region", { name: "홈 배너" });
+    const login = within(dialog).getByRole("region", { name: "로그인 화면" });
+    expect(banner.querySelectorAll("li")).toHaveLength(Object.keys(HERO_PHOTOS).length);
+    expect(login.querySelectorAll("li")).toHaveLength(LOGIN_PHOTOS.length);
+    expect(login).toHaveTextContent("서울 · 북촌 한옥마을");
+    expect(within(login).getAllByRole("link", { name: "CC0" })[0]).toHaveAttribute("href", LOGIN_PHOTOS[0].licenseUrl);
+    expect(within(login).getAllByRole("link", { name: "원본 보기(위키미디어 공용)" })[0]).toHaveAttribute("href", LOGIN_PHOTOS[0].page);
+    expect(login).toHaveTextContent("Bandoche · 퍼블릭 도메인");   // 라이선스 본문이 없으면 글자만
+    expect(screen.getByRole("button", { name: "닫기" })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(open).toHaveFocus();
+  });
+
+  it("shows no '사진 출처' when no slide has a photo", () => {
+    mount(slides);
+    expect(screen.queryByRole("button", { name: "사진 출처" })).toBeNull();
   });
 
   it("draws a single slide without a pause button and nothing without slides", () => {

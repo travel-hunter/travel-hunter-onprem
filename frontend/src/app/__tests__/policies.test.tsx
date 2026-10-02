@@ -151,6 +151,39 @@ describe("Travel Hunter app — policies & trip picker", () => {
     }
   });
 
+  it("draws the map frame while policies load instead of the old full-width loading card", async () => {
+    // 응답이 늦을 때: 지도 칸이 먼저 서고 '불러오는 중'은 목록 자리에 선다. 예전엔 빈 화면에 그 카드만 떠서 예전 목록 화면처럼 보였다
+    const listPoliciesSpy = vi.spyOn(appDataApi, "listPolicies").mockReturnValue(new Promise(() => {}));
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+      const status = await screen.findByRole("status");
+      expect(status).toHaveTextContent("정책을 불러오는 중입니다");
+      expect(status.closest(".thmap-loading")).toBeTruthy();
+      expect(document.querySelector(".thmap-stage .thmap-host")).toBeTruthy();
+    } finally {
+      listPoliciesSpy.mockRestore();
+    }
+  });
+
+  it("keeps the desktop panel on the loading state while a deep-linked detail waits for policies", async () => {
+    // 넓은 화면 detail= 주소로 바로 열 때: 정책이 오기 전에 '이 정책은 지금 목록에 없어요'를 띄우지 않는다
+    const listPoliciesSpy = vi.spyOn(appDataApi, "listPolicies").mockReturnValue(new Promise(() => {}));
+    try {
+      await login();
+      cleanup();
+      stubDesktop();
+      renderAppRoute("/policies?detail=some-policy");
+      await screen.findByText("정책을 불러오는 중입니다");
+      expect(document.querySelector(".thmap-split .thmap-panel .thmap-loading")).toBeTruthy();
+      expect(screen.queryByText("이 정책은 지금 목록에 없어요.")).toBeNull();
+    } finally {
+      listPoliciesSpy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("shows digital resident policies as always-issued instead of deadline-unknown on the list", async () => {
     const policies: Policy[] = [
       {

@@ -74,6 +74,8 @@ services:
       # 구조화 로그 - docs/superpowers/plans/2026-09-22-caddy-service-status-log.md
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FILE_PATH: ${LOG_FILE_PATH:-/var/log/travelhunter/backend.log}
+      # 확정한 사진 원본(사진 검토 0047) - 볼륨 travelhunter-media. 백엔드가 /api/media 로 내보낸다
+      MEDIA_ROOT: ${MEDIA_ROOT:-/media}
       LOG_FILE_MAX_MB: ${LOG_FILE_MAX_MB:-20}
       LOG_FILE_BACKUPS: ${LOG_FILE_BACKUPS:-10}
       ACCESS_LOG_EXCLUDE_PATHS: ${ACCESS_LOG_EXCLUDE_PATHS:-/api/health,/health}
@@ -88,6 +90,7 @@ services:
     volumes:
       # 컨테이너를 재생성해도 남는 로그 사본
       - travelhunter-logs:/var/log/travelhunter
+      - travelhunter-media:/media
     ports:
       - "8000:8000"
     depends_on:
@@ -125,3 +128,4 @@ services:
 volumes:
   travelhunter-db:
   travelhunter-logs:
+  travelhunter-media:

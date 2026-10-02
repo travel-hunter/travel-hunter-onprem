@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { mediaUrl } from "../api/client";
 import type { PolicyPhoto } from "../api/types";
 
 /**
@@ -19,7 +20,7 @@ export function PolicyHeroPhoto({ photo }: { photo: PolicyPhoto }) {
         className="policy-hero-photo"
         loading="lazy"
         onError={() => setIsBroken(true)}
-        src={photo.imageUrl}
+        src={mediaUrl(photo.imageUrl)}
       />
       <span className="policy-hero-credit">{photo.attribution}</span>
     </>
@@ -42,7 +43,7 @@ export function PolicyThumbPhoto({
       className="policy-thumb-photo"
       loading="lazy"
       onError={() => setIsBroken(true)}
-      src={photo.thumbnailUrl ?? photo.imageUrl}
+      src={mediaUrl(photo.thumbnailUrl ?? photo.imageUrl)}
     />
   );
 }

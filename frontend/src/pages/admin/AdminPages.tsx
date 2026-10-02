@@ -28,6 +28,8 @@ function formatAdminDateTime(value: string | null) {
 }
 
 export function AdminLayout() {
+  // 사진 검토 대기 수 - 사진 검토 화면이 목록을 받을 때마다 채운다
+  const [photoPending, setPhotoPending] = useState<number | null>(null);
   return (
     <div className="admin-layout">
       <aside className="admin-sidebar" aria-label="관리자 메뉴">
@@ -39,12 +41,16 @@ export function AdminLayout() {
           <NavLink className={adminNavClass} to="/admin/users">회원 관리</NavLink>
           <NavLink className={adminNavClass} to="/admin/policies">정책 관리</NavLink>
           <NavLink className={adminNavClass} to="/admin/policy-review">수집 검토</NavLink>
+          <NavLink className={adminNavClass} to="/admin/photo-review">
+            사진 검토
+            {photoPending ? <b className="admin-nav-badge" aria-label={`검토 대기 ${photoPending}건`}>{photoPending}</b> : null}
+          </NavLink>
           <NavLink className={adminNavClass} to="/admin/audit-logs">변경 이력</NavLink>
           <NavLink className="admin-nav-link" to="/home">서비스로 이동</NavLink>
         </nav>
       </aside>
       <main className="admin-main">
-        <Outlet />
+        <Outlet context={{ setPhotoPending }} />
       </main>
     </div>
   );

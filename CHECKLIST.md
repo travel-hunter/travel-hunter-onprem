@@ -2,22 +2,20 @@
 
 ## Current Status
 
-- Merge-ready: 디자인 시안(v40~v49) 화면 개편(`feature/screen-redesign`, 커밋 15개). 일정·홈·정책 탭·정책 상세·내 정보·로그인과 넓은 화면(1024px~) 배치,
-  주색 청록, 홈 배너(위키미디어 공용 사진)·시군 카드. 계획: `docs/superpowers/plans/2026-09-30-mockup-v40-app-apply.md` · `2026-09-30-desktop-layout.md` ·
-  `2026-09-30-home-banner-and-place-cards.md` · `2026-10-01-my-login-redesign.md`, 사진 출처 `docs/photo-sourcing/`.
-- Scope: frontend 와 문서만. backend·API 계약·DB·env 변경 없음.
-- 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로). 사진 수집 기준(`feature/photo-collection-criteria`, backend + Alembic 0046)은 별도 PR 로 나중에.
+- Merge-ready: 정책·시군 사진 검토와 원본 보관(`feature/photo-collection-criteria`). 수집은 기준(공공누리 유형 · 시설 · 크기 · 겹침)을 거친
+  후보만 넣고, 관리자가 '사진 검토'(`/admin/photo-review`)에서 확정한 한 장만 앱에 나간다. 확정 때 원본을 볼륨 `travelhunter-media` 에 받아
+  백엔드가 `/api/media` 로 내보낸다. 로그인 사진 8장 돌리기 · 앱 전체 '사진 출처', 홈 → 정책 탭 예전 화면 버그 수정 포함.
+  계획: `docs/superpowers/plans/2026-10-01-photo-collection-criteria.md` · `2026-10-02-photo-review-stage.md`.
+- Scope: backend(Alembic 0046 · 0047, 관리자 API, `/api/media`) · frontend · compose 볼륨 · 문서. 공개 `Policy.photo` 모양은 그대로(`imageUrl` 이 상대 주소).
+- 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
 
 ## Recent Validation
 
-- PASS: `npm run typecheck`, `npm run test:mojibake`, `npx vitest run` 44파일 480개, `npm run build`.
-- PASS: `npm run test:e2e:containers` 13/13(로컬 4173/8000, db·backend·frontend 세 컨테이너 모두 루트 작업 트리 출처).
-- PASS: 4173 헤드리스 실측 - 360·390·1024·1440·1920 가로 넘침 없음, 1920 은 1440 과 같은 모양, 홈 시군 카드 사진 배율 0.31~0.36, 정책 탭 불러오는 동안에도 넓은 틀.
+- PASS: backend `python -m pytest`(stay-discount 스냅샷 제외) 1189 passed · 24 skipped, `alembic upgrade 0045_traffic_detail:head --sql`, `downgrade 0047_photo_review:0045_traffic_detail --sql`.
+- PASS: `npm run typecheck`, `npm run test:mojibake`, `npx vitest run` 45파일 493개, `npm run build`, `npm run test:e2e:containers` 13/13.
+- PASS: 4173 실측 - 로컬 DB 에 0046·0047 적용 · 후보 수집(898장), 확정 → 원본 저장 → `/api/media` 200 · immutable 캐시 → 정책 상세 사진. 로그인 사진 6초 돌기(동작 줄이기면 멈춤), '사진 출처' 홈 · 내 정보 · 넓은 화면, 홈 '전국 공통' → 지도.
+- PASS: 코드 리뷰(BASE `ad25771`, HEAD `503e551`, backend · frontend 두 갈래) - HIGH 없음. MEDIUM 3건(수집 중 같은 사진 고유키 오류로 수집 전체 중단, 확정과 수집의 잠금 대기, 넓은 화면 불러오는 동안 '목록에 없어요') 과 LOW 다수(받는 주소 제한 · 넘겨주기, 설정 누락 500, 디스크 오류 500, 확정 503 문구, 수집 진행 묻기 멈춤, 끝날 때 고른 후보 지움, 두 번 누르기, 경로 순회 시험)를 고치고 시험 보강.
 - PASS: `git diff --check`, 변경 파일 U+FFFD 0건, diff 의 비밀값·로컬 경로·서버 주소 검색 0건.
-- PASS: 코드 리뷰(정책 탭·홈·일정·계정 네 영역, BASE `c02a330`) - 결함 19건(데이터 지움 1: 프로필 편집 창을 서버 프로필 전에 열면 빈 값 저장) 모두 고침(`9b5cea9`), 고친 부분 재검토.
-- PASS: 2차 검토(다른 화면 회귀 · 데이터 로직 · 시험 정합성) - 결함 7건 고침(일정 수정 경고·403 색, 넓은 화면 일정 아래 고정 줄, 시군 고른 뒤 칩 건수, '바다가는 달' 종류 등), 빠진 시험 보강(뒤로 기록 · 시군 카드 대표 규칙 · 편집 창 대기 · 해 넘기는 일정 · 시트 끌기/휠), 문서의 로컬 경로·비공개 링크 제거.
-- PASS: 사용자 4173 확인(2026-10-01, "전체적으로 만족").
-- NOT RUN: backend 시험 - 이 브랜치는 backend 변경 없음.
 
 ## Active Risks
 
@@ -32,12 +30,21 @@
 - 5분 주기다. 볼륨 보관 한도(스트림당 200MB)를 넘길 만큼 멈춰 있으면 그 사이는 잃는다. `docker logs` 로 회차 기록을 본다.
 - AWS 로 옮기면 빼 오는 곳이 CloudWatch 로 바뀐다(ASG·private subnet). 보관 형식은 그대로 둔다.
 
+### 사진 검토 · 원본 보관(`feature/photo-collection-criteria`)
+
+- 배포 직후 홈 시군 카드 · 정책 상세 머리가 모두 혜택 그림이 된다(0047 이 기존 자동 사진을 `review` 로 내림). Jenkins 는 `alembic upgrade head` 만 한다 -
+  관리자 사진 검토의 '후보 채우기'를 한 번 누르고 시군부터 확정한다(시군·도 약 70곳 + 정책 약 100건).
+- `travelhunter-media` 볼륨은 DB 볼륨처럼 백업 대상이다. `docker compose down -v` 금지. 지워지면 다시 확정할 때 원본을 다시 받는다.
+- `region_photos` · `policy_photos` 는 더 읽지도 쓰지도 않는다. 배포가 확인되면 지우는 마이그레이션을 따로 둔다.
+- 0047 은 배포 전이라 제자리에서 고쳤다(`stored_path` 등). 고치기 전 0047 을 적용한 DB 가 있으면 내렸다 다시 올려야 한다 - 개발서버는 0045.
+- 수집 진행 상태는 서버 프로세스 안에 있다(uvicorn 1개 전제). 워커를 늘리면 '이미 도는 중' 막기가 프로세스마다 따로다.
+- Pixabay 설정 · `app/services/pixabay.py` 는 이제 쓰이지 않는다(정리는 따로).
+
 ### 화면 개편(`feature/screen-redesign`)
 
 - 로컬 4173 은 루트 `.env` 의 `VITE_ADMIN_BASE_URL` 이 4173 이라 관리자 주소로 보여, 로그인의 가입·비밀번호 찾기·카카오·구글 입구가 숨는다. 실제 사용자 주소에선 보인다(vitest 로 확인).
 - 예전 클래스(`prototype-stat-card`·`prototype-menu-row`·`ds-favorite-policy-*` 등) CSS 는 이제 안 쓰이지만 지우지 않았다 - 죽은 CSS 정리는 따로(화면 상태별 확인 먼저).
 - 홈 배너 사진은 전남·숙박·제휴·환급·교통 다섯 장뿐이다. 사진이 없는 지역 장은 색 바탕. CC BY · BY-SA 사진의 출처 문구는 화면에서 빼면 안 된다.
-- 홈 시군 카드 사진은 수집 사진(TourAPI)이다. 시군 사이 겹침·부적절 사진은 사진 수집 기준 PR 이 머지되고 개발서버에서 다시 수집해야 준다.
 - 넓은 화면 판은 가운데 최대 1440px(정책 탭 지도만 전체 폭). 시안 캔버스(1280)보다 넓은 화면은 시안으로 정한 적이 없다.
 - 수집 데이터 확인 필요: 합천 반값여행(`travelmonth-102`)은 마감 2026-10-11 인데 본문 신청 기간은 07-31 에 끝났고, 금액도 본문 최대 50만원 · 카드 20만원으로 다르다. 홈 마감 칸 첫 장에 나온다.
 - 반값여행 묶음 머리의 공통 문구(`PROGRAM_GROUP_COPY`)는 고정 문구라 지역마다 조건이 다르면 그 지역을 틀리게 말한다. 장흥처럼 '관광지 2개소 또는 1개소 + 가맹점' 조건은 목록 줄에 첫 숫자만 나온다.

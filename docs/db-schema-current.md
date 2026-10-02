@@ -191,7 +191,18 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 지역 사진 관련 컬럼/테이블 (2026-09-07, `0036_region_photos`):
 
 - `policies.city`: 시군구 표시명(String(80), nullable). `external_source_records.city`를 승격 시 복사한다. 숙박세일 지역 alias 정책은 시도 단위 노출이므로 `NULL`로 명시 저장한다. 관리자 override/legacy dgtour 조기 반환 경로에서는 갱신하지 않으며, 그 경우 시도 대표 사진으로 폴백한다.
-- `region_photos`: 정책 카드 hero/썸네일용 지역 대표 관광지 사진 조회 테이블. `(provider, sido, city)` UNIQUE이며 `city`는 NOT NULL 기본 `''`(빈 문자열이 시도 대표 사진 sentinel — NULL이면 UNIQUE가 중복 upsert를 못 막는다). `sido`는 `policies.region`과 동일한 축약형(전남/경북)만 저장한다. `hero_image_url`/`thumb_image_url`/`provider_image_url`(원본 출처 보존), `storage_kind`(`remote`→S3 전환 시 `managed`), `attribution_text`(공공누리 1유형 출처표시, 기본 `사진: 한국관광공사`), `status`(`active`/`blocked` — 배포 없이 사진 차단), `fetched_at`(URL 부패 재검증 기준)을 담는다. 채움은 `backend/scripts/backfill_region_photos.py`(TourAPI, 키 없으면 no-op)가 담당한다.
+- `region_photos`: 정책 카드 hero/썸네일용 지역 대표 관광지 사진 조회 테이블. `(provider, sido, city)` UNIQUE이며 `city`는 NOT NULL 기본 `''`(빈 문자열이 시도 대표 사진 sentinel — NULL이면 UNIQUE가 중복 upsert를 못 막는다). `sido`는 `policies.region`과 동일한 축약형(전남/경북)만 저장한다. `hero_image_url`/`thumb_image_url`/`provider_image_url`(원본 출처 보존), `storage_kind`(`remote`→S3 전환 시 `managed`), `attribution_text`(공공누리 1유형 출처표시, 기본 `사진: 한국관광공사`), `status`(`active`/`blocked` — 배포 없이 사진 차단), `fetched_at`(URL 부패 재검증 기준)을 담는다. 2026-10-02(`0047_photo_review`)부터 앱이 읽지도 쓰지도 않는다(아래) - 배포가 확인되면 따로 지운다.
+
+사진 수집 기준 컬럼 (2026-10-01, `0046_photo_criteria`):
+
+- `region_photos` · `policy_photos` 에 `copyright_type`(TourAPI `cpyrhtDivCd`: `Type1` 공공누리 제1유형, `Type3` 제3유형 변경금지), `image_width` · `image_height`(실제 크기, 머리만 받아 잼), `region_photos.selection_reason`(고른 방식 - 0047 부터 사진 검토 확정은 `admin`)을 더했다. 모두 nullable - 기준 이전 줄은 비어 있다(0047 이 화면에서 내렸다). 기준은 `backend/app/services/photo_criteria.py`. 자체 보관으로 다시 인코딩할 때는 `Type3` 를 빼야 하므로 유형이 필요하다. 0047 이 기존 줄을 `status='review'` 로 내렸고, 그 뒤로 두 표는 쓰이지 않는다.
+
+사진 검토 (2026-10-02, `0047_photo_review`):
+
+- 수집(`backend/scripts/collect_photo_candidates.py`)은 후보만 넣고, 관리자가 한 장을 확정해야 앱 사진이 된다. 앱은 `status='approved'` 대상이 고른 후보(`approved_candidate_id`) 중 원본을 받아 둔 것(`stored_path` 있음)만 읽는다 - 표 두 개로 끝난다(`region_photos` · `policy_photos` 는 쓰지 않는다). 응답 해석 순서(정책 사진 → 시군 사진 → 없음)는 그대로라 정책은 확정하지 않으면 시군 사진을 물려받는다.
+- `photo_review_targets`: 검토 대상 하나. `target_key` UNIQUE(`region:전남|담양`, `region:전남|` = 도 전체, `policy:123`), `target_type`(`region`/`policy`), `sido`, `city`(`''` = 도 전체), `policy_id`(정책 대상만, `policies` 삭제 시 CASCADE), `status`(`pending`/`approved`/`none`, CHECK), `approved_candidate_id`(외래키 없음), `decided_at`, `decided_by_user_id`(`users` SET NULL). 결정은 `admin_audit_logs`(`photo_review.approve`/`.none`/`.reopen`)에도 남는다.
+- `photo_review_candidates`: 대상마다 후보. `(target_id, image_url)` UNIQUE, `target_id` CASCADE. 제목 · `content_type_id`(TourAPI 분류) · 원본/썸네일 주소 · `copyright_type` · 크기 · 주소, `source`(`collect` 수집 / `search` 이름으로 찾기 + `search_keyword`, CHECK). 확정할 때 받아 둔 원본: `stored_path`(`MEDIA_ROOT` 아래 `photos/<해시 앞 2자>/<sha256>.<확장자>`, 같은 사진은 한 파일), `byte_size`, `content_type` - 다시 확정하면 받아 둔 파일을 그대로 쓴다. 파일은 볼륨 `travelhunter-media`(`/media`)에 있고 백엔드가 `/api/media` 로 내보낸다.
+- 마이그레이션 데이터: 기존 `active` 사진 줄을 `status='review'` 로 내린다(검토 전으로 돌림). 후보로 옮기지 않는다 - 수집 기준(0046) 이전 사진이라 저작권 유형을 몰라 확정할 수 없다. 대상과 후보는 수집이 만든다. downgrade 는 `review` → `active`.
 
 수집 소스·검토 후보 테이블 (2026-09-13, `0038_policy_source_catalog`; `0039_external_source_status_text`는 `external_source_records.status_text`를 Text로 넓혔다):
 

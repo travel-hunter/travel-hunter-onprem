@@ -15,6 +15,9 @@ export const apiConfig = {
     : (configuredApiBaseUrl || DEFAULT_API_BASE_URL).replace(/\/$/, ""),
 };
 
+/* 서버가 받아 둔 사진은 API 와 같은 곳의 상대 주소(/api/media/...)로 온다. 화면과 API 가 다른 곳이면 API 주소를 붙인다 */
+export const mediaUrl = (url: string) => (url.startsWith("/") ? `${apiConfig.baseUrl}${url}` : url);
+
 let accessToken: string | null = null;
 
 /* 401 을 만났을 때 토큰을 다시 받아 오는 통로. 세션 쪽이 등록한다.

@@ -124,13 +124,13 @@ EXTERNAL_COLLECTION_POLL_SECONDS: "60"
 - CLI에서 1회 수집을 실행하는 경로다.
 - 내부적으로 live source collection service를 호출한다.
 
-### 4. 지역 사진 백필 (수집 후 별도 실행)
+### 4. 사진 후보 수집 (수집 후 별도 실행) → 관리자 사진 검토
 
-파일: `backend/scripts/backfill_region_photos.py`
+파일: `backend/scripts/collect_photo_candidates.py` (2026-10-02, 옛 `backfill_region_photos.py` · `backfill_policy_photos.py` 를 대신한다)
 
-- 정책 카드 hero/썸네일용 지역 대표 관광지 사진을 TourAPI(공공누리 1유형)에서 조회해 `region_photos` 테이블에 upsert한다. 수집/승격 경로에는 사진 호출이 없다 — TourAPI 장애가 수집 실패로 번지지 않게 하기 위해서다.
+- 시군(도 전체 포함) · 공개 정책마다 TourAPI 사진 후보를 6장씩 `photo_review_candidates` 에 넣는다. 그 시군의 관광지 · 쇼핑 · 축제를 조회순으로 번갈아, 수집 기준(`app/services/photo_criteria.py`)을 통과한 것만. 앱에 사진을 내걸지 않는다 — 관리자가 `/admin/photo-review` 에서 한 장을 확정해야 `region_photos` · `policy_photos` 의 `active` 줄이 된다. 결정한 대상은 다시 건드리지 않는다. 수집/승격 경로에는 사진 호출이 없다 — TourAPI 장애가 수집 실패로 번지지 않게 하기 위해서다.
 - `TOUR_API_ENABLED=true` + `TOUR_API_SERVICE_KEY`가 없으면 `tour_api_disabled; no-op`을 출력하고 exit 0 한다.
-- 실행 순서: `python scripts/normalize_external_policies.py`(policies.city 채움) → `python scripts/backfill_region_photos.py`. 플래그: `--dry-run --limit N --refresh-older-than-days N --only-sido 전남`.
+- 실행 순서: `python scripts/normalize_external_policies.py`(policies.city 채움) → `python scripts/collect_photo_candidates.py`. 플래그: `--dry-run --only-sido 전남`.
 
 ## source 수집 단계
 

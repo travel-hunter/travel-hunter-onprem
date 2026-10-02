@@ -1,0 +1,720 @@
+/* 사진 검토(시안 v50·v51): 왼쪽 대상 목록 · 가운데 후보 · 오른쪽 미리보기와 결정. 세 칸이 각자 스크롤한다.
+   app.css 가 이 파일보다 뒤에 붙어 같은 무게면 이긴다 - .admin-page 와 겹치는 것은 두 클래스로 쓴다. */
+
+.admin-page.photo-review {
+  position: relative;
+  max-width: 1280px;
+  height: calc(100dvh - 64px);
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 16px;
+}
+
+.admin-page-head.photo-review-head {
+  align-items: flex-end;
+  margin-bottom: 0;
+}
+
+.photo-review-progress {
+  width: min(300px, 40%);
+  display: grid;
+  gap: 6px;
+  color: var(--gray-700);
+  font-size: 13px;
+}
+
+.photo-review-progress b {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.photo-review-progress small {
+  color: var(--gray-600);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.photo-review-bar {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--gray-200);
+}
+
+.photo-review-bar .ok {
+  background: var(--primary-600);
+}
+
+.photo-review-bar .no {
+  background: var(--gray-500);
+}
+
+/* 머리 오른쪽: 결정 진행 + '후보 채우기'(시안 v52) */
+.photo-review-head-right {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+}
+
+.photo-review-head-right .photo-review-progress {
+  width: 260px;
+}
+
+.photo-review-collect {
+  width: 220px;
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.photo-review-collect small {
+  color: var(--gray-600);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.photo-review-collect small b {
+  color: var(--ink);
+}
+
+.photo-review-collect .photo-review-ghost:disabled {
+  color: var(--gray-600);
+  cursor: progress;
+}
+
+.photo-review-bar.mini {
+  width: 100%;
+  height: 4px;
+}
+
+.photo-review-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.photo-review-seg {
+  display: flex;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--gray-200);
+}
+
+.photo-review-seg button {
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--gray-700);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.photo-review-seg button[aria-pressed="true"] {
+  background: var(--white);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(17 24 39 / 14%);
+}
+
+.photo-review-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.photo-review-filter button {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--gray-200);
+  border-radius: 17px;
+  background: var(--white);
+  color: var(--gray-700);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.photo-review-filter button[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--white);
+}
+
+.photo-review-tabs button span {
+  margin-left: 5px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.photo-review-tabs button:focus-visible,
+.photo-review-queue button:focus-visible,
+.photo-review-detail button:focus-visible,
+.photo-review-rail button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.photo-review-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr) 172px;
+  gap: 16px;
+}
+
+.photo-review-queue,
+.photo-review-detail,
+.photo-review-rail {
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 24px;
+  scrollbar-width: thin;
+}
+
+.photo-review-queue {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  margin: 0;
+  padding: 2px 2px 24px;
+  list-style: none;
+}
+
+.photo-review-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.photo-review-row:hover {
+  background: var(--gray-100);
+}
+
+.photo-review-row[aria-current="true"] {
+  background: var(--white);
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+.photo-review-thumb {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--gray-100);
+}
+
+.photo-review-thumb.pending {
+  border: 1.5px dashed var(--gray-300);
+  background: none;
+  color: var(--gray-600);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.photo-review-thumb.tile {
+  background: none;
+}
+
+.photo-review-row-text {
+  min-width: 0;
+  display: grid;
+}
+
+.photo-review-row-text b {
+  overflow: hidden;
+  font-size: 14.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-review-row-text i {
+  overflow: hidden;
+  color: var(--gray-600);
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-review-row-text i.two-lines {
+  display: -webkit-box;
+  line-height: 1.35;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.photo-review-pill {
+  padding: 2px 7px;
+  border-radius: 9px;
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.photo-review-pill.pending {
+  background: var(--status-draft-bg);
+  color: var(--status-draft-text);
+}
+
+.photo-review-pill.ok {
+  background: var(--primary-50);
+  color: var(--primary-600);
+}
+
+.photo-review-pill.no {
+  background: var(--gray-100);
+  color: var(--gray-700);
+}
+
+.photo-review-detail {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 2px 4px 24px 2px;
+}
+
+.photo-review-detail-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.photo-review-detail-head h2 {
+  margin: 0;
+  font-size: 22px;
+  outline: none;
+}
+
+.photo-review-detail-head p {
+  margin: 2px 0 0;
+  color: var(--gray-600);
+  font-size: 13px;
+}
+
+.photo-review-ghost {
+  flex: none;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--gray-300);
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.photo-review-done {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 10px 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.photo-review-done.ok {
+  background: var(--primary-50);
+  color: var(--primary-600);
+}
+
+.photo-review-done.no {
+  background: var(--gray-100);
+  color: var(--gray-700);
+}
+
+.photo-review-done button {
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid currentcolor;
+  border-radius: 10px;
+  background: var(--white);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.photo-review-set {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.photo-review-set legend {
+  margin-bottom: 10px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.photo-review-set legend span {
+  margin-left: 8px;
+  color: var(--gray-600);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.photo-review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.photo-review-option {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 6px 6px 8px;
+  border-radius: 12px;
+  background: var(--white);
+  box-shadow: 0 0 0 1px var(--gray-200);
+  cursor: pointer;
+}
+
+.photo-review-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.photo-review-option:hover {
+  box-shadow: 0 0 0 1px var(--gray-300), 0 2px 8px rgb(17 24 39 / 6%);
+}
+
+.photo-review-option:has(input:checked) {
+  box-shadow: 0 0 0 2.5px var(--primary-600);
+}
+
+.photo-review-option:has(input:focus-visible) {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.photo-review-option:has(input:checked)::after {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--primary-600);
+  box-shadow: 0 0 0 2px var(--white);
+  color: var(--white);
+  content: "✓";
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.photo-review-set:disabled .photo-review-option {
+  cursor: default;
+}
+
+.photo-review-set:disabled .photo-review-option:not(:has(input:checked)) {
+  opacity: 0.45;
+}
+
+.photo-review-option img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--gray-100);
+}
+
+.photo-review-option-title {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-review-option-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--gray-600);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.photo-review-option-meta em {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--gray-100);
+  color: var(--gray-700);
+  font-style: normal;
+}
+
+.photo-review-option-addr {
+  overflow: hidden;
+  color: var(--gray-600);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-review-find {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--white);
+  box-shadow: 0 0 0 1px var(--gray-200);
+}
+
+.photo-review-find label {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.photo-review-find > div {
+  display: flex;
+  gap: 8px;
+}
+
+.photo-review-find input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--gray-300);
+  border-radius: 10px;
+  color: var(--ink);
+  font: inherit;
+}
+
+.photo-review-find input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.photo-review-find button {
+  height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--white);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.photo-review-find button:disabled {
+  background: var(--gray-300);
+  cursor: not-allowed;
+}
+
+.photo-review-find p {
+  margin: 0;
+  color: var(--gray-600);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.photo-review-miss {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--white);
+  box-shadow: 0 0 0 1px var(--gray-200);
+  color: var(--gray-700);
+  font-size: 13px;
+}
+
+.photo-review-rail {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.photo-review-rail-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.photo-review-head-preview {
+  width: 172px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--white);
+  box-shadow: 0 0 0 1px var(--gray-200);
+}
+
+.photo-review-head-preview .photo {
+  height: 100px;
+  display: grid;
+  place-items: center;
+  background: var(--primary-50);
+}
+
+.photo-review-head-preview .photo.nophoto {
+  background: var(--tb);
+}
+
+.photo-review-head-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-review-head-preview p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 10px 12px 12px;
+}
+
+.photo-review-head-preview span {
+  color: var(--gray-600);
+  font-size: 11.5px;
+}
+
+.photo-review-head-preview b {
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.photo-review-credit,
+.photo-review-fine {
+  margin: 0;
+  color: var(--gray-600);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.photo-review-fine {
+  font-size: 11.5px;
+}
+
+.photo-review-use {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  color: var(--gray-700);
+  font-size: 12px;
+}
+
+.photo-review-use dt {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.photo-review-use dd {
+  margin: 0;
+}
+
+.photo-review-use dd::before {
+  content: "· ";
+}
+
+.photo-review-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.photo-review-actions button {
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.photo-review-actions .primary {
+  border: 0;
+  background: var(--primary-600);
+  color: var(--white);
+}
+
+.photo-review-actions .primary:disabled {
+  background: var(--gray-200);
+  color: var(--gray-600);
+  cursor: not-allowed;
+}
+
+.photo-review-actions .secondary {
+  border: 1px solid var(--gray-300);
+  background: var(--white);
+  color: var(--ink);
+}
+
+.photo-review-toast {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  z-index: 5;
+  margin: 0;
+  padding: 10px 16px;
+  border-radius: 20px;
+  background: rgb(17 24 39 / 88%);
+  color: var(--white);
+  font-size: 13px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.photo-review-toast:empty {
+  display: none;
+}
+
+/* 좁은 창: 세 칸을 위아래로(목록은 짧게 잘라 스크롤) */
+@media (width < 1024px) {
+  .admin-page.photo-review {
+    height: auto;
+  }
+
+  .photo-review-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .photo-review-queue {
+    max-height: 240px;
+  }
+
+  .photo-review-queue,
+  .photo-review-detail,
+  .photo-review-rail {
+    overflow-y: visible;
+  }
+
+  .photo-review-queue {
+    overflow-y: auto;
+  }
+}

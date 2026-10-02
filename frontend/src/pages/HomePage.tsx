@@ -16,6 +16,7 @@ import {
   type Profile,
   type RegionRecommendation,
 } from "../api";
+import { mediaUrl } from "../api/client";
 import { useAsyncResource } from "../api/useAsyncResource";
 import { useSession } from "../app/session";
 import {
@@ -510,7 +511,7 @@ function buildHeroSlides(
   if (nationwide.length > 0) {
     slides.push({
       key: "nation",
-      to: `/policies?region=${NATIONWIDE_REGION}`,
+      to: `/policies?place=${NATIONWIDE_REGION}`,
       family: "move",
       icon: <BenefitTile kind="nation" />,
       eyebrow: <span>어느 지역을 가도 쓸 수 있어요</span>,
@@ -594,7 +595,7 @@ function PlaceCard({ card }: { card: PlaceCardData }) {
           className="home-region-photo"
           loading="lazy"
           onError={() => setIsBroken(true)}
-          src={photo.imageUrl}
+          src={mediaUrl(photo.imageUrl)}
         />
       ) : (
         <BenefitTile kind={kind} />
@@ -628,7 +629,7 @@ function NationwideLineCard({ policies }: { policies: Policy[] }) {
   return (
     <Link
       className="home-line-card"
-      to={`/policies?region=${NATIONWIDE_REGION}`}
+      to={`/policies?place=${NATIONWIDE_REGION}`}
     >
       <BenefitTile kind="nation" />
       <span className="home-line-copy">

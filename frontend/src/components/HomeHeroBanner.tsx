@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type 
 import { Link } from "react-router-dom";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import type { HeroPhoto } from "./heroPhotos";
+import { usePhotoCredits } from "./PhotoCredits";
 
 export type HomeHeroSlide = {
   key: string;
@@ -33,6 +34,7 @@ function slidePos(i: number, current: number, count: number) {
    (사용자 결정), 멈춤 버튼은 키보드 초점이 갈 때만 보인다(home.css). 기기의 '동작 줄이기'가 켜져 있으면 자동으로 넘기지 않는다. */
 export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
   const [index, setIndex] = useState(0);
+  const credits = usePhotoCredits();
   const [paused, setPaused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -89,6 +91,7 @@ export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
   };
 
   return (
+    <>
     <section
       aria-label="이번 주 소식"
       aria-roledescription="넘어가는 배너"
@@ -131,8 +134,6 @@ export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
             <span className="home-hero-go" aria-hidden="true">
               ›
             </span>
-            {/* 출처(사진 · 작가 · 라이선스) - CC BY · CC BY-SA 조건이라 빼지 않는다 */}
-            {slide.photo && <span className="home-hero-credit">{slide.photo.credit}</span>}
           </Link>
         );
       })}
@@ -147,5 +148,15 @@ export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
         </button>
       )}
     </section>
+    {/* 출처(CC BY · CC BY-SA 조건)는 장마다 적지 않고 앱 전체 '사진 출처' 창 하나로 모은다(시안 v53 · v54) */}
+    {slides.some((slide) => slide.photo) && (
+      <p className="home-hero-src">
+        <button aria-haspopup="dialog" onClick={credits.open} type="button">
+          사진 출처
+        </button>
+      </p>
+    )}
+    {credits.dialog}
+    </>
   );
 }

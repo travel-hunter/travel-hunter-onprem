@@ -5,9 +5,10 @@ import { appDataApi, type SignupVerifyResponse } from "../api";
 import { getPostAuthPath } from "../app/onboarding";
 import { shouldShowPublicAuthActions } from "../app/adminHost";
 import { useSession } from "../app/session";
-import { HERO_PHOTOS } from "../components/heroPhotos";
+import { LOGIN_PHOTOS } from "../components/heroPhotos";
 import { AuthFormShell, BrandMark } from "../components/patterns";
 import { Button, IconButton, LinkButton } from "../components/ui";
+import { useMediaQuery } from "../lib/useMediaQuery";
 import "../styles/account.css";
 
 function getSafeRedirect(searchParams: URLSearchParams) {
@@ -332,18 +333,18 @@ export function LoginPage() {
   const oauthRedirect = redirect ?? "/home";
   const showPublicAuthActions = shouldShowPublicAuthActions();
 
-  /* 시안 v49: 위(넓은 화면은 왼쪽)에 여행 사진 한 장, 아래 브랜드 글자 · 입력 · 가입·찾기 · 카카오·구글.
-     가입·찾기·소셜 입구는 관리자 주소에서만 숨긴다(shouldShowPublicAuthActions). 주 버튼은 청록(흰 글자 대비 5.5:1) */
-  const photo = HERO_PHOTOS["region:전남"];
+  /* 시안 v49: 위(넓은 화면은 왼쪽)에 여행 사진, 아래 브랜드 글자 · 입력 · 가입·찾기 · 카카오·구글.
+     사진은 여러 지역을 돌린다(시안 v54, LoginPhotos). 가입·찾기·소셜 입구는 관리자 주소에서만 숨긴다
+     (shouldShowPublicAuthActions). 주 버튼은 청록(흰 글자 대비 5.5:1) */
   return (
     <section className="screen white prototype-login-screen lg-screen">
-      <div className="lg-photo" style={{ backgroundImage: `url(${photo.src})` }}>
+      <div className="lg-photo">
+        <LoginPhotos />
         <p className="lg-say">
           숨은 여행 혜택을
           <br />
           지도에서 찾아요
         </p>
-        <span className="lg-credit">{photo.credit}</span>
       </div>
       <div className="lg-body">
         <div className="ds-auth-form-shell lg-shell">
@@ -1093,5 +1094,34 @@ export function OAuthCallbackPage() {
       )}
       </AuthFormShell>
     </section>
+  );
+}
+
+export const LOGIN_PHOTO_MS = 6000;
+
+/* 로그인 사진(시안 v54): 지역 8곳 중 무작위로 시작해 6초마다 천천히 다음 장으로(account.css 의 겹침 전환).
+   기기의 '동작 줄이기'면 넘기지 않는다. 출처는 사진 위에 적지 않는다 - CC0 · 퍼블릭 도메인이고 앱 안 '사진 출처'에 있다.
+   여덟 장을 한꺼번에 받지 않게 지금 · 앞 · 다음 장에만 사진을 건다(지나간 장은 브라우저가 이미 갖고 있다). */
+function LoginPhotos() {
+  const count = LOGIN_PHOTOS.length;
+  const [index, setIndex] = useState(() => Math.floor(Math.random() * count));
+  const reduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  useEffect(() => {
+    if (reduceMotion) return;
+    const timer = window.setInterval(() => setIndex((current) => (current + 1) % count), LOGIN_PHOTO_MS);
+    return () => window.clearInterval(timer);
+  }, [reduceMotion, count]);
+  const near = (i: number) => i === index || i === (index + 1) % count || i === (index + count - 1) % count;
+  return (
+    <>
+      {LOGIN_PHOTOS.map((photo, i) => (
+        <span
+          aria-hidden="true"
+          className={i === index ? "lg-ph on" : "lg-ph"}
+          key={photo.src}
+          style={near(i) ? { backgroundImage: `url(${photo.src})` } : undefined}
+        />
+      ))}
+    </>
   );
 }
