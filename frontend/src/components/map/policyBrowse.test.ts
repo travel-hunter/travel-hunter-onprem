@@ -7,6 +7,7 @@ import {
   chipCounts,
   deadlineChip,
   lowerBrowseState,
+  nearOn,
   readBrowseState,
   regionSummary,
   searchBrowse,
@@ -105,7 +106,7 @@ describe("policy tab browse model", () => {
 
 describe("policy tab layers in the URL", () => {
   const state = (patch: Partial<BrowseState>): BrowseState => ({
-    region: null, city: null, program: null, filter: null, sheet: "mid", search: false, detail: null, ...patch,
+    region: null, city: null, program: null, filter: null, sheet: "mid", search: false, detail: null, near: null, ...patch,
   });
 
   it("reads the old list and open-sheet links as the new stops", () => {
@@ -127,6 +128,17 @@ describe("policy tab layers in the URL", () => {
       current = lowerBrowseState(current);
     }
     expect(depths).toEqual([4, 3, 2, 1, 1, 0]);
+  });
+
+  it("keeps the place found by location only while its region and city stay picked", () => {
+    const near = { name: "오동도", lat: 34.745, lng: 127.766, sido: "전남", region: "전남", city: "여수", note: null };
+    const params = writeBrowseState(new URLSearchParams(), state({ region: "전남", city: "여수", near }));
+    const read = readBrowseState(params);
+    expect(read.near).toEqual(near);
+    expect(nearOn(read)).toEqual(near);
+    expect(nearOn({ ...read, city: "광양" })).toBeNull();
+    expect(readBrowseState(new URLSearchParams("near=%7Bbroken")).near).toBeNull();
+    expect(readBrowseState(new URLSearchParams(`near=${encodeURIComponent('{"name":1}')}`)).near).toBeNull();
   });
 
   it("on wide screens peels the panel detail first and ignores the sheet stop", () => {

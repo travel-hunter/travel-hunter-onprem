@@ -980,6 +980,31 @@
     },
     {
       "method": "GET",
+      "path": "/api/places/search",
+      "status": 200,
+      "authRequired": true,
+      "query": {
+        "query": "오동도"
+      },
+      "requiredArrayItemFields": {
+        "kind": "string enum(place|area)",
+        "id": "string",
+        "name": "string"
+      },
+      "optionalArrayItemFields": {
+        "category": "string|null",
+        "categoryCode": "string|null",
+        "address": "string|null",
+        "latitude": "number|null",
+        "longitude": "number|null",
+        "placeUrl": "string|null",
+        "sido": "string|null",
+        "city": "string|null"
+      },
+      "dbModeBehavior": "Authenticated users search Kakao Local places for the unified search (home place list, policy tab 'find by location'). Not tied to a trip and mutates nothing. Keyword search, plus Kakao address search when the query ends in a dong/eup/myeon/ri/N-ga so every same-named area comes back (kind=area, listed first). Each item carries the map region (sido) and city resolved from the Kakao address server-side; 전남광주통합특별시 maps to 광주 for 구 and 전남 for 시/군. Queries shorter than 2 chars, Kakao disabled, or Kakao failures return []."
+    },
+    {
+      "method": "GET",
       "path": "/api/trips/1/recommendations",
       "status": 200,
       "requiredArrayItemFields": {

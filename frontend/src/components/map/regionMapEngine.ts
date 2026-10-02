@@ -26,6 +26,8 @@ export type PolicyRegionMapHandle = {
   setView(view: { visible: number | null; low: boolean }): void;
   /** 고른 지역 안의 시·군 점(건수). 이름은 SIGUN_POINTS 의 "시도|시군" 뒤쪽이다. */
   setPlaces(places: readonly RegionMapPlace[], selected: string | null): void;
+  /** 위치로 찾은 장소 자리(도안 단위, 삽입 지도 옮김 포함). null 이면 뺀다 */
+  setPin(pin: readonly [number, number] | null): void;
   resize(): void;
   destroy(): void;
 };
@@ -52,7 +54,7 @@ type Box = { x: number; y: number; w: number; h: number };
 /* 도안 단위(200 x 269) 전체 틀. 제주를 옮긴 뒤의 땅이 여백 없이 들어온다 */
 const FULL_VB: Readonly<Box> = { x: 56, y: -2, w: 145, h: 219 };
 /* 제주는 오른쪽 아래 바다에 따로 그린다 - 섬까지의 빈 바다가 빠진 만큼 본토가 커진다 */
-const INSET: Record<string, readonly [number, number]> = { 제주: [106, -31] };
+export const INSET: Record<string, readonly [number, number]> = { 제주: [106, -31] };
 const INSET_FRAME = { x: 165.5, y: 193.5, w: 35, h: 22 } as const;
 /* 이름표 자리. 도형 기본 자리(lx, ly)가 이웃과 부딪히는 곳만 옮긴다 */
 const LABEL_AT: Record<string, readonly [number, number]> = {
@@ -169,6 +171,7 @@ export function createPolicyRegionMap(
   let viewSet = false;
   let placeItems: readonly RegionMapPlace[] = [];
   let placeSel: string | null = null;
+  let pin: readonly [number, number] | null = null;
   let dotHits: Array<{ name: string; sx: number; sy: number; lab: Rect | null }> = [];
 
   /* --- viewBox --- */
@@ -313,9 +316,19 @@ export function createPolicyRegionMap(
         g.appendChild(t);
         labels.appendChild(g);
       }
-      return;
-    }
-    drawFocus(focus, ppu);
+    } else drawFocus(focus, ppu);
+    drawPin(ppu);
+  }
+
+  /* 위치로 찾은 장소(통합 검색) - 시군 점 위에, 화면에서 같은 크기 */
+  function drawPin(ppu: number) {
+    if (!pin) return;
+    const g = el("g", { class: "thmap-pin", "aria-hidden": "true" });
+    g.append(
+      el("circle", { class: "ring", cx: pin[0].toFixed(3), cy: pin[1].toFixed(3), r: (16 / ppu).toFixed(3) }),
+      el("circle", { class: "dot", cx: pin[0].toFixed(3), cy: pin[1].toFixed(3), r: (6 / ppu).toFixed(3) }),
+    );
+    dotLayer.appendChild(g);
   }
 
   /* 고른 도: 둘레 도 이름은 옅게만(고른 도는 지역 카드가 말한다), 도 안 혜택 있는 시군은 건수 점으로.
@@ -493,6 +506,11 @@ export function createPolicyRegionMap(
     setPlaces(places, selected) {
       placeItems = places;
       placeSel = selected;
+      paint();
+    },
+    setPin(next) {
+      if (next === pin || (next && pin && next[0] === pin[0] && next[1] === pin[1])) return;
+      pin = next;
       paint();
     },
     destroy() {

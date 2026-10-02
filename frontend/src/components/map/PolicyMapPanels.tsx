@@ -1,8 +1,9 @@
-import { Search } from "lucide-react";
+import { ChevronLeft, MapPin, Search } from "lucide-react";
 import { useLayoutEffect, useRef, type RefObject } from "react";
-import type { Policy } from "../../api";
+import type { PlaceSearchItem, Policy } from "../../api";
 import { BenefitTile } from "../benefitTile";
 import { NATIONWIDE_REGION } from "../../utils/policyPrograms";
+import { geoToMap, nearTarget, type NearTarget } from "./nearby";
 import { REGION_PHOTOS } from "./regionPhotos";
 import {
   BROWSE_FILTERS,
@@ -200,24 +201,57 @@ function Marked({ text, query }: { text: string; query: string }) {
 /* 돋보기: 비워 두면 지역 사진 칸, 치면 시도·시군·사업. 엔터는 첫 결과 */
 /* 검색 결과 칸. 입력은 정책 탭 맨 위 검색창 하나가 맡는다(2026-09-30 사용자 결정: 검색창을 하나로).
    비워 두면 지역 사진 칸, 치면 지역·시군·혜택 이름. 끝의 '모두 보기'는 정책 글 전체에서 찾는 목록으로 간다. */
+/* 위치로 찾기 한 줄: 장소들을 시군으로 묶는다(같은 시군이면 한 줄). label = 근처 줄에 쓸 이름 */
+type NearGroup = { key: string; item: PlaceSearchItem; label: string; title: string; target: NearTarget };
+
+function nearGroups(policies: readonly Policy[], items: readonly PlaceSearchItem[], q: string): NearGroup[] {
+  const by = new Map<string, PlaceSearchItem[]>();
+  for (const item of items) {
+    if (!item.sido || item.latitude == null || item.longitude == null) continue;
+    const key = `${item.sido}|${item.city ?? ""}`;
+    by.set(key, [...(by.get(key) ?? []), item]);
+  }
+  return Array.from(by, ([key, list]) => {
+    const area = list.find((item) => item.kind === "area");
+    const named = list.find((item) => item.kind === "place" && item.name.includes(q));
+    const item = area ?? named ?? list[0];
+    const city = item.city ?? "";
+    // 동 이름처럼 장소가 아니면 '여수 중앙동', 장소 이름이 맞으면 그 이름들
+    const label = area ? area.name : named ? named.name : q.includes(city) || !city ? q : `${city} ${q}`;
+    const places = list.filter((entry) => entry.kind === "place").map((entry) => entry.name);
+    const title = area || !named ? label : places.slice(0, 2).join(", ") + (places.length > 2 ? ` 외 ${places.length - 2}곳` : "");
+    const target = nearTarget(policies, item.sido ?? null, item.city ?? null, geoToMap(item.sido as string, item.latitude as number, item.longitude as number));
+    return { key, item, label, title, target };
+  });
+}
+
 export function PolicySearchPanel({
   policies,
   region,
   query,
   fullTextCount,
+  places = null,
   onShowAll,
   onPickRegion,
   onPickPlace,
   onPickProgram,
+  onPickNear,
+  onClose,
 }: {
   policies: Policy[];
   region: string | null;
   query: string;
   fullTextCount: number;
+  /** 장소 검색 결과(카카오). null = 아직 안 찾았거나 찾는 중 */
+  places?: PlaceSearchItem[] | null;
   onShowAll: () => void;
   onPickRegion: (region: string) => void;
   onPickPlace: (region: string, place: string) => void;
   onPickProgram: (program: string) => void;
+  /** 위치로 찾기 줄 - 그 장소의 근처 혜택으로 */
+  onPickNear?: (item: PlaceSearchItem, label: string, target: NearTarget) => void;
+  /** 머리의 ‹ - 검색을 나온다(들어오기 전 화면의 반반) */
+  onClose?: () => void;
 }) {
   const q = query.trim();
   const counts = policies.reduce<Record<string, number>>((acc, policy) => {
@@ -226,8 +260,22 @@ export function PolicySearchPanel({
   }, {});
   const found = q ? searchBrowse(policies, q) : null;
   const regionLine = (name: string, count: number) => `${REGION_FULL_NAMES[name]} · ${count ? `혜택 ${count}건` : "전용 혜택 없음"}`;
+  /* 위치로 찾기: 지역 · 시군 이름이 안 맞을 때만(맞으면 그 줄이 먼저다 - 시안 v56) */
+  const near = found && !found.regions.length && !found.places.length && places && onPickNear ? nearGroups(policies, places, q) : [];
+  const searching = Boolean(found && !found.regions.length && !found.places.length && q.length >= 2 && places === null);
   return (
     <div className="thmap-search" role="region" aria-label="지역·혜택 검색 결과" id="policy-search-panel">
+      {onClose && (
+        <div className="thmap-search-head">
+          <button className="thmap-hback" type="button" aria-label="검색 닫기" onClick={onClose}>
+            <ChevronLeft size={22} aria-hidden="true" />
+          </button>
+          <div>
+            <h2 className="thmap-title">지역 · 혜택 찾기</h2>
+            <p className="thmap-hsub">지역을 고르거나 아는 장소를 쳐 보세요</p>
+          </div>
+        </div>
+      )}
       <div className="thmap-search-body">
         {!found && (
           <>
@@ -282,8 +330,25 @@ export function PolicySearchPanel({
             ))}
           </>
         )}
-        {found && !found.regions.length && !found.places.length && !found.programs.length && !fullTextCount && (
-          <p className="thmap-sres-empty">‘{q}’에 맞는 지역이나 혜택이 없어요. 시군은 혜택이 있는 곳만 찾을 수 있어요.</p>
+        {near.length > 0 && (
+          <>
+            <h3>위치로 찾기<span className="src">근처 혜택으로</span></h3>
+            {near.map((group) => (
+              <button className="thmap-sres-row" key={group.key} type="button" onClick={() => onPickNear?.(group.item, group.label, group.target)}>
+                <span className="thmap-near-ic" aria-hidden="true"><MapPin size={18} /></span>
+                <span className="tx">
+                  <b>{group.title}</b>
+                  <span>
+                    <span className="thmap-near-to">→ {group.item.sido} {group.item.city}</span> · {group.target.region === NATIONWIDE_REGION ? "전국 공통 혜택" : group.target.note ? "근처 혜택" : "혜택"} {group.target.count}건
+                  </span>
+                </span>
+              </button>
+            ))}
+          </>
+        )}
+        {searching && <p className="thmap-sres-empty">아는 장소로 찾는 중…</p>}
+        {found && !found.regions.length && !found.places.length && !found.programs.length && !fullTextCount && !near.length && !searching && (
+          <p className="thmap-sres-empty">‘{q}’에 맞는 지역 · 혜택 · 장소가 없어요.</p>
         )}
         {/* 이름에는 없어도 정책 글(기관·요약·조건)에 들어 있는 것까지 - 예전 검색창이 하던 일 */}
         {found && fullTextCount > 0 && (

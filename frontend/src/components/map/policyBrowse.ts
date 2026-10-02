@@ -235,6 +235,9 @@ export function regionTiles(policies: Policy[]) {
    depth 가 늘 때만 기록을 쌓고(useBrowseHistory), 같은 층끼리 옮기는 건(지역 → 다른 지역) 덮어쓴다. */
 export type SheetStop = "low" | "mid" | "full";
 
+/** 위치로 찾은 곳(통합 검색) - 지도 핀과 '○○ 근처'. 고른 지역 · 시군이 region · city 와 같을 때만 그린다 */
+export type NearAnchor = { name: string; lat: number; lng: number; sido: string; region: string; city: string | null; note: string | null };
+
 export type BrowseState = {
   region: string | null;
   city: string | null;
@@ -244,7 +247,20 @@ export type BrowseState = {
   search: boolean;
   /** 넓은 화면: 목록 패널이 보이는 정책 상세(slug). 좁은 화면은 쓰지 않는다 - 상세는 따로 연다 */
   detail: string | null;
+  /** 위치로 찾은 곳. 층이 아니라 지금 층의 속성이다 */
+  near: NearAnchor | null;
 };
+
+function readNear(raw: string | null): NearAnchor | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as Partial<NearAnchor>;
+    if (typeof v.name !== "string" || typeof v.lat !== "number" || typeof v.lng !== "number" || typeof v.region !== "string" || typeof v.sido !== "string") return null;
+    return { name: v.name.slice(0, 60), lat: v.lat, lng: v.lng, sido: v.sido, region: v.region, city: typeof v.city === "string" ? v.city : null, note: typeof v.note === "string" ? v.note.slice(0, 120) : null };
+  } catch {
+    return null;
+  }
+}
 
 export function readBrowseState(params: URLSearchParams): BrowseState {
   /* region= 은 예전 지역 필터 주소다(필터 목록 화면이 없어진 뒤로 지도 선택과 같다) */
@@ -261,8 +277,13 @@ export function readBrowseState(params: URLSearchParams): BrowseState {
     sheet: sheet === "low" ? "low" : sheet === "full" || params.get("view") === "list" ? "full" : "mid",
     search: params.get("find") === "1",
     detail: params.get("detail") || null,
+    near: readNear(params.get("near")),
   };
 }
+
+/** 근처가 지금 화면 것인지 - 다른 지역 · 시군으로 옮기면 저절로 사라진다 */
+export const nearOn = (state: BrowseState) =>
+  state.near && state.near.region === state.region && state.near.city === state.city ? state.near : null;
 
 export function writeBrowseState(params: URLSearchParams, state: BrowseState): URLSearchParams {
   const next = new URLSearchParams(params);
@@ -274,6 +295,7 @@ export function writeBrowseState(params: URLSearchParams, state: BrowseState): U
   put("sheet", state.sheet === "mid" ? null : state.sheet);
   put("find", state.search ? "1" : null);
   put("detail", state.detail);
+  put("near", state.near ? JSON.stringify(state.near) : null);
   // 예전 필터 목록 화면의 키 - 조건은 이제 주소 밖(policyConditions)에 있다
   for (const legacy of ["view", "region", "category", "period", "amount", "saved"]) next.delete(legacy);
   return next;

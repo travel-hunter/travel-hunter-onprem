@@ -1,5 +1,6 @@
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -1091,6 +1092,66 @@ describe("Travel Hunter app — policies & trip picker", () => {
     }
   });
 
+  it("comes back from a policy to the same list position and opened groups on a phone", async () => {
+    const policies: Policy[] = [
+      { ...examplePolicyDetail, id: "yg", slug: "yg", title: "[영광] 디지털관광주민증 혜택", region: "전남" },
+      { ...examplePolicyDetail, id: "wd", slug: "wd", title: "[완도] 디지털관광주민증 혜택", region: "전남" },
+    ];
+    const policyListSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+      await waitForSheet("모든 지역 2건");
+      const user = userEvent.setup();
+      // 모든 지역은 묶음이 접힌 채 시작한다 - 열고 목록을 내린 뒤 정책으로 들어간다
+      await user.click(document.querySelector(".thmap-grp-btn") as HTMLElement);
+      await waitFor(() => expect(document.querySelector(".thmap-grp.open")).toBeTruthy());
+      const list = document.querySelector(".thmap-list") as HTMLElement;
+      list.scrollTop = 140;
+      fireEvent.scroll(list);
+      await user.click(document.querySelector(".thmap-grp.open .thmap-kid-link") as HTMLElement);
+      await waitFor(() => expect(routeLocation().pathname).toMatch(/^\/policies\/(yg|wd)$/));
+      // 휴대폰은 상세가 다른 주소라 시트가 사라졌다 다시 생긴다 - 연 묶음과 스크롤 자리는 그대로여야 한다(10/3)
+      goBack();
+      await waitFor(() => expect(routeLocation().pathname).toBe("/policies"));
+      await waitForSheet("모든 지역 2건");
+      expect(document.querySelector(".thmap-grp.open")).toBeTruthy();
+      await waitFor(() => expect((document.querySelector(".thmap-list") as HTMLElement).scrollTop).toBe(140));
+    } finally {
+      policyListSpy.mockRestore();
+    }
+  });
+
+  it("closing a group that started open leaves its visible head under the finger", async () => {
+    const policies: Policy[] = [
+      { ...examplePolicyDetail, id: "yg", slug: "yg", title: "[영광] 디지털관광주민증 혜택", region: "전남" },
+      { ...examplePolicyDetail, id: "wd", slug: "wd", title: "[완도] 디지털관광주민증 혜택", region: "전남" },
+    ];
+    const policyListSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
+    const box = (top: number, height: number) =>
+      ({ top, bottom: top + height, left: 0, right: 390, width: 390, height, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies?place=전남");
+      await waitForSheet("전남 2건");
+      const user = userEvent.setup();
+      // 지역 화면은 묶음이 펼친 채 시작한다. 머리가 목록 안에 보이는 채로 닫으면 목록을 굴리지 않는다
+      // (예전에는 머리를 목록 맨 위로 끌어올려 누른 자리가 손가락 밑에서 달아났다)
+      const list = document.querySelector(".thmap-list") as HTMLElement;
+      const head = document.querySelector(".thmap-grp.open .thmap-grp-btn") as HTMLElement;
+      list.scrollTop = 50;
+      list.getBoundingClientRect = () => box(100, 500);
+      head.getBoundingClientRect = () => box(300, 56);
+      await user.click(head);
+      await waitFor(() => expect(document.querySelector(".thmap-grp.open")).toBeNull());
+      expect(list.scrollTop).toBe(50);
+    } finally {
+      policyListSpy.mockRestore();
+    }
+  });
+
   it("opens the same screen straight from the URL", async () => {
     const mapPolicies: Policy[] = [
       { ...examplePolicyDetail, id: "map-jeonnam", slug: "map-jeonnam", title: "전남 해안 혜택", region: "전남" },
@@ -1144,13 +1205,20 @@ describe("Travel Hunter app — policies & trip picker", () => {
       renderAppRoute("/policies");
       await waitForSheet("모든 지역 2건");
       const user = userEvent.setup();
-      // 검색창은 맨 위 하나 - 누르면 지역·혜택 검색 칸이 열리고 '필터' 자리에 '닫기'
+      // 검색창은 맨 위 하나 - 누르면 지역·혜택 검색 칸이 열린다. 검색창은 모양 그대로(필터 단추가 남는다, 시안 v56)
       const searchbox = screen.getByRole("searchbox", { name: "정책 검색" });
       await user.click(searchbox);
-      const panel = await screen.findByRole("region", { name: "지역·혜택 검색 결과" });
+      let panel = await screen.findByRole("region", { name: "지역·혜택 검색 결과" });
       expect(screen.queryByRole("button", { name: "지역·혜택 검색" })).toBeNull();
-      expect(screen.queryByRole("button", { name: "필터 열기" })).toBeNull();
-      expect(screen.getByRole("button", { name: "닫기" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "필터 열기" })).toBeInTheDocument();
+      expect(searchbox).toHaveAttribute("placeholder", "정책명, 지역, 혜택 검색");
+      expect(within(panel).getByRole("heading", { name: "지역 · 혜택 찾기" })).toBeInTheDocument();
+      // 칸 머리 ‹ 로 나오면 들어오기 전 화면 그대로
+      await user.click(within(panel).getByRole("button", { name: "검색 닫기" }));
+      await waitFor(() => expect(screen.queryByRole("region", { name: "지역·혜택 검색 결과" })).toBeNull());
+      await waitForSheet("모든 지역 2건");
+      await user.click(searchbox);
+      panel = await screen.findByRole("region", { name: "지역·혜택 검색 결과" });
       // 비워 두면 지역 사진 칸 - 혜택 많은 순
       expect(within(panel).getAllByRole("button", { pressed: false })[0]).toHaveTextContent("전라남도혜택 2건");
       await user.type(searchbox, "완도");
@@ -1167,6 +1235,59 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await waitForSheet("모든 지역 2건");
     } finally {
       policyListSpy.mockRestore();
+    }
+  });
+
+  it("finds benefits near a place the user only half remembers and pins it on the map", async () => {
+    const policies: Policy[] = [
+      { ...examplePolicyDetail, id: "ys", slug: "ys", title: "[여수] 숙박 할인", region: "전남" },
+      { ...examplePolicyDetail, id: "gy", slug: "gy", title: "[광양] 숙박 할인", region: "전남" },
+    ];
+    const policyListSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
+    const placeSpy = vi.spyOn(appDataApi, "searchPlaces").mockResolvedValue([
+      { kind: "place", id: "kakao:1", name: "오동도", category: "섬", address: "전남광주통합특별시 여수시 수정동 1", latitude: 34.745, longitude: 127.766, sido: "전남", city: "여수" },
+      { kind: "place", id: "kakao:2", name: "오동도 등대", category: "등대", address: "전남광주통합특별시 여수시 수정동 2", latitude: 34.744, longitude: 127.767, sido: "전남", city: "여수" },
+    ]);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+      await waitForSheet("모든 지역 2건");
+      const user = userEvent.setup();
+      const searchbox = screen.getByRole("searchbox", { name: "정책 검색" });
+      // 지역 · 시군 이름이면 서버에 묻지 않는다
+      await user.type(searchbox, "여수");
+      const panel = await screen.findByRole("region", { name: "지역·혜택 검색 결과" });
+      await within(panel).findByRole("button", { name: /여수.*전남 · 혜택 1건/ });
+      await user.clear(searchbox);
+      await user.type(searchbox, "오동도");
+      // 같은 시군 장소는 한 줄로 - 그 시군의 혜택으로 잇는다
+      const row = await within(panel).findByRole("button", { name: /오동도, 오동도 등대.*→ 전남 여수 · 혜택 1건/ });
+      expect(placeSpy).toHaveBeenCalledTimes(1);
+      expect(placeSpy.mock.calls[0][0]).toBe("오동도");
+      await user.click(row);
+      await waitForSheet("여수 1건");
+      expect(screen.getByText("오동도 근처")).toBeInTheDocument();
+      expect(document.querySelector(".thmap-pin")).toBeTruthy();
+      expect(new URLSearchParams(routeLocation().search).get("city")).toBe("여수");
+      // 가까운 시군 - 누르면 그 시군으로, 핀 · 칩 순서는 그대로이고 보고 있는 시군만 눌린 모양
+      const chipNames = () => within(screen.getByRole("group", { name: "가까운 시군" })).getAllByRole("button").map((chip) => chip.textContent);
+      const before = chipNames();
+      expect(within(screen.getByRole("group", { name: "가까운 시군" })).getByRole("button", { name: /여수/ })).toHaveAttribute("aria-pressed", "true");
+      await user.click(within(screen.getByRole("group", { name: "가까운 시군" })).getByRole("button", { name: /광양/ }));
+      await waitForSheet("광양 1건");
+      expect(chipNames()).toEqual(before);
+      expect(within(screen.getByRole("group", { name: "가까운 시군" })).getByRole("button", { name: /광양/ })).toHaveAttribute("aria-pressed", "true");
+      expect(document.querySelector(".thmap-pin")).toBeTruthy();
+      // 다른 시군으로 옮기면(전남 전체) 핀과 근처 줄이 사라진다
+      await user.click(screen.getByRole("button", { name: "전남 전체" }));
+      await waitForSheet("전남 2건");
+      expect(screen.queryByText("오동도 근처")).toBeNull();
+      expect(document.querySelector(".thmap-pin")).toBeNull();
+      expect(new URLSearchParams(routeLocation().search).get("near")).toBeNull();
+    } finally {
+      policyListSpy.mockRestore();
+      placeSpy.mockRestore();
     }
   });
 

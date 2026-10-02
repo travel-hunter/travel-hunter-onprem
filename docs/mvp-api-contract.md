@@ -1284,6 +1284,49 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
 - 404: 일정 없음 또는 접근 권한 없음
 - 422: `query` 누락/길이 위반
 
+### GET /places/search
+
+홈 · 정책 탭 통합 검색의 장소 찾기(시안 v56). 일정과 무관하다 - 로그인한 사용자 누구나. 카카오 로컬 키워드 검색으로 장소를 찾고, 찾을 말이 동 · 읍 · 면 · 리 · `N가`로 끝나면 카카오 주소 검색도 불러 같은 이름의 구역을 전국에서 함께 준다(`kind: "area"`, 장소보다 앞). 항목마다 서버가 주소로 지도 도(`sido`, 정책 `region` 과 같은 짧은 이름)와 시군(`city`, 정책 제목 `[시군]` 과 맞추는 짧은 이름)을 붙인다 - 주소 첫 낱말이 `전남광주통합특별시`이면 둘째 낱말이 구일 때 광주, 시 · 군일 때 전남. 가리지 못하면 `null`. 카카오가 꺼져 있거나 실패하면 빈 배열(오류 아님).
+
+**Query**
+- `query`: string, 1-80 chars. 두 글자 미만이면 빈 배열.
+
+**Response 200** → `PlaceSearchItem[]`
+```json
+[
+  {
+    "kind": "area",
+    "id": "area:4613010100",
+    "name": "여수시 중앙동",
+    "category": null,
+    "categoryCode": null,
+    "address": "전남광주통합특별시 여수시 중앙동",
+    "latitude": 34.737,
+    "longitude": 127.738,
+    "placeUrl": null,
+    "sido": "전남",
+    "city": "여수"
+  },
+  {
+    "kind": "place",
+    "id": "kakao:8193468",
+    "name": "오동도",
+    "category": "섬",
+    "categoryCode": "AT4",
+    "address": "전남광주통합특별시 여수시 수정동 1-1",
+    "latitude": 34.744,
+    "longitude": 127.766,
+    "placeUrl": "http://place.map.kakao.com/8193468",
+    "sido": "전남",
+    "city": "여수"
+  }
+]
+```
+
+**Errors**
+- 401: 인증 필요
+- 422: `query` 누락/길이 위반
+
 ### GET /trips/{trip_id}/recommendations
 
 Returns additional AI place candidates for the trip. The backend treats `(sourceProvider, externalPlaceId)` as the durable external identity, then applies a conservative same-provider `externalPlaceId` and normalized-title duplicate exclusion for existing MVP data. Kakao-backed candidates include official Kakao Local API map metadata when available; ratings/reviews are not exposed because the official API response does not provide those fields. When official Kakao data can supply enough non-duplicate places, the response targets at least 10 candidates with a useful mix of attractions, food, and stays; sparse categories are backfilled from other official candidates instead of creating synthetic places. The endpoint returns dynamic `sourceType="freshCandidate"` items first and reads `recommendations.result` only when no fresh candidate is available. New trip creation does not seed saved summaries. `sourceType="savedSummary"` is reserved for existing persisted rows or a future explicit recommendation-persistence contract. The current live row is a development-seed specimen, not proven production legacy history. No runtime writer, TTL, or purge is added until that product contract exists.

@@ -9,6 +9,7 @@ from app.core.config import Settings, settings
 
 
 KAKAO_LOCAL_KEYWORD_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
+KAKAO_LOCAL_ADDRESS_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/address.json"
 KAKAO_LOCAL_DEFAULT_SIZE = 15
 KAKAO_LOCAL_DEFAULT_SORT = "accuracy"
 
@@ -31,6 +32,19 @@ class KakaoLocalPlace:
     place_url: str | None
 
 
+@dataclass(frozen=True)
+class KakaoLocalArea:
+    """주소 검색의 행정 구역 한 곳(address_type REGION). '중앙동'처럼 같은 이름이 여러 시군에 있다."""
+
+    address_name: str
+    region_1depth_name: str
+    region_2depth_name: str
+    region_3depth_name: str
+    b_code: str | None
+    latitude: float | None
+    longitude: float | None
+
+
 class KakaoLocalSearchProvider(Protocol):
     def search_keyword(
         self,
@@ -41,6 +55,9 @@ class KakaoLocalSearchProvider(Protocol):
         size: int = KAKAO_LOCAL_DEFAULT_SIZE,
         sort: str = KAKAO_LOCAL_DEFAULT_SORT,
     ) -> list[KakaoLocalPlace]:
+        ...
+
+    def search_address(self, *, query: str, size: int = 30) -> list[KakaoLocalArea]:
         ...
 
 
@@ -145,6 +162,43 @@ class KakaoLocalClient:
             except ValueError:
                 continue
         return places
+
+    def search_address(self, *, query: str, size: int = 30) -> list[KakaoLocalArea]:
+        """주소 검색(구역만). analyze_type=similar - '중앙동'이면 전국의 중앙동이 다 온다."""
+
+        key = self._settings.kakao_local_rest_api_key.strip()
+        if not key:
+            raise KakaoLocalConfigurationError("KAKAO_LOCAL_REST_API_KEY is required.")
+        try:
+            response = self._http_get(
+                KAKAO_LOCAL_ADDRESS_SEARCH_URL,
+                headers={"Authorization": f"KakaoAK {key}"},
+                params={"query": query.strip(), "size": size, "analyze_type": "similar"},
+                timeout=self._settings.kakao_local_timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except httpx.HTTPError as exc:
+            raise KakaoLocalConfigurationError(str(exc))
+        documents = payload.get("documents", []) if isinstance(payload, dict) else []
+        if not isinstance(documents, list):
+            return []
+        return [area for area in (_to_area(d) for d in documents if isinstance(d, dict)) if area is not None]
+
+
+def _to_area(document: dict[str, Any]) -> KakaoLocalArea | None:
+    if not str(document.get("address_type", "")).startswith("REGION"):
+        return None   # 지번 · 도로명 한 곳은 장소 검색이 맡는다 - 여기서는 동 · 읍 · 면 같은 구역만
+    address = document.get("address") if isinstance(document.get("address"), dict) else {}
+    return KakaoLocalArea(
+        address_name=str(document.get("address_name", "")).strip(),
+        region_1depth_name=str(address.get("region_1depth_name", "")).strip(),
+        region_2depth_name=str(address.get("region_2depth_name", "")).strip(),
+        region_3depth_name=str(address.get("region_3depth_name") or address.get("region_3depth_h_name") or "").strip(),
+        b_code=(address.get("b_code") or None),
+        latitude=parse_float_or_none(document.get("y")),
+        longitude=parse_float_or_none(document.get("x")),
+    )
 
 
 def build_kakao_local_client(

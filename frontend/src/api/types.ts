@@ -384,6 +384,21 @@ export type PlaceSearchCandidate = {
   externalPlaceId?: string | null;
 };
 
+/** 통합 검색의 장소 한 곳(place) 또는 동 · 읍 · 면 구역(area). sido · city 는 서버가 주소로 가린 지도 도 · 시군 */
+export type PlaceSearchItem = {
+  kind: "place" | "area";
+  id: string;
+  name: string;
+  category?: string | null;
+  categoryCode?: string | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  placeUrl?: string | null;
+  sido?: string | null;
+  city?: string | null;
+};
+
 export type RegionRecommendation = {
   region: string;
   title: string;

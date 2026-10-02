@@ -1,7 +1,7 @@
 import { ChevronLeft, Heart, Search, Share2, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { appDataApi, type ApplicationGuide, type ApplicationGuideRound, type LinkedTripPolicy, type Policy, type PolicyCategory, type Trip } from "../api";
+import { appDataApi, type ApplicationGuide, type ApplicationGuideRound, type LinkedTripPolicy, type PlaceSearchItem, type Policy, type PolicyCategory, type Trip } from "../api";
 import { useAsyncResource } from "../api/useAsyncResource";
 import { useSession } from "../app/session";
 import { Button, EmptyState, ErrorState, IconButton, LinkButton, LoadingState, Tag, Toast } from "../components/ui";
@@ -11,7 +11,8 @@ import { PolicyMapSheet } from "../components/map/PolicyMapSheet";
 import { cityOf, NATIONWIDE_REGION } from "../utils/policyPrograms";
 import { REGION_NAMES, type RegionCounts } from "../components/map/regionMapEngine";
 import { BrowseChips, PolicySearchPanel, RegionSummaryCard } from "../components/map/PolicyMapPanels";
-import { BROWSE_FILTERS, browseDepthOf, browseView, chipCounts, lowerBrowseState, matchesBrowseFilter, programName, readBrowseState, writeBrowseState, type BrowseFilter, type BrowseState } from "../components/map/policyBrowse";
+import { BROWSE_FILTERS, browseDepthOf, browseView, chipCounts, lowerBrowseState, matchesBrowseFilter, nearOn, programName, readBrowseState, searchBrowse, writeBrowseState, type BrowseFilter, type BrowseState } from "../components/map/policyBrowse";
+import { geoToMap, nearbyCities, shortCity, type NearTarget } from "../components/map/nearby";
 import { useBrowseHistory } from "../components/map/useBrowseHistory";
 import { AMOUNT_FILTERS, conditionCount, conditionLabel, NO_CONDITIONS, PERIOD_FILTERS, setPolicyConditions, usePolicyConditions, type AmountFilter, type PeriodFilter, type PolicyConditions } from "../components/map/policyConditions";
 import { MAP_FILLS } from "../components/map/regionMapEngine";
@@ -308,7 +309,7 @@ export function PolicyListPage() {
   const navigate = useNavigate();
   const browseHistory = useBrowseHistory(isDesktop ? deskBrowseDepthOf : browseDepthOf);
   const { go: goBrowse, back: backBrowse } = browseHistory;
-  const setBrowse = (next: BrowseState) => goBrowse(writeBrowseState(searchParams, next));
+  const setBrowse = (next: BrowseState) => goBrowse(writeBrowseState(searchParams, next.near && !nearOn(next) ? { ...next, near: null } : next));
   /* 지도·칩·검색으로 옮기면 패널 상세는 목록으로 돌아간다 */
   const base: BrowseState = { ...browse, detail: null };
   const openDetail = (policy: Policy) => setBrowse({ ...browse, detail: policy.slug, search: false });
@@ -322,6 +323,8 @@ export function PolicyListPage() {
   useEffect(() => {
     if (!browse.search) setPanelQuery("");
   }, [browse.search]);
+  /* 위치로 찾기(시안 v56): 지역 · 시군 이름이 안 맞는 말만 서버 장소 검색(카카오)에 묻는다. null = 찾는 중 */
+  const [places, setPlaces] = useState<PlaceSearchItem[] | null>(null);
   /* 시트가 선 자리의 윗변 - 지도가 그 위쪽에 그림을 맞춘다 */
   const [coverTop, setCoverTop] = useState<number | null>(null);
   const { savedSlugs, addSavedSlug, removeSavedSlug } = useSession();
@@ -402,6 +405,13 @@ export function PolicyListPage() {
   const clearBrowse = () =>
     setBrowse(browse.city ? { ...base, city: null } : { ...base, region: null, city: null, program: null });
   const lowered = lowerBrowseState(browse, isDesktop);
+  /* 위치로 찾은 곳 - 지금 고른 지역 · 시군 것일 때만 핀 · 근처 줄 · 가까운 시군 */
+  const nearHere = nearOn(browse);
+  const pin = useMemo(
+    () => (nearHere ? geoToMap(nearHere.sido, nearHere.lat, nearHere.lng) : null),
+    // 주소에서 매번 새로 읽는 객체라 값으로 비교한다
+    [nearHere?.sido, nearHere?.lat, nearHere?.lng],
+  );
   const stepBack = () => backBrowse(lowered ? writeBrowseState(searchParams, lowered) : null);
 
   /* ── 필터 창 ─────────────────────────────────────────────────── */
@@ -464,6 +474,37 @@ export function PolicyListPage() {
     () => (policies ?? []).filter((policy) => matchesConditions(policy, { ...conditions, text: "" }, savedSlugs)),
     [policies, conditions, savedSlugs],
   );
+  const placeQuery = useMemo(() => {
+    const q = panelQuery.trim();
+    if (!browse.search || q.length < 2) return "";
+    const found = searchBrowse(searchPolicies, q);
+    return found.regions.length || found.places.length ? "" : q;
+  }, [browse.search, panelQuery, searchPolicies]);
+  useEffect(() => {
+    setPlaces(null);
+    if (!placeQuery) return;
+    const control = new AbortController();
+    const timer = window.setTimeout(() => {
+      appDataApi.searchPlaces(placeQuery, { signal: control.signal }).then(setPlaces, () => {
+        if (!control.signal.aborted) setPlaces([]);
+      });
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      control.abort();
+    };
+  }, [placeQuery]);
+  /* 위치로 찾은 곳의 근처 혜택으로 - 그 시군(없으면 가장 가까운 시군 · 도 · 전국)을 고르고 지도에 핀 */
+  const pickNear = (item: PlaceSearchItem, label: string, target: NearTarget) =>
+    setBrowse({
+      ...base,
+      region: target.region,
+      city: target.city,
+      filter: dropMove(target.region),
+      sheet: "mid",
+      search: false,
+      near: { name: label, lat: item.latitude ?? 0, lng: item.longitude ?? 0, sido: item.sido ?? "", region: target.region, city: target.city, note: target.note },
+    });
   const fullTextCount = useMemo(() => {
     const q = panelQuery.trim();
     return q ? searchPolicies.filter((policy) => matchesPolicySearch(policy, q)).length : 0;
@@ -514,6 +555,7 @@ export function PolicyListPage() {
         selectedPlace={browse.city}
         onSelectPlace={pickCity}
         onBackground={mapBackground}
+        pin={pin}
       />
       {!ready ? null : browse.region && browse.region !== NATIONWIDE_REGION ? (
         <RegionSummaryCard
@@ -553,6 +595,18 @@ export function PolicyListPage() {
       showBack={Boolean(browse.region || browse.program)}
       clearLabel={browse.city ? `${browse.region} 전체` : browse.region ? "전체 지역" : null}
       conditions={conditionLine ? { label: conditionLine, onClear: clearConditions } : null}
+      near={nearHere ? {
+        label: `${nearHere.name} 근처`,
+        note: nearHere.note,
+        /* 칩은 핀 기준 거리 순으로 고정 - 눌러도 순서 · 줄 높이가 그대로고, 보고 있는 시군만 눌린 모양(10/3 사용자 지적) */
+        nearby: nearbyCities(browsePolicies, pin).slice(0, 4).map((city) => ({
+          key: `${city.region}|${city.city}`,
+          label: shortCity(city.region, city.city),
+          meta: `약 ${city.km}km · ${city.count}건`,
+          on: city.region === nearHere.region && city.city === nearHere.city,
+          onPick: () => setBrowse({ ...base, region: city.region, city: city.city, filter: dropMove(city.region), near: { ...nearHere, region: city.region, city: city.city } }),
+        })),
+      } : null}
       onStop={(stop) => setBrowse({ ...browse, sheet: stop })}
       onBack={stepBack}
       onClear={clearBrowse}
@@ -571,6 +625,9 @@ export function PolicyListPage() {
       onPickRegion={toggleRegion}
       onPickPlace={pickPlace}
       onPickProgram={pickProgram}
+      places={placeQuery ? places : []}
+      onPickNear={pickNear}
+      onClose={stepBack}
     />
   ) : null;
   /* 상세는 정책이 온 뒤에만 - 불러오는 동안 '목록에 없어요'가 잠깐 뜨고 불러오는 표시를 덮었다 */
@@ -606,24 +663,18 @@ export function PolicyListPage() {
               if (!panelOpen || event.key !== "Enter" || event.nativeEvent.isComposing) return;
               event.preventDefault();
               if (!panelQuery.trim()) return;
-              document.querySelector<HTMLButtonElement>("#policy-search-panel button")?.click();
+              document.querySelector<HTMLButtonElement>("#policy-search-panel .thmap-search-body button")?.click();
             }}
-            placeholder={panelOpen ? "지역이나 혜택 이름 (예: 여수, 반값)" : "정책명, 지역, 혜택 검색"}
+            placeholder="정책명, 지역, 혜택 검색"
             type="search"
             value={panelOpen ? panelQuery : ""}
           />
-          {panelOpen ? (
-            <button className="prototype-search-close" onClick={() => setBrowse({ ...browse, search: false })} type="button">
-              닫기
+          <div className="prototype-filter-controls">
+            <button aria-haspopup="dialog" aria-label="필터 열기" className="prototype-filter-icon-button" onClick={openFilterSheet} type="button">
+              <SlidersHorizontal aria-hidden="true" size={20} />
+              <span>{filterCount > 0 ? `필터 ${filterCount}` : "필터"}</span>
             </button>
-          ) : (
-            <div className="prototype-filter-controls">
-              <button aria-haspopup="dialog" aria-label="필터 열기" className="prototype-filter-icon-button" onClick={openFilterSheet} type="button">
-                <SlidersHorizontal aria-hidden="true" size={20} />
-                <span>{filterCount > 0 ? `필터 ${filterCount}` : "필터"}</span>
-              </button>
-            </div>
-          )}
+          </div>
         </div>
         {/* 위 칩: 혜택 형태. 칩을 고르면 지도 건수와 목록이 같이 바뀐다 */}
         {ready && (
