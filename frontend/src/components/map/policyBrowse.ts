@@ -247,7 +247,8 @@ export type BrowseState = {
 };
 
 export function readBrowseState(params: URLSearchParams): BrowseState {
-  const region = params.get("place") || null;
+  /* region= 은 예전 지역 필터 주소다(필터 목록 화면이 없어진 뒤로 지도 선택과 같다) */
+  const region = params.get("place") || params.get("region") || null;
   const sheet = params.get("sheet");
   const type = params.get("type");
   return {
@@ -273,7 +274,8 @@ export function writeBrowseState(params: URLSearchParams, state: BrowseState): U
   put("sheet", state.sheet === "mid" ? null : state.sheet);
   put("find", state.search ? "1" : null);
   put("detail", state.detail);
-  next.delete("view");
+  // 예전 필터 목록 화면의 키 - 조건은 이제 주소 밖(policyConditions)에 있다
+  for (const legacy of ["view", "region", "category", "period", "amount", "saved"]) next.delete(legacy);
   return next;
 }
 

@@ -1,8 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { appDataApi, type Policy, type PolicyPhoto as PolicyPhotoType } from "../../api";
-import { PolicyThumbPhoto } from "../../components/policyPhoto";
 import { login, renderAppRoute } from "../../test/renderAppRoute";
 
 const photo: PolicyPhotoType = {
@@ -35,9 +34,7 @@ function makePolicy(overrides: Partial<Policy> = {}): Policy {
   };
 }
 
-/* 정책 사진은 목록 카드(검색·필터 목록)와 상세에만 있다. 지도 뒤 목록 시트의 줄은 혜택 형태 그림을 쓴다.
-   지역 필터(region=)를 걸면 목록 카드 화면이 된다. */
-const listRoute = "/policies?region=전남";
+/* 정책 사진은 상세에만 있다. 정책 탭 목록(지도 뒤 시트)의 줄은 혜택 형태 그림을 쓴다 - 예전 카드 목록 화면은 없앴다(시안 v55). */
 
 describe("Travel Hunter app — policy region photos", () => {
   afterEach(() => {
@@ -74,56 +71,6 @@ describe("Travel Hunter app — policy region photos", () => {
     expect(screen.queryByRole("img", { name: "두륜산 케이블카" })).not.toBeInTheDocument();
   });
 
-  it("shows list thumbnails and a single attribution line when any photo renders", async () => {
-    vi.spyOn(appDataApi, "listPolicies").mockResolvedValue([
-      makePolicy({ photo }),
-      makePolicy({ id: "p2", slug: "p2", title: "사진 없는 정책", photo: null }),
-    ]);
-    vi.spyOn(appDataApi, "listSavedPolicies").mockResolvedValue([]);
-
-    await login();
-    cleanup();
-    renderAppRoute(listRoute);
-
-    await waitFor(() => {
-      expect(screen.getByText("해남 공식 할인")).toBeInTheDocument();
-    });
-    expect(screen.getByRole("img", { name: "두륜산 케이블카" })).toBeInTheDocument();
-    expect(screen.getAllByText("사진: 한국관광공사")).toHaveLength(1);
-  });
-
-  it("uses the API attribution for a fallback-provider photo in the list", async () => {
-    const pixabayAttribution = "Photo: photographer via Pixabay";
-    vi.spyOn(appDataApi, "listPolicies").mockResolvedValue([
-      makePolicy({ photo: { ...photo, attribution: pixabayAttribution } }),
-    ]);
-    vi.spyOn(appDataApi, "listSavedPolicies").mockResolvedValue([]);
-
-    await login();
-    cleanup();
-    renderAppRoute(listRoute);
-
-    await waitFor(() => {
-      expect(screen.getByText(pixabayAttribution)).toBeInTheDocument();
-    });
-  });
-
-  it("omits the list attribution line when no policy has a photo", async () => {
-    vi.spyOn(appDataApi, "listPolicies").mockResolvedValue([
-      makePolicy({ photo: null }),
-    ]);
-    vi.spyOn(appDataApi, "listSavedPolicies").mockResolvedValue([]);
-
-    await login();
-    cleanup();
-    renderAppRoute(listRoute);
-
-    await waitFor(() => {
-      expect(screen.getByText("해남 공식 할인")).toBeInTheDocument();
-    });
-    expect(screen.queryByText("사진: 한국관광공사")).not.toBeInTheDocument();
-  });
-
   it("keeps policy photos off the map list - rows show the benefit kind instead, so no credit line", async () => {
     // 사진은 상세에만(시안 결정). 사진을 안 보이는 목록에 출처 줄만 남으면 안 된다
     vi.spyOn(appDataApi, "listPolicies").mockResolvedValue([
@@ -154,11 +101,4 @@ describe("Travel Hunter app — policy region photos", () => {
     expect(screen.queryByText("사진: 강원관광재단")).not.toBeInTheDocument();
   });
 
-  it("falls back to the emoji tile when the thumbnail image fails to load", () => {
-    render(<PolicyThumbPhoto fallback={<span>💸</span>} photo={photo} />);
-    const image = screen.getByRole("img", { name: "두륜산 케이블카" });
-    fireEvent.error(image);
-    expect(screen.queryByRole("img", { name: "두륜산 케이블카" })).not.toBeInTheDocument();
-    expect(screen.getByText("💸")).toBeInTheDocument();
-  });
 });

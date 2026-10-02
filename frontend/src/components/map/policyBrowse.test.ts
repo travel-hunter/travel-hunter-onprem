@@ -112,8 +112,11 @@ describe("policy tab layers in the URL", () => {
     expect(readBrowseState(new URLSearchParams("place=전남&view=list")).sheet).toBe("full");
     expect(readBrowseState(new URLSearchParams("place=부산&sheet=1"))).toMatchObject({ region: "부산", sheet: "mid" });
     expect(readBrowseState(new URLSearchParams("city=완도")).city).toBeNull();
-    const written = writeBrowseState(new URLSearchParams("category=숙박&view=list"), state({ region: "전남", sheet: "full" }));
-    expect(written.toString()).toBe(new URLSearchParams("category=숙박&place=전남&sheet=full").toString());
+    // 예전 필터 목록 화면의 키(category · region · period · amount · saved)는 쓸 때 지운다 - 조건은 주소 밖에 산다
+    const written = writeBrowseState(new URLSearchParams("category=숙박&period=7일 이내&view=list"), readBrowseState(new URLSearchParams("place=전남&view=list")));
+    expect(written.toString()).toBe(new URLSearchParams("place=전남&sheet=full").toString());
+    // 예전 지역 필터 주소(region=)는 지도 선택으로 읽는다
+    expect(readBrowseState(new URLSearchParams("region=전남")).region).toBe("전남");
   });
 
   it("peels one layer at a time: search, one page, city, region, list, then out", () => {

@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronLeft, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronUp, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Link } from "react-router-dom";
 import type { Policy } from "../../api";
@@ -43,6 +43,7 @@ export function PolicyMapSheet({
   onNation,
   onRest,
   onOpen,
+  conditions = null,
 }: {
   /** panel = 넓은 화면의 오른쪽 목록 패널. 끌기·높이 자리 없이 제자리에 선다 */
   mode?: "sheet" | "panel";
@@ -64,6 +65,8 @@ export function PolicyMapSheet({
   onNation: () => void;
   /** 시트가 자리에 섰을 때 그 윗변(화면 y). 지도가 이 위쪽에 그림을 맞춘다. */
   onRest?: (coverTop: number) => void;
+  /** 걸린 좁히기 조건(마감 · 금액 · 관심 정책만 · 글 검색) 한 줄과 ✕ - 시안 v55 */
+  conditions?: { label: string; onClear: () => void } | null;
 }) {
   const picked = region !== null;
   const panel = mode === "panel";
@@ -338,8 +341,23 @@ export function PolicyMapSheet({
           )}
         </div>
       </div>
+      {conditions && (
+        <div className="thmap-conds">
+          <span>{conditions.label}</span>
+          <button type="button" aria-label="조건 모두 풀기" onClick={conditions.onClear}>
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+      )}
       <ul className="thmap-list" ref={listRef} onScroll={updateScroll}>
-        {view.empty && <li className="thmap-empty">{view.empty}</li>}
+        {conditions && view.count === 0 && view.entries.length === 0 ? (
+          <li className="thmap-empty">
+            조건에 맞는 혜택이 없어요. 조건을 줄여 보세요.
+            <button className="thmap-unset" type="button" onClick={conditions.onClear}>조건 모두 풀기</button>
+          </li>
+        ) : (
+          view.empty && <li className="thmap-empty">{view.empty}</li>
+        )}
         {view.entries.map((entry) => (
           <EntryItem entry={entry} key={entry.kind === "row" ? entry.policy.id : entry.key} open={entry.kind !== "row" && isOpen(entry.key)} region={region} onToggle={toggleGroup} onOpen={onOpen} />
         ))}

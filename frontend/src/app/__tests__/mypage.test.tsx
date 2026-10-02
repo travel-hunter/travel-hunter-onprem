@@ -107,26 +107,18 @@ describe("Travel Hunter app — my page", () => {
       expect(document.body).toHaveTextContent("관심 정책으로 저장했어요."),
     );
     await user.click(screen.getByRole("button", { name: "뒤로" }));
-    // 관심 정책만 보기는 필터 시트로 모았다 - 상단 ♡ 관심 알약은 제목 줄과 함께 걷어냈다
+    // 관심 정책만 보기는 필터 창의 조건이다 - 지도 화면 안에서 목록을 좁힌다(시안 v55)
     await user.click(await screen.findByRole("button", { name: "필터 열기" }));
     const filterDialog = screen.getByRole("dialog", { name: "정책 필터" });
     await user.click(within(filterDialog).getByRole("button", { name: "관심 정책만" }));
-    await user.click(within(filterDialog).getByRole("button", { name: "필터 적용하기" }));
+    await user.click(within(filterDialog).getByRole("button", { name: "1건 보기" }));
 
     await waitFor(() => {
-      expect(document.body).toHaveTextContent("전체 1개 중 1개 표시");
-      expect(getLink(examplePolicyPath)).toBeInTheDocument();
+      expect(document.querySelector(".thmap-conds span")).toHaveTextContent("관심 정책만");
+      expect(document.querySelector(".thmap-title")).toHaveTextContent("1건");
     });
-    await user.click(
-      screen.getByRole("button", {
-        name: `${examplePolicyTitle} 즐겨찾기 해제`,
-      }),
-    );
-    await waitFor(() =>
-      expect(
-        document.querySelector(`a[href="${examplePolicyPath}"]`),
-      ).toBeFalsy(),
-    );
+    expect(document.querySelector(".thmap-host")).toBeTruthy();
+    expect(screen.queryByText(/전체 \d+개 중/)).toBeNull();
   });
 
   it("refreshes the my page favorite summary after policy detail save and unsave", async () => {

@@ -26,24 +26,3 @@ export function PolicyHeroPhoto({ photo }: { photo: PolicyPhoto }) {
     </>
   );
 }
-
-/** 목록 카드 64×64 타일용 썸네일. 실패 시 이모지 폴백을 그대로 노출한다. */
-export function PolicyThumbPhoto({
-  photo,
-  fallback,
-}: {
-  photo: PolicyPhoto;
-  fallback: React.ReactNode;
-}) {
-  const [isBroken, setIsBroken] = useState(false);
-  if (isBroken) return <>{fallback}</>;
-  return (
-    <img
-      alt={photo.alt}
-      className="policy-thumb-photo"
-      loading="lazy"
-      onError={() => setIsBroken(true)}
-      src={mediaUrl(photo.thumbnailUrl ?? photo.imageUrl)}
-    />
-  );
-}
