@@ -201,7 +201,7 @@ export function HomePage() {
         )}
       </div>
 
-      {policies && <HomeHeroBanner credits={Object.values(HERO_PHOTOS)} slides={heroSlides} />}
+      {policies && <HomeHeroBanner slides={heroSlides} />}
 
       {/* 가운데 뜨는 창은 홈을 가렸다. 닫을 수 있는 한 줄로 두고, 닫으면 이번 세션 동안 안 뜬다. */}
       {shouldShowProfilePrompt && (

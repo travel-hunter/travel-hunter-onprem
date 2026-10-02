@@ -1,9 +1,9 @@
 import { Pause, Play } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import type { HeroPhoto } from "./heroPhotos";
+import { usePhotoCredits } from "./PhotoCredits";
 
 export type HomeHeroSlide = {
   key: string;
@@ -32,10 +32,9 @@ function slidePos(i: number, current: number, count: number) {
    마우스가 올라가 있거나 안에 초점이 있으면 쉬고, 손으로 한 번 넘기면(밀기·옆 장·화살표) 자동 넘김을 멈춘다 -
    터치에서도 멈출 수 있고(WCAG 2.2.2) 넘긴 장이 곧바로 다음 장으로 바뀌지 않는다. 번호·이전·다음 버튼은 화면에서 뺐고
    (사용자 결정), 멈춤 버튼은 키보드 초점이 갈 때만 보인다(home.css). 기기의 '동작 줄이기'가 켜져 있으면 자동으로 넘기지 않는다. */
-export function HomeHeroBanner({ slides, credits = [] }: { slides: HomeHeroSlide[]; credits?: HeroPhoto[] }) {
+export function HomeHeroBanner({ slides }: { slides: HomeHeroSlide[] }) {
   const [index, setIndex] = useState(0);
-  const [creditsOpen, setCreditsOpen] = useState(false);
-  const creditsButton = useRef<HTMLButtonElement>(null);
+  const credits = usePhotoCredits();
   const [paused, setPaused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -89,11 +88,6 @@ export function HomeHeroBanner({ slides, credits = [] }: { slides: HomeHeroSlide
   };
   const onBlur = (event: FocusEvent<HTMLElement>) => {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
-  };
-
-  const closeCredits = () => {
-    setCreditsOpen(false);
-    creditsButton.current?.focus();
   };
 
   return (
@@ -154,67 +148,15 @@ export function HomeHeroBanner({ slides, credits = [] }: { slides: HomeHeroSlide
         </button>
       )}
     </section>
-    {/* 출처(CC BY · CC BY-SA 조건)는 장마다 적지 않고 여기 하나로 모은다(시안 v53) */}
-    {credits.length > 0 && slides.some((slide) => slide.photo) && (
+    {/* 출처(CC BY · CC BY-SA 조건)는 장마다 적지 않고 앱 전체 '사진 출처' 창 하나로 모은다(시안 v53 · v54) */}
+    {slides.some((slide) => slide.photo) && (
       <p className="home-hero-src">
-        <button aria-haspopup="dialog" onClick={() => setCreditsOpen(true)} ref={creditsButton} type="button">
+        <button aria-haspopup="dialog" onClick={credits.open} type="button">
           사진 출처
         </button>
       </p>
     )}
-    {creditsOpen && createPortal(<HeroPhotoCredits onClose={closeCredits} photos={credits} />, document.body)}
+    {credits.dialog}
     </>
-  );
-}
-
-/* 배너 사진 출처 창: 사진마다 주제 · 작가 · 라이선스(본문 링크) · 원본 링크. 휴대폰은 아래에서, 넓은 화면은 가운데.
-   Esc · 바깥 · 닫기로 닫고 초점은 '사진 출처' 단추로 돌아간다. */
-function HeroPhotoCredits({ photos, onClose }: { photos: HeroPhoto[]; onClose: () => void }) {
-  const closeButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    closeButton.current?.focus();
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return (
-    <div className="hero-credits" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div aria-labelledby="hero-credits-title" aria-modal="true" className="hero-credits-card" role="dialog">
-        <div className="hero-credits-head">
-          <h2 id="hero-credits-title">배너 사진 출처</h2>
-          <button onClick={onClose} ref={closeButton} type="button">
-            닫기
-          </button>
-        </div>
-        <ul className="hero-credits-list">
-          {photos.map((photo) => (
-            <li key={photo.src}>
-              <img alt="" src={photo.src} />
-              <div>
-                <b>{photo.subject}</b>
-                <span>
-                  {photo.author} ·{" "}
-                  {photo.licenseUrl ? (
-                    <a href={photo.licenseUrl} rel="noreferrer noopener" target="_blank">
-                      {photo.license}
-                    </a>
-                  ) : (
-                    photo.license
-                  )}
-                </span>
-                <a href={photo.page} rel="noreferrer noopener" target="_blank">
-                  원본 보기(위키미디어 공용)
-                </a>
-              </div>
-            </li>
-          ))}
-        </ul>
-        <p className="hero-credits-note">
-          위키미디어 공용 사진입니다. CC BY · CC BY-SA 사진은 저작자와 라이선스를 밝히는 것이 이용 조건입니다.
-        </p>
-      </div>
-    </div>
   );
 }

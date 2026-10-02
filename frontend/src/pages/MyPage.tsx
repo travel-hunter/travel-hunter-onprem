@@ -1,9 +1,10 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import { ChevronRight, CircleHelp, FileText, Heart, KeyRound, LogOut, ShieldCheck } from "lucide-react";
+import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { ChevronRight, CircleHelp, FileText, Heart, Image as ImageIcon, KeyRound, LogOut, ShieldCheck } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { appDataApi, isApiError, type Policy, type Trip } from "../api";
 import { useSession } from "../app/session";
 import { BenefitTile, benefitTypeOf } from "../components/benefitTile";
+import { usePhotoCredits } from "../components/PhotoCredits";
 import { deadlineChip, programName, REGION_FULL_NAMES } from "../components/map/policyBrowse";
 import { policyListText } from "../components/map/policyListText";
 import { useProfileEditor } from "../components/ProfileEditSheet";
@@ -40,6 +41,7 @@ export function MyPage() {
   const navigate = useNavigate();
   const { addedPolicySlugs, currentUser, logout, profile, removeSavedSlug, savedSlugs } = useSession();
   const editor = useProfileEditor();
+  const photoCredits = usePhotoCredits();
   const name = currentUser?.nickname ?? "여행자";
   const [savedPolicies, setSavedPolicies] = useState<Policy[]>([]);
   const [isLoadingSavedPolicies, setIsLoadingSavedPolicies] = useState(true);
@@ -331,6 +333,8 @@ export function MyPage() {
         <MenuRow icon={<CircleHelp size={20} />} label="공지사항 / FAQ" onClick={() => setInfoSheetType("faq")} />
         <MenuRow icon={<FileText size={20} />} label="이용약관" onClick={() => setInfoSheetType("terms")} />
         <MenuRow icon={<ShieldCheck size={20} />} label="개인정보처리방침" onClick={() => setInfoSheetType("privacy")} />
+        {/* 앱에 쓴 사진의 출처를 한곳에(시안 v54) - 홈 배너 아래 '사진 출처'와 같은 창 */}
+        <MenuRow icon={<ImageIcon size={20} />} label="사진 출처" onClick={photoCredits.open} />
         <MenuRow icon={<KeyRound size={20} />} label="비밀번호 관리" onClick={() => setAccountDialogType("password")} />
         <MenuRow icon={<LogOut size={20} />} label="로그아웃" onClick={signOut} />
       </section>
@@ -339,6 +343,7 @@ export function MyPage() {
       </button>
 
       {editor.sheet}
+      {photoCredits.dialog}
       {infoSheetType && <InfoSheet type={infoSheetType} onClose={() => setInfoSheetType(null)} />}
       {accountDialogType === "password" && (
         <AccountSecurityDialog
@@ -377,7 +382,7 @@ export function MyPage() {
   );
 }
 
-function MenuRow({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+function MenuRow({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: (event: MouseEvent<HTMLButtonElement>) => void }) {
   return (
     <button className="mp-row" onClick={onClick} type="button">
       <span aria-hidden="true" className="mp-row-icon">

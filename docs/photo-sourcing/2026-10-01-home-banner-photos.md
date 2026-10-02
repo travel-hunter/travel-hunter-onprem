@@ -25,7 +25,7 @@
 
 CC BY-NC(상업 이용 불가)·ND(변경 금지)·라이선스 불명은 쓰지 않는다.
 
-**화면 표시(2026-10-02, 시안 v53)** - 홈 배너는 장마다 적지 않고 배너 아래 오른쪽 '사진 출처' 창에 모은다: 사진마다 주제 · 작가 · 라이선스(라이선스 본문 링크) · 원본 보기(위키미디어 공용 링크). CC 가 요구하는 링크까지 둔다. 로그인 사진은 한 장이라 사진 위에 한 줄로 적는다. 데이터는 `frontend/src/components/heroPhotos.ts`(subject · author · license · licenseUrl · page).
+**화면 표시(2026-10-02, 시안 v53)** - 홈 배너는 장마다 적지 않고 배너 아래 오른쪽 '사진 출처' 창에 모은다: 사진마다 주제 · 작가 · 라이선스(라이선스 본문 링크) · 원본 보기(위키미디어 공용 링크). CC 가 요구하는 링크까지 둔다. 2026-10-02(시안 v54)부터 이 창은 앱 전체 '사진 출처'(홈 배너 · 로그인 화면 두 묶음)이고 내 정보 메뉴에서도 연다(`frontend/src/components/PhotoCredits.tsx`). 데이터는 `frontend/src/components/heroPhotos.ts`(subject · author · license · licenseUrl · page).
 
 **장과 사진 짝** - 시군마다 사진을 두면 그날 데이터에 따라 바뀌는 곳마다 사진이 필요해 끝이 없다. 장의 성격으로 고른다.
 
@@ -123,6 +123,26 @@ CC BY-NC(상업 이용 불가)·ND(변경 금지)·라이선스 불명은 쓰지
 - 표: `frontend/src/components/heroPhotos.ts` - 사진 열쇠 → 파일 · 출처 문자열. 혜택 종류 → 주제는 `heroThemeOf`.
   사진을 바꾸거나 더하면 이 표, `tools/hero_photos.py` 의 PICKS, 이 문서의 '고른 사진' 표를 같이 고친다.
 - 화면: 장 오른쪽 아래에 출처 문자열. 열쇠에 사진이 없으면 그 장은 혜택 형태 색 바탕.
+
+## 로그인 화면 사진(2026-10-02, 시안 v54)
+
+로그인 사진 한 장(보성 녹차밭)을 지역 8곳 풍경으로 바꿨다 - 열 때마다 무작위로 시작해 6초마다 천천히 넘어간다('동작 줄이기'면
+넘기지 않는다). 출처 표시 의무가 없는 CC0 · 퍼블릭 도메인만 골라 사진 위에 출처를 적지 않고 앱 안 '사진 출처'에만 둔다.
+
+| 지역 | 사진 | 작가 · 라이선스 | 원본 |
+|---|---|---|---|
+| 서울 | 북촌 한옥마을 | Bgag · CC0 | https://commons.wikimedia.org/wiki/File:Bukchon_Hanok_Village_03.jpg |
+| 경기 | 수원 화성 | Bernard Gagnon · CC0 | https://commons.wikimedia.org/wiki/File:Hwaseong_Fortress_01.jpg |
+| 강원 | 설악산 케이블카 | Bernard Gagnon · CC0 | https://commons.wikimedia.org/wiki/File:Seoraksan_Cable_Car_04.jpg |
+| 전북 | 전주 한옥마을 | Bernard Gagnon · CC0 | https://commons.wikimedia.org/wiki/File:Jeonju_Hanok_Maeul_02.jpg |
+| 전남 | 순천만 갈대밭 | Bandoche · 퍼블릭 도메인 | https://commons.wikimedia.org/wiki/File:Panorama_of_Reed_fields_in_Suncheon_bay.jpg |
+| 경북 | 안동 하회마을 | Bernard Gagnon · CC0 | https://commons.wikimedia.org/wiki/File:Hahoe_Folk_Village_02.jpg |
+| 부산 | 광안대교와 광안리 | lumoplank · CC0 | https://commons.wikimedia.org/wiki/File:Gwangan_Bridge_and_Gwangalli_Beach_-_Gwangalli2721.jpg |
+| 제주 | 성산일출봉 일대 | Bernard Gagnon · CC0 | https://commons.wikimedia.org/wiki/File:Seongsan,_Jeju_Island.jpg |
+
+- 파일: `frontend/src/assets/login/` 가로 1280px WebP(품질 64, 장당 100~310KB). 순천만은 파노라마라 3840px 로 받아 가운데 3:2 를
+  잘랐다(986×657). 받기: `python tools/login_photos.py --out-dir ../../../frontend/src/assets/login`.
+- 화면은 지금 · 앞 · 다음 장에만 사진을 건다 - 여덟 장을 처음에 한꺼번에 받지 않는다.
 
 ## 더 할 일
 

@@ -1,0 +1,123 @@
+/* 앱 전체 '사진 출처' 창(PhotoCredits.tsx, 시안 v54). 홈 배너 아래 · 내 정보 메뉴에서 연다 */
+.photo-credits {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  align-items: end;
+  background: rgb(17 24 39 / 42%);
+}
+
+.photo-credits-card {
+  max-height: 82dvh;
+  overflow-y: auto;
+  display: grid;
+  gap: 14px;
+  padding: 18px 18px calc(24px + env(safe-area-inset-bottom));
+  border-radius: 20px 20px 0 0;
+  background: var(--white);
+  color: var(--ink);
+}
+
+.photo-credits-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.photo-credits-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.photo-credits-head button {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--gray-300);
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.photo-credits-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photo-credits-list li {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.photo-credits-list img {
+  width: 72px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.photo-credits-list div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  color: var(--gray-600);
+  font-size: 12.5px;
+}
+
+.photo-credits-list b {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.photo-credits-list a {
+  color: var(--primary-600);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.photo-credits-note {
+  margin: 0;
+  color: var(--gray-600);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.photo-credits-group {
+  display: grid;
+  gap: 10px;
+}
+
+.photo-credits-group h3 {
+  margin: 0;
+  color: var(--gray-600);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.photo-credits button:focus-visible,
+.photo-credits a:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .photo-credits {
+    align-items: center;
+    justify-items: center;
+  }
+
+  .photo-credits-card {
+    width: 460px;
+    padding-bottom: 24px;
+    border-radius: 18px;
+  }
+}
