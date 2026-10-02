@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.media import MediaFiles
 from app.api.router import api_router
 from app.api.routes.health import router as health_router
 from app.core.config import settings
@@ -66,3 +67,5 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(api_router, prefix="/api")
+if settings.media_root:   # 확정 사진 파일(0047) - Caddy 는 /api 를 넘기기만 한다
+    app.mount("/api/media", MediaFiles(directory=settings.media_root, check_dir=False), name="media")

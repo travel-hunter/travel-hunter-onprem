@@ -16,6 +16,7 @@ import {
   type Profile,
   type RegionRecommendation,
 } from "../api";
+import { mediaUrl } from "../api/client";
 import { useAsyncResource } from "../api/useAsyncResource";
 import { useSession } from "../app/session";
 import {
@@ -594,7 +595,7 @@ function PlaceCard({ card }: { card: PlaceCardData }) {
           className="home-region-photo"
           loading="lazy"
           onError={() => setIsBroken(true)}
-          src={photo.imageUrl}
+          src={mediaUrl(photo.imageUrl)}
         />
       ) : (
         <BenefitTile kind={kind} />

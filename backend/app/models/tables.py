@@ -586,7 +586,7 @@ class PolicyPhotoAssignment(Base):
 
 
 class PhotoReviewTarget(Base):
-    """검토할 사진 대상 하나 - 시군(도 전체 포함) 또는 정책. 관리자가 확정한 후보만 앱 사진 줄(active)이 된다(0047)."""
+    """검토할 사진 대상 하나 - 시군(도 전체 포함) 또는 정책. 관리자가 확정한 후보(approved_candidate_id)가 곧 앱 사진이다(0047)."""
 
     __tablename__ = "photo_review_targets"
     __table_args__ = (
@@ -648,6 +648,10 @@ class PhotoReviewCandidate(Base):
     address: Mapped[str | None] = mapped_column(String(200))
     source: Mapped[str] = mapped_column(String(20), nullable=False)
     search_keyword: Mapped[str | None] = mapped_column(String(100))
+    # 확정할 때 받아 둔 원본(MEDIA_ROOT 아래 상대 경로 · 크기 · 형식). 앱은 이 파일만 내보낸다 - 관광공사 주소를 걸지 않는다
+    stored_path: Mapped[str | None] = mapped_column(String(300))
+    byte_size: Mapped[int | None] = mapped_column(Integer)
+    content_type: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )

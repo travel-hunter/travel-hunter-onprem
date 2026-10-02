@@ -1,11 +1,11 @@
-"""사진 검토 표(0047) 조회 · 쓰기. 앱에 나가는 사진 줄(region_photos · policy_photos)을 내리는 것도 여기서."""
+"""사진 검토 표(0047) 조회 · 쓰기. 앱이 쓰는 사진(확정한 대상 → 고른 후보)도 여기서 읽는다."""
 
 from __future__ import annotations
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import PhotoReviewCandidate, PhotoReviewTarget, PolicyPhotoAssignment, RegionPhoto
+from app.models import PhotoReviewCandidate, PhotoReviewTarget
 
 
 def list_all_targets(db: Session) -> list[PhotoReviewTarget]:
@@ -70,17 +70,12 @@ def all_candidate_image_urls(db: Session) -> set[str]:
     return set(db.scalars(select(PhotoReviewCandidate.image_url)))
 
 
-def hide_region_photos(db: Session, *, sido: str, city: str) -> None:
-    db.execute(
-        update(RegionPhoto)
-        .where(RegionPhoto.sido == sido, RegionPhoto.city == city, RegionPhoto.status == "active")
-        .values(status="hidden")
-    )
+def list_published(db: Session) -> list[tuple[PhotoReviewTarget, PhotoReviewCandidate]]:
+    """앱에 나가는 사진: 확정한 대상과 그 대상이 고른 후보(원본을 받아 둔 것만)."""
 
-
-def hide_policy_photo(db: Session, *, policy_id: int) -> None:
-    db.execute(
-        update(PolicyPhotoAssignment)
-        .where(PolicyPhotoAssignment.policy_id == policy_id, PolicyPhotoAssignment.status == "active")
-        .values(status="hidden")
-    )
+    rows = db.execute(
+        select(PhotoReviewTarget, PhotoReviewCandidate)
+        .join(PhotoReviewCandidate, PhotoReviewCandidate.id == PhotoReviewTarget.approved_candidate_id)
+        .where(PhotoReviewTarget.status == "approved", PhotoReviewCandidate.stored_path.is_not(None))
+    ).all()
+    return [(target, candidate) for target, candidate in rows]

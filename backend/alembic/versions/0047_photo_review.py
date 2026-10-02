@@ -5,8 +5,9 @@ Revises: 0046_photo_criteria
 Create Date: 2026-10-02
 
 수집은 시군 · 정책마다 사진 후보만 넣고, 관리자가 한 장을 확정해야 앱에 나간다(2026-10-01 사용자 결정,
-docs/superpowers/plans/2026-10-02-photo-review-stage.md). 앱에 나가는 사진은 지금처럼 region_photos ·
-policy_photos 의 active 줄이다 - 확정이 그 줄을 쓴다.
+docs/superpowers/plans/2026-10-02-photo-review-stage.md). 앱은 '대상이 고른 후보'를 바로 읽는다(표 2개, 10/2 결정).
+확정할 때 원본을 MEDIA_ROOT 에 받아 두고(stored_path) 그 파일만 /api/media 로 내보낸다 - 관광공사 주소를 걸지 않는다.
+region_photos · policy_photos 는 더 읽지도 쓰지도 않는다. 아래에서 review 로 내린 채 남겨 두고, 배포가 확인되면 따로 지운다.
 
 데이터: 기존 active 사진 줄을 review 로 내린다(검토 전으로 돌림 - 화면은 혜택 그림). 후보로 옮기지는 않는다 - 수집 기준
 (0046) 이전에 고른 사진이라 저작권 유형을 몰라 확정할 수 없다. 대상과 후보는 수집(scripts/collect_photo_candidates.py)이
@@ -64,6 +65,9 @@ def upgrade() -> None:
         sa.Column("address", sa.String(length=200), nullable=True),
         sa.Column("source", sa.String(length=20), nullable=False),
         sa.Column("search_keyword", sa.String(length=100), nullable=True),
+        sa.Column("stored_path", sa.String(length=300), nullable=True),
+        sa.Column("byte_size", sa.Integer(), nullable=True),
+        sa.Column("content_type", sa.String(length=40), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("target_id", "image_url", name="uq_photo_review_candidates_target_image"),
         sa.CheckConstraint("source IN ('collect', 'search')", name="ck_photo_review_candidates_source"),

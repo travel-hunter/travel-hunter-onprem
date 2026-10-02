@@ -146,6 +146,9 @@ class Settings:
     log_file_path: str = os.getenv("LOG_FILE_PATH", "")
     log_file_max_mb: int = int(os.getenv("LOG_FILE_MAX_MB", "20"))
     log_file_backups: int = int(os.getenv("LOG_FILE_BACKUPS", "10"))
+    # 확정한 사진 원본을 두는 곳(0047 사진 검토, app/services/photo_storage.py). 비우면 보관을 끈다 - 확정이 되지 않는다.
+    # 로그 경로처럼 기본값을 비워 둔다(호스트에서 돌리면 C 드라이브 루트 아래에 폴더가 생긴다). compose 가 컨테이너에만 /media 를 넘긴다.
+    media_root: str = os.getenv("MEDIA_ROOT", "")
     access_log_exclude_paths: tuple[str, ...] = split_csv(
         os.getenv("ACCESS_LOG_EXCLUDE_PATHS", "/api/health,/health")
     )

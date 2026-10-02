@@ -482,6 +482,9 @@ CREATE TABLE public.photo_review_candidates (
     address character varying(200),
     source character varying(20) NOT NULL,
     search_keyword character varying(100),
+    stored_path character varying(300),
+    byte_size integer,
+    content_type character varying(40),
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_photo_review_candidates_source CHECK (((source)::text = ANY ((ARRAY['collect'::character varying, 'search'::character varying])::text[])))
 );

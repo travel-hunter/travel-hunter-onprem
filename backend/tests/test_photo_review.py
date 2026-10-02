@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import itertools
 from datetime import datetime
 
@@ -19,16 +20,15 @@ from app.models import (
     PhotoReviewCandidate,
     PhotoReviewTarget,
     Policy,
-    PolicyPhotoAssignment,
-    RegionPhoto,
     User,
 )
 from app.services import photo_review
 from app.services.photo_criteria import ImageProbeError
+from app.services.photo_storage import PhotoStorageError, StoredImage
 from app.services.region_photos import build_region_photo_index
 from app.services.tour_api import TourApiAreaCode, TourApiConfigurationError, TourApiSpot
 
-ID_MODELS = (Policy, PhotoReviewTarget, PhotoReviewCandidate, RegionPhoto, PolicyPhotoAssignment, AdminAuditLog)
+ID_MODELS = (Policy, PhotoReviewTarget, PhotoReviewCandidate, AdminAuditLog)
 
 
 @pytest.fixture
@@ -56,6 +56,23 @@ def factory():
 def db(factory) -> Session:
     with factory() as session:
         yield session
+
+
+def fake_store(url: str) -> StoredImage:
+    digest = hashlib.sha256(url.encode()).hexdigest()
+    return StoredImage(f"photos/{digest[:2]}/{digest}.jpg", 1234, "image/jpeg")
+
+
+@pytest.fixture(autouse=True)
+def stored_photos(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    """확정은 원본을 받아 둔다 - 시험에서는 받지 않고 주소로 만든 경로를 돌려준다."""
+    monkeypatch.setattr(photo_review, "media_root", lambda: tmp_path)
+    monkeypatch.setattr(photo_review, "store_remote_image", fake_store)
+
+
+def served(candidate: PhotoReviewCandidate) -> str:
+    """앱이 받는 사진 주소 - 받아 둔 파일이다. 관광공사 주소를 그대로 걸지 않는다."""
+    return "/api/media/" + fake_store(candidate.image_url).path
 
 
 @pytest.fixture(autouse=True)
@@ -151,8 +168,7 @@ def test_collect_fills_the_city_first_then_its_policies_and_the_sido_row_without
     assert "http://tong.visitkorea.or.kr/c12-0.jpg" not in images(sido)
     assert all(c.source == "collect" and c.image_width == 1200 for c in city.candidates)
     # 수집은 앱에 사진을 내걸지 않는다
-    assert db.scalars(select(RegionPhoto)).all() == []
-    assert db.scalars(select(PolicyPhotoAssignment)).all() == []
+    assert build_region_photo_index(db).resolve("전남", "영광") is None
 
 
 def test_collect_tops_up_to_six_and_leaves_decided_targets_alone(db: Session) -> None:
@@ -247,7 +263,8 @@ def test_approve_publishes_the_photo_and_records_the_decision(db: Session) -> No
 
     assert city.status == "approved" and city.approved_candidate_id == chosen.id and city.decided_by_user_id == 10
     resolved = build_region_photo_index(db).resolve("전남", "영광")
-    assert resolved is not None and resolved.image_url == chosen.image_url
+    assert resolved is not None and resolved.image_url == served(chosen)
+    assert (chosen.byte_size, chosen.content_type) == (1234, "image/jpeg")
     assert resolved.attribution == "사진: 한국관광공사 · 공공누리 제1유형"
     log = db.scalars(select(AdminAuditLog)).one()
     assert (log.action, log.target_id) == ("photo_review.approve", "region:전남|영광")
@@ -279,14 +296,60 @@ def test_a_policy_left_alone_inherits_the_city_photo_and_its_own_photo_wins(db: 
     photo_review.mark_none(db, str(policy.id), admin)
 
     index = build_region_photo_index(db)
-    assert index.resolve_policy(1, "전남", "영광").image_url == city.candidates[0].image_url
+    assert index.resolve_policy(1, "전남", "영광").image_url == served(city.candidates[0])
     item = photo_review.list_targets(db, unit="policy", status=None)["items"][0]
     assert item["inheritedPhoto"]["imageUrl"] == city.candidates[0].image_url
     assert item["policySlug"] == "policy-1" and item["status"] == "none" and item["decidedAt"].endswith("Z")
 
     photo_review.reopen(db, str(policy.id), admin)
     photo_review.approve(db, str(policy.id), str(policy.candidates[0].id), admin)
-    assert build_region_photo_index(db).resolve_policy(1, "전남", "영광").image_url == policy.candidates[0].image_url
+    assert build_region_photo_index(db).resolve_policy(1, "전남", "영광").image_url == served(policy.candidates[0])
+
+
+def test_approve_keeps_nothing_when_the_download_fails(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    add_policy(db)
+    admin = add_admin(db)
+    photo_review.collect_candidates(db, Provider(), size_of=landscape)
+    city = target(db, "region:전남|영광")
+
+    def broken(_url: str) -> StoredImage:
+        raise PhotoStorageError("not an image")
+
+    monkeypatch.setattr(photo_review, "store_remote_image", broken)
+    with pytest.raises(photo_review.PhotoReviewError) as failed:
+        photo_review.approve(db, str(city.id), str(city.candidates[0].id), admin)
+    assert failed.value.status_code == 502
+    assert city.status == "pending" and city.candidates[0].stored_path is None
+    assert db.scalars(select(AdminAuditLog).where(AdminAuditLog.action == "photo_review.approve")).all() == []
+
+    monkeypatch.setattr(photo_review, "media_root", lambda: None)
+    with pytest.raises(photo_review.PhotoReviewError) as unset:
+        photo_review.approve(db, str(city.id), str(city.candidates[0].id), admin)
+    assert unset.value.status_code == 503
+
+
+def test_approving_again_reuses_the_stored_file(db: Session, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    add_policy(db)
+    admin = add_admin(db)
+    photo_review.collect_candidates(db, Provider(), size_of=landscape)
+    city = target(db, "region:전남|영광")
+    chosen = city.candidates[0]
+    photo_review.approve(db, str(city.id), str(chosen.id), admin)
+    photo_review.reopen(db, str(city.id), admin)
+    stored = tmp_path / chosen.stored_path
+    stored.parent.mkdir(parents=True)
+    stored.write_bytes(b"jpeg")
+
+    calls: list[str] = []
+    monkeypatch.setattr(photo_review, "store_remote_image", lambda url: calls.append(url) or fake_store(url))
+    photo_review.approve(db, str(city.id), str(chosen.id), admin)
+    assert calls == [] and build_region_photo_index(db).resolve("전남", "영광").image_url == served(chosen)
+
+    # 볼륨을 새로 만들어 파일이 없어졌으면 다시 받는다
+    stored.unlink()
+    photo_review.reopen(db, str(city.id), admin)
+    photo_review.approve(db, str(city.id), str(chosen.id), admin)
+    assert calls == [chosen.image_url]
 
 
 def test_search_keeps_only_same_sido_non_food_non_lodging_photos(db: Session) -> None:

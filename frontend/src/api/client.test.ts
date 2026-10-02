@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   apiClient,
+  apiConfig,
+  mediaUrl,
   setApiAccessToken,
   setApiTokenRefresher,
 } from "./client";
@@ -144,5 +146,12 @@ describe("apiClient 401 재발급", () => {
 
     // 묶음이 한 번 끝나면 풀려야 한다. 안 풀리면 다음 만료를 영영 못 넘긴다.
     expect(refresher).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("mediaUrl", () => {
+  it("prefixes the API host to photos the server stored and leaves outside URLs alone", () => {
+    expect(mediaUrl("/api/media/photos/ab/ab12.jpg")).toBe(`${apiConfig.baseUrl}/api/media/photos/ab/ab12.jpg`);
+    expect(mediaUrl("https://upload.wikimedia.org/a.jpg")).toBe("https://upload.wikimedia.org/a.jpg");
   });
 });

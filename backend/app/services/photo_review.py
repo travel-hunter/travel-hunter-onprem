@@ -1,7 +1,8 @@
-"""사진 검토(0047): 수집은 대상마다 후보만 넣고, 관리자가 한 장을 확정해야 앱 사진 줄(active)이 된다.
+"""사진 검토(0047): 수집은 대상마다 후보만 넣고, 관리자가 한 장을 확정해야 앱에 나간다.
 
-대상은 시군(도 전체 포함, region)과 정책(policy). 응답 쪽 해석 순서(region_photos.py: 정책 사진 → 시군 사진 →
-혜택 그림)는 그대로라, 정책은 고르지 않으면 시군 사진을 물려받는다(2026-10-01 사용자 결정).
+대상은 시군(도 전체 포함, region)과 정책(policy). 확정한 후보가 곧 앱 사진이다 - 확정할 때 원본을 우리 볼륨에 받아 두고
+(photo_storage.py) 응답은 그 파일을 가리킨다. 해석 순서(region_photos.py: 정책 사진 → 시군 사진 → 혜택 그림)는 그대로라,
+정책은 고르지 않으면 시군 사진을 물려받는다(2026-10-01 사용자 결정).
 
 후보 줄: 그 시군(시군 코드)의 관광지 · 쇼핑 · 축제를 조회순(arrange P)으로 받아 번갈아 섞고, 수집 기준
 (photo_criteria.py)을 통과한 것만. 이미 다른 대상의 후보인 사진은 건너뛴다 - 시군을 먼저 채우고 그 시군 정책을
@@ -25,9 +26,8 @@ from app.data.travel_areas import normalize_municipality_name
 from app.models import ExternalSourceRecord, PhotoReviewCandidate, PhotoReviewTarget, Policy, User
 from app.repositories import photo_review as repository
 from app.repositories.policies import list_active_policies_for_photo_backfill
-from app.repositories.policy_photos import upsert_policy_photo
-from app.repositories.region_photos import upsert_region_photo
 from app.services.photo_criteria import ImageProbeError, attribution_for, metadata_rejections, size_rejections
+from app.services.photo_storage import PhotoStorageError, StoredImage, media_root, store_remote_image
 from app.services.policies import _normalize_policy_category
 from app.services.tour_api import TourApiAreaCode, TourApiPhotoProvider, TourApiSpot
 
@@ -537,51 +537,6 @@ def _require_target(db: Session, target_id: str, *, lock: bool = False) -> Photo
     return target
 
 
-def _hide_published(db: Session, target: PhotoReviewTarget) -> None:
-    if target.target_type == "region":
-        repository.hide_region_photos(db, sido=target.sido, city=target.city)
-    elif target.policy_id is not None:
-        repository.hide_policy_photo(db, policy_id=target.policy_id)
-
-
-def _publish(db: Session, target: PhotoReviewTarget, candidate: PhotoReviewCandidate) -> None:
-    common = {
-        "provider_content_id": candidate.provider_content_id,
-        "copyright_type": candidate.copyright_type,
-        "image_width": candidate.image_width,
-        "image_height": candidate.image_height,
-        "attribution_text": attribution_for(candidate.copyright_type),
-        "status": "active",
-        "fetched_at": _now(),
-    }
-    _hide_published(db, target)   # 다른 제공처의 옛 줄이 남아 있어도 이 줄 하나만 보이게
-    if target.target_type == "region":
-        upsert_region_photo(
-            db,
-            provider=PROVIDER,
-            sido=target.sido,
-            city=target.city,
-            content_title=candidate.title,
-            hero_image_url=candidate.image_url,
-            thumb_image_url=candidate.thumbnail_url,
-            provider_image_url=candidate.image_url,
-            selection_reason="admin",
-            **common,
-        )
-    else:
-        upsert_policy_photo(
-            db,
-            policy_id=int(target.policy_id),
-            provider=PROVIDER,
-            image_url=candidate.image_url,
-            thumbnail_url=candidate.thumbnail_url,
-            alt_text=candidate.title[:200],
-            relevance_score=0,
-            assignment_reason="admin",
-            **common,
-        )
-
-
 def _snapshot(target: PhotoReviewTarget) -> dict[str, object]:
     return {"status": target.status, "approvedCandidateId": target.approved_candidate_id}
 
@@ -599,10 +554,6 @@ def _decide(
     from app.repositories.admin import add_audit_log
 
     before = _snapshot(target)
-    if candidate is not None:
-        _publish(db, target, candidate)
-    else:
-        _hide_published(db, target)
     target.status = status
     target.approved_candidate_id = candidate.id if candidate is not None else None
     target.decided_at = _now() if status != "pending" else None
@@ -610,6 +561,7 @@ def _decide(
     after = _snapshot(target)
     if candidate is not None:
         after["imageUrl"] = candidate.image_url
+        after["storedPath"] = candidate.stored_path
     add_audit_log(
         db,
         admin_user_id=int(admin.id),
@@ -624,11 +576,30 @@ def _decide(
     return target
 
 
-def approve(db: Session, target_id: str, candidate_id: str, admin: User) -> PhotoReviewTarget:
+def approve(
+    db: Session,
+    target_id: str,
+    candidate_id: str,
+    admin: User,
+    *,
+    store: Callable[[str], StoredImage] | None = None,
+) -> PhotoReviewTarget:
+    """확정 = 원본을 받아 두는 데 성공해야 한다. 못 받으면 아무것도 바꾸지 않는다(관광공사 주소를 그대로 걸지 않는다)."""
+
     target = _require_target(db, target_id, lock=True)
     candidate = next((c for c in target.candidates if str(c.id) == str(candidate_id)), None)
     if candidate is None:
         raise PhotoReviewError(404, "Photo review candidate not found")
+    root = media_root()
+    # 다시 확정하면 받아 둔 파일을 그대로 쓴다. 볼륨을 새로 만들어 파일이 없어졌으면 다시 받는다
+    if not candidate.stored_path or (root is not None and not (root / candidate.stored_path).exists()):
+        if store is None and root is None:
+            raise PhotoReviewError(503, "Photo storage is not configured")
+        try:
+            stored = (store or store_remote_image)(candidate.image_url)
+        except PhotoStorageError as error:
+            raise PhotoReviewError(502, f"Photo download failed: {error}") from error
+        candidate.stored_path, candidate.byte_size, candidate.content_type = stored.path, stored.byte_size, stored.content_type
     return _decide(
         db, target, admin, action="photo_review.approve", status="approved",
         summary=f"사진 확정: {candidate.title}", candidate=candidate,
