@@ -2,20 +2,20 @@
 
 ## Current Status
 
-- Merge-ready: 정책·시군 사진 검토와 원본 보관(`feature/photo-collection-criteria`). 수집은 기준(공공누리 유형 · 시설 · 크기 · 겹침)을 거친
-  후보만 넣고, 관리자가 '사진 검토'(`/admin/photo-review`)에서 확정한 한 장만 앱에 나간다. 확정 때 원본을 볼륨 `travelhunter-media` 에 받아
-  백엔드가 `/api/media` 로 내보낸다. 로그인 사진 8장 돌리기 · 앱 전체 '사진 출처', 홈 → 정책 탭 예전 화면 버그 수정 포함.
-  계획: `docs/superpowers/plans/2026-10-01-photo-collection-criteria.md` · `2026-10-02-photo-review-stage.md`.
-- Scope: backend(Alembic 0046 · 0047, 관리자 API, `/api/media`) · frontend · compose 볼륨 · 문서. 공개 `Policy.photo` 모양은 그대로(`imageUrl` 이 상대 주소).
+- Merge-ready: 정책 탭 필터 · 글 검색을 지도 화면 안에서(`feature/policy-filter-in-map`, 시안 v55). 필터 창 적용이나 검색 칸 '…모두 보기'가
+  지도를 떠나 예전 카드 목록을 띄우던 버그를 고치고, 그 목록 화면과 부품(`PolicyListCard` · 목록 썸네일)을 지웠다.
+  조건(마감 · 금액 · 관심 정책만 · 글 검색)은 주소 밖 `components/map/policyConditions.ts`(sessionStorage)에 둔다. 계획: `docs/superpowers/plans/2026-10-02-policy-filter-in-map.md`.
+- Scope: frontend 와 문서만. backend · API 계약 · DB · env 변경 없음.
+- 다음: 홈 통합 검색(지역 · 혜택 + 장소) - 시안 v56 승인 대기, 승인 뒤 별도 브랜치(새 장소 검색 API 가 필요하다).
 - 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
 
 ## Recent Validation
 
-- PASS: backend `python -m pytest`(stay-discount 스냅샷 제외) 1189 passed · 24 skipped, `alembic upgrade 0045_traffic_detail:head --sql`, `downgrade 0047_photo_review:0045_traffic_detail --sql`.
-- PASS: `npm run typecheck`, `npm run test:mojibake`, `npx vitest run` 45파일 493개, `npm run build`, `npm run test:e2e:containers` 13/13.
-- PASS: 4173 실측 - 로컬 DB 에 0046·0047 적용 · 후보 수집(898장), 확정 → 원본 저장 → `/api/media` 200 · immutable 캐시 → 정책 상세 사진. 로그인 사진 6초 돌기(동작 줄이기면 멈춤), '사진 출처' 홈 · 내 정보 · 넓은 화면, 홈 '전국 공통' → 지도.
-- PASS: 코드 리뷰(BASE `ad25771`, HEAD `503e551`, backend · frontend 두 갈래) - HIGH 없음. MEDIUM 3건(수집 중 같은 사진 고유키 오류로 수집 전체 중단, 확정과 수집의 잠금 대기, 넓은 화면 불러오는 동안 '목록에 없어요') 과 LOW 다수(받는 주소 제한 · 넘겨주기, 설정 누락 500, 디스크 오류 500, 확정 503 문구, 수집 진행 묻기 멈춤, 끝날 때 고른 후보 지움, 두 번 누르기, 경로 순회 시험)를 고치고 시험 보강.
-- PASS: `git diff --check`, 변경 파일 U+FFFD 0건, diff 의 비밀값·로컬 경로·서버 주소 검색 0건.
+- PASS: `npm run typecheck`, `npm run test:mojibake`, `npx vitest run` 44파일 489개, `npm run build`, `npm run test:e2e:containers` 13/13.
+- PASS: 4173 실측(390 · 1440) - 필터 창 전남 + 마감 30일 이내 → 지도 그대로 '전남 1건' · 조건 줄 · '필터 1', 화면 안 ‹ 뒤에도 조건 남음, ✕ 로 풀림, '숙박' 모두 보기 → '모든 지역 94건', 예전 목록 없음, 가로 넘침 없음.
+- PASS: 코드 리뷰(BASE `f1f9e45`, HEAD `7f10ec4`) - HIGH 없음. MEDIUM 2건('모두 보기' 건수와 목록이 지역 선택 때문에 다름, 지도 중심에서 글 검색 조건이 안 보임)과 LOW(교통 + 지역 미리 세기, 로그아웃해도 조건 남음, 검색 칸 숫자가 조건 무시)를 고치고 시험 보강.
+- PASS: `git diff --check`, 변경 파일 U+FFFD 0건.
+- 알려진 흔들림: `mypage.test.tsx` 의 즐겨찾기 빈 화면 시험은 같은 로컬 백엔드 시험 계정에 다른 시험이 저장한 정책이 남으면 가끔 실패한다(단독 재실행 통과, 이 변경과 무관).
 
 ## Active Risks
 
@@ -29,6 +29,13 @@
 - profile 로 꺼진 서비스는 `--remove-orphans` 로 안 지워진다. 끌 때는 `--profile logarchive rm -sf logarchive`.
 - 5분 주기다. 볼륨 보관 한도(스트림당 200MB)를 넘길 만큼 멈춰 있으면 그 사이는 잃는다. `docker logs` 로 회차 기록을 본다.
 - AWS 로 옮기면 빼 오는 곳이 CloudWatch 로 바뀐다(ASG·private subnet). 보관 형식은 그대로 둔다.
+
+### 필터 · 글 검색을 지도 안에서(`feature/policy-filter-in-map`)
+
+- 새로 고친 직후 '관심 정책만'이 걸려 있으면 관심 정책 목록이 오기 전 잠깐 0건이 보인다(목록을 못 받으면 0건에 머문다 - 조건 줄 ✕ 로 푼다).
+- 조건은 탭(sessionStorage)에 남아 다른 탭에서 정책 탭으로 돌아와도 걸려 있다. 로그아웃하면 지운다.
+- 휴대폰 반반 화면에서 지역을 고르면(지도 누르기와 같이) 같은 층이라 기록을 덮어쓴다 - 기기 뒤로가기는 정책 탭을 떠난다(예전부터의 층 규칙).
+- 예전 목록 CSS(`.policy-list-card` · `.policy-list-photo-credit` · `.prototype-policy-result-row` 등)는 남아 있다 - 죽은 CSS 정리는 따로.
 
 ### 사진 검토 · 원본 보관(`feature/photo-collection-criteria`)
 
