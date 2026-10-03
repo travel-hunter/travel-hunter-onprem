@@ -15,9 +15,11 @@ import {
   ApiError,
   appDataApi,
   type LinkedTripPolicy,
+  type PlaceSearchItem,
   type Recommendation,
   type Trip,
 } from "../../api";
+import { tripPlaceFromSearchItem, writePlaceParam } from "../../utils/placeHandoff";
 import { App } from "../App";
 import { AppProviders } from "../AppRoot";
 import {
@@ -27,7 +29,7 @@ import {
   getPreviewTrip,
 } from "../../test/fixtures";
 import { installAppKakaoSdkMock } from "../../test/kakaoMock";
-import { getLink, login, renderAppRoute } from "../../test/renderAppRoute";
+import { getLink, login, renderAppRoute, routeLocation } from "../../test/renderAppRoute";
 import {
   buildTimelineRenderItems,
   buildTimelineSortableIds,
@@ -3057,7 +3059,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("제주 서귀포시 성산읍");
       expect(screen.queryByLabelText("장소명")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("메모")).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "1개 저장하기" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Day 1에 1개 저장하기" })).toBeInTheDocument();
 
       await user.type(searchInput, "시장");
       await user.click(await screen.findByRole("button", { name: "동문시장 선택" }));
@@ -3075,9 +3077,9 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
 
       expect(basket).toHaveTextContent("추가할 장소 2개");
       expect(within(basket).getAllByText("성산일출봉")).toHaveLength(1);
-      expect(screen.getByRole("button", { name: "2개 저장하기" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Day 1에 2개 저장하기" })).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "2개 저장하기" }));
+      await user.click(screen.getByRole("button", { name: "Day 1에 2개 저장하기" }));
 
       expect(addPlaceSpy).not.toHaveBeenCalled();
       expect(screen.getByRole("dialog", { name: "장소 추가" })).toBeInTheDocument();
@@ -3085,6 +3087,54 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       getTripSpy.mockRestore();
       searchTripPlacesSpy.mockRestore();
       addPlaceSpy.mockRestore();
+    }
+  });
+
+  it("opens the add sheet with a place handed over from the home search and saves it on the picked day", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "128",
+      revision: 3,
+      title: "Handoff trip",
+      days: { 1: [], 2: [] },
+      currentUserRole: "owner",
+    };
+    const odongdo: PlaceSearchItem = {
+      kind: "place",
+      id: "kakao:8193468",
+      name: "오동도",
+      category: "여행 > 관광,명소 > 섬",
+      categoryCode: "AT4",
+      address: "전남광주통합특별시 여수시 수정동 1-1",
+      latitude: 34.745,
+      longitude: 127.766,
+      placeUrl: "http://place.map.kakao.com/8193468",
+      sido: "전남",
+      city: "여수",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const addPlacesSpy = vi.spyOn(appDataApi, "addTripPlaces").mockResolvedValue({ ...trip, revision: 4 });
+    try {
+      await login();
+      cleanup();
+      renderAppRoute(`/trips/128?${new URLSearchParams({ addPlace: writePlaceParam(odongdo) })}`);
+      const user = userEvent.setup();
+      // 홈 장소 카드의 '일정에 담기'(시안 v57): 넘어온 장소가 바구니에 담긴 채 열리고, 주소의 넘김은 한 번 읽고 지운다
+      const sheet = await screen.findByRole("dialog", { name: "장소 추가" });
+      expect(within(sheet).getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("오동도");
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("addPlace")).toBeNull());
+      // 추가 창에서도 날짜 칩으로 저장할 날을 고른다 - 고르기만 하고 옮기지 않는다
+      await user.click(within(sheet).getByRole("radio", { name: /Day 2/ }));
+      expect(addPlacesSpy).not.toHaveBeenCalled();
+      await user.click(within(sheet).getByRole("button", { name: "Day 2에 1개 저장하기" }));
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
+      // 일정 안 장소 검색으로 같은 곳을 담을 때와 같은 기록(카카오 id · 분류 전체 경로)
+      expect(addPlacesSpy).toHaveBeenCalledWith("128", 2, { expectedRevision: 3, places: [tripPlaceFromSearchItem(odongdo)] });
+      // 담은 날을 보여 준다 - 보던 Day 1 에 남으면 저장이 안 된 것처럼 보였다(10/3 리뷰)
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("day")).toBe("2"));
+    } finally {
+      getTripSpy.mockRestore();
+      addPlacesSpy.mockRestore();
     }
   });
 

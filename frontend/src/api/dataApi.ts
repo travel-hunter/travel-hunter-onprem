@@ -27,6 +27,8 @@ import {
   InviteEmailResult,
   InviteState,
   PlaceSearchCandidate,
+  PlaceSearchItem,
+  NearbyCategory,
   Policy,
   Profile,
   ProfileSkipResponse,
@@ -323,6 +325,10 @@ export type AppDataApi = {
     options: TripPlaceSearchOptions,
     control?: ApiRequestControl,
   ) => Promise<PlaceSearchCandidate[]>;
+  /** 통합 검색의 장소 찾기(카카오 로컬) - 일정과 무관 */
+  searchPlaces: (query: string, control?: ApiRequestControl) => Promise<PlaceSearchItem[]>;
+  /** 장소 카드 '이 근처' - 좌표 반경 2km 안의 그 분류 장소, 가까운 순 */
+  listNearbyPlaces: (latitude: number, longitude: number, category: NearbyCategory, control?: ApiRequestControl) => Promise<PlaceSearchItem[]>;
   getInviteState: (tripId: string) => Promise<InviteState>;
   confirmInviteSent: (tripId: string) => Promise<InviteState>;
   sendInviteEmail: (tripId: string, request: SendInviteEmailRequest) => Promise<InviteEmailResult>;

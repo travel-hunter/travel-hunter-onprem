@@ -2,6 +2,7 @@ import type { Policy } from "../../api";
 import { BENEFIT_TYPES, benefitTypeOf, type BenefitType } from "../benefitTile";
 import { daysUntilPolicyDeadline, isDigitalTourismResidentCardPolicy, isSafePolicyDeadline } from "../../utils";
 import { cityOf, NATIONWIDE_REGION, programOf } from "../../utils/policyPrograms";
+import { filterOfWord, nameHas, nameWords, regionsOfWord } from "./searchText";
 
 /* 정책 탭 지도 화면의 목록·검색·칩이 쓰는 계산. 화면 없이 돌아가는 순수 함수만 둔다. */
 
@@ -42,6 +43,8 @@ export const REGION_FULL_NAMES: Readonly<Record<string, string>> = {
 };
 /* 건수가 같을 때 쓰는 순서 */
 export const REGION_ORDER = Object.keys(REGION_FULL_NAMES);
+/** 지도 도의 짧은 이름인가 - 주소에서 온 값은 이것으로 거른다('__proto__' 같은 값이 표의 Object 를 꺼냈다) */
+export const isRegionName = (value: string) => Object.prototype.hasOwnProperty.call(REGION_FULL_NAMES, value);
 
 export function countByRegion(policies: Policy[]): Record<string, number> {
   const counts: Record<string, number> = {};
@@ -188,37 +191,70 @@ export function regionSummary(policies: Policy[], region: string): RegionSummary
 }
 
 /* ── 돋보기 검색 ───────────────────────────────────────────────
-   비워 두면 지역 목록, 치면 시도·시군·사업. 시군은 혜택이 있는 곳만 찾힌다(제목의 [시군]). */
+   비워 두면 지역 목록, 치면 시도 · 시군 · 사업 · 혜택 형태. 시군은 혜택이 있는 곳만 찾힌다(제목의 [시군]).
+   사람이 치는 말 그대로 찾는다(10/3 사용자 조사, searchText.ts): 띄어쓰기 무시, 낱말마다 찾기, 일상 별칭(강원도 · 수도권 · 숙소 ·
+   KTX), 초성(ㅂㅅ). 낱말이 여럿이고 지역과 혜택이 함께 맞으면('여수 숙박세일') 둘을 합친 줄을 맨 위에 둔다. */
+export type BrowseCombo = { region: string; city: string | null; program: string | null; filter: BrowseFilter | null; count: number };
+
 export type BrowseSearch = {
+  combos: BrowseCombo[];
   regions: Array<{ region: string; count: number }>;
   places: Array<{ place: string; region: string; count: number }>;
+  filters: Array<{ key: BrowseFilter; label: string; count: number }>;
   programs: Array<{ name: string; count: number; type: BenefitType; nation: boolean }>;
 };
 
 export function searchBrowse(policies: Policy[], query: string): BrowseSearch {
-  const q = query.trim();
+  const split = query.trim().toLocaleLowerCase("ko-KR").split(/\s+/).filter(Boolean);
+  // 낱말이 여럿이면 한 자 낱말과 흔한 말('할인' · '혜택')은 버린다. 낱말 하나면 그대로 - '여'로도 찾던 그대로
+  const words = nameWords(query, (word) => filterOfWord(word) !== null);
   const counts = countByRegion(policies);
   const regions = REGION_ORDER
-    .filter((region) => region.includes(q) || REGION_FULL_NAMES[region].includes(q))
+    .filter((region) => words.some((word) =>
+      nameHas(region, word) || nameHas(REGION_FULL_NAMES[region], word) || regionsOfWord(word).includes(region)))
     .map((region) => ({ region, count: counts[region] ?? 0 }));
   const places = new Map<string, { place: string; region: string; count: number }>();
   const programs = new Map<string, { name: string; count: number; type: BenefitType; nation: boolean }>();
   for (const policy of policies) {
     const place = cityOf(policy);
-    if (place && place.includes(q)) {
+    if (place && words.some((word) => nameHas(place, word))) {
       const key = `${place}|${policy.region}`;
       const entry = places.get(key) ?? { place, region: policy.region, count: 0 };
       entry.count += 1;
       places.set(key, entry);
     }
     const name = programName(policy);
-    if (name.includes(q)) {
+    if (words.some((word) => nameHas(name, word))) {
       const entry = programs.get(name) ?? { name, count: 0, type: benefitTypeOf(policy), nation: policy.region === NATIONWIDE_REGION };
       entry.count += 1;
       programs.set(name, entry);
     }
   }
-  return { regions, places: Array.from(places.values()), programs: Array.from(programs.values()) };
+  const filters = Array.from(new Set(words.map(filterOfWord).filter((key): key is BrowseFilter => key !== null)))
+    .map((key) => ({ key, label: filterLabel(key), count: policies.filter((policy) => matchesBrowseFilter(policy, key)).length }))
+    .filter((entry) => entry.count > 0);
+  const combos: BrowseCombo[] = [];
+  if (split.length > 1) {
+    const where: Array<{ region: string; city: string | null }> = [
+      ...regions.map((entry) => ({ region: entry.region, city: null })),
+      ...Array.from(places.values(), (entry) => ({ region: entry.region, city: entry.place })),
+    ];
+    const inWhere = (policy: Policy, at: { region: string; city: string | null }) =>
+      policy.region === at.region && (!at.city || cityOf(policy) === at.city);
+    for (const at of where) {
+      for (const program of programs.values()) {
+        const count = policies.filter((policy) => inWhere(policy, at) && programName(policy) === program.name).length;
+        if (count) combos.push({ ...at, program: program.name, filter: null, count });
+      }
+      if (programs.size) continue;
+      for (const entry of filters) {
+        const count = policies.filter((policy) => inWhere(policy, at) && matchesBrowseFilter(policy, entry.key)).length;
+        if (count) combos.push({ ...at, program: null, filter: entry.key, count });
+      }
+    }
+    combos.sort((left, right) => right.count - left.count);
+  }
+  return { combos, regions, places: Array.from(places.values()), filters, programs: Array.from(programs.values()) };
 }
 
 /* 돋보기를 비워 두었을 때의 지역 사진 칸 - 혜택 많은 순, 같으면 REGION_ORDER */
@@ -235,6 +271,10 @@ export function regionTiles(policies: Policy[]) {
    depth 가 늘 때만 기록을 쌓고(useBrowseHistory), 같은 층끼리 옮기는 건(지역 → 다른 지역) 덮어쓴다. */
 export type SheetStop = "low" | "mid" | "full";
 
+/** 위치로 찾은 곳(통합 검색) - 지도 핀과 '○○ 근처'. 고른 지역 · 시군이 region · city 와 같을 때만 그린다.
+    카카오 장소 ID와 사용자가 친 말만 싣는다(이름 · 좌표는 placeMemory 에서 다시 꺼낸다 - 카카오 운영정책). region · city · note 는 우리 데이터 */
+export type NearAnchor = { id: string; q: string; region: string; city: string | null; note: string | null };
+
 export type BrowseState = {
   region: string | null;
   city: string | null;
@@ -244,11 +284,29 @@ export type BrowseState = {
   search: boolean;
   /** 넓은 화면: 목록 패널이 보이는 정책 상세(slug). 좁은 화면은 쓰지 않는다 - 상세는 따로 연다 */
   detail: string | null;
+  /** 위치로 찾은 곳. 층이 아니라 지금 층의 속성이다 */
+  near: NearAnchor | null;
 };
+
+/** 구역은 번호(area:숫자 - 법정동, 없으면 행정동)로만 싣는다 - 둘 다 없으면 서버가 구역 ID를 주소 문자열로 대신한다(10/4 리뷰) */
+const nearIdOk = (id: string) => !id.startsWith("area:") || /^area:\d+$/.test(id);
+
+function readNear(raw: string | null): NearAnchor | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as Partial<NearAnchor>;
+    if (typeof v.id !== "string" || !v.id || v.id.length > 80 || !nearIdOk(v.id) || typeof v.q !== "string" || typeof v.region !== "string") return null;
+    if (v.region !== NATIONWIDE_REGION && !isRegionName(v.region)) return null;
+    return { id: v.id, q: v.q.slice(0, 80), region: v.region, city: typeof v.city === "string" ? v.city : null, note: typeof v.note === "string" ? v.note.slice(0, 120) : null };
+  } catch {
+    return null;
+  }
+}
 
 export function readBrowseState(params: URLSearchParams): BrowseState {
   /* region= 은 예전 지역 필터 주소다(필터 목록 화면이 없어진 뒤로 지도 선택과 같다) */
-  const region = params.get("place") || params.get("region") || null;
+  const raw = params.get("place") || params.get("region") || null;
+  const region = raw && (raw === NATIONWIDE_REGION || isRegionName(raw)) ? raw : null;
   const sheet = params.get("sheet");
   const type = params.get("type");
   return {
@@ -261,8 +319,13 @@ export function readBrowseState(params: URLSearchParams): BrowseState {
     sheet: sheet === "low" ? "low" : sheet === "full" || params.get("view") === "list" ? "full" : "mid",
     search: params.get("find") === "1",
     detail: params.get("detail") || null,
+    near: readNear(params.get("near")),
   };
 }
+
+/** 근처가 지금 화면 것인지 - 다른 지역 · 시군으로 옮기면 저절로 사라진다 */
+export const nearOn = (state: BrowseState) =>
+  state.near && state.near.region === state.region && state.near.city === state.city ? state.near : null;
 
 export function writeBrowseState(params: URLSearchParams, state: BrowseState): URLSearchParams {
   const next = new URLSearchParams(params);
@@ -274,6 +337,9 @@ export function writeBrowseState(params: URLSearchParams, state: BrowseState): U
   put("sheet", state.sheet === "mid" ? null : state.sheet);
   put("find", state.search ? "1" : null);
   put("detail", state.detail);
+  // 근처는 그 지역 · 시군을 보고 있을 때만 - 다른 곳으로 옮기면(뒤로 · ‹ · Esc 포함) 주소에서도 지운다(10/3 리뷰)
+  const near = nearOn(state);
+  put("near", near && nearIdOk(near.id) ? JSON.stringify(near) : null);
   // 예전 필터 목록 화면의 키 - 조건은 이제 주소 밖(policyConditions)에 있다
   for (const legacy of ["view", "region", "category", "period", "amount", "saved"]) next.delete(legacy);
   return next;

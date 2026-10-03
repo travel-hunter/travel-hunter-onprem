@@ -9,6 +9,8 @@ from app.core.config import Settings, settings
 
 
 KAKAO_LOCAL_KEYWORD_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
+KAKAO_LOCAL_ADDRESS_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/address.json"
+KAKAO_LOCAL_CATEGORY_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/category.json"
 KAKAO_LOCAL_DEFAULT_SIZE = 15
 KAKAO_LOCAL_DEFAULT_SORT = "accuracy"
 
@@ -29,6 +31,22 @@ class KakaoLocalPlace:
     latitude: float | None
     longitude: float | None
     place_url: str | None
+    # 좌표를 주고 찾았을 때(분류 · 키워드 검색의 x · y) 그 점에서의 거리(m)
+    distance_meters: int | None = None
+
+
+@dataclass(frozen=True)
+class KakaoLocalArea:
+    """주소 검색의 행정 구역 한 곳(address_type REGION). '중앙동'처럼 같은 이름이 여러 시군에 있다."""
+
+    address_name: str
+    region_1depth_name: str
+    region_2depth_name: str
+    region_3depth_name: str
+    b_code: str | None
+    latitude: float | None
+    longitude: float | None
+    h_code: str | None = None   # 행정동으로 온 구역은 b_code(법정동) 없이 이것만 있다('중앙동' 30곳 중 16곳, 10/4)
 
 
 class KakaoLocalSearchProvider(Protocol):
@@ -40,6 +58,21 @@ class KakaoLocalSearchProvider(Protocol):
         page: int = 1,
         size: int = KAKAO_LOCAL_DEFAULT_SIZE,
         sort: str = KAKAO_LOCAL_DEFAULT_SORT,
+    ) -> list[KakaoLocalPlace]:
+        ...
+
+    def search_address(self, *, query: str, size: int = 30) -> list[KakaoLocalArea]:
+        ...
+
+    def search_category(
+        self,
+        *,
+        category_group_code: str,
+        x: float,
+        y: float,
+        radius: int = 2000,
+        size: int = KAKAO_LOCAL_DEFAULT_SIZE,
+        sort: str = "distance",
     ) -> list[KakaoLocalPlace]:
         ...
 
@@ -66,6 +99,13 @@ def parse_float_or_none(value: str | None) -> float | None:
         return None
 
 
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _to_place_payload(document: dict[str, Any]) -> KakaoLocalPlace:
     external_id = str(document.get("id", "")).strip()
     if not external_id:
@@ -84,6 +124,7 @@ def _to_place_payload(document: dict[str, Any]) -> KakaoLocalPlace:
         latitude=parse_float_or_none(document.get("y")),
         longitude=parse_float_or_none(document.get("x")),
         place_url=(document.get("place_url") or None) if isinstance(document, dict) else None,
+        distance_meters=_int_or_none(document.get("distance")),
     )
 
 
@@ -107,11 +148,6 @@ class KakaoLocalClient:
         size: int = KAKAO_LOCAL_DEFAULT_SIZE,
         sort: str = KAKAO_LOCAL_DEFAULT_SORT,
     ) -> list[KakaoLocalPlace]:
-        key = self._settings.kakao_local_rest_api_key.strip()
-        if not key:
-            raise KakaoLocalConfigurationError(
-                "KAKAO_LOCAL_REST_API_KEY is required."
-            )
         params = {
             "query": query.strip(),
             "page": page,
@@ -120,10 +156,34 @@ class KakaoLocalClient:
         }
         if category_group_code:
             params["category_group_code"] = category_group_code
+        return self._search_places(KAKAO_LOCAL_KEYWORD_SEARCH_URL, params)
 
+    def search_category(
+        self,
+        *,
+        category_group_code: str,
+        x: float,
+        y: float,
+        radius: int = 2000,
+        size: int = KAKAO_LOCAL_DEFAULT_SIZE,
+        sort: str = "distance",
+    ) -> list[KakaoLocalPlace]:
+        """분류 검색 - 좌표(x 경도 · y 위도) 반경(m) 안의 그 분류 장소. 장소마다 그 점에서의 거리(distance_meters)가 온다."""
+
+        return self._search_places(
+            KAKAO_LOCAL_CATEGORY_SEARCH_URL,
+            {"category_group_code": category_group_code, "x": x, "y": y, "radius": radius, "size": size, "sort": sort},
+        )
+
+    def _search_places(self, url: str, params: dict[str, Any]) -> list[KakaoLocalPlace]:
+        key = self._settings.kakao_local_rest_api_key.strip()
+        if not key:
+            raise KakaoLocalConfigurationError(
+                "KAKAO_LOCAL_REST_API_KEY is required."
+            )
         try:
             response = self._http_get(
-                KAKAO_LOCAL_KEYWORD_SEARCH_URL,
+                url,
                 headers={"Authorization": f"KakaoAK {key}"},
                 params=params,
                 timeout=self._settings.kakao_local_timeout_seconds,
@@ -145,6 +205,44 @@ class KakaoLocalClient:
             except ValueError:
                 continue
         return places
+
+    def search_address(self, *, query: str, size: int = 30) -> list[KakaoLocalArea]:
+        """주소 검색(구역만). analyze_type=similar - '중앙동'이면 전국의 중앙동이 다 온다."""
+
+        key = self._settings.kakao_local_rest_api_key.strip()
+        if not key:
+            raise KakaoLocalConfigurationError("KAKAO_LOCAL_REST_API_KEY is required.")
+        try:
+            response = self._http_get(
+                KAKAO_LOCAL_ADDRESS_SEARCH_URL,
+                headers={"Authorization": f"KakaoAK {key}"},
+                params={"query": query.strip(), "size": size, "analyze_type": "similar"},
+                timeout=self._settings.kakao_local_timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except httpx.HTTPError as exc:
+            raise KakaoLocalConfigurationError(str(exc))
+        documents = payload.get("documents", []) if isinstance(payload, dict) else []
+        if not isinstance(documents, list):
+            return []
+        return [area for area in (_to_area(d) for d in documents if isinstance(d, dict)) if area is not None]
+
+
+def _to_area(document: dict[str, Any]) -> KakaoLocalArea | None:
+    if not str(document.get("address_type", "")).startswith("REGION"):
+        return None   # 지번 · 도로명 한 곳은 장소 검색이 맡는다 - 여기서는 동 · 읍 · 면 같은 구역만
+    address = document.get("address") if isinstance(document.get("address"), dict) else {}
+    return KakaoLocalArea(
+        address_name=str(document.get("address_name", "")).strip(),
+        region_1depth_name=str(address.get("region_1depth_name", "")).strip(),
+        region_2depth_name=str(address.get("region_2depth_name", "")).strip(),
+        region_3depth_name=str(address.get("region_3depth_name") or address.get("region_3depth_h_name") or "").strip(),
+        b_code=(address.get("b_code") or None),
+        h_code=(address.get("h_code") or None),
+        latitude=parse_float_or_none(document.get("y")),
+        longitude=parse_float_or_none(document.get("x")),
+    )
 
 
 def build_kakao_local_client(

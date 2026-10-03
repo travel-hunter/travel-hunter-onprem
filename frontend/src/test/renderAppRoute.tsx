@@ -1,6 +1,6 @@
 import { render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate, type MemoryRouterProps } from "react-router-dom";
 import { expect } from "vitest";
 import { App } from "../app/App";
 import { AppProviders } from "../app/AppRoot";
@@ -21,9 +21,10 @@ function RouteProbe() {
   );
 }
 
-export function renderAppRoute(route: string) {
+/** 기록 여러 칸(state 포함)을 주면 마지막 칸에서 시작한다 - 새로 고친 탭처럼 기록은 남고 메모리는 빈 상태를 만든다 */
+export function renderAppRoute(route: string | NonNullable<MemoryRouterProps["initialEntries"]>) {
   return render(
-    <MemoryRouter initialEntries={[route]}>
+    <MemoryRouter initialEntries={typeof route === "string" ? [route] : route}>
       <AppProviders>
         <App />
         <RouteProbe />

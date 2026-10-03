@@ -384,6 +384,26 @@ export type PlaceSearchCandidate = {
   externalPlaceId?: string | null;
 };
 
+/** 통합 검색의 장소 한 곳(place) 또는 동 · 읍 · 면 구역(area). sido · city 는 서버가 주소로 가린 지도 도 · 시군 */
+export type PlaceSearchItem = {
+  kind: "place" | "area";
+  id: string;
+  name: string;
+  category?: string | null;
+  categoryCode?: string | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  placeUrl?: string | null;
+  sido?: string | null;
+  city?: string | null;
+  /** 이 근처(GET /places/nearby)일 때만 - 기준 좌표에서의 거리(m) */
+  distanceMeters?: number | null;
+};
+
+/** 장소 카드 '이 근처'의 분류: 맛집 · 카페 · 숙소 · 볼거리(카카오 분류 코드) */
+export type NearbyCategory = "FD6" | "CE7" | "AD5" | "AT4";
+
 export type RegionRecommendation = {
   region: string;
   title: string;

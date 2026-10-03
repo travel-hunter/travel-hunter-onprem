@@ -1284,6 +1284,84 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
 - 404: 일정 없음 또는 접근 권한 없음
 - 422: `query` 누락/길이 위반
 
+### GET /places/search
+
+홈 · 정책 탭 통합 검색의 장소 찾기(시안 v56). 일정과 무관하다 - 로그인한 사용자 누구나. 카카오 로컬 키워드 검색으로 장소를 찾고, 찾을 말이 동 · 읍 · 면 · 리 · `N가`로 끝나면 카카오 주소 검색도 불러 같은 이름의 구역을 전국에서 함께 준다(`kind: "area"`, 장소보다 앞). 항목마다 서버가 주소로 지도 도(`sido`, 정책 `region` 과 같은 짧은 이름)와 시군(`city`, 정책 제목 `[시군]` 과 맞추는 짧은 이름)을 붙인다 - 주소 첫 낱말이 `전남광주통합특별시`이면 둘째 낱말이 구일 때 광주, 시 · 군일 때 전남. 가리지 못하면 `null`. `category` 는 카카오 분류 전체 경로로, 일정 장소 검색(`GET /trips/{tripId}/place-search`)의 `categoryName` 과 같은 값이다 - 홈에서 일정에 담아도 같은 장소 기록이 된다. 카카오가 꺼져 있거나 실패하면 빈 배열(오류 아님).
+
+**Query**
+- `query`: string, 1-80 chars. 두 글자 미만이면 빈 배열.
+
+**Response 200** → `PlaceSearchItem[]`
+```json
+[
+  {
+    "kind": "area",
+    "id": "area:4613010100",
+    "name": "여수시 중앙동",
+    "category": null,
+    "categoryCode": null,
+    "address": "전남광주통합특별시 여수시 중앙동",
+    "latitude": 34.737,
+    "longitude": 127.738,
+    "placeUrl": null,
+    "sido": "전남",
+    "city": "여수",
+    "distanceMeters": null
+  },
+  {
+    "kind": "place",
+    "id": "kakao:8193468",
+    "name": "오동도",
+    "category": "여행 > 관광,명소 > 섬 > 섬(내륙)",
+    "categoryCode": "AT4",
+    "address": "전남광주통합특별시 여수시 수정동 1-1",
+    "latitude": 34.744,
+    "longitude": 127.766,
+    "placeUrl": "http://place.map.kakao.com/8193468",
+    "sido": "전남",
+    "city": "여수",
+    "distanceMeters": null
+  }
+]
+```
+
+**Errors**
+- 401: 인증 필요
+- 422: `query` 누락/길이 위반
+
+### GET /places/nearby
+
+홈 장소 카드의 '이 근처'(시안 v58). 장소 좌표 반경 2km 안의 한 분류 장소를 가까운 순으로 최대 6곳 준다(기준 장소 자신이 끼면 화면이 뺀다). 카카오 로컬 분류 검색(`category.json`) 그대로라 별점 · 리뷰 · 인기 지표는 없다. 항목 모양은 `GET /places/search` 와 같고(`kind: "place"`), `distanceMeters` 에 기준 좌표에서의 거리(m)가 온다(검색 결과는 `null`). 카카오가 꺼져 있거나 실패하면 빈 배열(오류 아님). 로그인 필요.
+
+**Query**
+- `lat`: number, 33-39 (위도)
+- `lng`: number, 124-132 (경도)
+- `category`: `FD6`(음식점) | `CE7`(카페) | `AD5`(숙박) | `AT4`(관광명소)
+
+**Response 200** → `PlaceSearchItem[]`
+```json
+[
+  {
+    "kind": "place",
+    "id": "kakao:1234567",
+    "name": "오동도해양식당",
+    "category": "음식점 > 한식 > 해물,생선",
+    "categoryCode": "FD6",
+    "address": "전남광주통합특별시 여수시 수정동 3-1",
+    "latitude": 34.746,
+    "longitude": 127.763,
+    "placeUrl": "http://place.map.kakao.com/1234567",
+    "sido": "전남",
+    "city": "여수",
+    "distanceMeters": 320
+  }
+]
+```
+
+**Errors**
+- 401: 인증 필요
+- 422: `lat` · `lng` 범위 밖, `category` 가 네 값이 아님
+
 ### GET /trips/{trip_id}/recommendations
 
 Returns additional AI place candidates for the trip. The backend treats `(sourceProvider, externalPlaceId)` as the durable external identity, then applies a conservative same-provider `externalPlaceId` and normalized-title duplicate exclusion for existing MVP data. Kakao-backed candidates include official Kakao Local API map metadata when available; ratings/reviews are not exposed because the official API response does not provide those fields. When official Kakao data can supply enough non-duplicate places, the response targets at least 10 candidates with a useful mix of attractions, food, and stays; sparse categories are backfilled from other official candidates instead of creating synthetic places. The endpoint returns dynamic `sourceType="freshCandidate"` items first and reads `recommendations.result` only when no fresh candidate is available. New trip creation does not seed saved summaries. `sourceType="savedSummary"` is reserved for existing persisted rows or a future explicit recommendation-persistence contract. The current live row is a development-seed specimen, not proven production legacy history. No runtime writer, TTL, or purge is added until that product contract exists.

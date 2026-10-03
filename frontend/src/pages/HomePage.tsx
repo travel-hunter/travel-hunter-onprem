@@ -1,4 +1,4 @@
-import { MapPin, Search, X } from "lucide-react";
+import { MapPin, X } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -29,6 +29,7 @@ import {
   benefitTypeOf,
 } from "../components/benefitTile";
 import { HomeHeroBanner, type HomeHeroSlide } from "../components/HomeHeroBanner";
+import { HomeSearch, useHomeSearchOpen } from "../components/HomeSearch";
 import { HERO_PHOTOS, heroThemeOf } from "../components/heroPhotos";
 import { KOREA_REGION_SHAPES } from "../components/map/koreaRegionShapes";
 import { HomeSectionHeader } from "../components/patterns";
@@ -73,6 +74,7 @@ export function isProfileComplete(profile: Profile) {
 export function HomePage() {
   const { currentUser, profile } = useSession();
   const profileEditor = useProfileEditor(); // '내 관심 지역 혜택'의 '관심 지역 바꾸기' - 내 정보와 같은 편집 창
+  const searching = useHomeSearchOpen();
   const dismissalKey = currentUser
     ? `${PROFILE_PROMPT_DISMISSAL_PREFIX}${currentUser.id}`
     : null;
@@ -171,138 +173,131 @@ export function HomePage() {
     /* desktop-wide: 1024px 이상에서 앱 틀을 넓히고(app.css) 홈을 두 단 격자로 편다(home.css). 좁은 화면에서는 아무 일도 안 한다. */
     <section className="screen with-tabs prototype-app-screen prototype-home-screen desktop-wide">
       <div className="prototype-status-spacer" aria-hidden="true" />
-      <div className="prototype-home-search-row">
-        <Link className="prototype-home-search-pill" to="/policies">
-          <Search size={15} />
-          어디로 떠나세요?
-        </Link>
-        <Link
-          className="prototype-home-avatar"
-          to="/mypage"
-          aria-label="마이페이지"
-        >
-          {avatarLabel}
-        </Link>
-      </div>
-
-      <div className="prototype-home-greeting">
-        <h2>안녕, {name}님</h2>
-        {policies && (
-          <p>
-            지금 받을 수 있는 혜택 <b>{policies.length}건</b>
-            {closingThisWeek > 0 && (
-              <>
-                {" "}
-                · 이번 주 마감{" "}
-                <b className="home-urgent">{closingThisWeek}건</b>
-              </>
-            )}
-          </p>
-        )}
-      </div>
-
-      {policies && <HomeHeroBanner slides={heroSlides} />}
-
-      {/* 가운데 뜨는 창은 홈을 가렸다. 닫을 수 있는 한 줄로 두고, 닫으면 이번 세션 동안 안 뜬다. */}
-      {shouldShowProfilePrompt && (
-        <section className="home-banner" aria-label="프로필 설정 안내">
-          <Link className="home-banner-go" to="/profile-setup?redirect=/home">
-            <b>관심 지역·취향·예산을 정하면 추천이 정확해져요</b>
-            <span>설정하기 ›</span>
-          </Link>
-          <button
-            aria-label="프로필 설정 안내 닫기"
-            className="home-banner-close"
-            onClick={dismissProfilePrompt}
-            type="button"
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </section>
-      )}
-
-      {policiesLoading && <LoadingState label="혜택을 불러오는 중입니다" />}
-      {policiesError && (
-        <ErrorState title="혜택을 불러오지 못했어요" message={policiesError} />
-      )}
-
-      {policies && (
+      <HomeSearch policies={policies ?? null} avatarLabel={avatarLabel} />
+      {/* 검색 중에는 홈 내용 대신 검색창 아래가 결과다(시안 v56) - 닫으면 그대로 돌아온다.
+          감싸는 칸을 두지 않는다: 넓은 화면 격자가 이 화면의 바로 아래 자식들로 칸을 나눈다(home.css) */}
+      {!searching && (
         <>
-          <DeadlineSection
-            title="마감이 가까운 혜택"
-            groups={closingGroups}
-            empty="곧 마감되는 혜택이 없어요."
-          />
-          {/* 관심 지역을 아직 안 골랐으면 위 배너가 고르기를 권한다 */}
-          {hasInterestRegions && (
-            <DeadlineSection
-              title="내 관심 지역 혜택"
-              groups={interestGroups}
-              empty="관심 지역에 아직 모아 둔 혜택이 없어요."
-              action={
-                <button className="home-section-action" onClick={profileEditor.open} type="button">
-                  관심 지역 바꾸기
-                </button>
-              }
-            />
-          )}
+          <div className="prototype-home-greeting">
+            <h2>안녕, {name}님</h2>
+            {policies && (
+              <p>
+                지금 받을 수 있는 혜택 <b>{policies.length}건</b>
+                {closingThisWeek > 0 && (
+                  <>
+                    {" "}
+                    · 이번 주 마감{" "}
+                    <b className="home-urgent">{closingThisWeek}건</b>
+                  </>
+                )}
+              </p>
+            )}
+          </div>
 
-          {placeCards.length > 0 && (
-            <section className="home-section" aria-label="혜택이 많은 지역">
-              <HomeSectionHeader title="혜택이 많은 지역" />
-              <ul className="home-row home-row-regions">
-                <li>
-                  <Link className="home-map-card" to="/policies">
-                    <HomeRegionMap counts={regionCounts} />
-                    <span>
-                      <b>
-                        지도로 보기 <span aria-hidden="true">›</span>
-                      </b>
-                      <i>17개 시도 혜택 수</i>
-                    </span>
-                  </Link>
-                </li>
-                {placeCards.map((card) => (
-                  <li key={card.key}>
-                    <PlaceCard card={card} />
-                  </li>
-                ))}
-              </ul>
-              <PhotoCredit cards={placeCards} />
+          {policies && <HomeHeroBanner slides={heroSlides} />}
+
+          {/* 가운데 뜨는 창은 홈을 가렸다. 닫을 수 있는 한 줄로 두고, 닫으면 이번 세션 동안 안 뜬다. */}
+          {shouldShowProfilePrompt && (
+            <section className="home-banner" aria-label="프로필 설정 안내">
+              <Link className="home-banner-go" to="/profile-setup?redirect=/home">
+                <b>관심 지역·취향·예산을 정하면 추천이 정확해져요</b>
+                <span>설정하기 ›</span>
+              </Link>
+              <button
+                aria-label="프로필 설정 안내 닫기"
+                className="home-banner-close"
+                onClick={dismissProfilePrompt}
+                type="button"
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
             </section>
           )}
 
-          {nationwidePolicies.length > 0 && (
-            <NationwideLineCard policies={nationwidePolicies} />
+          {policiesLoading && <LoadingState label="혜택을 불러오는 중입니다" />}
+          {policiesError && (
+            <ErrorState title="혜택을 불러오지 못했어요" message={policiesError} />
+          )}
+
+          {policies && (
+            <>
+              <DeadlineSection
+                title="마감이 가까운 혜택"
+                groups={closingGroups}
+                empty="곧 마감되는 혜택이 없어요."
+              />
+              {/* 관심 지역을 아직 안 골랐으면 위 배너가 고르기를 권한다 */}
+              {hasInterestRegions && (
+                <DeadlineSection
+                  title="내 관심 지역 혜택"
+                  groups={interestGroups}
+                  empty="관심 지역에 아직 모아 둔 혜택이 없어요."
+                  action={
+                    <button className="home-section-action" onClick={profileEditor.open} type="button">
+                      관심 지역 바꾸기
+                    </button>
+                  }
+                />
+              )}
+
+              {placeCards.length > 0 && (
+                <section className="home-section" aria-label="혜택이 많은 지역">
+                  <HomeSectionHeader title="혜택이 많은 지역" />
+                  <ul className="home-row home-row-regions">
+                    <li>
+                      <Link className="home-map-card" to="/policies">
+                        <HomeRegionMap counts={regionCounts} />
+                        <span>
+                          <b>
+                            지도로 보기 <span aria-hidden="true">›</span>
+                          </b>
+                          <i>17개 시도 혜택 수</i>
+                        </span>
+                      </Link>
+                    </li>
+                    {placeCards.map((card) => (
+                      <li key={card.key}>
+                        <PlaceCard card={card} />
+                      </li>
+                    ))}
+                  </ul>
+                  <PhotoCredit cards={placeCards} />
+                </section>
+              )}
+
+              {nationwidePolicies.length > 0 && (
+                <NationwideLineCard policies={nationwidePolicies} />
+              )}
+            </>
+          )}
+
+          {/* 일정 만들기 자리. 관심 지역이 있으면 그 지역 코스 카드, 없으면 한 줄 카드 하나 -
+              예전 기본 카드의 '숙소 포함·맛집 포함' 말풍선은 근거 없는 약속이라 뺐다. */}
+          {aiRegionCards.length > 0 ? (
+            /* 넓은 화면에서 전국 공통 카드 옆 한 칸을 차지하도록 제목과 카드를 한 덩어리로 묶는다(좁은 화면에서는 모양 없음) */
+            <div className="home-ai-block">
+              <div className="prototype-home-ai-title">AI 추천 맞춤 일정</div>
+              {aiRegionCards.length > 1 ? (
+                <PreferredAiCarousel cards={aiRegionCards} />
+              ) : (
+                <div className="prototype-home-ai-single">
+                  <AiRecommendationCard {...aiRegionCards[0]} />
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link className="home-line-card home-trip-line" to="/trips/new">
+              <BenefitTile kind="trip" />
+              <span className="home-line-copy">
+                <b>여행 일정 만들기</b>
+                <i>일정 지역에서 쓸 수 있는 혜택을 함께 보여 줘요</i>
+              </span>
+              <span className="home-line-go" aria-hidden="true">
+                ›
+              </span>
+            </Link>
           )}
         </>
-      )}
-
-      {/* 일정 만들기 자리. 관심 지역이 있으면 그 지역 코스 카드, 없으면 한 줄 카드 하나 -
-          예전 기본 카드의 '숙소 포함·맛집 포함' 말풍선은 근거 없는 약속이라 뺐다. */}
-      {aiRegionCards.length > 0 ? (
-        /* 넓은 화면에서 전국 공통 카드 옆 한 칸을 차지하도록 제목과 카드를 한 덩어리로 묶는다(좁은 화면에서는 모양 없음) */
-        <div className="home-ai-block">
-          <div className="prototype-home-ai-title">AI 추천 맞춤 일정</div>
-          {aiRegionCards.length > 1 ? (
-            <PreferredAiCarousel cards={aiRegionCards} />
-          ) : (
-            <div className="prototype-home-ai-single">
-              <AiRecommendationCard {...aiRegionCards[0]} />
-            </div>
-          )}
-        </div>
-      ) : (
-        <Link className="home-line-card home-trip-line" to="/trips/new">
-          <BenefitTile kind="trip" />
-          <span className="home-line-copy">
-            <b>여행 일정 만들기</b>
-            <i>일정 지역에서 쓸 수 있는 혜택을 함께 보여 줘요</i>
-          </span>
-          <span className="home-line-go" aria-hidden="true">
-            ›
-          </span>
-        </Link>
       )}
       {profileEditor.sheet}
     </section>

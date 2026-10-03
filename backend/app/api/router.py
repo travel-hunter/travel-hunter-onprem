@@ -6,6 +6,7 @@ from app.api.routes import (
     health,
     invites,
     ops,
+    places,
     policies,
     profile,
     recommendations,
@@ -20,6 +21,7 @@ api_router.include_router(admin.router)
 api_router.include_router(auth.router)
 api_router.include_router(profile.router)
 api_router.include_router(policies.router)
+api_router.include_router(places.router)
 api_router.include_router(recommendations.router)
 api_router.include_router(trips.router)
 api_router.include_router(travel_areas.router)

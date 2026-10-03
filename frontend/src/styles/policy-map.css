@@ -498,12 +498,17 @@ body.thmap-map-view .app-container { overflow: hidden; }
   transform: translateX(-50%);
   background: var(--color-bg-card);
 }
-/* 맨 위 검색창이 이 칸의 입력이다. 칸이 열린 동안 '필터' 자리에 '닫기' */
-.prototype-search-close {
-  flex: none; min-width: 64px; height: 44px; padding: 0 14px; border: 0; border-radius: 22px;
-  background: var(--gray-100); color: var(--gray-700); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+/* 맨 위 검색창이 이 칸의 입력이다(모양 그대로 - 시안 v56). 칸 머리 ‹ 로 나오면 들어오기 전의 반반 */
+.thmap-search-head { display: flex; align-items: center; gap: 4px; padding: 12px 12px 4px 8px; }
+.thmap-search-head .thmap-title { margin: 0; }
+.thmap-search-head .thmap-hsub { margin: 2px 0 0; }
+/* 위치로 찾기 줄 */
+.thmap-near-ic {
+  flex: none; width: 36px; height: 36px; display: grid; place-items: center;
+  border-radius: 18px; background: var(--color-action-primary-soft); color: var(--primary-700);
 }
-.prototype-search-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.thmap-near-to { color: var(--primary-700); font-weight: 700; }
+.thmap-search-body h3 .src { margin-left: 6px; font-weight: 600; letter-spacing: 0; color: var(--gray-500); }
 .thmap-search-body { flex: 1; overflow-y: auto; padding: 4px 16px 16px; scrollbar-width: none; }
 /* 이름 말고 정책 글 전체에서 찾은 목록으로 - 결과 맨 끝 */
 .thmap-sres-all {
@@ -749,3 +754,41 @@ body.thmap-map-view .app-container { overflow: hidden; }
   cursor: pointer;
 }
 .thmap-conds button:focus-visible, .thmap-unset:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/* 위치로 찾은 곳(시안 v56) - 지도 핀, 목록 머리 아래 '○○ 근처'와 가까운 시군 */
+.thmap-pin { pointer-events: none; }
+.thmap-pin .ring { fill: rgba(239, 68, 68, 0.18); stroke: #ef4444; stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.thmap-pin .dot { fill: #ef4444; stroke: #fff; stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.thmap-near { margin: 0 16px 8px; display: grid; gap: 6px; }
+.thmap-near-line { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--color-text-primary); }
+.thmap-near-line svg { color: #ef4444; flex: none; }
+.thmap-near-note { margin: 0; font-size: 12.5px; color: var(--gray-600); }
+.thmap-nearby { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.thmap-nearby .h { font-size: 12px; font-weight: 800; color: var(--gray-600); margin-right: 2px; }
+.thmap-nearby button {
+  display: inline-flex; align-items: baseline; gap: 6px; min-height: 34px; padding: 0 12px;
+  border: 1px solid var(--color-border-default); border-radius: 17px; background: var(--color-bg-card);
+  color: inherit; font: inherit; font-size: 13px; cursor: pointer;
+}
+.thmap-nearby button b { font-weight: 700; }
+.thmap-nearby button[aria-pressed="true"] { border-color: var(--primary-600); background: var(--color-action-primary-soft); color: var(--primary-700); cursor: default; }
+.thmap-nearby button span { color: var(--gray-600); font-size: 12px; }
+.thmap-nearby button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* 찾은 것이 없을 때 다음 행동(10/3 사용자 조사) - 혜택 이름 칩 · 교통 · 전체 정책 */
+.thmap-sres-none { display: grid; gap: 10px; margin: 16px 4px; }
+.thmap-sres-none .thmap-sres-empty { margin: 0; }
+.thmap-sres-hints { display: flex; flex-wrap: wrap; gap: 8px; }
+.thmap-sres-hints button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 18px;
+  background: var(--color-bg-card);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.thmap-sres-hints button.all { border-color: var(--primary-600); color: var(--primary-700); font-weight: 700; }
+.thmap-sres-hints button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }

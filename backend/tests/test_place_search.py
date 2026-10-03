@@ -1,0 +1,278 @@
+"""통합 검색의 장소 찾기(place_search) - 바깥 HTTP 없이 가짜 카카오로. 주소 문자열은 카카오가 10/2 실제로 준 모양이다."""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from fastapi.testclient import TestClient
+
+from app.api.dependencies import get_current_user
+from app.db.session import get_optional_db
+from app.main import app
+from app.models import User
+from app.services import place_search
+from app.services.kakao_local import KakaoLocalArea, KakaoLocalClient, KakaoLocalConfigurationError, KakaoLocalPlace
+
+
+def place(name: str, address: str, *, code: str = "AT4", category: str = "여행 > 관광,명소 > 섬", pid: str = "1",
+          distance: int | None = None) -> KakaoLocalPlace:
+    return KakaoLocalPlace(
+        external_place_id=pid, name=name, category_name=category, category_group_code=code, category_group_name=None,
+        phone=None, address=address, latitude=34.74, longitude=127.76, place_url=f"http://place.map.kakao.com/{pid}",
+        distance_meters=distance,
+    )
+
+
+def area(address_name: str, r1: str, r2: str, r3: str, code: str) -> KakaoLocalArea:
+    return KakaoLocalArea(address_name=address_name, region_1depth_name=r1, region_2depth_name=r2, region_3depth_name=r3,
+                          b_code=code, latitude=34.7, longitude=127.7)
+
+
+class FakeKakao:
+    def __init__(self, places=(), areas=(), fail_keyword=False, nearby=()):
+        self.places, self.areas, self.fail_keyword, self.nearby = list(places), list(areas), fail_keyword, list(nearby)
+        self.calls: list[tuple[str, str]] = []
+
+    def search_keyword(self, *, query, size=15, **_):
+        self.calls.append(("keyword", query))
+        if self.fail_keyword:
+            raise RuntimeError("kakao down")
+        return self.places
+
+    def search_address(self, *, query, size=30):
+        self.calls.append(("address", query))
+        return self.areas
+
+    def search_category(self, *, category_group_code, x, y, radius=2000, size=15, sort="distance"):
+        self.calls.append(("category", category_group_code, x, y, radius, sort))
+        return self.nearby
+
+
+def test_place_gets_the_map_region_and_city_from_its_kakao_address() -> None:
+    kakao = FakeKakao(places=[
+        place("오동도", "전남광주통합특별시 여수시 수정동 1-1", pid="a"),
+        place("광주 양림동 펭귄마을", "전남광주통합특별시 남구 양림동 1", pid="b"),
+        place("안목해변", "강원특별자치도 강릉시 견소동 286", pid="c"),
+        place("웨스틴조선 부산", "부산 해운대구 우동 737", code="AD5", category="여행 > 숙박 > 호텔", pid="d"),
+        place("빅트리", "경남 창원시 성산구 중앙동 1", pid="e"),
+        place("성산일출봉", "제주특별자치도 서귀포시 성산읍 성산리 1", pid="f"),
+    ])
+    items = place_search.search_places("오동도", kakao)
+    got = [(i["name"], i["sido"], i["city"]) for i in items]
+    assert got == [
+        ("오동도", "전남", "여수"),
+        ("광주 양림동 펭귄마을", "광주", "남구"),   # 통합 주소의 구 = 광주
+        ("안목해변", "강원", "강릉"),
+        ("웨스틴조선 부산", "부산", "해운대"),
+        ("빅트리", "경남", "창원"),
+        ("성산일출봉", "제주", "서귀포"),
+    ]
+    first = items[0]
+    assert first["kind"] == "place" and first["id"] == "kakao:a" and first["category"] == "여행 > 관광,명소 > 섬"
+    assert first["placeUrl"] == "http://place.map.kakao.com/a"
+    assert kakao.calls == [("keyword", "오동도")]   # 장소 이름은 주소 검색을 부르지 않는다
+
+
+def test_a_dong_name_also_asks_the_address_search_for_every_same_named_dong() -> None:
+    kakao = FakeKakao(
+        places=[place("빅트리", "경남 창원시 성산구 중앙동 1")],
+        areas=[
+            area("전남광주통합특별시 여수시 중앙동", "전남광주통합특별시", "여수시", "중앙동", "4613010100"),
+            area("경기 성남시 중원구 중앙동", "경기", "성남시 중원구", "중앙동", "4113310100"),
+            area("전북특별자치도 익산시 중앙동1가", "전북특별자치도", "익산시", "중앙동1가", "4514010100"),
+            area("전남광주통합특별시 북구 중앙동", "전남광주통합특별시", "북구", "중앙동", "2917010100"),
+        ],
+    )
+    items = place_search.search_places("중앙동", kakao)
+    areas = [(i["name"], i["sido"], i["city"]) for i in items if i["kind"] == "area"]
+    assert areas == [("여수시 중앙동", "전남", "여수"), ("성남시 중앙동", "경기", "성남"), ("익산시 중앙동1가", "전북", "익산"), ("북구 중앙동", "광주", "북구")]
+    assert items[-1]["kind"] == "place"   # 구역 먼저, 장소는 그 뒤
+    assert ("address", "중앙동") in kakao.calls
+
+
+def test_short_or_disabled_or_failing_search_is_empty_not_an_error(monkeypatch) -> None:
+    assert place_search.search_places("여", FakeKakao(places=[place("x", "서울 중구 1")])) == []
+    monkeypatch.setattr(place_search, "build_kakao_local_client", lambda: None)
+    assert place_search.search_places("오동도") == []
+    assert place_search.search_places("오동도", FakeKakao(fail_keyword=True)) == []
+
+
+def test_unknown_first_word_keeps_the_place_without_a_region() -> None:
+    items = place_search.search_places("어딘가", FakeKakao(places=[place("어딘가", "대구경북통합특별시 안동시 1")]))
+    assert items[0]["sido"] is None and items[0]["name"] == "어딘가"
+
+
+def test_kakao_client_reads_only_region_rows_from_the_address_search() -> None:
+    class Settings:
+        kakao_local_enabled = True
+        kakao_local_rest_api_key = "test-key"
+        kakao_local_timeout_seconds = 5.0
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"documents": [
+                {"address_type": "REGION", "address_name": "강원특별자치도 강릉시 학동", "x": "128.93", "y": "37.75",
+                 "address": {"region_1depth_name": "강원특별자치도", "region_2depth_name": "강릉시", "region_3depth_name": "학동", "b_code": "5115010500"}},
+                {"address_type": "ROAD_ADDR", "address_name": "강원 강릉시 학동길 1", "x": "128.9", "y": "37.7", "address": {}},
+            ]}
+
+    seen = {}
+
+    def http_get(url, headers, params, timeout):
+        seen.update(url=url, params=params)
+        return Response()
+
+    areas = KakaoLocalClient(settings_obj=Settings(), http_get=http_get).search_address(query="학동")
+    assert [(a.region_2depth_name, a.region_3depth_name, a.latitude) for a in areas] == [("강릉시", "학동", 37.75)]
+    assert seen["url"].endswith("/v2/local/search/address.json") and seen["params"]["analyze_type"] == "similar"
+
+
+def test_an_admin_dong_without_a_legal_code_is_named_by_its_admin_code_not_its_address() -> None:
+    """행정동으로 온 구역은 b_code 가 비고 h_code 만 있다('중앙동' 30곳 중 16곳, 10/4 실측) - ID 에 카카오 주소 글자를 쓰지 않는다(주소창에 실린다)."""
+    class Settings:
+        kakao_local_enabled = True
+        kakao_local_rest_api_key = "test-key"
+        kakao_local_timeout_seconds = 5.0
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"documents": [
+                {"address_type": "REGION", "address_name": "전남광주통합특별시 여수시 중앙동", "x": "127.73", "y": "34.74",
+                 "address": {"region_1depth_name": "전남광주통합특별시", "region_2depth_name": "여수시", "region_3depth_h_name": "중앙동",
+                             "b_code": "", "h_code": "4613053000"}},
+            ]}
+
+    areas = KakaoLocalClient(settings_obj=Settings(), http_get=lambda url, headers, params, timeout: Response()).search_address(query="중앙동")
+    items = place_search.search_places("중앙동", FakeKakao(areas=areas))
+    assert [i["id"] for i in items if i["kind"] == "area"] == ["area:4613053000"]
+
+
+def test_places_route_needs_login_and_returns_camel_case_items(monkeypatch) -> None:
+    client = TestClient(app)
+    assert client.get("/api/places/search?query=오동도").status_code == 401
+
+    user = User(id=1, email="u@example.com", nickname="u", onboarding_completed=True,
+                created_at=datetime(2026, 10, 3), updated_at=datetime(2026, 10, 3))
+    app.dependency_overrides[get_current_user] = lambda: user
+    monkeypatch.setattr(place_search, "build_kakao_local_client", lambda: FakeKakao(places=[place("오동도", "전남광주통합특별시 여수시 수정동 1")]))
+    try:
+        found = client.get("/api/places/search?query=오동도")
+        too_long = client.get("/api/places/search", params={"query": "가" * 81})
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+    assert found.status_code == 200
+    assert found.json() == [{
+        "kind": "place", "id": "kakao:1", "name": "오동도", "category": "여행 > 관광,명소 > 섬", "categoryCode": "AT4",
+        "address": "전남광주통합특별시 여수시 수정동 1", "latitude": 34.74, "longitude": 127.76,
+        "placeUrl": "http://place.map.kakao.com/1", "sido": "전남", "city": "여수", "distanceMeters": None,
+    }]
+    assert too_long.status_code == 422
+
+
+def test_nearby_asks_the_category_search_around_the_point_and_keeps_the_distance(monkeypatch) -> None:
+    kakao = FakeKakao(nearby=[place("오동도해양식당", "전남광주통합특별시 여수시 수정동 3-1", code="FD6",
+                                    category="음식점 > 한식 > 해물,생선", pid="n1", distance=320)])
+    items = place_search.nearby_places(latitude=34.745, longitude=127.766, category="FD6", provider=kakao)
+    assert [(i["name"], i["sido"], i["city"], i["distanceMeters"]) for i in items] == [("오동도해양식당", "전남", "여수", 320)]
+    assert kakao.calls == [("category", "FD6", 127.766, 34.745, 2000, "distance")]   # 카카오는 x = 경도, y = 위도
+    assert place_search.nearby_places(latitude=34.7, longitude=127.7, category="XX", provider=kakao) == []
+    monkeypatch.setattr(place_search, "build_kakao_local_client", lambda: None)
+    assert place_search.nearby_places(latitude=34.7, longitude=127.7, category="FD6") == []
+
+
+def test_kakao_client_category_search_sends_the_point_and_radius_and_reads_the_distance() -> None:
+    class Settings:
+        kakao_local_enabled = True
+        kakao_local_rest_api_key = "test-key"
+        kakao_local_timeout_seconds = 5.0
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"documents": [{"id": "9", "place_name": "안목 커피", "category_name": "음식점 > 카페", "category_group_code": "CE7",
+                                   "address_name": "강원특별자치도 강릉시 견소동 1", "x": "128.94", "y": "37.77",
+                                   "place_url": "http://place.map.kakao.com/9", "distance": "150"}]}
+
+    seen = {}
+
+    def http_get(url, headers, params, timeout):
+        seen.update(url=url, params=params)
+        return Response()
+
+    places = KakaoLocalClient(settings_obj=Settings(), http_get=http_get).search_category(category_group_code="CE7", x=128.94, y=37.77)
+    assert [(p.name, p.distance_meters) for p in places] == [("안목 커피", 150)]
+    assert seen["url"].endswith("/v2/local/search/category.json")
+    assert {k: seen["params"][k] for k in ("category_group_code", "x", "y", "radius", "sort")} == {
+        "category_group_code": "CE7", "x": 128.94, "y": 37.77, "radius": 2000, "sort": "distance"}
+
+
+def test_nearby_route_needs_login_and_checks_the_category_and_the_point(monkeypatch) -> None:
+    client = TestClient(app)
+    assert client.get("/api/places/nearby", params={"lat": 34.7, "lng": 127.7, "category": "FD6"}).status_code == 401
+
+    user = User(id=1, email="u@example.com", nickname="u", onboarding_completed=True,
+                created_at=datetime(2026, 10, 3), updated_at=datetime(2026, 10, 3))
+    app.dependency_overrides[get_current_user] = lambda: user
+    monkeypatch.setattr(place_search, "build_kakao_local_client", lambda: FakeKakao(nearby=[
+        place("오동도해양식당", "전남광주통합특별시 여수시 수정동 3-1", code="FD6", category="음식점 > 한식", pid="n1", distance=320)]))
+    try:
+        found = client.get("/api/places/nearby", params={"lat": 34.745, "lng": 127.766, "category": "FD6"})
+        bad_category = client.get("/api/places/nearby", params={"lat": 34.745, "lng": 127.766, "category": "XX"})
+        outside = client.get("/api/places/nearby", params={"lat": 51.5, "lng": -0.12, "category": "FD6"})
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+    assert found.status_code == 200
+    assert [(i["kind"], i["name"], i["distanceMeters"]) for i in found.json()] == [("place", "오동도해양식당", 320)]
+    assert bad_category.status_code == 422 and outside.status_code == 422
+
+
+def test_kakao_misconfiguration_is_an_empty_list_not_a_server_error(monkeypatch) -> None:
+    # 켜 두고 키가 비었을 때 - 계약대로 빈 목록(예전엔 500)
+    def broken():
+        raise KakaoLocalConfigurationError("KAKAO_LOCAL_REST_API_KEY is required when KAKAO_LOCAL_ENABLED=true.")
+
+    monkeypatch.setattr(place_search, "build_kakao_local_client", broken)
+    assert place_search.search_places("오동도") == []
+    assert place_search.nearby_places(latitude=34.7, longitude=127.7, category="FD6") == []
+
+
+def test_place_routes_release_the_db_session_before_calling_kakao(monkeypatch) -> None:
+    events: list[str] = []
+
+    class Session:
+        def close(self):
+            events.append("db closed")
+
+    class Kakao(FakeKakao):
+        def search_keyword(self, *, query, size=15, **_):
+            events.append("kakao")
+            return []
+
+        def search_category(self, **_):
+            events.append("kakao")
+            return []
+
+    def session():
+        yield Session()
+
+    user = User(id=1, email="u@example.com", nickname="u", onboarding_completed=True,
+                created_at=datetime(2026, 10, 3), updated_at=datetime(2026, 10, 3))
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_optional_db] = session
+    monkeypatch.setattr(place_search, "build_kakao_local_client", lambda: Kakao())
+    try:
+        client = TestClient(app)
+        assert client.get("/api/places/search", params={"query": "오동도"}).status_code == 200
+        assert client.get("/api/places/nearby", params={"lat": 34.7, "lng": 127.7, "category": "FD6"}).status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_optional_db, None)
+    assert events == ["db closed", "kakao", "db closed", "kakao"]

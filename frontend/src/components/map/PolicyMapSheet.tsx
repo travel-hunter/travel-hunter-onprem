@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronLeft, ChevronUp, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronUp, MapPin, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Link } from "react-router-dom";
 import type { Policy } from "../../api";
@@ -6,6 +6,7 @@ import { BENEFIT_TYPES, BenefitTile, benefitTypeOf } from "../benefitTile";
 import { cityOf, NATIONWIDE_REGION } from "../../utils/policyPrograms";
 import { deadlineChip, programName, type BrowseEntry, type BrowseView, type SheetStop } from "./policyBrowse";
 import { policyListText, PROGRAM_GROUP_COPY } from "./policyListText";
+import { sheetMemory } from "./sheetMemory";
 
 /* 지도 위 목록 시트. 자리는 셋 - 지도 중심(머리 한 줄) · 반반(지역을 고르면 2/3) · 한 페이지.
    반반·지역 선택에서는 시트가 제자리에 서고 목록만 안에서 스크롤한다 - 스크롤로 시트가 올라가지 않는다.
@@ -44,6 +45,7 @@ export function PolicyMapSheet({
   onRest,
   onOpen,
   conditions = null,
+  near = null,
 }: {
   /** panel = 넓은 화면의 오른쪽 목록 패널. 끌기·높이 자리 없이 제자리에 선다 */
   mode?: "sheet" | "panel";
@@ -67,6 +69,8 @@ export function PolicyMapSheet({
   onRest?: (coverTop: number) => void;
   /** 걸린 좁히기 조건(마감 · 금액 · 관심 정책만 · 글 검색) 한 줄과 ✕ - 시안 v55 */
   conditions?: { label: string; onClear: () => void } | null;
+  /** 위치로 찾은 곳 - '📍 ○○ 근처'와 넓힌 이유, 가까운 시군(시안 v56) */
+  near?: { label: string; note: string | null; nearby: { key: string; label: string; meta: string; on: boolean; onPick: () => void }[] } | null;
 }) {
   const picked = region !== null;
   const panel = mode === "panel";
@@ -227,8 +231,12 @@ export function PolicyMapSheet({
 
   /* ── 묶음 여닫기 ─────────────────────────────────────────────
      모든 지역은 접힌 채로, 지역을 고르면 펼친 채로 시작한다. 다시 누르면 닫히고 열기 전 스크롤 자리로. */
-  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
-  const [shut, setShut] = useState<ReadonlySet<string>>(new Set());
+  const [opened, setOpened] = useState<ReadonlySet<string>>(sheetMemory.opened);
+  const [shut, setShut] = useState<ReadonlySet<string>>(() => (sheetMemory.shut.scope === scopeKey ? sheetMemory.shut.keys : new Set()));
+  useEffect(() => {
+    sheetMemory.opened = opened;
+    sheetMemory.shut = { scope: scopeKey, keys: shut };
+  }, [opened, shut, scopeKey]);
   const origins = useRef(new Map<string, { top: number; scope: string }>());
   const restoreRef = useRef<number | null>(null);
   const isOpen = (key: string) => (picked ? !shut.has(key) : opened.has(key));
@@ -248,26 +256,39 @@ export function PolicyMapSheet({
       const origin = origins.current.get(key);
       origins.current.delete(key);
       if (origin && origin.scope === scopeKey) restoreRef.current = origin.top;
-      /* 처음부터 펼쳐져 있던 묶음(지역 화면)은 그 머리가 목록 맨 위에 오게 */
-      else if (head) restoreRef.current = list.scrollTop + head.getBoundingClientRect().top - list.getBoundingClientRect().top;
+      /* 처음부터 펼쳐져 있던 묶음(지역 화면): 머리가 위로 넘어가 고정 줄로 떠 있었으면 그 머리를 목록 맨 위로.
+         머리가 보이면 손대지 않는다 - 누른 머리가 손가락 아래 그대로 있어야 한다(10/3 사용자 지적) */
+      else if (head) {
+        const above = head.getBoundingClientRect().top - list.getBoundingClientRect().top;
+        if (above < 0) restoreRef.current = list.scrollTop + above;
+      }
     }
   };
 
-  /* ── 화면마다 스크롤 자리 ─────────────────────────────────── */
-  const scrolls = useRef(new Map<string, number>());
+  /* ── 화면마다 스크롤 자리(sheetMemory.scrolls) ─────────────────
+     굴릴 때마다 적고, 목록이 새로 붙으면(처음 · 상세에서 돌아옴 · 필터 창을 닫음) 시트 높이가 선 뒤 되살린다 -
+     높이가 서기 전에 되살리면 목록 키가 달라 자리가 잘린다. 화면이 바뀌는 그 렌더에서는 적지 않는다(앞 화면 자리를
+     새 목록에 잘린 값으로 덮는다) */
   const scopeRef = useRef(scopeKey);
-  const lastTopRef = useRef(0);
+  const attachedRef = useRef(false);
   useLayoutEffect(() => {
     if (scopeRef.current === scopeKey) return;
-    scrolls.current.set(scopeRef.current, lastTopRef.current);
     scopeRef.current = scopeKey;
     setShut(new Set());
     const list = listRef.current;
-    if (list) list.scrollTop = scrolls.current.get(scopeKey) ?? 0;
+    if (list) list.scrollTop = sheetMemory.scrolls.get(scopeKey) ?? 0;
   }, [scopeKey]);
   useLayoutEffect(() => {
     const list = listRef.current;
-    if (restoreRef.current !== null && list) {
+    if (!list) {
+      attachedRef.current = false;
+      return;
+    }
+    if (!attachedRef.current) {
+      if (!panel && heightRef.current === 0) return;
+      attachedRef.current = true;
+      list.scrollTop = sheetMemory.scrolls.get(scopeKey) ?? 0;
+    } else if (restoreRef.current !== null) {
       list.scrollTop = restoreRef.current;
       restoreRef.current = null;
     }
@@ -278,7 +299,7 @@ export function PolicyMapSheet({
   function updateScroll() {
     const list = listRef.current;
     if (!list) return;
-    lastTopRef.current = list.scrollTop;
+    if (attachedRef.current && scopeRef.current === scopeKey) sheetMemory.scrolls.set(scopeKey, list.scrollTop);
     const top = list.getBoundingClientRect().top;
     list.querySelectorAll<HTMLElement>(".thmap-grp.open").forEach((item) => {
       const head = item.querySelector(".thmap-grp-btn")?.getBoundingClientRect();
@@ -347,6 +368,26 @@ export function PolicyMapSheet({
           <button type="button" aria-label="조건 모두 풀기" onClick={conditions.onClear}>
             <X size={16} aria-hidden="true" />
           </button>
+        </div>
+      )}
+      {near && (
+        <div className="thmap-near">
+          <p className="thmap-near-line">
+            <MapPin size={15} aria-hidden="true" />
+            <b>{near.label}</b>
+          </p>
+          {near.note && <p className="thmap-near-note">{near.note}</p>}
+          {near.nearby.length > 0 && (
+            <div className="thmap-nearby" role="group" aria-label="가까운 시군">
+              <span className="h">가까운 시군</span>
+              {near.nearby.map((city) => (
+                <button key={city.key} type="button" aria-pressed={city.on} onClick={city.on ? undefined : city.onPick}>
+                  <b>{city.label}</b>
+                  <span>{city.meta}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <ul className="thmap-list" ref={listRef} onScroll={updateScroll}>

@@ -1,6 +1,7 @@
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { readPlaceParam } from "../../utils/placeHandoff";
 import {
   appDataApi,
   type TravelAreaOption,
@@ -120,6 +121,9 @@ export function ItineraryCreatePage() {
     [],
   );
   const policySlug = searchParams.get("policySlug") ?? undefined;
+  /* 홈 장소 카드에서 왔으면(시안 v57) 만든 일정에서 그 장소를 담은 장소 추가 창이 열리게 넘긴다 */
+  const handoffPlace = searchParams.get("addPlace");
+  const handoffPlaceName = readPlaceParam(handoffPlace)?.name ?? null;
   const requestedTravelAreaId = normalizeTravelAreaIdParam(
     searchParams.get("travelAreaId"),
   );
@@ -543,7 +547,11 @@ export function ItineraryCreatePage() {
         await appDataApi.addPolicyToTrip(trip.id, linkablePolicySlug);
         addPolicy(linkablePolicySlug);
       }
-      navigate(`/trips/${trip.id}`);
+      navigate(
+        handoffPlace && handoffPlaceName
+          ? `/trips/${trip.id}?${new URLSearchParams({ addPlace: handoffPlace })}`
+          : `/trips/${trip.id}`,
+      );
     } catch {
       setError(
         "일정을 만들지 못했습니다. 선택한 조건을 확인하고 다시 시도하세요.",
@@ -570,6 +578,12 @@ export function ItineraryCreatePage() {
       </div>
 
       <div className="prototype-create-content">
+        {handoffPlaceName && (
+          <div className="prototype-linked-policy-banner">
+            <span aria-hidden="true">장소</span>
+            <strong>만들고 나면 ‘{handoffPlaceName}’ 담을 날을 골라요</strong>
+          </div>
+        )}
         {linkedPolicyLabel &&
           (step === 1 || (isPolicyLinkedRegionEntry && step === 2)) && (
             <div className="prototype-linked-policy-banner">

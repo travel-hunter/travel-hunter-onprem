@@ -1,7 +1,7 @@
 import { ChevronLeft, Heart, Search, Share2, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { appDataApi, type ApplicationGuide, type ApplicationGuideRound, type LinkedTripPolicy, type Policy, type PolicyCategory, type Trip } from "../api";
+import { appDataApi, type ApplicationGuide, type ApplicationGuideRound, type LinkedTripPolicy, type PlaceSearchItem, type Policy, type PolicyCategory, type Trip } from "../api";
 import { useAsyncResource } from "../api/useAsyncResource";
 import { useSession } from "../app/session";
 import { Button, EmptyState, ErrorState, IconButton, LinkButton, LoadingState, Tag, Toast } from "../components/ui";
@@ -11,9 +11,11 @@ import { PolicyMapSheet } from "../components/map/PolicyMapSheet";
 import { cityOf, NATIONWIDE_REGION } from "../utils/policyPrograms";
 import { REGION_NAMES, type RegionCounts } from "../components/map/regionMapEngine";
 import { BrowseChips, PolicySearchPanel, RegionSummaryCard } from "../components/map/PolicyMapPanels";
-import { BROWSE_FILTERS, browseDepthOf, browseView, chipCounts, lowerBrowseState, matchesBrowseFilter, programName, readBrowseState, writeBrowseState, type BrowseFilter, type BrowseState } from "../components/map/policyBrowse";
+import { rememberPlaces, usePlaceById } from "../components/map/placeMemory";
+import { BROWSE_FILTERS, browseDepthOf, browseView, chipCounts, lowerBrowseState, matchesBrowseFilter, nearOn, programName, readBrowseState, searchBrowse, writeBrowseState, type BrowseCombo, type BrowseFilter, type BrowseState } from "../components/map/policyBrowse";
+import { geoToMap, nearbyCities, shortCity, type NearTarget } from "../components/map/nearby";
 import { useBrowseHistory } from "../components/map/useBrowseHistory";
-import { AMOUNT_FILTERS, conditionCount, conditionLabel, NO_CONDITIONS, PERIOD_FILTERS, setPolicyConditions, usePolicyConditions, type AmountFilter, type PeriodFilter, type PolicyConditions } from "../components/map/policyConditions";
+import { AMOUNT_FILTERS, conditionCount, conditionLabel, matchesPolicySearch, NO_CONDITIONS, PERIOD_FILTERS, setPolicyConditions, usePolicyConditions, type AmountFilter, type PeriodFilter, type PolicyConditions } from "../components/map/policyConditions";
 import { MAP_FILLS } from "../components/map/regionMapEngine";
 import { deskBrowseDepthOf } from "../components/map/policyBrowse";
 import { useIsDesktop } from "../lib/useMediaQuery";
@@ -123,27 +125,6 @@ function matchesConditions(policy: Policy, conditions: PolicyConditions, savedSl
     && matchesAmount(policy, conditions.amount)
     && (!conditions.savedOnly || savedSlugs.has(policy.slug))
     && matchesPolicySearch(policy, conditions.text);
-}
-
-function normalizedSearchText(value: string) {
-  return value.trim().toLocaleLowerCase("ko-KR");
-}
-
-function matchesPolicySearch(policy: Policy, searchTerm: string) {
-  const query = normalizedSearchText(searchTerm);
-  if (!query) return true;
-  const haystack = [
-    policy.title,
-    policy.org,
-    policy.region,
-    policy.category,
-    policy.amount,
-    policy.summary,
-    policy.tag,
-    ...policy.requirements,
-    ...policy.documents,
-  ].join(" ").toLocaleLowerCase("ko-KR");
-  return haystack.includes(query);
 }
 
 function getRecommendedPolicies(policies: Policy[]) {
@@ -322,6 +303,8 @@ export function PolicyListPage() {
   useEffect(() => {
     if (!browse.search) setPanelQuery("");
   }, [browse.search]);
+  /* 위치로 찾기(시안 v56): 지역 · 시군 이름이 안 맞는 말만 서버 장소 검색(카카오)에 묻는다. null = 찾는 중 */
+  const [places, setPlaces] = useState<PlaceSearchItem[] | null>(null);
   /* 시트가 선 자리의 윗변 - 지도가 그 위쪽에 그림을 맞춘다 */
   const [coverTop, setCoverTop] = useState<number | null>(null);
   const { savedSlugs, addSavedSlug, removeSavedSlug } = useSession();
@@ -382,6 +365,14 @@ export function PolicyListPage() {
     setBrowse({ ...base, region, city, filter: dropMove(region), sheet: "mid", search: false });
   const pickProgram = (program: string) =>
     setBrowse({ ...base, program, region: null, city: null, sheet: "mid", search: false });
+  /* 검색 칸의 '지역 + 혜택' 줄('여수 숙박세일') - 그 지역(시군)의 그 사업 · 형태 */
+  const pickCombo = (combo: BrowseCombo) =>
+    setBrowse({ ...base, region: combo.region, city: combo.city, program: combo.program, filter: combo.filter, sheet: "mid", search: false });
+  /* 검색 칸의 혜택 형태 줄('숙소' · 'KTX') - 위 칩을 고른 것과 같다(교통은 지역 혜택이 없어 한 페이지 목록) */
+  const pickSearchFilter = (filter: BrowseFilter) =>
+    filter === "move"
+      ? setBrowse({ ...base, filter, region: null, city: null, program: null, sheet: "full", search: false })
+      : setBrowse({ ...base, filter, program: null, sheet: browse.sheet === "low" ? "mid" : browse.sheet, search: false });
   /* 시군 점: 다시 누르면 도 전체. 지도 중심에서 고르면 목록을 올려 3분할로 */
   const pickCity = (city: string | null) =>
     setBrowse({ ...base, city, sheet: city && browse.sheet === "low" ? "mid" : browse.sheet });
@@ -402,6 +393,17 @@ export function PolicyListPage() {
   const clearBrowse = () =>
     setBrowse(browse.city ? { ...base, city: null } : { ...base, region: null, city: null, program: null });
   const lowered = lowerBrowseState(browse, isDesktop);
+  /* 위치로 찾은 곳 - 지금 고른 지역 · 시군 것일 때만 핀 · 근처 줄 · 가까운 시군. 이름 · 좌표는 메모리 또는 같은 말로 다시 찾기 */
+  const nearHere = nearOn(browse);
+  const { place: nearPlace, missing: nearMissing } = usePlaceById(nearHere?.id ?? null, nearHere?.q ?? "");
+  const pin = useMemo(
+    () => (nearPlace?.sido && nearPlace.latitude != null && nearPlace.longitude != null ? geoToMap(nearPlace.sido, nearPlace.latitude, nearPlace.longitude) : null),
+    [nearPlace],
+  );
+  /* 다시 찾아도 없으면 주소에서도 근처를 지운다(기록을 쌓지 않고 덮어쓴다, 그 시군 화면은 그대로) */
+  useEffect(() => {
+    if (nearHere && nearMissing) browseHistory.replace(writeBrowseState(searchParams, { ...browse, near: null }).toString());
+  }, [nearHere?.id, nearMissing]);
   const stepBack = () => backBrowse(lowered ? writeBrowseState(searchParams, lowered) : null);
 
   /* ── 필터 창 ─────────────────────────────────────────────────── */
@@ -464,6 +466,40 @@ export function PolicyListPage() {
     () => (policies ?? []).filter((policy) => matchesConditions(policy, { ...conditions, text: "" }, savedSlugs)),
     [policies, conditions, savedSlugs],
   );
+  const placeQuery = useMemo(() => {
+    const q = panelQuery.trim();
+    if (!browse.search || q.length < 2) return "";
+    const found = searchBrowse(searchPolicies, q);
+    return found.regions.length || found.places.length ? "" : q;
+  }, [browse.search, panelQuery, searchPolicies]);
+  useEffect(() => {
+    setPlaces(null);
+    if (!placeQuery) return;
+    const control = new AbortController();
+    const timer = window.setTimeout(() => {
+      appDataApi.searchPlaces(placeQuery, { signal: control.signal }).then((items) => {
+        rememberPlaces(items);
+        setPlaces(items);
+      }, () => {
+        if (!control.signal.aborted) setPlaces([]);
+      });
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      control.abort();
+    };
+  }, [placeQuery]);
+  /* 위치로 찾은 곳의 근처 혜택으로 - 그 시군(없으면 가장 가까운 시군 · 도 · 전국)을 고르고 지도에 핀. 주소에는 카카오 장소 ID와 친 말만 */
+  const pickNear = (item: PlaceSearchItem, target: NearTarget) =>
+    setBrowse({
+      ...base,
+      region: target.region,
+      city: target.city,
+      filter: dropMove(target.region),
+      sheet: "mid",
+      search: false,
+      near: { id: item.id, q: panelQuery.trim(), region: target.region, city: target.city, note: target.note },
+    });
   const fullTextCount = useMemo(() => {
     const q = panelQuery.trim();
     return q ? searchPolicies.filter((policy) => matchesPolicySearch(policy, q)).length : 0;
@@ -514,6 +550,7 @@ export function PolicyListPage() {
         selectedPlace={browse.city}
         onSelectPlace={pickCity}
         onBackground={mapBackground}
+        pin={pin}
       />
       {!ready ? null : browse.region && browse.region !== NATIONWIDE_REGION ? (
         <RegionSummaryCard
@@ -553,6 +590,18 @@ export function PolicyListPage() {
       showBack={Boolean(browse.region || browse.program)}
       clearLabel={browse.city ? `${browse.region} 전체` : browse.region ? "전체 지역" : null}
       conditions={conditionLine ? { label: conditionLine, onClear: clearConditions } : null}
+      near={nearHere && nearPlace ? {
+        label: `${nearPlace.name} 근처`,
+        note: nearHere.note,
+        /* 칩은 핀 기준 거리 순으로 고정 - 눌러도 순서 · 줄 높이가 그대로고, 보고 있는 시군만 눌린 모양(10/3 사용자 지적) */
+        nearby: nearbyCities(browsePolicies, pin).slice(0, 4).map((city) => ({
+          key: `${city.region}|${city.city}`,
+          label: shortCity(city.region, city.city),
+          meta: `약 ${city.km}km · ${city.count}건`,
+          on: city.region === nearHere.region && city.city === nearHere.city,
+          onPick: () => setBrowse({ ...base, region: city.region, city: city.city, filter: dropMove(city.region), near: { ...nearHere, region: city.region, city: city.city } }),
+        })),
+      } : null}
       onStop={(stop) => setBrowse({ ...browse, sheet: stop })}
       onBack={stepBack}
       onClear={clearBrowse}
@@ -571,6 +620,12 @@ export function PolicyListPage() {
       onPickRegion={toggleRegion}
       onPickPlace={pickPlace}
       onPickProgram={pickProgram}
+      onPickCombo={pickCombo}
+      onPickFilter={pickSearchFilter}
+      onBrowseAll={stepBack}
+      places={placeQuery ? places : []}
+      onPickNear={pickNear}
+      onClose={stepBack}
     />
   ) : null;
   /* 상세는 정책이 온 뒤에만 - 불러오는 동안 '목록에 없어요'가 잠깐 뜨고 불러오는 표시를 덮었다 */
@@ -606,24 +661,24 @@ export function PolicyListPage() {
               if (!panelOpen || event.key !== "Enter" || event.nativeEvent.isComposing) return;
               event.preventDefault();
               if (!panelQuery.trim()) return;
-              document.querySelector<HTMLButtonElement>("#policy-search-panel button")?.click();
+              // 결과 줄만 - 결과가 없을 때의 추천 칩을 누르지 않게(10/3 리뷰). 그때는 초점을 두어 바로 고쳐 친다
+              const input = event.currentTarget;
+              const row = document.querySelector<HTMLButtonElement>("#policy-search-panel .thmap-search-body .thmap-sres-row, #policy-search-panel .thmap-search-body .thmap-sres-all");
+              if (!row) return;
+              row.click();
+              // 클릭으로 고를 때처럼 초점을 칸 밖으로 - 칸을 다시 누르면 열리고(onFocus) 휴대폰 키보드도 내려가 결과 시트를 가리지 않는다
+              input.blur();
             }}
-            placeholder={panelOpen ? "지역이나 혜택 이름 (예: 여수, 반값)" : "정책명, 지역, 혜택 검색"}
+            placeholder="정책명, 지역, 혜택 검색"
             type="search"
             value={panelOpen ? panelQuery : ""}
           />
-          {panelOpen ? (
-            <button className="prototype-search-close" onClick={() => setBrowse({ ...browse, search: false })} type="button">
-              닫기
+          <div className="prototype-filter-controls">
+            <button aria-haspopup="dialog" aria-label="필터 열기" className="prototype-filter-icon-button" onClick={openFilterSheet} type="button">
+              <SlidersHorizontal aria-hidden="true" size={20} />
+              <span>{filterCount > 0 ? `필터 ${filterCount}` : "필터"}</span>
             </button>
-          ) : (
-            <div className="prototype-filter-controls">
-              <button aria-haspopup="dialog" aria-label="필터 열기" className="prototype-filter-icon-button" onClick={openFilterSheet} type="button">
-                <SlidersHorizontal aria-hidden="true" size={20} />
-                <span>{filterCount > 0 ? `필터 ${filterCount}` : "필터"}</span>
-              </button>
-            </div>
-          )}
+          </div>
         </div>
         {/* 위 칩: 혜택 형태. 칩을 고르면 지도 건수와 목록이 같이 바뀐다 */}
         {ready && (

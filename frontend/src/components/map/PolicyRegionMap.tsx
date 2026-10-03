@@ -52,6 +52,7 @@ export function PolicyRegionMap({
   selectedPlace = null,
   onSelectPlace,
   onBackground,
+  pin = null,
 }: {
   counts: RegionCounts;
   selected: string | null;
@@ -73,6 +74,8 @@ export function PolicyRegionMap({
   onSelectPlace?: (place: string | null) => void;
   /** 아무것도 안 고른 채 빈 바다를 누르면 */
   onBackground?: () => void;
+  /** 위치로 찾은 장소 자리(도안 단위) - 지도에 핀 */
+  pin?: readonly [number, number] | null;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<PolicyRegionMapHandle | null>(null);
@@ -83,8 +86,8 @@ export function PolicyRegionMap({
   const onPlaceRef = useRef(onSelectPlace);
   onPlaceRef.current = onSelectPlace;
   /* 다시 그릴 때(건수가 바뀌면) 새 엔진에 그대로 다시 건다 */
-  const viewRef = useRef({ coverTop, sheetLow, places, selectedPlace });
-  viewRef.current = { coverTop, sheetLow, places, selectedPlace };
+  const viewRef = useRef({ coverTop, sheetLow, places, selectedPlace, pin });
+  viewRef.current = { coverTop, sheetLow, places, selectedPlace, pin };
   const applyView = (handle: PolicyRegionMapHandle) => {
     const host = hostRef.current, current = viewRef.current;
     if (!host) return;
@@ -92,6 +95,7 @@ export function PolicyRegionMap({
     /* 목록이 한 페이지로 올라가 지도가 거의 안 보이면 다시 맞추지 않는다 - 내려올 때 제자리에서 드러나야 한다 */
     if (visible === null || visible >= MIN_VISIBLE) handle.setView({ visible, low: current.sheetLow });
     handle.setPlaces(current.places ?? [], current.selectedPlace);
+    handle.setPin(current.pin ?? null);
   };
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
   const marksRef = useRef<HTMLDivElement | null>(null);
@@ -153,7 +157,7 @@ export function PolicyRegionMap({
   /* 시트가 자리에 서면 그 위쪽에 맞춰 다가가고, 고른 지역의 시·군 점을 다시 찍는다 */
   useEffect(() => {
     if (handleRef.current) applyView(handleRef.current);
-  }, [coverTop, sheetLow, places, selectedPlace, selected]);
+  }, [coverTop, sheetLow, places, selectedPlace, selected, pin]);
 
   useEffect(() => {
     const handle = handleRef.current;
