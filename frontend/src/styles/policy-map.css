@@ -709,3 +709,43 @@ body.thmap-map-view .app-container { overflow: hidden; }
     transform: none;
   }
 }
+
+/* 걸린 좁히기 조건 한 줄(시안 v55) - 목록 머리 아래. ✕ 로 모두 푼다 */
+.thmap-conds {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 10px;
+  background: var(--color-action-primary-soft);
+  color: var(--color-text-primary);
+  font-size: 13px;
+}
+.thmap-conds span { flex: 1; min-width: 0; }
+.thmap-conds button {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 16px;
+  background: var(--color-bg-card);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.thmap-unset {
+  display: block;
+  margin-top: 8px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 17px;
+  background: var(--color-bg-card);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.thmap-conds button:focus-visible, .thmap-unset:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

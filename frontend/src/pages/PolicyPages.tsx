@@ -4,16 +4,16 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { appDataApi, type ApplicationGuide, type ApplicationGuideRound, type LinkedTripPolicy, type Policy, type PolicyCategory, type Trip } from "../api";
 import { useAsyncResource } from "../api/useAsyncResource";
 import { useSession } from "../app/session";
-import { PolicyListCard } from "../components/cards";
 import { Button, EmptyState, ErrorState, IconButton, LinkButton, LoadingState, Tag, Toast } from "../components/ui";
-import { getDeadlinePolicies, getPolicyPhoto } from "../data/displayConfig";
+import { getDeadlinePolicies } from "../data/displayConfig";
 import { PolicyRegionMap } from "../components/map/PolicyRegionMap";
 import { PolicyMapSheet } from "../components/map/PolicyMapSheet";
 import { cityOf, NATIONWIDE_REGION } from "../utils/policyPrograms";
 import { REGION_NAMES, type RegionCounts } from "../components/map/regionMapEngine";
 import { BrowseChips, PolicySearchPanel, RegionSummaryCard } from "../components/map/PolicyMapPanels";
-import { browseDepthOf, browseView, chipCounts, lowerBrowseState, matchesBrowseFilter, programName, readBrowseState, writeBrowseState, type BrowseFilter, type BrowseState } from "../components/map/policyBrowse";
+import { BROWSE_FILTERS, browseDepthOf, browseView, chipCounts, lowerBrowseState, matchesBrowseFilter, programName, readBrowseState, writeBrowseState, type BrowseFilter, type BrowseState } from "../components/map/policyBrowse";
 import { useBrowseHistory } from "../components/map/useBrowseHistory";
+import { AMOUNT_FILTERS, conditionCount, conditionLabel, NO_CONDITIONS, PERIOD_FILTERS, setPolicyConditions, usePolicyConditions, type AmountFilter, type PeriodFilter, type PolicyConditions } from "../components/map/policyConditions";
 import { MAP_FILLS } from "../components/map/regionMapEngine";
 import { deskBrowseDepthOf } from "../components/map/policyBrowse";
 import { useIsDesktop } from "../lib/useMediaQuery";
@@ -76,35 +76,11 @@ function getPolicyTripCreatePath(policySlug: string, regionQuery: string | null,
   return `/trips/new?${searchParams.toString()}`;
 }
 
-const allFilter = "전체";
-const categoryFilters = [allFilter, "교통", "숙박", "여행상품", "지역할인", "이벤트", "기타"] as const;
-const periodFilters = ["전체", "7일 이내", "30일 이내", "3개월 이내"] as const;
-const amountFilters = ["전체", "금액 명시", "10만원 이상", "30만원 이상"] as const;
-type PeriodFilter = (typeof periodFilters)[number];
-type AmountFilter = (typeof amountFilters)[number];
-type CategoryFilter = (typeof categoryFilters)[number];
-type PolicyFilterState = {
-  category: CategoryFilter;
-  region: string;
-  period: PeriodFilter;
-  amount: AmountFilter;
-  savedOnly: boolean;
-};
-const policyCategoryTabs: Array<{ label: string; value: (typeof categoryFilters)[number] }> = [
-  { label: "전체", value: allFilter },
-  { label: "교통", value: "교통" },
-  { label: "숙박", value: "숙박" },
-  { label: "여행상품", value: "여행상품" },
-  { label: "지역할인", value: "지역할인" },
-  { label: "이벤트", value: "이벤트" },
-  { label: "기타", value: "기타" },
-];
+/* 필터 창 초안: 혜택 형태(위 칩) · 지역(지도 선택) · 마감 · 금액 · 관심 정책만 */
+type FilterDraft = { filter: BrowseFilter | null; region: string | null; period: PeriodFilter; amount: AmountFilter; savedOnly: boolean };
+const EMPTY_DRAFT: FilterDraft = { filter: null, region: null, period: "전체", amount: "전체", savedOnly: false };
 type DiscoveryPolicyCategory = PolicyCategory;
 const discoveryCategoryFilters: DiscoveryPolicyCategory[] = ["교통", "숙박", "여행상품", "지역할인", "이벤트", "기타"];
-
-function isCategoryFilter(value: string | null): value is CategoryFilter {
-  return categoryFilters.includes(value as CategoryFilter);
-}
 
 const regionGroups: Array<{ label: string; regions: string[] }> = [
   { label: "수도권", regions: ["서울", "경기", "인천"] },
@@ -113,44 +89,6 @@ const regionGroups: Array<{ label: string; regions: string[] }> = [
   { label: "경상", regions: ["대구", "부산", "울산", "경북", "경남"] },
   { label: "강원·제주", regions: ["강원", "제주"] },
 ];
-
-function isPeriodFilter(value: string | null): value is PeriodFilter {
-  return periodFilters.includes(value as PeriodFilter);
-}
-
-function isAmountFilter(value: string | null): value is AmountFilter {
-  return amountFilters.includes(value as AmountFilter);
-}
-
-function getAppliedFilterSummary(filters: PolicyFilterState, searchTerm: string) {
-  return [
-    filters.category,
-    filters.region !== allFilter ? filters.region : null,
-    filters.period !== "전체" ? filters.period : "기간 전체",
-    filters.amount !== "전체" ? filters.amount : "금액 전체",
-    filters.savedOnly ? "관심 정책" : null,
-    normalizedSearchText(searchTerm) ? `검색: ${searchTerm.trim()}` : null,
-  ].filter(Boolean).join(" · ");
-}
-
-function getActiveFilterCount(filters: PolicyFilterState, searchTerm: string) {
-  return [
-    filters.category !== allFilter,
-    filters.region !== allFilter,
-    filters.period !== "전체",
-    filters.amount !== "전체",
-    filters.savedOnly,
-    normalizedSearchText(searchTerm) !== "",
-  ].filter(Boolean).length;
-}
-
-function getAvailableRegionsByGroup(regionFilters: string[]) {
-  const groupedRegionSet = new Set(regionGroups.flatMap((group) => group.regions));
-  const extras = regionFilters.filter((region) => region !== allFilter && !groupedRegionSet.has(region));
-  const grouped = regionGroups.map((group) => ({ ...group, regions: [...group.regions] }));
-  if (extras.length > 0) grouped.unshift({ label: "기타", regions: extras });
-  return grouped;
-}
 
 function daysUntilDeadline(deadline: string): number {
   return daysUntilPolicyDeadline(deadline) ?? Number.POSITIVE_INFINITY;
@@ -180,6 +118,13 @@ function matchesAmount(policy: Policy, filter: AmountFilter): boolean {
   return true;
 }
 
+function matchesConditions(policy: Policy, conditions: PolicyConditions, savedSlugs: { has: (slug: string) => boolean }) {
+  return matchesPeriod(policy, conditions.period)
+    && matchesAmount(policy, conditions.amount)
+    && (!conditions.savedOnly || savedSlugs.has(policy.slug))
+    && matchesPolicySearch(policy, conditions.text);
+}
+
 function normalizedSearchText(value: string) {
   return value.trim().toLocaleLowerCase("ko-KR");
 }
@@ -199,60 +144,6 @@ function matchesPolicySearch(policy: Policy, searchTerm: string) {
     ...policy.documents,
   ].join(" ").toLocaleLowerCase("ko-KR");
   return haystack.includes(query);
-}
-
-function getBenefitClarityScore(policy: Policy) {
-  if (isGenericBenefitAmount(policy.amount)) return -20;
-  const amountText = policy.amount ?? "";
-  let score = 20;
-  if (/%|할인|무료|캐시백|환급|지원/.test(amountText)) score += 18;
-  if (/원|만원|\d/.test(amountText)) score += 16;
-  if (amountText.length >= 10) score += 8;
-  return score;
-}
-
-function getDeadlinePriorityScore(policy: Policy) {
-  if (!policy.deadline) return 0;
-  const days = daysUntilDeadline(policy.deadline);
-  if (days < 0) return -100;
-  if (days <= 7) return 85;
-  if (days <= 30) return 65;
-  if (days <= 90) return 35;
-  return 8;
-}
-
-function getPolicyListPriorityScore(policy: Policy) {
-  return getDeadlinePriorityScore(policy) + getBenefitClarityScore(policy) + Math.round(policy.match / 10);
-}
-
-function sortPoliciesForList(policies: Policy[], shouldDiversifyCategory: boolean) {
-  const candidates = [...policies].sort((left, right) => {
-    const scoreDifference = getPolicyListPriorityScore(right) - getPolicyListPriorityScore(left);
-    if (scoreDifference !== 0) return scoreDifference;
-    const deadlineDifference = daysUntilDeadline(left.deadline) - daysUntilDeadline(right.deadline);
-    if (deadlineDifference !== 0) return deadlineDifference;
-    return left.title.localeCompare(right.title, "ko");
-  });
-  if (!shouldDiversifyCategory) return candidates;
-
-  const sorted: Policy[] = [];
-  const categoryCounts = new Map<PolicyCategory, number>();
-  while (candidates.length > 0) {
-    let bestIndex = 0;
-    let bestScore = Number.NEGATIVE_INFINITY;
-    candidates.forEach((policy, index) => {
-      const diversityPenalty = (categoryCounts.get(policy.category) ?? 0) * 32;
-      const score = getPolicyListPriorityScore(policy) - diversityPenalty;
-      if (score > bestScore) {
-        bestScore = score;
-        bestIndex = index;
-      }
-    });
-    const [selectedPolicy] = candidates.splice(bestIndex, 1);
-    sorted.push(selectedPolicy);
-    categoryCounts.set(selectedPolicy.category, (categoryCounts.get(selectedPolicy.category) ?? 0) + 1);
-  }
-  return sorted;
 }
 
 function getRecommendedPolicies(policies: Policy[]) {
@@ -403,27 +294,13 @@ function getPolicyControlsHelpText(policy: Policy) {
 
 export function PolicyListPage() {
   const [searchParams] = useSearchParams();
-  const categoryParam = searchParams.get("category");
-  const regionParam = searchParams.get("region");
-  const periodParam = searchParams.get("period");
-  const amountParam = searchParams.get("amount");
-  const selectedCategory = isCategoryFilter(categoryParam) ? categoryParam : allFilter;
-  const [selectedRegion, setSelectedRegion] = useState<string>(regionParam || allFilter);
-  const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter>(isPeriodFilter(periodParam) ? periodParam : "전체");
-  const [selectedAmount, setSelectedAmount] = useState<AmountFilter>(isAmountFilter(amountParam) ? amountParam : "전체");
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
-  const [showSavedOnly, setShowSavedOnly] = useState(() => searchParams.get("saved") === "1");
-  const [draftFilters, setDraftFilters] = useState<PolicyFilterState>({
-    category: selectedCategory,
-    region: selectedRegion,
-    period: selectedPeriod,
-    amount: selectedAmount,
-    savedOnly: showSavedOnly,
-  });
-  const [searchTerm, setSearchTerm] = useState("");
+  /* 좁히기 조건(마감 · 금액 · 관심 정책만 · 글 검색)은 지도 화면 안에서 지도 색 · 건수와 목록을 같이 좁힌다(시안 v55).
+     예전엔 조건이 걸리면 지도를 떠나 예전 카드 목록으로 갔다. 조건은 층이 아니라 주소 밖(policyConditions)에 두고 ✕ 로 푼다 */
+  const conditions = usePolicyConditions();
+  const [draft, setDraft] = useState<FilterDraft>(EMPTY_DRAFT);
   /* 지도 화면의 상태(고른 지역·시군·사업·칩·시트 자리·돋보기)는 전부 URL 에 둔다. 컴포넌트 상태로 두면
      정책 상세에 들어갔다 뒤로 왔을 때 화면이 다시 만들어지며 처음으로 돌아간다.
-     지역은 필터가 아니다 - 지도를 눌렀다고 검색 결과가 줄어들면 안 되므로 필터의 region 이 아니라 place 를 쓴다.
      층이 늘 때만 기록을 쌓아 뒤로가기가 한 층씩 되짚는다(useBrowseHistory). */
   const browse = readBrowseState(searchParams);
   /* 넓은 화면(1024px~)은 지도 옆에 목록 패널이 늘 서 있다 - 시트 자리는 층이 아니고, 줄을 누르면 패널이 상세가 된다 */
@@ -439,7 +316,7 @@ export function PolicyListPage() {
   useEffect(() => {
     if (!isDesktop && browse.detail) navigate(`/policies/${browse.detail}`, { replace: true });
   }, [isDesktop, browse.detail, navigate]);
-  /* 검색창은 맨 위 하나(2026-09-30 사용자 결정). 지도 화면에서 누르면 지역·혜택 검색 칸이 열리고
+  /* 검색창은 맨 위 하나(2026-09-30 사용자 결정). 누르면 지역·혜택 검색 칸이 열리고
      친 글자는 그 칸의 찾을 말이 된다. 칸이 닫히면 비운다. */
   const [panelQuery, setPanelQuery] = useState("");
   useEffect(() => {
@@ -449,15 +326,15 @@ export function PolicyListPage() {
   const [coverTop, setCoverTop] = useState<number | null>(null);
   const { savedSlugs, addSavedSlug, removeSavedSlug } = useSession();
   const { data: policies, error, isLoading } = useAsyncResource(() => appDataApi.listPolicies(), []);
-  const regionFilters = useMemo(() => {
-    const regions = policies?.map((policy) => policy.region) ?? [];
-    return [allFilter, ...Array.from(new Set(regions)).sort((left, right) => left.localeCompare(right, "ko"))];
-  }, [policies]);
-  const groupedRegionFilters = useMemo(() => getAvailableRegionsByGroup(regionFilters), [regionFilters]);
+  /* 조건이 걸린 정책 - 지도 건수 · 칩 · 목록 · 시군 점 · 지역 카드가 다 이것에서 시작한다 */
+  const narrowed = useMemo(
+    () => (policies ?? []).filter((policy) => matchesConditions(policy, conditions, savedSlugs)),
+    [policies, conditions, savedSlugs],
+  );
   /* 위 칩(혜택 형태)과 검색에서 고른 사업이 걸린 정책 - 지도 건수·목록·시군 점이 다 이것을 센다 */
   const browsePolicies = useMemo(
-    () => (policies ?? []).filter((policy) => matchesBrowseFilter(policy, browse.filter) && (!browse.program || programName(policy) === browse.program)),
-    [policies, browse.filter, browse.program],
+    () => narrowed.filter((policy) => matchesBrowseFilter(policy, browse.filter) && (!browse.program || programName(policy) === browse.program)),
+    [narrowed, browse.filter, browse.program],
   );
   /* 지도에 줄 건수. 전국 정책은 세지 않는다 - 하나에 17곳이 다 켜지면 "어디에 정책이 있나"가
      사라지고, 지역 건수가 12건씩 부풀었다. 전국은 지도 왼쪽 위 '전국 공통'이 따로 센다.
@@ -475,15 +352,9 @@ export function PolicyListPage() {
       entry.total = entry.own;
     }
     return counts;
-  }, [policies, browsePolicies]);
-  const appliedFilters = useMemo<PolicyFilterState>(() => ({
-    category: selectedCategory,
-    region: selectedRegion,
-    period: selectedPeriod,
-    amount: selectedAmount,
-    savedOnly: showSavedOnly,
-  }), [selectedCategory, selectedRegion, selectedPeriod, selectedAmount, showSavedOnly]);
-  const activeFilterCount = getActiveFilterCount(appliedFilters, searchTerm);
+  }, [browsePolicies]);
+  const filterCount = conditionCount(conditions);
+  const conditionLine = conditionLabel(conditions);
 
   const handleToggleSave = async (policy: Policy) => {
     const slug = policy.slug;
@@ -496,67 +367,9 @@ export function PolicyListPage() {
     }
   };
 
-  const visiblePolicies = useMemo(() => {
-    if (!policies) return [];
-    const filteredPolicies = policies.filter((policy) => {
-      if (showSavedOnly && !savedSlugs.has(policy.slug)) return false;
-      const matchesRegion = selectedRegion === allFilter || policy.region === selectedRegion;
-      const matchesCategory = selectedCategory === allFilter || policy.category === selectedCategory;
-      return matchesRegion && matchesCategory && matchesPeriod(policy, selectedPeriod) && matchesAmount(policy, selectedAmount) && matchesPolicySearch(policy, searchTerm);
-    });
-    return sortPoliciesForList(filteredPolicies, selectedCategory === allFilter);
-  }, [policies, selectedCategory, selectedRegion, selectedPeriod, selectedAmount, searchTerm, showSavedOnly, savedSlugs]);
-
-  const photoAttributions = useMemo(
-    () => Array.from(new Set(
-      visiblePolicies.flatMap((policy) => {
-        const photo = getPolicyPhoto(policy);
-        return photo?.attribution ? [photo.attribution] : [];
-      }),
-    )),
-    [visiblePolicies],
-  );
-
-  const hasActiveFilters = activeFilterCount > 0;
-
-  useEffect(() => {
-    setShowSavedOnly(searchParams.get("saved") === "1");
-    setSelectedRegion(searchParams.get("region") || allFilter);
-    const nextPeriod = searchParams.get("period");
-    setSelectedPeriod(isPeriodFilter(nextPeriod) ? nextPeriod : "전체");
-    const nextAmount = searchParams.get("amount");
-    setSelectedAmount(isAmountFilter(nextAmount) ? nextAmount : "전체");
-  }, [searchParams]);
-
-  const filterParams = (filters: PolicyFilterState) => {
-    const next = new URLSearchParams(searchParams);
-    if (filters.category === allFilter) next.delete("category");
-    else next.set("category", filters.category);
-    if (filters.region === allFilter) next.delete("region");
-    else next.set("region", filters.region);
-    if (filters.period === "전체") next.delete("period");
-    else next.set("period", filters.period);
-    if (filters.amount === "전체") next.delete("amount");
-    else next.set("amount", filters.amount);
-    if (filters.savedOnly) next.set("saved", "1");
-    else next.delete("saved");
-    return next;
-  };
-  /* 필터 목록은 지도 층 밖 화면이다. 지도에서 처음 걸면 한 칸 쌓고(기기 뒤로가기가 지도로), 목록에서 바꾸면 덮어쓴다.
-     예전처럼 상태 없이 쌓으면 화면 안 ‹ 가 그 칸을 '앞 화면이 연 주소'로 보고 필터 목록으로 되감았다 */
-  const writeFilterParams = (filters: PolicyFilterState) => {
-    const next = filterParams(filters);
-    const keys = ["category", "region", "period", "amount", "saved"];
-    const filtered = keys.some((key) => searchParams.has(key));
-    // 시트에서 다 풀어 적용하면 ✕ 와 같다 - 쌓아 둔 칸을 되감아 빈 기록 칸을 남기지 않는다
-    if (filtered && !keys.some((key) => next.has(key))) browseHistory.unwind(next);
-    else if (filtered) browseHistory.replace(next.toString());
-    else browseHistory.push(next);
-  };
-
   /* ── 지도 화면 조작 ─────────────────────────────────────────── */
   /* 교통은 지역 혜택이 없다(모두 전국 공통) - 지역을 고르면 교통 칩을 푼다 */
-  const dropMove = (region: string | null) => (region && region !== NATIONWIDE_REGION && browse.filter === "move" ? null : browse.filter);
+  const dropMove = (region: string | null, filter = browse.filter) => (region && region !== NATIONWIDE_REGION && filter === "move" ? null : filter);
   /* 지도에서 지역을 누르면(엔진이 이미 같은 지역 다시 누르기를 풀기로 바꿔 준다). 지도 중심이면 목록을 올려 함께 보인다 */
   const selectRegion = (region: string | null) =>
     setBrowse({ ...base, region, city: null, filter: dropMove(region), sheet: browse.sheet === "low" ? "mid" : browse.sheet, search: false });
@@ -591,50 +404,49 @@ export function PolicyListPage() {
   const lowered = lowerBrowseState(browse, isDesktop);
   const stepBack = () => backBrowse(lowered ? writeBrowseState(searchParams, lowered) : null);
 
+  /* ── 필터 창 ─────────────────────────────────────────────────── */
+  /* 혜택 형태는 위 칩, 지역은 지도 선택과 같은 값이다. 마감 · 금액 · 관심 정책만이 새로 좁히는 조건 */
   const openFilterSheet = () => {
-    setDraftFilters(appliedFilters);
+    setDraft({ filter: browse.filter, region: browse.region, period: conditions.period, amount: conditions.amount, savedOnly: conditions.savedOnly });
     setIsFilterSheetOpen(true);
   };
-
-  const closeFilterSheet = () => {
-    setDraftFilters(appliedFilters);
+  const closeFilterSheet = () => setIsFilterSheetOpen(false);
+  /* 아래 단추가 미리 세는 수 - 적용하면 목록 머리에 나올 건수와 같다 */
+  const draftCount = useMemo(() => {
+    const keepCity = draft.region === browse.region ? browse.city : null;
+    return (policies ?? []).filter(
+      (policy) =>
+        matchesConditions(policy, { ...draft, text: conditions.text }, savedSlugs)
+        && matchesBrowseFilter(policy, dropMove(draft.region, draft.filter))
+        && (!browse.program || programName(policy) === browse.program)
+        && (!draft.region || policy.region === draft.region)
+        && (!keepCity || cityOf(policy) === keepCity),
+    ).length;
+  }, [policies, draft, conditions.text, savedSlugs, browse.region, browse.city, browse.program]);
+  const applyDraft = () => {
+    setPolicyConditions({ ...conditions, period: draft.period, amount: draft.amount, savedOnly: draft.savedOnly });
+    const sameRegion = draft.region === browse.region;
+    setBrowse({
+      ...base,
+      filter: dropMove(draft.region, draft.filter),
+      region: draft.region,
+      city: sameRegion ? browse.city : null,
+      sheet: browse.sheet === "low" ? "mid" : browse.sheet,
+      search: false,
+    });
     setIsFilterSheetOpen(false);
   };
-
-  const applyDraftFilters = () => {
-    setSelectedRegion(draftFilters.region);
-    setSelectedPeriod(draftFilters.period);
-    setSelectedAmount(draftFilters.amount);
-    setShowSavedOnly(draftFilters.savedOnly);
-    writeFilterParams(draftFilters);
-    setIsFilterSheetOpen(false);
-  };
-
-  const resetDraftFilters = () => {
-    setDraftFilters({ category: allFilter, region: allFilter, period: "전체", amount: "전체", savedOnly: false });
-  };
-
-  const resetFilters = () => {
-    const nextFilters: PolicyFilterState = { category: allFilter, region: allFilter, period: "전체", amount: "전체", savedOnly: false };
-    setSelectedRegion(nextFilters.region);
-    setSelectedPeriod(nextFilters.period);
-    setSelectedAmount(nextFilters.amount);
-    setShowSavedOnly(false);
-    setSearchTerm("");
-    setDraftFilters(nextFilters);
-    browseHistory.unwind(filterParams(nextFilters));
-    setIsFilterSheetOpen(false);
-  };
+  const clearConditions = () => setPolicyConditions(NO_CONDITIONS);
 
   /* 시트 목록: 모든 지역 · 전국 공통 · 고른 지역(시군) */
   const browseList = useMemo(
     () => browseView(browsePolicies, browse.region, browse.city, browse.filter),
     [browsePolicies, browse.region, browse.city, browse.filter],
   );
-  const chips = useMemo(() => chipCounts(policies ?? [], browse.region, browse.program, browse.city), [policies, browse.region, browse.program, browse.city]);
-  /* 지도 왼쪽 위 '전국 공통 N' - 칩·사업이 걸린 수. 지역 카드의 '전국 공통 혜택 N건 보기'는 전부 */
+  const chips = useMemo(() => chipCounts(narrowed, browse.region, browse.program, browse.city), [narrowed, browse.region, browse.program, browse.city]);
+  /* 지도 왼쪽 위 '전국 공통 N' - 칩·사업이 걸린 수. 지역 카드의 '전국 공통 혜택 N건 보기'는 칩을 뺀 수 */
   const nationCount = useMemo(() => browsePolicies.filter((policy) => policy.region === NATIONWIDE_REGION).length, [browsePolicies]);
-  const allNationCount = useMemo(() => (policies ?? []).filter((policy) => policy.region === NATIONWIDE_REGION).length, [policies]);
+  const allNationCount = useMemo(() => narrowed.filter((policy) => policy.region === NATIONWIDE_REGION).length, [narrowed]);
   /* 고른 도 안의 시군 점(혜택 건수). 제목 앞 [시군] 으로 센다 */
   const mapPlaces = useMemo(() => {
     const region = browse.region;
@@ -646,30 +458,29 @@ export function PolicyListPage() {
     }
     return Array.from(counts, ([name, count]) => ({ name, count }));
   }, [browsePolicies, browse.region]);
-  /* 지도 화면은 지도·칩·시트뿐이고 그 밑에 목록이 없다. 필터나 검색어가 걸리면
-     결과가 갈 곳이 없으므로 그때는 원래 목록 화면으로 간다. 지도 선택은 필터가 아니라
-     여기 안 들어온다 - 지역을 눌러도 결과 건수가 그대로다. */
-  const isNarrowed = searchTerm.trim() !== "" || selectedCategory !== allFilter
-    || selectedRegion !== allFilter || selectedPeriod !== "전체"
-    || selectedAmount !== "전체" || showSavedOnly;
-  const showMap = !isNarrowed;
-  const panelOpen = showMap && browse.search;
+  const panelOpen = browse.search;
+  /* 검색 칸이 세는 정책: 글 검색을 뺀 조건(마감 · 금액 · 관심만)이 걸린 것 - 칸의 숫자가 고른 뒤 목록과 맞게 */
+  const searchPolicies = useMemo(
+    () => (policies ?? []).filter((policy) => matchesConditions(policy, { ...conditions, text: "" }, savedSlugs)),
+    [policies, conditions, savedSlugs],
+  );
   const fullTextCount = useMemo(() => {
     const q = panelQuery.trim();
-    return q ? (policies ?? []).filter((policy) => matchesPolicySearch(policy, q)).length : 0;
-  }, [policies, panelQuery]);
-  /* 검색 칸의 '모두 보기': 예전 검색창처럼 정책 글 전체에서 찾은 목록으로 간다 */
+    return q ? searchPolicies.filter((policy) => matchesPolicySearch(policy, q)).length : 0;
+  }, [searchPolicies, panelQuery]);
+  /* 검색 칸의 '모두 보기': 정책 글 전체에서 그 말이 든 정책만 남긴다(조건 - ✕ 로 푼다). 고른 지역 · 칩 · 사업은 풀어
+     칸이 센 'N건'과 목록 건수가 같게 한다 - 글 검색은 지도 어디서 쳤든 전체에서 찾는 것이다 */
   const showAllMatches = () => {
-    setSearchTerm(panelQuery.trim());
-    setBrowse({ ...browse, search: false });
+    setPolicyConditions({ ...conditions, text: panelQuery.trim() });
+    setBrowse({ ...base, region: null, city: null, program: null, filter: null, search: false, sheet: browse.sheet === "low" ? "mid" : browse.sheet });
   };
-  const draftFilterSummary = getAppliedFilterSummary(draftFilters, "");
 
-  /* Esc = 화면 안 ‹ 와 같은 한 층. 지도 안(지역 선택 풀기)·필터 시트는 제 일을 한다 */
+  /* Esc = 화면 안 ‹ 와 같은 한 층. 지도 안(지역 선택 풀기)은 제 일을 하고, 필터 창이 떠 있으면 창만 닫는다 */
   useEffect(() => {
-    if (!showMap || isFilterSheetOpen) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !lowered) return;
+      if (event.key !== "Escape") return;
+      if (isFilterSheetOpen) return closeFilterSheet();
+      if (!lowered) return;
       // 담기 창 같은 대화창이 떠 있으면 그 창의 일이다 - 뒤의 상세까지 닫지 않는다
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if ((event.target as Element | null)?.closest?.(".thmap-host")) return;
@@ -682,13 +493,10 @@ export function PolicyListPage() {
   /* 지도 화면의 세 조각 - 지도 칸 · 목록 · 검색 칸. 좁은 화면은 지도 위에 목록 시트와 검색 칸을 겹치고,
      넓은 화면은 지도 오른쪽 패널에 목록을 세우고 검색 칸·정책 상세를 그 위에 덮는다(아래 목록은 스크롤 자리째 남는다) */
   const ready = !isLoading && !error && Boolean(policies && policies.length > 0);
-  /* 넓은 틀은 화면 폭만으로 정한다 - 불러오는 동안에도. ready 까지 기다리면 그 사이 좁은 화면 틀이 그려졌다가 바뀐다(10/1).
-     지도 틀도 불러오는 동안 미리 그린다 - 빈 화면에 '불러오는 중' 카드만 뜨면 예전 목록 화면처럼 보였다(10/2).
+  /* 지도 틀은 불러오는 동안에도 미리 그린다 - 빈 화면에 '불러오는 중' 카드만 뜨면 예전 목록 화면처럼 보였다(10/2).
      그동안 지도는 건수 없이 흐리고, 불러오는 표시는 목록 자리(패널 · 시트 자리)에 선다 */
-  const loadingMap = showMap && isLoading;
-  const mapOn = showMap && (ready || loadingMap);
-  const deskMap = isDesktop && showMap;
-  const split = deskMap && mapOn;
+  const mapOn = ready || isLoading;
+  const split = isDesktop && mapOn;
   const detailPolicy = split && browse.detail ? (policies ?? []).find((policy) => policy.slug === browse.detail) ?? null : null;
   const stage = mapOn ? (
     <div className="thmap-stage">
@@ -707,9 +515,9 @@ export function PolicyListPage() {
         onSelectPlace={pickCity}
         onBackground={mapBackground}
       />
-      {!ready || !policies ? null : browse.region && browse.region !== NATIONWIDE_REGION ? (
+      {!ready ? null : browse.region && browse.region !== NATIONWIDE_REGION ? (
         <RegionSummaryCard
-          policies={policies}
+          policies={narrowed}
           region={browse.region}
           filter={browse.filter}
           nationCount={allNationCount}
@@ -729,21 +537,22 @@ export function PolicyListPage() {
       )}
     </div>
   ) : null;
-  const sheet = loadingMap ? (
+  const sheet = isLoading ? (
     <div className="thmap-loading">
       <LoadingState compact label="정책을 불러오는 중입니다" />
     </div>
   ) : ready ? (
     <PolicyMapSheet
       /* 넓은 화면 패널은 필터 창이 떠도 그 뒤에 그대로 선다(비우면 빈 패널이 비친다) */
-      enabled={showMap && (isDesktop || !isFilterSheetOpen)}
+      enabled={isDesktop || !isFilterSheetOpen}
       mode={isDesktop ? "panel" : "sheet"}
       view={browseList}
       stop={browse.sheet}
       region={browse.region}
-      scopeKey={`${browse.region}|${browse.city}|${browse.program}|${browse.filter}`}
+      scopeKey={`${browse.region}|${browse.city}|${browse.program}|${browse.filter}|${conditionLine}`}
       showBack={Boolean(browse.region || browse.program)}
       clearLabel={browse.city ? `${browse.region} 전체` : browse.region ? "전체 지역" : null}
+      conditions={conditionLine ? { label: conditionLine, onClear: clearConditions } : null}
       onStop={(stop) => setBrowse({ ...browse, sheet: stop })}
       onBack={stepBack}
       onClear={clearBrowse}
@@ -754,7 +563,7 @@ export function PolicyListPage() {
   ) : null;
   const search = ready && panelOpen && policies ? (
     <PolicySearchPanel
-      policies={policies}
+      policies={searchPolicies}
       region={browse.region}
       query={panelQuery}
       fullTextCount={fullTextCount}
@@ -768,11 +577,11 @@ export function PolicyListPage() {
   const panelCover = split && Boolean(search || (ready && browse.detail));
 
   return (
-    <section className={deskMap ? "screen with-tabs prototype-policy-list-screen desktop-wide" : "screen with-tabs prototype-policy-list-screen"}>
+    <section className={isDesktop ? "screen with-tabs prototype-policy-list-screen desktop-wide" : "screen with-tabs prototype-policy-list-screen"}>
       <div className="prototype-policy-toolbar">
         {/* 제목 줄을 걷어내고 검색줄부터 시작한다 - 지도가 그만큼 커진다. 제목은 화면에서만 빼고
             남긴다: 화면 낭독기와 아래 h2(지역 목록)의 뿌리가 되는 유일한 h1 이다.
-            ♡ 관심은 필터 시트의 "관심 정책만" 칩과 같은 값이라 그쪽 하나로 모은다. */}
+            ♡ 관심은 필터 창의 "관심 정책만" 칩과 같은 값이라 그쪽 하나로 모은다. */}
         <h1 className="sr-only">정책 탐색</h1>
 
         <div className="prototype-policy-search-row">
@@ -781,17 +590,16 @@ export function PolicyListPage() {
             id="policy-list-search"
             aria-label="정책 검색"
             aria-controls={panelOpen ? "policy-search-panel" : undefined}
-            aria-expanded={showMap ? panelOpen : undefined}
+            aria-expanded={panelOpen}
             autoComplete="off"
             enterKeyHint="search"
             onChange={(event) => {
-              // 지도 화면에서 치면 늘 검색 칸으로(초점이 남은 채 칸이 닫혔어도 다시 연다). 목록 화면은 예전처럼 글 전체 검색
-              if (!showMap) return setSearchTerm(event.target.value);
+              // 치면 늘 검색 칸으로(초점이 남은 채 칸이 닫혔어도 다시 연다)
               if (!browse.search) setBrowse({ ...base, search: true });
               setPanelQuery(event.target.value);
             }}
             onFocus={() => {
-              if (showMap && !browse.search) setBrowse({ ...base, search: true });
+              if (!browse.search) setBrowse({ ...base, search: true });
             }}
             onKeyDown={(event) => {
               // 한글 조합을 끝내는 Enter(맥 크롬은 두 번 온다)와 빈 찾을 말은 첫 결과를 누르지 않는다
@@ -802,39 +610,28 @@ export function PolicyListPage() {
             }}
             placeholder={panelOpen ? "지역이나 혜택 이름 (예: 여수, 반값)" : "정책명, 지역, 혜택 검색"}
             type="search"
-            value={panelOpen ? panelQuery : searchTerm}
+            value={panelOpen ? panelQuery : ""}
           />
           {panelOpen ? (
             <button className="prototype-search-close" onClick={() => setBrowse({ ...browse, search: false })} type="button">
               닫기
             </button>
           ) : (
-          <div className="prototype-filter-controls">
-            <button aria-label="필터 열기" className="prototype-filter-icon-button" onClick={openFilterSheet} type="button">
-              <SlidersHorizontal aria-hidden="true" size={20} />
-              <span>{activeFilterCount > 0 ? `필터 ${activeFilterCount}` : "필터"}</span>
-            </button>
-            {/* 버튼 안에 버튼을 넣을 수 없어 한 알약처럼 붙여 둔다. 목록 화면엔 지도 밖 영역이
-                없어서 걸린 필터를 풀 자리가 여기뿐이다. */}
-            {hasActiveFilters && (
-              <button aria-label="필터 초기화" className="prototype-filter-reset-chip" onClick={resetFilters} type="button">✕</button>
-            )}
-          </div>
+            <div className="prototype-filter-controls">
+              <button aria-haspopup="dialog" aria-label="필터 열기" className="prototype-filter-icon-button" onClick={openFilterSheet} type="button">
+                <SlidersHorizontal aria-hidden="true" size={20} />
+                <span>{filterCount > 0 ? `필터 ${filterCount}` : "필터"}</span>
+              </button>
+            </div>
           )}
         </div>
-        {/* 지도 화면의 위 칩: 혜택 형태. 칩을 고르면 지도 건수와 목록이 같이 바뀐다 */}
-        {!isLoading && !error && policies && policies.length > 0 && showMap && (
+        {/* 위 칩: 혜택 형태. 칩을 고르면 지도 건수와 목록이 같이 바뀐다 */}
+        {ready && (
           <BrowseChips counts={chips} filter={browse.filter} program={browse.program} onFilter={pickFilter} onClearProgram={() => setBrowse({ ...base, program: null })} />
         )}
       </div>
-      {/* 건수 줄은 검색·필터 목록에만 - 지도 화면은 목록 머리가 건수를 말한다 */}
-      {!isLoading && !error && policies && !showMap && (
-        <div className="prototype-policy-result-row" aria-live="polite">
-          전체 {policies.length}개 중 {visiblePolicies.length}개 표시
-        </div>
-      )}
       {/* 바다가 깔리는 칸. 좁은 화면은 지도가 목록 뒤로 탭바 위까지 꽉 차 있고, 목록이 비운 만큼 드러난다.
-          넓은 화면은 지도(남는 폭) + 오른쪽 목록 패널 420px */}
+          넓은 화면은 지도(남는 폭) + 오른쪽 목록 패널 */}
       {split ? (
         <div className="thmap-split">
           {stage}
@@ -860,26 +657,7 @@ export function PolicyListPage() {
           </div>
         </div>
       ) : stage}
-      {isLoading && !showMap && <LoadingState label="정책을 불러오는 중입니다" />}
       {error && <ErrorState message={error} action={<LinkButton to="/home" variant="line">홈으로 가기</LinkButton>} />}
-      {!isLoading && !error && visiblePolicies.length === 0 && !showMap && (
-        <EmptyState
-          eyebrow="정책 탐색"
-          title={hasActiveFilters ? "검색 조건에 맞는 정책이 없어요" : "등록된 정책이 아직 없어요"}
-          body={hasActiveFilters ? "검색어를 줄이거나 필터를 다시 선택해보세요." : "새로운 여행 혜택이 등록되면 이곳에서 확인할 수 있어요."}
-          action={hasActiveFilters ? <Button onClick={resetFilters}>전체 보기</Button> : <LinkButton to="/home" variant="line">홈으로 가기</LinkButton>}
-        />
-      )}
-      {!isLoading && !error && visiblePolicies.length > 0 && !showMap && (
-        <div className="list">
-          {visiblePolicies.map((policy) => (
-            <PolicyListCard key={policy.id} policy={policy} isSaved={savedSlugs.has(policy.slug)} onToggleSave={handleToggleSave} />
-          ))}
-          {photoAttributions.map((attribution) => (
-            <p className="policy-list-photo-credit" key={attribution}>{attribution}</p>
-          ))}
-        </div>
-      )}
 
       {!split && sheet}
       {!split && search}
@@ -895,35 +673,34 @@ export function PolicyListPage() {
                 <X aria-hidden="true" size={18} />
               </button>
             </div>
-            <div className="prototype-filter-draft-summary" aria-live="polite">
-              <strong>{draftFilterSummary}</strong>
-            </div>
 
             <div className="prototype-filter-section">
-              <div className="prototype-filter-section-title"><span>카테고리</span><em>하나 선택</em></div>
-              <div className="prototype-filter-chip-row" role="group" aria-label="카테고리 필터">
-                {policyCategoryTabs.map((tab) => (
-                  <button className={draftFilters.category === tab.value ? "filter-chip active" : "filter-chip"} key={tab.value} onClick={() => setDraftFilters((filters) => ({ ...filters, category: tab.value }))} type="button">
-                    {tab.label}
+              <div className="prototype-filter-section-title"><span>혜택 형태</span><em>위 칩과 같아요</em></div>
+              <div className="prototype-filter-chip-row" role="group" aria-label="혜택 형태">
+                {BROWSE_FILTERS.map((option) => (
+                  <button aria-pressed={draft.filter === option.key} className={draft.filter === option.key ? "filter-chip active" : "filter-chip"} key={option.label} onClick={() => setDraft((current) => ({ ...current, filter: option.key }))} type="button">
+                    {option.label}
                   </button>
                 ))}
               </div>
             </div>
 
             <div className="prototype-filter-section">
-              <div className="prototype-filter-section-title"><span>지역</span><em>권역별 17개</em></div>
-              <div className="prototype-filter-chip-row" role="group" aria-label="지역 필터">
-                <button className={draftFilters.region === allFilter ? "filter-chip active" : "filter-chip"} onClick={() => setDraftFilters((filters) => ({ ...filters, region: allFilter }))} type="button">
-                  전체
-                </button>
+              <div className="prototype-filter-section-title"><span>지역</span><em>지도에서 고른 것과 같아요</em></div>
+              <div className="prototype-filter-chip-row" role="group" aria-label="지역">
+                {[[null, "전체"], [NATIONWIDE_REGION, "전국 공통"]].map(([value, label]) => (
+                  <button aria-pressed={draft.region === value} className={draft.region === value ? "filter-chip active" : "filter-chip"} key={label} onClick={() => setDraft((current) => ({ ...current, region: value }))} type="button">
+                    {label}
+                  </button>
+                ))}
               </div>
               <div className="prototype-region-group-list">
-                {groupedRegionFilters.map((group) => (
+                {regionGroups.map((group) => (
                   <div className="prototype-region-group" key={group.label}>
                     <h3>{group.label}</h3>
                     <div className="prototype-filter-chip-row">
                       {group.regions.map((region) => (
-                        <button className={draftFilters.region === region ? "filter-chip active" : "filter-chip"} key={region} onClick={() => setDraftFilters((filters) => ({ ...filters, region }))} type="button">
+                        <button aria-pressed={draft.region === region} className={draft.region === region ? "filter-chip active" : "filter-chip"} key={region} onClick={() => setDraft((current) => ({ ...current, region }))} type="button">
                           {region}
                         </button>
                       ))}
@@ -934,31 +711,33 @@ export function PolicyListPage() {
             </div>
 
             <div className="prototype-filter-section">
-              <div className="prototype-filter-section-title"><span>기간 · 금액</span><em>필요한 조건만</em></div>
-              <div className="prototype-filter-chip-row" aria-label="기간 필터">
-                {periodFilters.map((period) => (
-                  <button className={draftFilters.period === period ? "filter-chip active" : "filter-chip"} key={period} onClick={() => setDraftFilters((filters) => ({ ...filters, period }))} type="button">
+              <div className="prototype-filter-section-title"><span>마감 · 금액</span><em>필요한 조건만</em></div>
+              <div className="prototype-filter-chip-row" role="group" aria-label="마감">
+                {PERIOD_FILTERS.map((period) => (
+                  <button aria-pressed={draft.period === period} className={draft.period === period ? "filter-chip active" : "filter-chip"} key={period} onClick={() => setDraft((current) => ({ ...current, period }))} type="button">
                     {period === "전체" ? "기간 전체" : period}
                   </button>
                 ))}
               </div>
-              <div className="prototype-filter-chip-row" aria-label="금액 필터">
-                {amountFilters.map((amount) => (
-                  <button className={draftFilters.amount === amount ? "filter-chip active" : "filter-chip"} key={amount} onClick={() => setDraftFilters((filters) => ({ ...filters, amount }))} type="button">
+              <div className="prototype-filter-chip-row" role="group" aria-label="금액">
+                {AMOUNT_FILTERS.map((amount) => (
+                  <button aria-pressed={draft.amount === amount} className={draft.amount === amount ? "filter-chip active" : "filter-chip"} key={amount} onClick={() => setDraft((current) => ({ ...current, amount }))} type="button">
                     {amount === "전체" ? "금액 전체" : amount}
                   </button>
                 ))}
               </div>
-              <div className="prototype-filter-chip-row" aria-label="관심 정책 필터">
-                <button className={draftFilters.savedOnly ? "filter-chip active" : "filter-chip"} onClick={() => setDraftFilters((filters) => ({ ...filters, savedOnly: !filters.savedOnly }))} type="button" aria-pressed={draftFilters.savedOnly}>
+              <div className="prototype-filter-chip-row" role="group" aria-label="관심 정책">
+                <button className={draft.savedOnly ? "filter-chip active" : "filter-chip"} onClick={() => setDraft((current) => ({ ...current, savedOnly: !current.savedOnly }))} type="button" aria-pressed={draft.savedOnly}>
                   관심 정책만
                 </button>
               </div>
             </div>
 
             <div className="prototype-filter-sheet-actions">
-              <button className="prototype-filter-reset-button" onClick={resetDraftFilters} type="button">초기화</button>
-              <button className="prototype-filter-apply-button" onClick={applyDraftFilters} type="button">필터 적용하기</button>
+              <button className="prototype-filter-reset-button" onClick={() => setDraft(EMPTY_DRAFT)} type="button">초기화</button>
+              <button className="prototype-filter-apply-button" disabled={draftCount === 0} onClick={applyDraft} type="button">
+                {draftCount > 0 ? `${draftCount}건 보기` : "맞는 혜택 없음"}
+              </button>
             </div>
           </div>
         </div>
