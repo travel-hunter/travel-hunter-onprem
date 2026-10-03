@@ -46,6 +46,7 @@ class KakaoLocalArea:
     b_code: str | None
     latitude: float | None
     longitude: float | None
+    h_code: str | None = None   # 행정동으로 온 구역은 b_code(법정동) 없이 이것만 있다('중앙동' 30곳 중 16곳, 10/4)
 
 
 class KakaoLocalSearchProvider(Protocol):
@@ -238,6 +239,7 @@ def _to_area(document: dict[str, Any]) -> KakaoLocalArea | None:
         region_2depth_name=str(address.get("region_2depth_name", "")).strip(),
         region_3depth_name=str(address.get("region_3depth_name") or address.get("region_3depth_h_name") or "").strip(),
         b_code=(address.get("b_code") or None),
+        h_code=(address.get("h_code") or None),
         latitude=parse_float_or_none(document.get("y")),
         longitude=parse_float_or_none(document.get("x")),
     )

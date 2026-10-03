@@ -130,6 +130,29 @@ def test_kakao_client_reads_only_region_rows_from_the_address_search() -> None:
     assert seen["url"].endswith("/v2/local/search/address.json") and seen["params"]["analyze_type"] == "similar"
 
 
+def test_an_admin_dong_without_a_legal_code_is_named_by_its_admin_code_not_its_address() -> None:
+    """행정동으로 온 구역은 b_code 가 비고 h_code 만 있다('중앙동' 30곳 중 16곳, 10/4 실측) - ID 에 카카오 주소 글자를 쓰지 않는다(주소창에 실린다)."""
+    class Settings:
+        kakao_local_enabled = True
+        kakao_local_rest_api_key = "test-key"
+        kakao_local_timeout_seconds = 5.0
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"documents": [
+                {"address_type": "REGION", "address_name": "전남광주통합특별시 여수시 중앙동", "x": "127.73", "y": "34.74",
+                 "address": {"region_1depth_name": "전남광주통합특별시", "region_2depth_name": "여수시", "region_3depth_h_name": "중앙동",
+                             "b_code": "", "h_code": "4613053000"}},
+            ]}
+
+    areas = KakaoLocalClient(settings_obj=Settings(), http_get=lambda url, headers, params, timeout: Response()).search_address(query="중앙동")
+    items = place_search.search_places("중앙동", FakeKakao(areas=areas))
+    assert [i["id"] for i in items if i["kind"] == "area"] == ["area:4613053000"]
+
+
 def test_places_route_needs_login_and_returns_camel_case_items(monkeypatch) -> None:
     client = TestClient(app)
     assert client.get("/api/places/search?query=오동도").status_code == 401

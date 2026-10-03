@@ -31,6 +31,7 @@ import {
 } from "../../test/fixtures";
 import { getLink, goBack, login, renderAppRoute, routeLocation } from "../../test/renderAppRoute";
 import { DESKTOP_MEDIA_QUERY } from "../../lib/useMediaQuery";
+import { forgetPlaces } from "../../components/map/placeMemory";
 
 /* 지도 화면: 지도 뒤로 목록 시트가 반반으로 선다. 목록 머리가 지금 목록의 이름과 건수를 말한다
    ("모든 지역 3건", "전남 1건"). 필터 · 글 검색도 이 화면 안에서 좁힌다(시안 v55) - 예전 카드 목록 화면은 없다. */
@@ -1270,6 +1271,10 @@ describe("Travel Hunter app — policies & trip picker", () => {
       expect(screen.getByText("오동도 근처")).toBeInTheDocument();
       expect(document.querySelector(".thmap-pin")).toBeTruthy();
       expect(new URLSearchParams(routeLocation().search).get("city")).toBe("여수");
+      // 주소의 near 에는 카카오 장소 ID와 친 말만 - 이름 · 좌표는 싣지 않는다(카카오 운영정책)
+      const nearParam = JSON.parse(new URLSearchParams(routeLocation().search).get("near")!);
+      expect(Object.keys(nearParam).sort()).toEqual(["city", "id", "note", "q", "region"]);
+      expect([nearParam.id, nearParam.q]).toEqual(["kakao:1", "오동도"]);
       // 가까운 시군 - 누르면 그 시군으로, 핀 · 칩 순서는 그대로이고 보고 있는 시군만 눌린 모양
       const chipNames = () => within(screen.getByRole("group", { name: "가까운 시군" })).getAllByRole("button").map((chip) => chip.textContent);
       const before = chipNames();
@@ -1285,6 +1290,40 @@ describe("Travel Hunter app — policies & trip picker", () => {
       expect(screen.queryByText("오동도 근처")).toBeNull();
       expect(document.querySelector(".thmap-pin")).toBeNull();
       expect(new URLSearchParams(routeLocation().search).get("near")).toBeNull();
+    } finally {
+      policyListSpy.mockRestore();
+      placeSpy.mockRestore();
+    }
+  });
+
+  it("draws a place found by location from its id after a reload, and drops it when it cannot be found again", async () => {
+    const policies: Policy[] = [{ ...examplePolicyDetail, id: "ys", slug: "ys", title: "[여수] 숙박 할인", region: "전남" }];
+    const policyListSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
+    const placeSpy = vi.spyOn(appDataApi, "searchPlaces").mockResolvedValue([
+      { kind: "place", id: "kakao:1", name: "오동도", category: "섬", address: "전남광주통합특별시 여수시 수정동 1", latitude: 34.745, longitude: 127.766, sido: "전남", city: "여수" },
+    ]);
+    const near = JSON.stringify({ id: "kakao:1", q: "오동도", region: "전남", city: "여수", note: null });
+    try {
+      await login();
+      cleanup();
+      renderAppRoute(`/policies?place=전남&city=여수&near=${encodeURIComponent(near)}`);
+      await waitForSheet("여수 1건");
+      expect(await screen.findByText("오동도 근처")).toBeInTheDocument();
+      expect(placeSpy).toHaveBeenCalledWith("오동도", expect.anything());
+      expect(document.querySelector(".thmap-pin")).toBeTruthy();
+
+      // 다시 찾아도 없으면 근처 줄 · 핀 없이 그 시군만
+      cleanup();
+      forgetPlaces();
+      placeSpy.mockResolvedValue([]);
+      renderAppRoute(`/policies?place=전남&city=여수&near=${encodeURIComponent(near)}`);
+      await waitForSheet("여수 1건");
+      await waitFor(() => expect(placeSpy).toHaveBeenCalledTimes(2));
+      expect(screen.queryByText("오동도 근처")).toBeNull();
+      expect(document.querySelector(".thmap-pin")).toBeNull();
+      // 주소에서도 near 를 지운다 - 그 시군 화면은 그대로
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("near")).toBeNull());
+      expect(new URLSearchParams(routeLocation().search).get("city")).toBe("여수");
     } finally {
       policyListSpy.mockRestore();
       placeSpy.mockRestore();

@@ -11,6 +11,7 @@ import { PolicyMapSheet } from "../components/map/PolicyMapSheet";
 import { cityOf, NATIONWIDE_REGION } from "../utils/policyPrograms";
 import { REGION_NAMES, type RegionCounts } from "../components/map/regionMapEngine";
 import { BrowseChips, PolicySearchPanel, RegionSummaryCard } from "../components/map/PolicyMapPanels";
+import { rememberPlaces, usePlaceById } from "../components/map/placeMemory";
 import { BROWSE_FILTERS, browseDepthOf, browseView, chipCounts, lowerBrowseState, matchesBrowseFilter, nearOn, programName, readBrowseState, searchBrowse, writeBrowseState, type BrowseCombo, type BrowseFilter, type BrowseState } from "../components/map/policyBrowse";
 import { geoToMap, nearbyCities, shortCity, type NearTarget } from "../components/map/nearby";
 import { useBrowseHistory } from "../components/map/useBrowseHistory";
@@ -392,13 +393,17 @@ export function PolicyListPage() {
   const clearBrowse = () =>
     setBrowse(browse.city ? { ...base, city: null } : { ...base, region: null, city: null, program: null });
   const lowered = lowerBrowseState(browse, isDesktop);
-  /* 위치로 찾은 곳 - 지금 고른 지역 · 시군 것일 때만 핀 · 근처 줄 · 가까운 시군 */
+  /* 위치로 찾은 곳 - 지금 고른 지역 · 시군 것일 때만 핀 · 근처 줄 · 가까운 시군. 이름 · 좌표는 메모리 또는 같은 말로 다시 찾기 */
   const nearHere = nearOn(browse);
+  const { place: nearPlace, missing: nearMissing } = usePlaceById(nearHere?.id ?? null, nearHere?.q ?? "");
   const pin = useMemo(
-    () => (nearHere ? geoToMap(nearHere.sido, nearHere.lat, nearHere.lng) : null),
-    // 주소에서 매번 새로 읽는 객체라 값으로 비교한다
-    [nearHere?.sido, nearHere?.lat, nearHere?.lng],
+    () => (nearPlace?.sido && nearPlace.latitude != null && nearPlace.longitude != null ? geoToMap(nearPlace.sido, nearPlace.latitude, nearPlace.longitude) : null),
+    [nearPlace],
   );
+  /* 다시 찾아도 없으면 주소에서도 근처를 지운다(기록을 쌓지 않고 덮어쓴다, 그 시군 화면은 그대로) */
+  useEffect(() => {
+    if (nearHere && nearMissing) browseHistory.replace(writeBrowseState(searchParams, { ...browse, near: null }).toString());
+  }, [nearHere?.id, nearMissing]);
   const stepBack = () => backBrowse(lowered ? writeBrowseState(searchParams, lowered) : null);
 
   /* ── 필터 창 ─────────────────────────────────────────────────── */
@@ -472,7 +477,10 @@ export function PolicyListPage() {
     if (!placeQuery) return;
     const control = new AbortController();
     const timer = window.setTimeout(() => {
-      appDataApi.searchPlaces(placeQuery, { signal: control.signal }).then(setPlaces, () => {
+      appDataApi.searchPlaces(placeQuery, { signal: control.signal }).then((items) => {
+        rememberPlaces(items);
+        setPlaces(items);
+      }, () => {
         if (!control.signal.aborted) setPlaces([]);
       });
     }, 300);
@@ -481,8 +489,8 @@ export function PolicyListPage() {
       control.abort();
     };
   }, [placeQuery]);
-  /* 위치로 찾은 곳의 근처 혜택으로 - 그 시군(없으면 가장 가까운 시군 · 도 · 전국)을 고르고 지도에 핀 */
-  const pickNear = (item: PlaceSearchItem, label: string, target: NearTarget) =>
+  /* 위치로 찾은 곳의 근처 혜택으로 - 그 시군(없으면 가장 가까운 시군 · 도 · 전국)을 고르고 지도에 핀. 주소에는 카카오 장소 ID와 친 말만 */
+  const pickNear = (item: PlaceSearchItem, target: NearTarget) =>
     setBrowse({
       ...base,
       region: target.region,
@@ -490,7 +498,7 @@ export function PolicyListPage() {
       filter: dropMove(target.region),
       sheet: "mid",
       search: false,
-      near: { name: label, lat: item.latitude ?? 0, lng: item.longitude ?? 0, sido: item.sido ?? "", region: target.region, city: target.city, note: target.note },
+      near: { id: item.id, q: panelQuery.trim(), region: target.region, city: target.city, note: target.note },
     });
   const fullTextCount = useMemo(() => {
     const q = panelQuery.trim();
@@ -582,8 +590,8 @@ export function PolicyListPage() {
       showBack={Boolean(browse.region || browse.program)}
       clearLabel={browse.city ? `${browse.region} 전체` : browse.region ? "전체 지역" : null}
       conditions={conditionLine ? { label: conditionLine, onClear: clearConditions } : null}
-      near={nearHere ? {
-        label: `${nearHere.name} 근처`,
+      near={nearHere && nearPlace ? {
+        label: `${nearPlace.name} 근처`,
         note: nearHere.note,
         /* 칩은 핀 기준 거리 순으로 고정 - 눌러도 순서 · 줄 높이가 그대로고, 보고 있는 시군만 눌린 모양(10/3 사용자 지적) */
         nearby: nearbyCities(browsePolicies, pin).slice(0, 4).map((city) => ({

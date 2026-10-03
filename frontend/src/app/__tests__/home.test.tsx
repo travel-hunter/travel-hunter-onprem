@@ -20,8 +20,8 @@ import {
   getPreviewTrip,
   testIsoDateFromToday,
 } from "../../test/fixtures";
-import { login, renderAppRoute, routeLocation } from "../../test/renderAppRoute";
-import { writePlaceParam } from "../../utils/placeHandoff";
+import { goBack, login, renderAppRoute, routeLocation } from "../../test/renderAppRoute";
+import { forgetPlaces, rememberPlaces } from "../../components/map/placeMemory";
 
 function policy(overrides: Partial<Policy> & Pick<Policy, "id" | "title">): Policy {
   return { ...examplePolicyDetail, slug: overrides.id, ...overrides };
@@ -827,7 +827,7 @@ describe("Travel Hunter app — home", () => {
     }
   });
 
-  it("searches places from the home search bar, opens a place card and hands the place to a trip", async () => {
+  it("searches places from the home search bar and opens a place card by its Kakao id, with no trip hand-off yet", async () => {
     const odongdo: PlaceSearchItem = {
       kind: "place",
       id: "kakao:8193468",
@@ -847,21 +847,6 @@ describe("Travel Hunter app — home", () => {
     ]);
     const getProfileSpy = withoutPreferredRegions();
     const searchPlacesSpy = vi.spyOn(appDataApi, "searchPlaces").mockResolvedValue([odongdo]);
-    const upcoming = (id: string, title: string, role: Trip["currentUserRole"], from: number): Trip => ({
-      ...getPreviewTrip(),
-      id,
-      title,
-      startDate: testIsoDateFromToday(from),
-      endDate: testIsoDateFromToday(from + 2),
-      days: { 1: [], 2: [], 3: [] },
-      currentUserRole: role,
-    });
-    const listTripsSpy = vi.spyOn(appDataApi, "listTrips").mockResolvedValue([
-      upcoming("301", "여수 여행", "owner", 10),
-      upcoming("302", "지난 여행", "owner", -30),
-      upcoming("303", "보기만 하는 여행", "viewer", 10),
-    ]);
-    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(upcoming("301", "여수 여행", "owner", 10));
     try {
       await login();
       cleanup();
@@ -892,34 +877,33 @@ describe("Travel Hunter app — home", () => {
       // 장소 카드 - 뒤로(‹ 검색 결과)는 결과 그대로
       await user.click(row);
       let card = await screen.findByRole("article", { name: "오동도 장소 카드" });
-      expect(routeLocation().search).toContain("pl=");
+      // 주소에는 카카오 장소 ID만 - 이름 · 주소 · 좌표는 싣지 않는다(카카오 운영정책)
+      expect(new URLSearchParams(routeLocation().search).get("pl")).toBe("kakao:8193468");
+      expect(routeLocation().search).not.toContain(encodeURIComponent("수정동"));
+      // 카카오 장소값을 일정에 저장하지 않게 될 때(3단계)까지 '일정에 담기'는 없다
+      expect(within(card).queryByRole("button", { name: "일정에 담기" })).toBeNull();
       expect(within(card).getByRole("link", { name: /카카오맵에서 자세히/ })).toHaveAttribute("href", "http://place.map.kakao.com/8193468");
       // 근처 혜택 버튼은 어느 시군 혜택인지 말한다(그 시군 전용이면 거리는 없다)
       const near = new URLSearchParams(within(card).getByRole("link", { name: /^여수 혜택 1건 보기/ }).getAttribute("href")!.split("?")[1]);
-      expect([near.get("place"), near.get("city"), JSON.parse(near.get("near")!).name]).toEqual(["전남", "여수", "오동도"]);
+      expect([near.get("place"), near.get("city"), JSON.parse(near.get("near")!).id, JSON.parse(near.get("near")!).q]).toEqual(["전남", "여수", "kakao:8193468", "오동도"]);
       await user.click(within(card).getByRole("button", { name: "‹ 검색 결과" }));
       await waitFor(() => expect(screen.queryByRole("article", { name: "오동도 장소 카드" })).toBeNull());
       expect(searchbox).toHaveValue("오동도");
       await user.click(await screen.findByRole("button", { name: /오동도.*섬/ }));
       card = await screen.findByRole("article", { name: "오동도 장소 카드" });
 
-      // 일정에 담기: 끝나지 않은 · 고칠 수 있는 일정만. 고르면 그 일정의 장소 추가 창이 이 장소를 바구니에 담은 채 열린다(시안 v57)
-      await user.click(within(card).getByRole("button", { name: "일정에 담기" }));
-      const picker = await within(card).findByRole("group", { name: "일정 고르기" });
-      await within(picker).findByRole("button", { name: /여수 여행/ });
-      expect(within(picker).queryByText("지난 여행")).toBeNull();
-      expect(within(picker).queryByText("보기만 하는 여행")).toBeNull();
-      await user.click(within(picker).getByRole("button", { name: /여수 여행/ }));
-      await waitFor(() => expect(routeLocation().pathname).toBe("/trips/301"));
-      const sheet = await screen.findByRole("dialog", { name: "장소 추가" });
-      expect(within(sheet).getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("오동도");
-      expect(within(sheet).getByRole("button", { name: "Day 1에 1개 저장하기" })).toBeInTheDocument();
+      // 새로 고침(메모리 없음): 같은 말로 다시 찾아 같은 ID의 카드를 그린다
+      cleanup();
+      forgetPlaces();
+      searchPlacesSpy.mockClear();
+      renderAppRoute("/home?q=%EC%98%A4%EB%8F%99%EB%8F%84&pl=kakao%3A8193468");
+      expect(await screen.findByRole("article", { name: "오동도 장소 카드" })).toBeInTheDocument();
+      // 다시 찾기는 결과 목록 검색과 같은 요청 하나다
+      expect(searchPlacesSpy).toHaveBeenCalledTimes(1);
     } finally {
       listPoliciesSpy.mockRestore();
       getProfileSpy.mockRestore();
       searchPlacesSpy.mockRestore();
-      listTripsSpy.mockRestore();
-      getTripSpy.mockRestore();
     }
   });
 
@@ -982,20 +966,82 @@ describe("Travel Hunter app — home", () => {
       expect(within(nearby).getByRole("button", { name: /오동도관광호텔/ })).toHaveTextContent("약 1.3km");
 
       // 한 곳을 누르면 그 장소 카드로 이어 본다 - 뒤로는 앞 장소
+      await user.click(within(nearby).getByRole("button", { name: "볼거리" }));
+      expect(await within(nearby).findByText("반경 2km 안에 없어요.")).toHaveClass("home-nearby-tip");
+      await user.click(within(nearby).getByRole("button", { name: "숙소" }));
       await user.click(within(nearby).getByRole("button", { name: /오동도관광호텔/ }));
       const hotel = await screen.findByRole("article", { name: "오동도관광호텔 장소 카드" });
+      // 메모리(30분 · 200곳)에서 밀려나도 보던 카드와 '‹ 앞 장소'는 그대로 - 다른 분류를 눌러 다시 그려도(10/4 리뷰)
+      forgetPlaces();
+      await user.click(within(within(hotel).getByRole("region", { name: "이 근처" })).getByRole("button", { name: "맛집" }));
+      expect(screen.getByRole("article", { name: "오동도관광호텔 장소 카드" })).toBeInTheDocument();
+      expect(new URLSearchParams(routeLocation().search).get("pl")).toBe("kakao:n2");
       await user.click(within(hotel).getByRole("button", { name: "‹ 오동도" }));
       expect(await screen.findByRole("article", { name: "오동도 장소 카드" })).toBeInTheDocument();
 
-      // 이어 본 카드를 주소로 바로 열었으면(되감을 기록 없음) ‹ 는 검색 결과로 - 예전엔 아무 일도 없었다(10/3 리뷰)
+      // 이어 본 카드를 주소로 바로 열었고(되감을 기록 없음) 메모리에는 있으면 - ‹ 는 검색 결과로
       cleanup();
-      const hotelItem = near("kakao:n2", "오동도관광호텔", "여행 > 숙박 > 호텔", 1300);
-      renderAppRoute(`/home?${new URLSearchParams({ q: "오동도", pl: writePlaceParam(hotelItem), lv: "2", from: "오동도" })}`);
+      rememberPlaces([odongdo, near("kakao:n2", "오동도관광호텔", "여행 > 숙박 > 호텔", 1300)]);
+      renderAppRoute(`/home?${new URLSearchParams({ q: "오동도", pl: "kakao:n2", lv: "2", from: "kakao:8193468" })}`);
       const direct = await screen.findByRole("article", { name: "오동도관광호텔 장소 카드" });
       await user.click(within(direct).getByRole("button", { name: "‹ 오동도" }));
       await waitFor(() => expect(screen.queryByRole("article", { name: "오동도관광호텔 장소 카드" })).toBeNull());
       expect(new URLSearchParams(routeLocation().search).get("q")).toBe("오동도");
       expect(await screen.findByRole("button", { name: /오동도.*섬/ })).toBeInTheDocument();
+
+      // 받은 링크(메모리 없음)로 이어 본 카드를 열면 같은 말로 찾아도 없다 - 빈 카드 없이 검색 결과로
+      cleanup();
+      forgetPlaces();
+      renderAppRoute(`/home?${new URLSearchParams({ q: "오동도", pl: "kakao:n2", lv: "2", from: "kakao:8193468" })}`);
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("pl")).toBeNull());
+      expect(screen.queryByRole("article", { name: "오동도관광호텔 장소 카드" })).toBeNull();
+      expect(await screen.findByRole("button", { name: /오동도.*섬/ })).toBeInTheDocument();
+    } finally {
+      listPoliciesSpy.mockRestore();
+      getProfileSpy.mockRestore();
+      searchPlacesSpy.mockRestore();
+      nearbySpy.mockRestore();
+    }
+  });
+
+  it("goes back down its stacked layers when a followed place is not found again after a reload", async () => {
+    const odongdo: PlaceSearchItem = {
+      kind: "place",
+      id: "kakao:8193468",
+      name: "오동도",
+      category: "여행 > 관광,명소 > 섬",
+      categoryCode: "AT4",
+      address: "전남광주통합특별시 여수시 수정동 1-1",
+      latitude: 34.745,
+      longitude: 127.766,
+      placeUrl: "http://place.map.kakao.com/8193468",
+      sido: "전남",
+      city: "여수",
+    };
+    const listPoliciesSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue([policy({ id: "ys", title: "[여수] 숙박 할인", region: "전남" })]);
+    const getProfileSpy = withoutPreferredRegions();
+    const searchPlacesSpy = vi.spyOn(appDataApi, "searchPlaces").mockResolvedValue([odongdo]);
+    const nearbySpy = vi.spyOn(appDataApi, "listNearbyPlaces").mockResolvedValue([]);
+    try {
+      await login();
+      cleanup();
+      // 이어 본 장소를 보다 새로 고친 탭 - 기록(thChain)은 남고 메모리는 비었다. 같은 말로 다시 찾아도 그 장소는 없다
+      const results = new URLSearchParams({ q: "오동도" }).toString();
+      const card = new URLSearchParams({ q: "오동도", pl: "kakao:8193468" }).toString();
+      const hotel = new URLSearchParams({ q: "오동도", pl: "kakao:n2", lv: "2", from: "kakao:8193468" }).toString();
+      renderAppRoute([
+        "/home",
+        { pathname: "/home", search: `?${results}`, state: { thChain: [""], thLocal: true } },
+        { pathname: "/home", search: `?${card}`, state: { thChain: ["", results], thLocal: true } },
+        { pathname: "/home", search: `?${hotel}`, state: { thChain: ["", results, card], thLocal: true } },
+      ]);
+      await waitFor(() => expect(routeLocation().search).toBe(`?${results}`));
+      expect(await screen.findByRole("button", { name: /오동도.*섬/ })).toBeInTheDocument();
+
+      // 쌓인 기록을 되감아 검색 결과에 섰다 - 기기 뒤로가기는 닫은 장소 카드가 아니라 홈으로
+      goBack();
+      await waitFor(() => expect(routeLocation().search).toBe(""));
+      expect(screen.queryByRole("article", { name: "오동도 장소 카드" })).toBeNull();
     } finally {
       listPoliciesSpy.mockRestore();
       getProfileSpy.mockRestore();
@@ -1041,7 +1087,9 @@ describe("Travel Hunter app — home", () => {
       await user.type(searchbox, "중앙동");
       const row = await screen.findByRole("link", { name: /여수시 중앙동.*→ 전남 여수 · 혜택 1건/ });
       const params = new URLSearchParams(row.getAttribute("href")!.split("?")[1]);
-      expect([params.get("place"), params.get("city"), JSON.parse(params.get("near")!).name]).toEqual(["전남", "여수", "여수시 중앙동"]);
+      const nearParam = JSON.parse(params.get("near")!);
+      expect([params.get("place"), params.get("city"), nearParam.id, nearParam.q]).toEqual(["전남", "여수", "area:4613010100", "중앙동"]);
+      expect(Object.keys(nearParam).sort()).toEqual(["city", "id", "note", "q", "region"]);
 
       // 아무것도 없으면 다음 행동 - 혜택 이름 칩과 전체 정책 보기
       await user.clear(searchbox);

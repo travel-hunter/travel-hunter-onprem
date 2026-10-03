@@ -797,21 +797,6 @@
   text-align: center;
 }
 .home-place-acts { display: grid; gap: 8px; }
-.home-place-primary {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 50px;
-  border: 0;
-  border-radius: 14px;
-  background: var(--primary-600);
-  color: #fff;
-  font: inherit;
-  font-size: 16px;
-  font-weight: 700;
-  text-decoration: none;
-  cursor: pointer;
-}
 .home-place-near {
   display: flex;
   align-items: center;
@@ -828,36 +813,7 @@
 }
 .home-place-note { margin: 0; font-size: 13px; color: var(--gray-600); }
 .home-place-kakao { justify-self: start; font-size: 13px; color: var(--gray-700); }
-.home-trip-pick { display: grid; gap: 8px; margin-top: 4px; padding: 12px; border: 1px solid var(--gray-200); border-radius: 16px; background: var(--gray-50); }
-.home-trip-pick h4 { margin: 0; font-size: 15px; }
-.home-trip-pick-tip { margin: 0; font-size: 13px; color: var(--gray-600); }
-.home-trip-pick-row {
-  display: grid;
-  gap: 2px;
-  min-height: 56px;
-  padding: 8px 12px;
-  border: 1px solid var(--gray-200);
-  border-radius: 12px;
-  background: var(--color-bg-card);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.home-trip-pick-row b { font-size: 15px; }
-.home-trip-pick-row span { font-size: 13px; color: var(--gray-600); }
-.home-trip-pick-new {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 46px;
-  border: 1px solid var(--color-border-default);
-  border-radius: 14px;
-  background: var(--color-bg-card);
-  color: inherit;
-  font-size: 15px;
-  text-decoration: none;
-}
+.home-nearby-tip { margin: 0; font-size: 13px; color: var(--gray-600); }
 .home-search-results button:focus-visible,
 .home-search-results a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 @media (min-width: 1024px) {

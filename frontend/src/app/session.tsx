@@ -14,6 +14,7 @@ import {
   Profile,
   User,
 } from "../api";
+import { forgetPlaces } from "../components/map/placeMemory";
 import { NO_CONDITIONS, setPolicyConditions } from "../components/map/policyConditions";
 
 type SessionContextValue = {
@@ -78,6 +79,7 @@ async function refreshSessionOnce(): Promise<AuthResponse | null> {
 function clearAuth() {
   // 정책 탭 좁히기 조건(관심 정책만 · 검색어)은 그 사람의 것이다 - 같은 탭에서 다른 사람이 로그인할 때 남지 않게
   setPolicyConditions(NO_CONDITIONS);
+  forgetPlaces();   // 본 카카오 장소 메모리도 그 사람의 것이다
   setApiAccessToken(null);
   window.localStorage.removeItem(AUTH_STORAGE_KEY);
   clearProfileCompletionPromptDismissals();

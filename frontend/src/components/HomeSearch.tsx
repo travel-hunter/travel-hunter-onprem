@@ -2,21 +2,19 @@ import { ChevronLeft, MapPin, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { appDataApi, type NearbyCategory, type PlaceSearchItem, type Policy } from "../api";
-import { useAsyncResource } from "../api/useAsyncResource";
-import { tripStatus } from "../utils";
-import { readPlaceParam, writePlaceParam } from "../utils/placeHandoff";
 import { cityOf, NATIONWIDE_REGION } from "../utils/policyPrograms";
 import { KakaoMapView } from "./map/KakaoMapView";
 import { geoToMap, nearTarget, policyCityFor, shortCity, type NearTarget } from "./map/nearby";
 import { matchesBrowseFilter, readBrowseState, REGION_FULL_NAMES, searchBrowse, writeBrowseState, type BrowseState } from "./map/policyBrowse";
+import { recallPlace, rememberPlaces, useHeldPlace } from "./map/placeMemory";
 import { matchesPolicySearch, setPolicyConditions, usePolicyConditions } from "./map/policyConditions";
 import { PolicySearchRows, SearchNoResults } from "./map/PolicyMapPanels";
 import { useBrowseHistory } from "./map/useBrowseHistory";
 import "../styles/policy-map.css";
 
 /* 홈 통합 검색(시안 v56 · v57). 검색창은 모양 그대로 입력이 되고 그 아래 자리가 결과로 바뀐다 - 다른 화면으로 가지 않는다.
-   찾을 말(q)과 연 장소 카드(pl)는 주소에 둬 정책 탭 · 일정에 다녀와도 뒤로 한 번에 그대로 돌아온다.
-   층: 검색(q) → 장소 카드(pl) → 이 근처로 이어 본 장소 카드(lv 2, 3 …, 앞 장소 이름은 from). 치는 동안은 같은 층이라 기록이 쌓이지 않는다. */
+   주소에는 찾을 말(q)과 연 장소의 카카오 장소 ID(pl)만 둔다 - 장소 값은 placeMemory 에서 꺼내고, 없으면 같은 말로 다시 찾는다(카카오 운영정책).
+   층: 검색(q) → 장소 카드(pl) → 이 근처로 이어 본 장소 카드(lv 2, 3 …, 앞 장소의 ID는 from). 치는 동안은 같은 층이라 기록이 쌓이지 않는다. */
 const EXAMPLES = ["반값여행", "숙박세일", "여수", "오동도", "강릉 카페"];   // 혜택 이름도 - 무엇을 칠지 모를 때(10/3 사용자 조사)
 const MIN_PLACE_QUERY = 2;
 const PLACE_DEBOUNCE_MS = 300;
@@ -47,7 +45,7 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
   const conditions = usePolicyConditions();
   const q = searchParams.get("q");
   const open = q !== null;
-  const place = readPlaceParam(searchParams.get("pl"));
+  const placeId = searchParams.get("pl");
   /* 입력값은 이 칸이 쥔다 - 주소를 거쳐 되돌아오는 값을 입력칸에 그대로 넣으면 한글 조합이 끊긴다.
      주소가 밖에서 바뀌었을 때(뒤로 등)만 따라간다 */
   const [text, setText] = useState(q ?? "");
@@ -93,6 +91,7 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
     const timer = window.setTimeout(() => {
       appDataApi.searchPlaces(placeQuery, { signal: control.signal }).then(
         (items) => {
+          rememberPlaces(items);
           setAreas(items.filter((item) => item.kind === "area"));
           setPlaces(items.filter((item) => item.kind === "place"));
         },
@@ -111,7 +110,7 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-      if (place) closePlace();
+      if (placeId) closePlace();
       else close();
     };
     document.addEventListener("keydown", onKey);
@@ -119,6 +118,17 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
   });
 
   const query = text.trim();
+  /* 연 장소 - 이 화면에서 본 것(메모리)이거나, 주소로 바로 열었으면 위 결과 목록 검색(같은 말)에서 같은 ID. 다시 찾기 요청은 따로 하지 않는다.
+     그린 장소와 '‹ 앞 장소' 이름은 같은 ID 동안 붙잡는다 - 메모리에서 밀려나도 보던 카드가 사라지지 않게 */
+  const place = useHeldPlace(placeId, recallPlace(placeId) ?? places?.find((item) => item.id === placeId) ?? null);
+  const fromId = level > 1 ? searchParams.get("from") : null;
+  const fromName = useHeldPlace(fromId, recallPlace(fromId))?.name ?? null;
+  const placeMissing = Boolean(placeId && !place && (query.length < MIN_PLACE_QUERY || places !== null));
+  /* 다시 찾아도 없으면(이어 본 장소를 새로 고친 경우 등) 검색 결과로 - 쌓인 기록이 있으면 되감는다.
+     덮어쓰면 기록이 층을 건너뛰어 기기 뒤로가기가 닫은 카드를 다시 연다(10/4 리뷰) */
+  useEffect(() => {
+    if (placeMissing) go(toResults());
+  }, [placeMissing]);
   /* 홈 건수는 정책 탭의 좁히기 조건(마감 · 금액 · 관심만)을 걸지 않은 전체로 센다 - 정책 탭으로 가면 조건 줄과 ✕ 가 함께 보인다 */
   const all = policies ?? [];
   const found = query ? searchBrowse(all, query) : null;
@@ -163,23 +173,29 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
       {open && (
         <div className="home-search-results" id="home-search-results" role="region" aria-label="검색 결과">
           <div className="home-search-head">
-            <button className="home-search-back" type="button" aria-label={place ? "검색 결과로" : "검색 닫기"} onClick={place ? closePlace : close}>
+            <button className="home-search-back" type="button" aria-label={placeId ? "검색 결과로" : "검색 닫기"} onClick={placeId ? closePlace : close}>
               <ChevronLeft size={22} aria-hidden="true" />
             </button>
-            <b>{place ? "장소" : "검색"}</b>
+            <b>{placeId ? "장소" : "검색"}</b>
           </div>
           {place ? (
             <HomePlaceCard
               key={place.id}
               item={place}
+              query={query}
               policies={all}
-              fromName={level > 1 ? searchParams.get("from") : null}
+              fromName={fromName}
               nearCode={nearCode}
               nearbyCache={nearbyCache}
               onNearCode={setNearCode}
-              onOpenNearby={(next) => go(withParams({ pl: writePlaceParam(next), lv: String(level + 1), from: place.name }))}
+              onOpenNearby={(next) => {
+                rememberPlaces([next]);
+                go(withParams({ pl: next.id, lv: String(level + 1), from: place.id }));
+              }}
               onBack={closePlace}
             />
+          ) : placeId ? (
+            <p className="thmap-sres-empty">장소를 찾는 중…</p>
           ) : !query ? (
             <div className="home-search-start">
               <h3>이렇게 찾아 보세요</h3>
@@ -190,7 +206,7 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
                   </button>
                 ))}
               </div>
-              <p>지역이나 혜택 이름은 정책 탭으로, 장소는 카드로 열려요. 장소 카드에서 그 근처 혜택을 보거나 일정에 담을 수 있어요.</p>
+              <p>지역이나 혜택 이름은 정책 탭으로, 장소는 카드로 열려요. 장소 카드에서 그 근처 혜택을 볼 수 있어요.</p>
             </div>
           ) : (
             <div className="home-search-body">
@@ -214,7 +230,7 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
                 <>
                   <h3>동네<span className="src">근처 혜택으로</span></h3>
                   {areas.map((item) => (
-                    <HomeAreaRow key={item.id} item={item} policies={all} />
+                    <HomeAreaRow key={item.id} item={item} policies={all} query={query} />
                   ))}
                 </>
               )}
@@ -226,7 +242,7 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
                 <>
                   <h3>장소<span className="src">카카오 지도</span></h3>
                   {places.map((item) => (
-                    <HomePlaceRow key={item.id} item={item} policies={all} onOpen={() => go(withParams({ pl: writePlaceParam(item), lv: null, from: null }))} />
+                    <HomePlaceRow key={item.id} item={item} policies={all} onOpen={() => go(withParams({ pl: item.id, lv: null, from: null }))} />
                   ))}
                 </>
               ))}
@@ -259,22 +275,22 @@ function nearLinkLabel(target: NearTarget) {
   return target.km != null ? `${where} 약 ${target.km}km · 혜택 ${target.count}건 보기` : `${where} 혜택 ${target.count}건 보기`;
 }
 
-/** 정책 탭의 그 근처 화면(위치로 찾기와 같은 핀 · '근처' 줄 · 가까운 시군) */
-function nearUrlOf(item: PlaceSearchItem, target: NearTarget) {
+/** 정책 탭의 그 근처 화면(위치로 찾기와 같은 핀 · '근처' 줄 · 가까운 시군). near 에는 카카오 장소 ID와 친 말만 - 이름 · 좌표는 placeMemory 에서 */
+function nearUrlOf(item: PlaceSearchItem, target: NearTarget, query: string) {
   return policiesUrl({
     region: target.region,
     city: target.city,
     near: item.sido && item.latitude != null && item.longitude != null
-      ? { name: item.name, lat: item.latitude, lng: item.longitude, sido: item.sido, region: target.region, city: target.city, note: target.note }
+      ? { id: item.id, q: query, region: target.region, city: target.city, note: target.note }
       : null,
   });
 }
 
 /* 동네 한 줄('여수시 중앙동') - 누르면 정책 탭의 그 근처 혜택 */
-function HomeAreaRow({ item, policies }: { item: PlaceSearchItem; policies: Policy[] }) {
+function HomeAreaRow({ item, policies, query }: { item: PlaceSearchItem; policies: Policy[]; query: string }) {
   const target = nearTarget(policies, item.sido ?? null, item.city ?? null, xyOf(item));
   return (
-    <Link className="thmap-sres-row home-area-row" to={nearUrlOf(item, target)}>
+    <Link className="thmap-sres-row home-area-row" to={nearUrlOf(item, target, query)}>
       <span className="thmap-near-ic" aria-hidden="true"><MapPin size={18} /></span>
       <span className="tx">
         <b>{item.name}</b>
@@ -305,6 +321,7 @@ function HomePlaceRow({ item, policies, onOpen }: { item: PlaceSearchItem; polic
 
 function HomePlaceCard({
   item,
+  query,
   policies,
   fromName,
   nearCode,
@@ -314,6 +331,7 @@ function HomePlaceCard({
   onBack,
 }: {
   item: PlaceSearchItem;
+  query: string;
   policies: Policy[];
   /** 이 근처로 이어 왔으면 앞 장소 이름 - '‹ 오동도' */
   fromName: string | null;
@@ -323,11 +341,10 @@ function HomePlaceCard({
   onOpenNearby: (item: PlaceSearchItem) => void;
   onBack: () => void;
 }) {
-  const [picking, setPicking] = useState(false);
   const xy = xyOf(item);
   const target = nearTarget(policies, item.sido ?? null, item.city ?? null, xy);
   /* 근처 혜택 = 정책 탭 위치로 찾기와 같은 화면(핀 · '근처' 줄 · 가까운 시군) */
-  const nearUrl = nearUrlOf(item, target);
+  const nearUrl = nearUrlOf(item, target, query);
   return (
     <article className="home-place-card" aria-label={`${item.name} 장소 카드`}>
       <button className="home-place-back" type="button" onClick={onBack}>‹ {fromName ?? "검색 결과"}</button>
@@ -344,9 +361,6 @@ function HomePlaceCard({
         />
       </div>
       <div className="home-place-acts">
-        <button className="home-place-primary" type="button" aria-expanded={picking} onClick={() => setPicking((value) => !value)}>
-          일정에 담기
-        </button>
         {target.note && <p className="home-place-note">{target.note}</p>}
         <Link className="home-place-near" to={nearUrl}>
           {nearLinkLabel(target)}<span aria-hidden="true">›</span>
@@ -357,7 +371,6 @@ function HomePlaceCard({
           </a>
         )}
       </div>
-      {picking && <TripPicker item={item} />}
       <NearbySection item={item} policies={policies} code={nearCode} cache={nearbyCache} onCode={onNearCode} onOpen={onOpenNearby} />
     </article>
   );
@@ -437,11 +450,11 @@ function NearbySection({
       </div>
       {note && <p className="home-nearby-stay">{note}</p>}
       {items === null ? (
-        <p className="home-trip-pick-tip">근처를 찾는 중…</p>
+        <p className="home-nearby-tip">근처를 찾는 중…</p>
       ) : result.failed ? (
-        <p className="home-trip-pick-tip">근처 장소를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
+        <p className="home-nearby-tip">근처 장소를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
       ) : items.length === 0 ? (
-        <p className="home-trip-pick-tip">반경 2km 안에 없어요.</p>
+        <p className="home-nearby-tip">반경 2km 안에 없어요.</p>
       ) : (
         items.map((place) => (
           <button className="thmap-sres-row home-nearby-row" key={place.id} type="button" onClick={() => onOpen(place)}>
@@ -457,49 +470,5 @@ function NearbySection({
         ))
       )}
     </section>
-  );
-}
-
-/* 일정에 담기(시안 v57): 일정만 고른다. 고르면 그 일정 상세의 '장소 추가' 창이 이 장소를 바구니에 담은 채 열리고 날은 거기서 고른다.
-   담을 곳은 끝나지 않은 일정 중 고칠 수 있는 것만(보기 권한이면 열자마자 막힌다) */
-function TripPicker({ item }: { item: PlaceSearchItem }) {
-  const navigate = useNavigate();
-  const { data, error, isLoading } = useAsyncResource(() => appDataApi.listTrips(), []);
-  const trips = (data ?? [])
-    .filter((trip) => tripStatus(trip.startDate, trip.endDate)?.tone !== "past" && trip.currentUserRole !== "viewer")
-    .sort((left, right) => left.startDate.localeCompare(right.startDate));
-  const handoff = writePlaceParam(item);
-  const newTripUrl = `/trips/new?${new URLSearchParams({ ...(item.sido ? { sido: item.sido } : {}), addPlace: handoff })}`;
-  return (
-    <div className="home-trip-pick" role="group" aria-label="일정 고르기">
-      {isLoading ? (
-        <p className="home-trip-pick-tip">일정을 불러오는 중…</p>
-      ) : error ? (
-        <p className="home-trip-pick-tip">일정 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
-      ) : trips.length > 0 ? (
-        <>
-          <h4>어느 일정에 담을까요?</h4>
-          <p className="home-trip-pick-tip">고르면 그 일정의 장소 추가 창이 열려요. 날은 거기서 골라요.</p>
-          {trips.map((trip) => (
-            <button
-              className="home-trip-pick-row"
-              key={trip.id}
-              type="button"
-              onClick={() => navigate(`/trips/${trip.id}?${new URLSearchParams({ addPlace: handoff })}`)}
-            >
-              <b>{trip.title}</b>
-              <span>{trip.dates}</span>
-            </button>
-          ))}
-          <Link className="home-trip-pick-new" to={newTripUrl}>새 일정 만들기</Link>
-        </>
-      ) : (
-        <>
-          <h4>다가오는 일정이 없어요</h4>
-          <p className="home-trip-pick-tip">일정을 만들면 그 일정의 장소 추가 창이 이 장소를 담은 채 열려요.</p>
-          <Link className="home-place-primary" to={newTripUrl}>새 일정 만들기</Link>
-        </>
-      )}
-    </div>
   );
 }

@@ -81,3 +81,7 @@
 
 `feature/unified-search` 는 필터 PR #88(`feature/policy-filter-in-map`) 위에서 개발한다 - 조건 저장소와 지도 화면 정리가 필요하다.
 PR 은 #88 이 머지된 뒤 develop 에 다시 얹어 develop 대상으로 연다(쌓인 PR 금지).
+
+## PR 전 변경(카카오 운영정책)
+
+카카오 장소값을 주소에 싣지 않고 홈 '일정에 담기'를 숨긴다. 근거와 이후 단계는 `docs/superpowers/specs/2026-10-03-public-place-storage-design.md`, 구현은 `docs/superpowers/plans/2026-10-03-unified-search-place-values.md`에 있다.

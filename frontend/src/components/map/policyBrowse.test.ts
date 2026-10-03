@@ -158,15 +158,17 @@ describe("policy tab layers in the URL", () => {
   });
 
   it("keeps the place found by location only while its region and city stay picked", () => {
-    const near = { name: "오동도", lat: 34.745, lng: 127.766, sido: "전남", region: "전남", city: "여수", note: null };
+    const near = { id: "kakao:8193468", q: "오동도", region: "전남", city: "여수", note: null };
     const params = writeBrowseState(new URLSearchParams(), state({ region: "전남", city: "여수", near }));
     const read = readBrowseState(params);
     expect(read.near).toEqual(near);
+    // 주소에는 카카오 장소 ID와 친 말만 - 이름 · 좌표는 싣지 않는다(카카오 운영정책)
+    expect(Object.keys(JSON.parse(params.get("near")!)).sort()).toEqual(["city", "id", "note", "q", "region"]);
     expect(nearOn(read)).toEqual(near);
     expect(nearOn({ ...read, city: "광양" })).toBeNull();
     expect(readBrowseState(new URLSearchParams("near=%7Bbroken")).near).toBeNull();
-    expect(readBrowseState(new URLSearchParams(`near=${encodeURIComponent('{"name":1}')}`)).near).toBeNull();
-    // 한 칸 내려가면(뒤로 · ‹ · Esc) 주소에서도 지운다 - 남겨 두면 다시 그 시군을 고를 때 옛 핀이 살아났다
+    expect(readBrowseState(new URLSearchParams(`near=${encodeURIComponent('{"id":1}')}`)).near).toBeNull();
+    // 한 칸 내려가면(뒤로 · ‹ · Esc) 주소에서도 지운다
     const lower = lowerBrowseState(read);
     expect(lower).toMatchObject({ region: "전남", city: null });
     expect(writeBrowseState(params, lower as BrowseState).get("near")).toBeNull();
@@ -176,12 +178,22 @@ describe("policy tab layers in the URL", () => {
     expect(readBrowseState(new URLSearchParams("place=__proto__")).region).toBeNull();
     expect(readBrowseState(new URLSearchParams("region=constructor")).region).toBeNull();
     expect(readBrowseState(new URLSearchParams("place=전국")).region).toBe("전국");
-    const near = JSON.stringify({ name: "오동도", lat: 34.745, lng: 127.766, sido: "전남", region: "전남", city: "여수", note: null });
+    const near = JSON.stringify({ id: "kakao:8193468", q: "오동도", region: "전남", city: "여수", note: null });
     const read = (raw: string) => readBrowseState(new URLSearchParams(`place=전남&city=여수&near=${encodeURIComponent(raw)}`)).near;
     expect(read(near)).not.toBeNull();
-    expect(read(near.replace('"sido":"전남"', '"sido":"__proto__"'))).toBeNull();
     expect(read(near.replace('"region":"전남"', '"region":"constructor"'))).toBeNull();
-    expect(read(near.replace('"lat":34.745', '"lat":1e999'))).toBeNull();
+    expect(read(near.replace('"id":"kakao:8193468"', '"id":""'))).toBeNull();
+    // 예전 주소(이름 · 좌표를 실었던 near)는 버린다
+    expect(read(JSON.stringify({ name: "오동도", lat: 34.745, lng: 127.766, sido: "전남", region: "전남", city: "여수", note: null }))).toBeNull();
+  });
+
+  it("keeps an area in near only by its code, never by its address", () => {
+    // 법정동 · 행정동 번호가 다 없으면 서버는 구역 ID를 주소 문자열로 대신한다 - 그 값은 주소(URL)에 싣지 않는다(10/4 리뷰)
+    const byAddress = { id: "area:전남 여수시 중앙동", q: "중앙동", region: "전남", city: "여수", note: null };
+    expect(writeBrowseState(new URLSearchParams(), state({ region: "전남", city: "여수", near: byAddress })).get("near")).toBeNull();
+    expect(readBrowseState(new URLSearchParams(`place=전남&city=여수&near=${encodeURIComponent(JSON.stringify(byAddress))}`)).near).toBeNull();
+    const byCode = { ...byAddress, id: "area:4613010100" };
+    expect(readBrowseState(writeBrowseState(new URLSearchParams(), state({ region: "전남", city: "여수", near: byCode }))).near).toEqual(byCode);
   });
 
   it("on wide screens peels the panel detail first and ignores the sheet stop", () => {

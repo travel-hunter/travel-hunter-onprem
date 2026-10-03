@@ -76,7 +76,8 @@ def _area_item(area) -> dict[str, object]:
     name = " ".join(part for part in (city_word, area.region_3depth_name) if part)
     return {
         "kind": "area",
-        "id": f"area:{area.b_code or area.address_name}",
+        # 법정동 · 행정동 번호 - 주소 글자는 둘 다 없을 때만이고, 그 ID 는 프론트가 주소창(near)에 싣지 않는다(10/4 리뷰)
+        "id": f"area:{area.b_code or area.h_code or area.address_name}",
         "name": name or area.address_name,
         "category": None,
         "categoryCode": None,

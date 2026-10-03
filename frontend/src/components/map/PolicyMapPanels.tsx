@@ -205,8 +205,8 @@ function Marked({ text, query }: { text: string; query: string }) {
 /* 돋보기: 비워 두면 지역 사진 칸, 치면 시도·시군·사업. 엔터는 첫 결과 */
 /* 검색 결과 칸. 입력은 정책 탭 맨 위 검색창 하나가 맡는다(2026-09-30 사용자 결정: 검색창을 하나로).
    비워 두면 지역 사진 칸, 치면 지역·시군·혜택 이름. 끝의 '모두 보기'는 정책 글 전체에서 찾는 목록으로 간다. */
-/* 위치로 찾기 한 줄: 장소들을 시군으로 묶는다(같은 시군이면 한 줄). label = 근처 줄에 쓸 이름 */
-type NearGroup = { key: string; item: PlaceSearchItem; label: string; title: string; target: NearTarget };
+/* 위치로 찾기 한 줄: 장소들을 시군으로 묶는다(같은 시군이면 한 줄). 근처 줄의 이름은 item(카카오 장소)에서 - 주소에는 그 ID만 */
+type NearGroup = { key: string; item: PlaceSearchItem; title: string; target: NearTarget };
 
 function nearGroups(policies: readonly Policy[], items: readonly PlaceSearchItem[], q: string): NearGroup[] {
   const by = new Map<string, PlaceSearchItem[]>();
@@ -224,10 +224,9 @@ function nearGroups(policies: readonly Policy[], items: readonly PlaceSearchItem
     const named = list.filter((item) => item.kind === "place" && words.some((word) => nameHas(item.name, word)));
     if (!area && !named.length) continue;
     const item = area ?? named[0];
-    const label = area ? area.name : named[0].name;
     const title = area ? area.name : named.slice(0, 2).map((entry) => entry.name).join(", ") + (named.length > 2 ? ` 외 ${named.length - 2}곳` : "");
     const target = nearTarget(policies, item.sido ?? null, item.city ?? null, geoToMap(item.sido as string, item.latitude as number, item.longitude as number));
-    groups.push({ key, item, label, title, target });
+    groups.push({ key, item, title, target });
   }
   return groups;
 }
@@ -265,7 +264,7 @@ export function PolicySearchPanel({
   /** 결과 없음의 '전체 정책 보기' */
   onBrowseAll: () => void;
   /** 위치로 찾기 줄 - 그 장소의 근처 혜택으로 */
-  onPickNear?: (item: PlaceSearchItem, label: string, target: NearTarget) => void;
+  onPickNear?: (item: PlaceSearchItem, target: NearTarget) => void;
   /** 머리의 ‹ - 검색을 나온다(들어오기 전 화면의 반반) */
   onClose?: () => void;
 }) {
@@ -332,7 +331,7 @@ export function PolicySearchPanel({
               <>
                 <h3>위치로 찾기<span className="src">근처 혜택으로</span></h3>
                 {near.map((group) => (
-                  <button className="thmap-sres-row" key={group.key} type="button" onClick={() => onPickNear?.(group.item, group.label, group.target)}>
+                  <button className="thmap-sres-row" key={group.key} type="button" onClick={() => onPickNear?.(group.item, group.target)}>
                     <span className="thmap-near-ic" aria-hidden="true"><MapPin size={18} /></span>
                     <span className="tx">
                       <b>{group.title}</b>

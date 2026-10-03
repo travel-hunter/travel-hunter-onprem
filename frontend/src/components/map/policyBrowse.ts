@@ -271,8 +271,9 @@ export function regionTiles(policies: Policy[]) {
    depth 가 늘 때만 기록을 쌓고(useBrowseHistory), 같은 층끼리 옮기는 건(지역 → 다른 지역) 덮어쓴다. */
 export type SheetStop = "low" | "mid" | "full";
 
-/** 위치로 찾은 곳(통합 검색) - 지도 핀과 '○○ 근처'. 고른 지역 · 시군이 region · city 와 같을 때만 그린다 */
-export type NearAnchor = { name: string; lat: number; lng: number; sido: string; region: string; city: string | null; note: string | null };
+/** 위치로 찾은 곳(통합 검색) - 지도 핀과 '○○ 근처'. 고른 지역 · 시군이 region · city 와 같을 때만 그린다.
+    카카오 장소 ID와 사용자가 친 말만 싣는다(이름 · 좌표는 placeMemory 에서 다시 꺼낸다 - 카카오 운영정책). region · city · note 는 우리 데이터 */
+export type NearAnchor = { id: string; q: string; region: string; city: string | null; note: string | null };
 
 export type BrowseState = {
   region: string | null;
@@ -287,14 +288,16 @@ export type BrowseState = {
   near: NearAnchor | null;
 };
 
+/** 구역은 번호(area:숫자 - 법정동, 없으면 행정동)로만 싣는다 - 둘 다 없으면 서버가 구역 ID를 주소 문자열로 대신한다(10/4 리뷰) */
+const nearIdOk = (id: string) => !id.startsWith("area:") || /^area:\d+$/.test(id);
+
 function readNear(raw: string | null): NearAnchor | null {
   if (!raw) return null;
   try {
     const v = JSON.parse(raw) as Partial<NearAnchor>;
-    if (typeof v.name !== "string" || typeof v.lat !== "number" || typeof v.lng !== "number" || typeof v.region !== "string" || typeof v.sido !== "string") return null;
-    if (!Number.isFinite(v.lat) || !Number.isFinite(v.lng)) return null;
-    if (!isRegionName(v.sido) || (v.region !== NATIONWIDE_REGION && !isRegionName(v.region))) return null;
-    return { name: v.name.slice(0, 60), lat: v.lat, lng: v.lng, sido: v.sido, region: v.region, city: typeof v.city === "string" ? v.city : null, note: typeof v.note === "string" ? v.note.slice(0, 120) : null };
+    if (typeof v.id !== "string" || !v.id || v.id.length > 80 || !nearIdOk(v.id) || typeof v.q !== "string" || typeof v.region !== "string") return null;
+    if (v.region !== NATIONWIDE_REGION && !isRegionName(v.region)) return null;
+    return { id: v.id, q: v.q.slice(0, 80), region: v.region, city: typeof v.city === "string" ? v.city : null, note: typeof v.note === "string" ? v.note.slice(0, 120) : null };
   } catch {
     return null;
   }
@@ -335,7 +338,8 @@ export function writeBrowseState(params: URLSearchParams, state: BrowseState): U
   put("find", state.search ? "1" : null);
   put("detail", state.detail);
   // 근처는 그 지역 · 시군을 보고 있을 때만 - 다른 곳으로 옮기면(뒤로 · ‹ · Esc 포함) 주소에서도 지운다(10/3 리뷰)
-  put("near", nearOn(state) ? JSON.stringify(state.near) : null);
+  const near = nearOn(state);
+  put("near", near && nearIdOk(near.id) ? JSON.stringify(near) : null);
   // 예전 필터 목록 화면의 키 - 조건은 이제 주소 밖(policyConditions)에 있다
   for (const legacy of ["view", "region", "category", "period", "amount", "saved"]) next.delete(legacy);
   return next;

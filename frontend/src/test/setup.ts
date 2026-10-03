@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach } from "vitest";
 import { NO_CONDITIONS, setPolicyConditions } from "../components/map/policyConditions";
+import { forgetPlaces } from "../components/map/placeMemory";
 import { forgetSheetMemory } from "../components/map/sheetMemory";
 
 function installMemoryLocalStorage() {
@@ -62,6 +63,7 @@ afterEach(() => {
   setPolicyConditions(NO_CONDITIONS);
   // 목록 시트의 스크롤 자리 · 여닫은 묶음도 시트 밖(모듈)에 산다
   forgetSheetMemory();
+  forgetPlaces();
   cleanup();
   ensureLocalStorage();
   window.localStorage.clear();
