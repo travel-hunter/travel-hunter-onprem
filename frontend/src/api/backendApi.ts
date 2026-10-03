@@ -68,6 +68,7 @@ import {
   InviteState,
   PlaceSearchCandidate,
   PlaceSearchItem,
+  NearbyCategory,
   Policy,
   Profile,
   ProfileOptions,
@@ -200,6 +201,8 @@ export const backendApi: AppDataApi = {
     ),
   searchPlaces: (query: string, control?: ApiRequestControl): Promise<PlaceSearchItem[]> =>
     apiClient.get<PlaceSearchItem[]>(`/api/places/search${queryString({ query })}`, { signal: control?.signal }),
+  listNearbyPlaces: (latitude: number, longitude: number, category: NearbyCategory, control?: ApiRequestControl): Promise<PlaceSearchItem[]> =>
+    apiClient.get<PlaceSearchItem[]>(`/api/places/nearby${queryString({ lat: latitude, lng: longitude, category })}`, { signal: control?.signal }),
   getInviteState: (tripId: string): Promise<InviteState> => apiClient.get<InviteState>(`/api/trips/${tripId}/invite`),
   confirmInviteSent: (tripId: string): Promise<InviteState> => apiClient.post<InviteState>(`/api/trips/${tripId}/invite`),
   sendInviteEmail: (tripId: string, request: SendInviteEmailRequest): Promise<InviteEmailResult> => apiClient.post<InviteEmailResult>(`/api/trips/${tripId}/invite/email`, request),

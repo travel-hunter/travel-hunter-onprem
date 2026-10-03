@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { Policy } from "../../api";
+import { textMatches } from "./searchText";
 
 /* 정책 탭의 좁히기 조건(시안 v55): 마감 · 금액 · 관심 정책만 · 글 검색('…모두 보기').
    지도 층처럼 주소에 두지 않는다 - 조건은 층이 아니라서 뒤로가기(기기 · 화면 안 ‹)로 풀리면 안 되는데, 주소에 두면
@@ -69,14 +70,10 @@ export function conditionLabel(c: PolicyConditions): string | null {
   return parts.length ? parts.join(" · ") : null;
 }
 
-function normalizedSearchText(value: string) {
-  return value.trim().toLocaleLowerCase("ko-KR");
-}
-
-/** 정책 글(제목 · 기관 · 지역 · 분류 · 금액 · 요약 · 조건 · 준비물)에 찾을 말이 들었나 - 정책 탭 글 검색과 홈 검색의 '…모두 보기'가 같이 쓴다 */
+/** 정책 글(제목 · 기관 · 지역 · 분류 · 금액 · 요약 · 조건 · 준비물)에 찾을 말이 들었나 - 낱말이 모두(띄어쓰기 무시 · 별칭 포함)
+    들어 있어야 한다. 정책 탭 글 검색과 홈 검색의 '…모두 보기'가 같이 쓴다 */
 export function matchesPolicySearch(policy: Policy, searchTerm: string) {
-  const query = normalizedSearchText(searchTerm);
-  if (!query) return true;
+  if (!searchTerm.trim()) return true;
   const haystack = [
     policy.title,
     policy.org,
@@ -87,6 +84,6 @@ export function matchesPolicySearch(policy: Policy, searchTerm: string) {
     policy.tag,
     ...policy.requirements,
     ...policy.documents,
-  ].join(" ").toLocaleLowerCase("ko-KR");
-  return haystack.includes(query);
+  ].join(" ");
+  return textMatches(haystack, searchTerm);
 }

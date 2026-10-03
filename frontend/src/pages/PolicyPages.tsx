@@ -11,7 +11,7 @@ import { PolicyMapSheet } from "../components/map/PolicyMapSheet";
 import { cityOf, NATIONWIDE_REGION } from "../utils/policyPrograms";
 import { REGION_NAMES, type RegionCounts } from "../components/map/regionMapEngine";
 import { BrowseChips, PolicySearchPanel, RegionSummaryCard } from "../components/map/PolicyMapPanels";
-import { BROWSE_FILTERS, browseDepthOf, browseView, chipCounts, lowerBrowseState, matchesBrowseFilter, nearOn, programName, readBrowseState, searchBrowse, writeBrowseState, type BrowseFilter, type BrowseState } from "../components/map/policyBrowse";
+import { BROWSE_FILTERS, browseDepthOf, browseView, chipCounts, lowerBrowseState, matchesBrowseFilter, nearOn, programName, readBrowseState, searchBrowse, writeBrowseState, type BrowseCombo, type BrowseFilter, type BrowseState } from "../components/map/policyBrowse";
 import { geoToMap, nearbyCities, shortCity, type NearTarget } from "../components/map/nearby";
 import { useBrowseHistory } from "../components/map/useBrowseHistory";
 import { AMOUNT_FILTERS, conditionCount, conditionLabel, matchesPolicySearch, NO_CONDITIONS, PERIOD_FILTERS, setPolicyConditions, usePolicyConditions, type AmountFilter, type PeriodFilter, type PolicyConditions } from "../components/map/policyConditions";
@@ -364,6 +364,14 @@ export function PolicyListPage() {
     setBrowse({ ...base, region, city, filter: dropMove(region), sheet: "mid", search: false });
   const pickProgram = (program: string) =>
     setBrowse({ ...base, program, region: null, city: null, sheet: "mid", search: false });
+  /* 검색 칸의 '지역 + 혜택' 줄('여수 숙박세일') - 그 지역(시군)의 그 사업 · 형태 */
+  const pickCombo = (combo: BrowseCombo) =>
+    setBrowse({ ...base, region: combo.region, city: combo.city, program: combo.program, filter: combo.filter, sheet: "mid", search: false });
+  /* 검색 칸의 혜택 형태 줄('숙소' · 'KTX') - 위 칩을 고른 것과 같다(교통은 지역 혜택이 없어 한 페이지 목록) */
+  const pickSearchFilter = (filter: BrowseFilter) =>
+    filter === "move"
+      ? setBrowse({ ...base, filter, region: null, city: null, program: null, sheet: "full", search: false })
+      : setBrowse({ ...base, filter, program: null, sheet: browse.sheet === "low" ? "mid" : browse.sheet, search: false });
   /* 시군 점: 다시 누르면 도 전체. 지도 중심에서 고르면 목록을 올려 3분할로 */
   const pickCity = (city: string | null) =>
     setBrowse({ ...base, city, sheet: city && browse.sheet === "low" ? "mid" : browse.sheet });
@@ -604,6 +612,9 @@ export function PolicyListPage() {
       onPickRegion={toggleRegion}
       onPickPlace={pickPlace}
       onPickProgram={pickProgram}
+      onPickCombo={pickCombo}
+      onPickFilter={pickSearchFilter}
+      onBrowseAll={stepBack}
       places={placeQuery ? places : []}
       onPickNear={pickNear}
       onClose={stepBack}

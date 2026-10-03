@@ -2,6 +2,7 @@ import type { Policy } from "../../api";
 import { BENEFIT_TYPES, benefitTypeOf, type BenefitType } from "../benefitTile";
 import { daysUntilPolicyDeadline, isDigitalTourismResidentCardPolicy, isSafePolicyDeadline } from "../../utils";
 import { cityOf, NATIONWIDE_REGION, programOf } from "../../utils/policyPrograms";
+import { filterOfWord, nameHas, nameWords, REGION_WORDS, squash } from "./searchText";
 
 /* 정책 탭 지도 화면의 목록·검색·칩이 쓰는 계산. 화면 없이 돌아가는 순수 함수만 둔다. */
 
@@ -188,37 +189,70 @@ export function regionSummary(policies: Policy[], region: string): RegionSummary
 }
 
 /* ── 돋보기 검색 ───────────────────────────────────────────────
-   비워 두면 지역 목록, 치면 시도·시군·사업. 시군은 혜택이 있는 곳만 찾힌다(제목의 [시군]). */
+   비워 두면 지역 목록, 치면 시도 · 시군 · 사업 · 혜택 형태. 시군은 혜택이 있는 곳만 찾힌다(제목의 [시군]).
+   사람이 치는 말 그대로 찾는다(10/3 사용자 조사, searchText.ts): 띄어쓰기 무시, 낱말마다 찾기, 일상 별칭(강원도 · 수도권 · 숙소 ·
+   KTX), 초성(ㅂㅅ). 낱말이 여럿이고 지역과 혜택이 함께 맞으면('여수 숙박세일') 둘을 합친 줄을 맨 위에 둔다. */
+export type BrowseCombo = { region: string; city: string | null; program: string | null; filter: BrowseFilter | null; count: number };
+
 export type BrowseSearch = {
+  combos: BrowseCombo[];
   regions: Array<{ region: string; count: number }>;
   places: Array<{ place: string; region: string; count: number }>;
+  filters: Array<{ key: BrowseFilter; label: string; count: number }>;
   programs: Array<{ name: string; count: number; type: BenefitType; nation: boolean }>;
 };
 
 export function searchBrowse(policies: Policy[], query: string): BrowseSearch {
-  const q = query.trim();
+  const split = query.trim().toLocaleLowerCase("ko-KR").split(/\s+/).filter(Boolean);
+  // 낱말이 여럿이면 한 자 낱말과 흔한 말('할인' · '혜택')은 버린다. 낱말 하나면 그대로 - '여'로도 찾던 그대로
+  const words = nameWords(query, (word) => filterOfWord(word) !== null);
   const counts = countByRegion(policies);
   const regions = REGION_ORDER
-    .filter((region) => region.includes(q) || REGION_FULL_NAMES[region].includes(q))
+    .filter((region) => words.some((word) =>
+      nameHas(region, word) || nameHas(REGION_FULL_NAMES[region], word) || (REGION_WORDS[squash(word)] ?? []).includes(region)))
     .map((region) => ({ region, count: counts[region] ?? 0 }));
   const places = new Map<string, { place: string; region: string; count: number }>();
   const programs = new Map<string, { name: string; count: number; type: BenefitType; nation: boolean }>();
   for (const policy of policies) {
     const place = cityOf(policy);
-    if (place && place.includes(q)) {
+    if (place && words.some((word) => nameHas(place, word))) {
       const key = `${place}|${policy.region}`;
       const entry = places.get(key) ?? { place, region: policy.region, count: 0 };
       entry.count += 1;
       places.set(key, entry);
     }
     const name = programName(policy);
-    if (name.includes(q)) {
+    if (words.some((word) => nameHas(name, word))) {
       const entry = programs.get(name) ?? { name, count: 0, type: benefitTypeOf(policy), nation: policy.region === NATIONWIDE_REGION };
       entry.count += 1;
       programs.set(name, entry);
     }
   }
-  return { regions, places: Array.from(places.values()), programs: Array.from(programs.values()) };
+  const filters = Array.from(new Set(words.map(filterOfWord).filter((key): key is BrowseFilter => key !== null)))
+    .map((key) => ({ key, label: filterLabel(key), count: policies.filter((policy) => matchesBrowseFilter(policy, key)).length }))
+    .filter((entry) => entry.count > 0);
+  const combos: BrowseCombo[] = [];
+  if (split.length > 1) {
+    const where: Array<{ region: string; city: string | null }> = [
+      ...regions.map((entry) => ({ region: entry.region, city: null })),
+      ...Array.from(places.values(), (entry) => ({ region: entry.region, city: entry.place })),
+    ];
+    const inWhere = (policy: Policy, at: { region: string; city: string | null }) =>
+      policy.region === at.region && (!at.city || cityOf(policy) === at.city);
+    for (const at of where) {
+      for (const program of programs.values()) {
+        const count = policies.filter((policy) => inWhere(policy, at) && programName(policy) === program.name).length;
+        if (count) combos.push({ ...at, program: program.name, filter: null, count });
+      }
+      if (programs.size) continue;
+      for (const entry of filters) {
+        const count = policies.filter((policy) => inWhere(policy, at) && matchesBrowseFilter(policy, entry.key)).length;
+        if (count) combos.push({ ...at, program: null, filter: entry.key, count });
+      }
+    }
+    combos.sort((left, right) => right.count - left.count);
+  }
+  return { combos, regions, places: Array.from(places.values()), filters, programs: Array.from(programs.values()) };
 }
 
 /* 돋보기를 비워 두었을 때의 지역 사진 칸 - 혜택 많은 순, 같으면 REGION_ORDER */

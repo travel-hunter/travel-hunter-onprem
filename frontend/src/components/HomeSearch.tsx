@@ -1,27 +1,28 @@
 import { ChevronLeft, MapPin, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { appDataApi, type PlaceSearchItem, type Policy } from "../api";
+import { appDataApi, type NearbyCategory, type PlaceSearchItem, type Policy } from "../api";
 import { useAsyncResource } from "../api/useAsyncResource";
 import { tripStatus } from "../utils";
 import { readPlaceParam, writePlaceParam } from "../utils/placeHandoff";
-import { NATIONWIDE_REGION } from "../utils/policyPrograms";
+import { cityOf, NATIONWIDE_REGION } from "../utils/policyPrograms";
 import { KakaoMapView } from "./map/KakaoMapView";
-import { geoToMap, nearTarget } from "./map/nearby";
-import { readBrowseState, searchBrowse, writeBrowseState, type BrowseState } from "./map/policyBrowse";
+import { geoToMap, nearTarget, policyCityFor, shortCity, type NearTarget } from "./map/nearby";
+import { matchesBrowseFilter, readBrowseState, REGION_FULL_NAMES, searchBrowse, writeBrowseState, type BrowseState } from "./map/policyBrowse";
 import { matchesPolicySearch, setPolicyConditions, usePolicyConditions } from "./map/policyConditions";
-import { PolicySearchRows } from "./map/PolicyMapPanels";
+import { PolicySearchRows, SearchNoResults } from "./map/PolicyMapPanels";
 import { useBrowseHistory } from "./map/useBrowseHistory";
 import "../styles/policy-map.css";
 
 /* 홈 통합 검색(시안 v56 · v57). 검색창은 모양 그대로 입력이 되고 그 아래 자리가 결과로 바뀐다 - 다른 화면으로 가지 않는다.
    찾을 말(q)과 연 장소 카드(pl)는 주소에 둬 정책 탭 · 일정에 다녀와도 뒤로 한 번에 그대로 돌아온다.
-   층: 검색(q) → 장소 카드(pl). 치는 동안은 같은 층이라 기록이 쌓이지 않는다. */
-const EXAMPLES = ["여수", "오동도", "해운대", "전주 한옥마을", "강릉 카페"];
+   층: 검색(q) → 장소 카드(pl) → 이 근처로 이어 본 장소 카드(lv 2, 3 …, 앞 장소 이름은 from). 치는 동안은 같은 층이라 기록이 쌓이지 않는다. */
+const EXAMPLES = ["반값여행", "숙박세일", "여수", "오동도", "강릉 카페"];   // 혜택 이름도 - 무엇을 칠지 모를 때(10/3 사용자 조사)
 const MIN_PLACE_QUERY = 2;
 const PLACE_DEBOUNCE_MS = 300;
 
-const homeDepthOf = (params: URLSearchParams) => (params.has("q") ? 1 : 0) + (params.get("pl") ? 1 : 0);
+const placeLevelOf = (params: URLSearchParams) => (params.get("pl") ? Math.max(1, Number(params.get("lv")) || 1) : 0);
+const homeDepthOf = (params: URLSearchParams) => (params.has("q") ? 1 : 0) + placeLevelOf(params);
 const lastCategory = (category: string | null | undefined) => (category ?? "").split(" > ").pop() || "장소";
 const shortAddress = (address: string | null | undefined) => (address ?? "").split(/\s+/).slice(1, 3).join(" ");
 const xyOf = (item: PlaceSearchItem) =>
@@ -67,21 +68,32 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
   const typeText = (value: string) => {
     setText(value);
     writtenRef.current = value;
-    go(withParams({ q: value, pl: null }));
+    go(withParams({ q: value, pl: null, lv: null, from: null }));
   };
-  const close = () => back(withParams({ q: null, pl: null }));
-  const closePlace = () => back(withParams({ pl: null }));
+  const close = () => back(withParams({ q: null, pl: null, lv: null, from: null }));
+  /* 이 근처로 이어 본 장소면 앞 장소로(쌓아 둔 기록 한 칸), 아니면 검색 결과로 */
+  const level = placeLevelOf(searchParams);
+  const closePlace = () => (level > 1 ? back(null) : back(withParams({ pl: null, lv: null, from: null })));
+  const [nearCode, setNearCode] = useState<NearbyCategory>("FD6");
+  /* 이 근처 결과 - 이 화면을 쓰는 동안 같은 장소 · 분류는 다시 묻지 않는다(앞 장소로 돌아올 때 바로 보인다) */
+  const nearbyCache = useRef(new Map<string, PlaceSearchItem[]>()).current;
 
   /* 장소(카카오)는 지역 · 혜택 이름이 맞아도 늘 묻는다 - 홈은 '여수'를 쳐도 여수의 장소 목록이 나와야 한다(정책 탭과 다르다) */
   const placeQuery = open ? text.trim() : "";
   const [places, setPlaces] = useState<PlaceSearchItem[] | null>(null);
+  /* 동 · 읍 · 면(같은 이름이 전국에 - '중앙동'). 정책 탭 위치로 찾기처럼 시군별로 보이고 그 근처 혜택으로 잇는다(10/3 사용자 조사) */
+  const [areas, setAreas] = useState<PlaceSearchItem[]>([]);
   useEffect(() => {
     setPlaces(null);
+    setAreas([]);
     if (placeQuery.length < MIN_PLACE_QUERY) return;
     const control = new AbortController();
     const timer = window.setTimeout(() => {
       appDataApi.searchPlaces(placeQuery, { signal: control.signal }).then(
-        (items) => setPlaces(items.filter((item) => item.kind === "place")),
+        (items) => {
+          setAreas(items.filter((item) => item.kind === "area"));
+          setPlaces(items.filter((item) => item.kind === "place"));
+        },
         () => {
           if (!control.signal.aborted) setPlaces([]);
         },
@@ -108,7 +120,11 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
   const all = policies ?? [];
   const found = query ? searchBrowse(all, query) : null;
   const fullTextCount = useMemo(() => (query ? all.filter((policy) => matchesPolicySearch(policy, query)).length : 0), [all, query]);
-  const hasPolicyRows = Boolean(found && (found.regions.length || found.places.length || found.programs.length || fullTextCount));
+  const hasPolicyRows = Boolean(found && (found.combos.length || found.regions.length || found.places.length || found.filters.length || found.programs.length || fullTextCount));
+  /* 혜택 이름 · 형태를 친 말('반값' · '숙소')이면 상호명 장소(반값밧데리할인마트 …)는 접어 둔다 - 누르면 보인다(10/3 사용자 조사) */
+  const benefitWords = Boolean(found && (found.combos.length || found.filters.length || found.programs.length));
+  const [placesOpen, setPlacesOpen] = useState(false);
+  useEffect(() => setPlacesOpen(false), [query]);
   const loadingPlaces = query.length >= MIN_PLACE_QUERY && places === null;
 
   return (
@@ -145,7 +161,17 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
             <b>{place ? "장소" : "검색"}</b>
           </div>
           {place ? (
-            <HomePlaceCard item={place} policies={all} onBack={closePlace} />
+            <HomePlaceCard
+              key={place.id}
+              item={place}
+              policies={all}
+              fromName={level > 1 ? searchParams.get("from") : null}
+              nearCode={nearCode}
+              nearbyCache={nearbyCache}
+              onNearCode={setNearCode}
+              onOpenNearby={(next) => go(withParams({ pl: writePlaceParam(next), lv: String(level + 1), from: place.name }))}
+              onBack={closePlace}
+            />
           ) : !query ? (
             <div className="home-search-start">
               <h3>이렇게 찾아 보세요</h3>
@@ -168,22 +194,44 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
                   onPickRegion={(region) => navigate(policiesUrl({ region }))}
                   onPickPlace={(region, city) => navigate(policiesUrl({ region, city }))}
                   onPickProgram={(program) => navigate(policiesUrl({ program }))}
+                  onPickCombo={(combo) => navigate(policiesUrl({ region: combo.region, city: combo.city, program: combo.program, filter: combo.filter }))}
+                  onPickFilter={(filter) => navigate(policiesUrl({ filter }))}
                   onShowAll={() => {
                     setPolicyConditions({ ...conditions, text: query });
                     navigate("/policies");
                   }}
                 />
               )}
-              {places && places.length > 0 && (
+              {areas.length > 0 && (
                 <>
-                  <h3>장소<span className="src">카카오 지도</span></h3>
-                  {places.map((item) => (
-                    <HomePlaceRow key={item.id} item={item} policies={all} onOpen={() => go(withParams({ pl: writePlaceParam(item) }))} />
+                  <h3>동네<span className="src">근처 혜택으로</span></h3>
+                  {areas.map((item) => (
+                    <HomeAreaRow key={item.id} item={item} policies={all} />
                   ))}
                 </>
               )}
+              {places && places.length > 0 && (benefitWords && !placesOpen ? (
+                <button className="home-places-more" type="button" onClick={() => setPlacesOpen(true)}>
+                  ‘{query}’ 이름이 든 장소도 보기 · {places.length}곳
+                </button>
+              ) : (
+                <>
+                  <h3>장소<span className="src">카카오 지도</span></h3>
+                  {places.map((item) => (
+                    <HomePlaceRow key={item.id} item={item} policies={all} onOpen={() => go(withParams({ pl: writePlaceParam(item), lv: null, from: null }))} />
+                  ))}
+                </>
+              ))}
               {loadingPlaces && <p className="thmap-sres-empty">장소를 찾는 중…</p>}
-              {!loadingPlaces && !hasPolicyRows && !places?.length && <p className="thmap-sres-empty">‘{query}’에 맞는 지역 · 혜택 · 장소가 없어요.</p>}
+              {!loadingPlaces && !hasPolicyRows && !places?.length && !areas.length && (
+                <SearchNoResults
+                  query={query}
+                  policies={all}
+                  onPickProgram={(program) => navigate(policiesUrl({ program }))}
+                  onPickFilter={(filter) => navigate(policiesUrl({ filter }))}
+                  onBrowseAll={() => navigate("/policies")}
+                />
+              )}
             </div>
           )}
         </div>
@@ -192,9 +240,49 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
   );
 }
 
+/** 혜택이 있는 곳 이름 - 시군이면 '여수', 도 전체면 '전라남도' */
+const targetPlaceName = (target: NearTarget) =>
+  target.city ? shortCity(target.region, target.city) : REGION_FULL_NAMES[target.region] ?? target.region;
+
+/** 근처 혜택 버튼 - 어느 시군 혜택인지, 넓혔으면 얼마나 먼지('주변 혜택 1건'이 45km 밖 시군이었다 - 10/3 사용자 조사) */
+function nearLinkLabel(target: NearTarget) {
+  if (target.region === NATIONWIDE_REGION) return `전국 공통 혜택 ${target.count}건 보기`;
+  const where = targetPlaceName(target);
+  return target.km != null ? `${where} 약 ${target.km}km · 혜택 ${target.count}건 보기` : `${where} 혜택 ${target.count}건 보기`;
+}
+
+/** 정책 탭의 그 근처 화면(위치로 찾기와 같은 핀 · '근처' 줄 · 가까운 시군) */
+function nearUrlOf(item: PlaceSearchItem, target: NearTarget) {
+  return policiesUrl({
+    region: target.region,
+    city: target.city,
+    near: item.sido && item.latitude != null && item.longitude != null
+      ? { name: item.name, lat: item.latitude, lng: item.longitude, sido: item.sido, region: target.region, city: target.city, note: target.note }
+      : null,
+  });
+}
+
+/* 동네 한 줄('여수시 중앙동') - 누르면 정책 탭의 그 근처 혜택 */
+function HomeAreaRow({ item, policies }: { item: PlaceSearchItem; policies: Policy[] }) {
+  const target = nearTarget(policies, item.sido ?? null, item.city ?? null, xyOf(item));
+  return (
+    <Link className="thmap-sres-row home-area-row" to={nearUrlOf(item, target)}>
+      <span className="thmap-near-ic" aria-hidden="true"><MapPin size={18} /></span>
+      <span className="tx">
+        <b>{item.name}</b>
+        <span>
+          <span className="thmap-near-to">→ {item.sido} {item.city}</span> ·{" "}
+          {target.region === NATIONWIDE_REGION ? "전국 공통 혜택" : target.note ? "근처 혜택" : "혜택"} {target.count}건
+        </span>
+      </span>
+    </Link>
+  );
+}
+
 function HomePlaceRow({ item, policies, onOpen }: { item: PlaceSearchItem; policies: Policy[]; onOpen: () => void }) {
   const target = nearTarget(policies, item.sido ?? null, item.city ?? null, xyOf(item));
-  const badge = target.region === NATIONWIDE_REGION ? null : target.note ? `근처 혜택 ${target.count}` : `혜택 ${target.count}`;
+  // 그 가게가 아니라 그 시군(도)의 혜택이라는 게 보이게 - '혜택 1'만 있으면 가게 할인처럼 읽혔다(10/3 사용자 조사)
+  const badge = target.region === NATIONWIDE_REGION ? null : `${targetPlaceName(target)} 혜택 ${target.count}`;
   return (
     <button className="thmap-sres-row home-place-row" type="button" onClick={onOpen}>
       <span className="thmap-near-ic" aria-hidden="true"><MapPin size={18} /></span>
@@ -207,21 +295,34 @@ function HomePlaceRow({ item, policies, onOpen }: { item: PlaceSearchItem; polic
   );
 }
 
-function HomePlaceCard({ item, policies, onBack }: { item: PlaceSearchItem; policies: Policy[]; onBack: () => void }) {
+function HomePlaceCard({
+  item,
+  policies,
+  fromName,
+  nearCode,
+  nearbyCache,
+  onNearCode,
+  onOpenNearby,
+  onBack,
+}: {
+  item: PlaceSearchItem;
+  policies: Policy[];
+  /** 이 근처로 이어 왔으면 앞 장소 이름 - '‹ 오동도' */
+  fromName: string | null;
+  nearCode: NearbyCategory;
+  nearbyCache: Map<string, PlaceSearchItem[]>;
+  onNearCode: (code: NearbyCategory) => void;
+  onOpenNearby: (item: PlaceSearchItem) => void;
+  onBack: () => void;
+}) {
   const [picking, setPicking] = useState(false);
   const xy = xyOf(item);
   const target = nearTarget(policies, item.sido ?? null, item.city ?? null, xy);
   /* 근처 혜택 = 정책 탭 위치로 찾기와 같은 화면(핀 · '근처' 줄 · 가까운 시군) */
-  const nearUrl = policiesUrl({
-    region: target.region,
-    city: target.city,
-    near: item.sido && item.latitude != null && item.longitude != null
-      ? { name: item.name, lat: item.latitude, lng: item.longitude, sido: item.sido, region: target.region, city: target.city, note: target.note }
-      : null,
-  });
+  const nearUrl = nearUrlOf(item, target);
   return (
     <article className="home-place-card" aria-label={`${item.name} 장소 카드`}>
-      <button className="home-place-back" type="button" onClick={onBack}>‹ 검색 결과</button>
+      <button className="home-place-back" type="button" onClick={onBack}>‹ {fromName ?? "검색 결과"}</button>
       {item.category && <p className="home-place-cat">{item.category.split(" > ").join(" · ")}</p>}
       <h3>{item.name}</h3>
       {item.address && <p className="home-place-addr">{item.address}</p>}
@@ -240,7 +341,7 @@ function HomePlaceCard({ item, policies, onBack }: { item: PlaceSearchItem; poli
         </button>
         {target.note && <p className="home-place-note">{target.note}</p>}
         <Link className="home-place-near" to={nearUrl}>
-          주변 혜택 {target.count}건 보기<span aria-hidden="true">›</span>
+          {nearLinkLabel(target)}<span aria-hidden="true">›</span>
         </Link>
         {item.placeUrl && (
           <a className="home-place-kakao" href={item.placeUrl} target="_blank" rel="noopener noreferrer">
@@ -249,7 +350,105 @@ function HomePlaceCard({ item, policies, onBack }: { item: PlaceSearchItem; poli
         )}
       </div>
       {picking && <TripPicker item={item} />}
+      <NearbySection item={item} policies={policies} code={nearCode} cache={nearbyCache} onCode={onNearCode} onOpen={onOpenNearby} />
     </article>
+  );
+}
+
+/* 이 근처(시안 v58): 카카오 분류 반경 검색 - 맛집 · 카페 · 숙소 · 볼거리, 반경 2km 가까운 순 다섯 곳. 카카오는 별점 · 리뷰 ·
+   인기 지표를 주지 않아 '인기순'이 아니다. 한 곳을 누르면 그 장소 카드로 이어 본다(뒤로 = 앞 장소). 같은 장소 · 분류는 다시 묻지 않는다 */
+const NEARBY_TABS: readonly (readonly [NearbyCategory, string])[] = [["FD6", "맛집"], ["CE7", "카페"], ["AD5", "숙소"], ["AT4", "볼거리"]];
+const NEARBY_SHOWN = 5;
+const formatDistance = (meters: number) => (meters < 1000 ? `약 ${Math.max(10, Math.round(meters / 10) * 10)}m` : `약 ${(meters / 1000).toFixed(1)}km`);
+
+/** 숙소 칸: 그 시군(없으면 도)의 숙박 혜택 건수 - 숙소마다 쓸 수 있는지는 혜택 조건에 달렸다 */
+function stayBenefitNote(policies: Policy[], item: PlaceSearchItem) {
+  if (!item.sido) return null;
+  const stays = policies.filter((policy) => policy.region === item.sido && matchesBrowseFilter(policy, "stay"));
+  const city = policyCityFor(policies, item.sido, item.city ?? null);
+  const inCity = city ? stays.filter((policy) => cityOf(policy) === city).length : 0;
+  const where = inCity && city ? shortCity(item.sido, city) : REGION_FULL_NAMES[item.sido] ?? item.sido;
+  const count = inCity || stays.length;
+  return count ? `${where} 숙박 혜택 ${count}건 - 숙소마다 쓸 수 있는지는 혜택 조건에서 확인해요` : null;
+}
+
+function NearbySection({
+  item,
+  policies,
+  code,
+  cache: nearbyCache,
+  onCode,
+  onOpen,
+}: {
+  item: PlaceSearchItem;
+  policies: Policy[];
+  code: NearbyCategory;
+  cache: Map<string, PlaceSearchItem[]>;
+  onCode: (code: NearbyCategory) => void;
+  onOpen: (item: PlaceSearchItem) => void;
+}) {
+  const key = `${item.id}|${code}`;
+  const [result, setResult] = useState<{ key: string; items: PlaceSearchItem[] | null; failed: boolean }>({ key, items: nearbyCache.get(key) ?? null, failed: false });
+  useEffect(() => {
+    const cached = nearbyCache.get(key);
+    if (cached) {
+      setResult({ key, items: cached, failed: false });
+      return;
+    }
+    setResult({ key, items: null, failed: false });
+    if (item.latitude == null || item.longitude == null) {
+      setResult({ key, items: [], failed: false });
+      return;
+    }
+    const control = new AbortController();
+    appDataApi.listNearbyPlaces(item.latitude, item.longitude, code, { signal: control.signal }).then(
+      (list) => {
+        const shown = list.filter((place) => place.id !== item.id).slice(0, NEARBY_SHOWN);
+        nearbyCache.set(key, shown);
+        setResult({ key, items: shown, failed: false });
+      },
+      () => {
+        if (!control.signal.aborted) setResult({ key, items: [], failed: true });
+      },
+    );
+    return () => control.abort();
+  }, [key]);
+  const items = result.key === key ? result.items : null;
+  const note = code === "AD5" ? stayBenefitNote(policies, item) : null;
+  return (
+    <section className="home-nearby" aria-label="이 근처">
+      <h4>
+        이 근처<span className="src">반경 2km · 가까운 순</span>
+      </h4>
+      <div className="home-nearby-tabs" role="group" aria-label="이 근처 종류">
+        {NEARBY_TABS.map(([value, label]) => (
+          <button key={value} type="button" aria-pressed={value === code} onClick={() => onCode(value)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {note && <p className="home-nearby-stay">{note}</p>}
+      {items === null ? (
+        <p className="home-trip-pick-tip">근처를 찾는 중…</p>
+      ) : result.failed ? (
+        <p className="home-trip-pick-tip">근처 장소를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
+      ) : items.length === 0 ? (
+        <p className="home-trip-pick-tip">반경 2km 안에 없어요.</p>
+      ) : (
+        items.map((place) => (
+          <button className="thmap-sres-row home-nearby-row" key={place.id} type="button" onClick={() => onOpen(place)}>
+            <span className="tx">
+              <b>{place.name}</b>
+              <span>
+                {lastCategory(place.category)}
+                {place.distanceMeters != null ? ` · ${formatDistance(place.distanceMeters)}` : ""}
+              </span>
+            </span>
+            <span className="go" aria-hidden="true">›</span>
+          </button>
+        ))
+      )}
+    </section>
   );
 }
 

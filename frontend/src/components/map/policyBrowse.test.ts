@@ -99,8 +99,28 @@ describe("policy tab browse model", () => {
     expect(found.places).toEqual([{ place: "완도", region: "전남", count: 1 }]);
     const programs = searchBrowse(policies, "반값").programs;
     expect(programs).toEqual([{ name: "대한민국 반값여행 지원", count: 1, type: "refund", nation: false }]);
-    /* 전북은 이제 '전북특별자치도'라 '전라'로는 전남만 찾힌다 */
-    expect(searchBrowse(policies, "전라").regions.map((r) => r.region)).toEqual(["전남"]);
+    /* '전라'는 일상 별칭으로 전북 · 전남 둘 다(전북은 이름이 '전북특별자치도'라 이름만으로는 안 찾힌다) */
+    expect(searchBrowse(policies, "전라").regions.map((r) => r.region)).toEqual(["전북", "전남"]);
+  });
+
+  it("finds what people actually type: spaces, two words, everyday names and initial consonants", () => {
+    // 띄어쓰기는 무시한다
+    expect(searchBrowse(policies, "반 값").programs.map((p) => p.name)).toEqual(["대한민국 반값여행 지원"]);
+    // 지역 + 혜택이 함께 맞으면 둘을 합친 줄
+    expect(searchBrowse(policies, "하동 반값").combos).toEqual([
+      { region: "경남", city: "하동", program: "대한민국 반값여행 지원", filter: null, count: 1 },
+    ]);
+    // 일상 별칭: 지역 이름 · 혜택 형태
+    expect(searchBrowse(policies, "경상도").regions.map((r) => r.region)).toEqual(["경북", "경남"]);
+    expect(searchBrowse(policies, "KTX").filters).toEqual([{ key: "move", label: "교통", count: 1 }]);
+    // 지역과 형태가 맞아도 그 지역에 그 형태가 없으면 합친 줄은 없다(교통은 전국 공통뿐)
+    const trainInGyeongnam = searchBrowse(policies, "경남 기차");
+    expect(trainInGyeongnam.combos).toEqual([]);
+    expect(trainInGyeongnam.filters.map((f) => f.key)).toEqual(["move"]);
+    // 초성은 이름에만
+    expect(searchBrowse(policies, "ㅎㄷ").places.map((p) => p.place)).toEqual(["하동"]);
+    // 낱말이 여럿이면 한 자 낱말은 버린다
+    expect(searchBrowse(policies, "완도 의").places.map((p) => p.place)).toEqual(["완도"]);
   });
 });
 

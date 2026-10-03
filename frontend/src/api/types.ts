@@ -397,7 +397,12 @@ export type PlaceSearchItem = {
   placeUrl?: string | null;
   sido?: string | null;
   city?: string | null;
+  /** 이 근처(GET /places/nearby)일 때만 - 기준 좌표에서의 거리(m) */
+  distanceMeters?: number | null;
 };
+
+/** 장소 카드 '이 근처'의 분류: 맛집 · 카페 · 숙소 · 볼거리(카카오 분류 코드) */
+export type NearbyCategory = "FD6" | "CE7" | "AD5" | "AT4";
 
 export type RegionRecommendation = {
   region: string;

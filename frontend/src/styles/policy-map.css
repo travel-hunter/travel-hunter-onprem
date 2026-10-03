@@ -774,3 +774,21 @@ body.thmap-map-view .app-container { overflow: hidden; }
 .thmap-nearby button[aria-pressed="true"] { border-color: var(--primary-600); background: var(--color-action-primary-soft); color: var(--primary-700); cursor: default; }
 .thmap-nearby button span { color: var(--gray-600); font-size: 12px; }
 .thmap-nearby button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* 찾은 것이 없을 때 다음 행동(10/3 사용자 조사) - 혜택 이름 칩 · 교통 · 전체 정책 */
+.thmap-sres-none { display: grid; gap: 10px; margin: 16px 4px; }
+.thmap-sres-none .thmap-sres-empty { margin: 0; }
+.thmap-sres-hints { display: flex; flex-wrap: wrap; gap: 8px; }
+.thmap-sres-hints button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 18px;
+  background: var(--color-bg-card);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.thmap-sres-hints button.all { border-color: var(--primary-600); color: var(--primary-700); font-weight: 700; }
+.thmap-sres-hints button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }

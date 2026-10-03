@@ -10,6 +10,7 @@ from app.core.config import Settings, settings
 
 KAKAO_LOCAL_KEYWORD_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 KAKAO_LOCAL_ADDRESS_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/address.json"
+KAKAO_LOCAL_CATEGORY_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/category.json"
 KAKAO_LOCAL_DEFAULT_SIZE = 15
 KAKAO_LOCAL_DEFAULT_SORT = "accuracy"
 
@@ -30,6 +31,8 @@ class KakaoLocalPlace:
     latitude: float | None
     longitude: float | None
     place_url: str | None
+    # 좌표를 주고 찾았을 때(분류 · 키워드 검색의 x · y) 그 점에서의 거리(m)
+    distance_meters: int | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,18 @@ class KakaoLocalSearchProvider(Protocol):
     def search_address(self, *, query: str, size: int = 30) -> list[KakaoLocalArea]:
         ...
 
+    def search_category(
+        self,
+        *,
+        category_group_code: str,
+        x: float,
+        y: float,
+        radius: int = 2000,
+        size: int = KAKAO_LOCAL_DEFAULT_SIZE,
+        sort: str = "distance",
+    ) -> list[KakaoLocalPlace]:
+        ...
+
 
 def validate_kakao_local_settings(settings_obj: Settings = settings) -> None:
     if not settings_obj.kakao_local_enabled:
@@ -83,6 +98,13 @@ def parse_float_or_none(value: str | None) -> float | None:
         return None
 
 
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _to_place_payload(document: dict[str, Any]) -> KakaoLocalPlace:
     external_id = str(document.get("id", "")).strip()
     if not external_id:
@@ -101,6 +123,7 @@ def _to_place_payload(document: dict[str, Any]) -> KakaoLocalPlace:
         latitude=parse_float_or_none(document.get("y")),
         longitude=parse_float_or_none(document.get("x")),
         place_url=(document.get("place_url") or None) if isinstance(document, dict) else None,
+        distance_meters=_int_or_none(document.get("distance")),
     )
 
 
@@ -124,11 +147,6 @@ class KakaoLocalClient:
         size: int = KAKAO_LOCAL_DEFAULT_SIZE,
         sort: str = KAKAO_LOCAL_DEFAULT_SORT,
     ) -> list[KakaoLocalPlace]:
-        key = self._settings.kakao_local_rest_api_key.strip()
-        if not key:
-            raise KakaoLocalConfigurationError(
-                "KAKAO_LOCAL_REST_API_KEY is required."
-            )
         params = {
             "query": query.strip(),
             "page": page,
@@ -137,10 +155,34 @@ class KakaoLocalClient:
         }
         if category_group_code:
             params["category_group_code"] = category_group_code
+        return self._search_places(KAKAO_LOCAL_KEYWORD_SEARCH_URL, params)
 
+    def search_category(
+        self,
+        *,
+        category_group_code: str,
+        x: float,
+        y: float,
+        radius: int = 2000,
+        size: int = KAKAO_LOCAL_DEFAULT_SIZE,
+        sort: str = "distance",
+    ) -> list[KakaoLocalPlace]:
+        """분류 검색 - 좌표(x 경도 · y 위도) 반경(m) 안의 그 분류 장소. 장소마다 그 점에서의 거리(distance_meters)가 온다."""
+
+        return self._search_places(
+            KAKAO_LOCAL_CATEGORY_SEARCH_URL,
+            {"category_group_code": category_group_code, "x": x, "y": y, "radius": radius, "size": size, "sort": sort},
+        )
+
+    def _search_places(self, url: str, params: dict[str, Any]) -> list[KakaoLocalPlace]:
+        key = self._settings.kakao_local_rest_api_key.strip()
+        if not key:
+            raise KakaoLocalConfigurationError(
+                "KAKAO_LOCAL_REST_API_KEY is required."
+            )
         try:
             response = self._http_get(
-                KAKAO_LOCAL_KEYWORD_SEARCH_URL,
+                url,
                 headers={"Authorization": f"KakaoAK {key}"},
                 params=params,
                 timeout=self._settings.kakao_local_timeout_seconds,

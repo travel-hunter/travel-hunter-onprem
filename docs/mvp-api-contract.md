@@ -1305,7 +1305,8 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
     "longitude": 127.738,
     "placeUrl": null,
     "sido": "전남",
-    "city": "여수"
+    "city": "여수",
+    "distanceMeters": null
   },
   {
     "kind": "place",
@@ -1318,7 +1319,8 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
     "longitude": 127.766,
     "placeUrl": "http://place.map.kakao.com/8193468",
     "sido": "전남",
-    "city": "여수"
+    "city": "여수",
+    "distanceMeters": null
   }
 ]
 ```
@@ -1326,6 +1328,39 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
 **Errors**
 - 401: 인증 필요
 - 422: `query` 누락/길이 위반
+
+### GET /places/nearby
+
+홈 장소 카드의 '이 근처'(시안 v58). 장소 좌표 반경 2km 안의 한 분류 장소를 가까운 순으로 최대 6곳 준다(기준 장소 자신이 끼면 화면이 뺀다). 카카오 로컬 분류 검색(`category.json`) 그대로라 별점 · 리뷰 · 인기 지표는 없다. 항목 모양은 `GET /places/search` 와 같고(`kind: "place"`), `distanceMeters` 에 기준 좌표에서의 거리(m)가 온다(검색 결과는 `null`). 카카오가 꺼져 있거나 실패하면 빈 배열(오류 아님). 로그인 필요.
+
+**Query**
+- `lat`: number, 33-39 (위도)
+- `lng`: number, 124-132 (경도)
+- `category`: `FD6`(음식점) | `CE7`(카페) | `AD5`(숙박) | `AT4`(관광명소)
+
+**Response 200** → `PlaceSearchItem[]`
+```json
+[
+  {
+    "kind": "place",
+    "id": "kakao:1234567",
+    "name": "오동도해양식당",
+    "category": "음식점 > 한식 > 해물,생선",
+    "categoryCode": "FD6",
+    "address": "전남광주통합특별시 여수시 수정동 3-1",
+    "latitude": 34.746,
+    "longitude": 127.763,
+    "placeUrl": "http://place.map.kakao.com/1234567",
+    "sido": "전남",
+    "city": "여수",
+    "distanceMeters": 320
+  }
+]
+```
+
+**Errors**
+- 401: 인증 필요
+- 422: `lat` · `lng` 범위 밖, `category` 가 네 값이 아님
 
 ### GET /trips/{trip_id}/recommendations
 

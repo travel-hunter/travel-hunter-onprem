@@ -1291,6 +1291,47 @@ describe("Travel Hunter app — policies & trip picker", () => {
     }
   });
 
+  it("searches the way people type and never invents a place name for 'find by location'", async () => {
+    const policies: Policy[] = [
+      { ...examplePolicyDetail, id: "ys", slug: "ys", title: "[여수] 숙박 할인", region: "전남" },
+      { ...examplePolicyDetail, id: "gy", slug: "gy", title: "[광양] 숙박 할인", region: "전남" },
+    ];
+    const policyListSpy = vi.spyOn(appDataApi, "listPolicies").mockResolvedValue(policies);
+    // 카카오가 친 말과 이름이 안 맞는 장소만 준다('당일치기') - 예전엔 '양주 당일치기' 같은 줄을 지어냈다
+    const placeSpy = vi.spyOn(appDataApi, "searchPlaces").mockResolvedValue([
+      { kind: "place", id: "kakao:9", name: "양주 별빛식당", category: "음식점", address: "경기 양주시 1", latitude: 37.78, longitude: 127.04, sido: "경기", city: "양주" },
+    ]);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies");
+      await waitForSheet("모든 지역 2건");
+      const user = userEvent.setup();
+      const searchbox = screen.getByRole("searchbox", { name: "정책 검색" });
+      await user.click(searchbox);
+      const panel = await screen.findByRole("region", { name: "지역·혜택 검색 결과" });
+
+      // 지역 + 혜택을 한 번에('여수 숙박') - 그 시군의 그 사업으로 바로
+      await user.type(searchbox, "여수 숙박");
+      await user.click(await within(panel).findByRole("button", { name: /^여수 · 숙박 할인/ }));
+      await waitForSheet("여수 1건");
+
+      // 이름이 안 맞는 장소로는 위치로 찾기 줄을 만들지 않는다 - 대신 다음 행동
+      await user.click(searchbox);
+      const again = await screen.findByRole("region", { name: "지역·혜택 검색 결과" });
+      await user.clear(searchbox);
+      await user.type(searchbox, "당일치기");
+      expect(await within(again).findByText("‘당일치기’에 맞는 지역 · 혜택 · 장소가 없어요. 이렇게 찾아 보세요.")).toBeInTheDocument();
+      expect(within(again).queryByText("위치로 찾기")).toBeNull();
+      expect(within(again).queryByText(/양주 당일치기/)).toBeNull();
+      await user.click(within(again).getByRole("button", { name: "전체 정책 보기" }));
+      await waitFor(() => expect(screen.queryByRole("region", { name: "지역·혜택 검색 결과" })).toBeNull());
+    } finally {
+      policyListSpy.mockRestore();
+      placeSpy.mockRestore();
+    }
+  });
+
   it("on wide screens keeps the list in a panel beside the map and opens a policy there", async () => {
     const policies: Policy[] = [
       { ...examplePolicyDetail, id: "yg", slug: "yg", title: "[영광] 디지털관광주민증 혜택", region: "전남" },

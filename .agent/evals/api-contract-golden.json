@@ -999,9 +999,38 @@
         "longitude": "number|null",
         "placeUrl": "string|null",
         "sido": "string|null",
-        "city": "string|null"
+        "city": "string|null",
+        "distanceMeters": "integer|null"
       },
       "dbModeBehavior": "Authenticated users search Kakao Local places for the unified search (home place list, policy tab 'find by location'). Not tied to a trip and mutates nothing. Keyword search, plus Kakao address search when the query ends in a dong/eup/myeon/ri/N-ga so every same-named area comes back (kind=area, listed first). Each item carries the map region (sido) and city resolved from the Kakao address server-side; 전남광주통합특별시 maps to 광주 for 구 and 전남 for 시/군. Queries shorter than 2 chars, Kakao disabled, or Kakao failures return []."
+    },
+    {
+      "method": "GET",
+      "path": "/api/places/nearby",
+      "status": 200,
+      "authRequired": true,
+      "query": {
+        "lat": 34.745,
+        "lng": 127.766,
+        "category": "FD6"
+      },
+      "requiredArrayItemFields": {
+        "kind": "string enum(place)",
+        "id": "string",
+        "name": "string"
+      },
+      "optionalArrayItemFields": {
+        "category": "string|null",
+        "categoryCode": "string|null",
+        "address": "string|null",
+        "latitude": "number|null",
+        "longitude": "number|null",
+        "placeUrl": "string|null",
+        "sido": "string|null",
+        "city": "string|null",
+        "distanceMeters": "integer|null"
+      },
+      "dbModeBehavior": "Authenticated users get up to 6 Kakao Local places of one category (FD6 food, CE7 cafe, AD5 stay, AT4 attraction) within 2 km of the point, nearest first, with distanceMeters from the point (the home place card's 'nearby' section). Kakao category search as-is: no ratings, reviews, or popularity. lat 33-39 and lng 124-132 or 422; other categories 422. Kakao disabled or failing returns []."
     },
     {
       "method": "GET",

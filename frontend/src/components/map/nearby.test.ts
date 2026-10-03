@@ -23,6 +23,7 @@ describe("위치로 찾기의 근처", () => {
     expect(nearTarget([yeosu, gwangyang], "전남", "여수", ODONGDO)).toEqual({ region: "전남", city: "여수", count: 1, note: null });
     const near = nearTarget([gwangyang, yeonggwang], "전남", "여수", ODONGDO);
     expect(near).toMatchObject({ region: "전남", city: "광양", count: 1 });
+    expect(near.km).toBeGreaterThan(0);   // 넓힌 시군까지 거리 - 홈 장소 카드 버튼이 '광양 약 23km'로 보인다
     expect(near.note).toBe("여수 전용 혜택이 없어 가까운 시군 혜택을 보여 드려요");
     expect(nearTarget([yeonggwang], "전남", "여수", ODONGDO)).toMatchObject({ region: "전남", city: null, count: 1, note: "여수 전용 혜택이 없어 전라남도 혜택을 보여 드려요" });
     expect(nearTarget([nation], "전남", "여수", ODONGDO)).toMatchObject({ region: "전국", city: null, count: 1 });

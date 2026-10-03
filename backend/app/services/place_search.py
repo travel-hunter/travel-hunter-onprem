@@ -103,3 +103,33 @@ def search_places(query: str, provider: KakaoLocalSearchProvider | None = None) 
     except Exception:   # noqa: BLE001
         logger.warning("place_search_keyword_failed", exc_info=True)
     return items
+
+
+NEARBY_CATEGORIES = ("FD6", "CE7", "AD5", "AT4")   # 맛집 · 카페 · 숙소 · 볼거리
+NEARBY_RADIUS_M = 2000
+NEARBY_SIZE = 6   # 기준 장소 자신이 끼면 화면이 빼고 다섯을 보인다
+
+
+def nearby_places(
+    *,
+    latitude: float,
+    longitude: float,
+    category: str,
+    provider: KakaoLocalSearchProvider | None = None,
+) -> list[dict[str, object]]:
+    """장소 카드 '이 근처'(시안 v58): 좌표 반경 2km 안의 그 분류 장소를 가까운 순으로. 카카오 분류 검색 그대로라
+    별점 · 리뷰 · 인기 지표는 없다. 카카오가 꺼져 있거나 실패하면 빈 목록."""
+
+    if category not in NEARBY_CATEGORIES:
+        return []
+    client = provider or build_kakao_local_client()
+    if client is None:
+        return []
+    try:
+        places = client.search_category(
+            category_group_code=category, x=longitude, y=latitude, radius=NEARBY_RADIUS_M, size=NEARBY_SIZE, sort="distance"
+        )
+    except Exception:  # noqa: BLE001 - 이 근처가 안 돼도 카드의 나머지는 쓴다
+        logger.warning("place_search_nearby_failed", exc_info=True)
+        return []
+    return [{**_place_item(place), "distanceMeters": place.distance_meters} for place in places]

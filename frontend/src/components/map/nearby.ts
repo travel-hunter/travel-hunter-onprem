@@ -73,7 +73,14 @@ export function nearbyCities(policies: readonly Policy[], xy: readonly [number, 
 /** 시군 이름을 화면에 - '부산영도' → '영도' */
 export const shortCity = (region: string, city: string) => (city.startsWith(region) && city.length > region.length ? city.slice(region.length) : city);
 
-export type NearTarget = { region: string; city: string | null; count: number; note: string | null };
+export type NearTarget = {
+  region: string;
+  city: string | null;
+  count: number;
+  note: string | null;
+  /** 가장 가까운 시군으로 넓혔을 때 그 시군까지(약 km) */
+  km?: number;
+};
 
 /** 근처 혜택을 어디로 보일지: 그 시군 전용 → 가장 가까운 시군 → 도 → 전국 공통. note 는 넓힌 이유 */
 export function nearTarget(
@@ -88,7 +95,7 @@ export function nearTarget(
   if (own) return { region: sido, city: own, count: policies.filter((p) => p.region === sido && cityOf(p) === own).length, note: null };
   const here = city || REGION_FULL_NAMES[sido];
   const near = nearbyCities(policies, xy)[0];
-  if (near) return { region: near.region, city: near.city, count: near.count, note: `${here} 전용 혜택이 없어 가까운 시군 혜택을 보여 드려요` };   // 칩을 바꿔 눌러도 맞는 말
+  if (near) return { region: near.region, city: near.city, count: near.count, km: near.km, note: `${here} 전용 혜택이 없어 가까운 시군 혜택을 보여 드려요` };   // 칩을 바꿔 눌러도 맞는 말
   const inSido = policies.filter((policy) => policy.region === sido).length;
   if (inSido) return { region: sido, city: null, count: inSido, note: `${here} 전용 혜택이 없어 ${REGION_FULL_NAMES[sido]} 혜택을 보여 드려요` };
   return { region: NATIONWIDE_REGION, city: null, count: nation, note: `${REGION_FULL_NAMES[sido]} 전용 혜택이 없어 전국 공통 혜택을 보여 드려요` };

@@ -864,3 +864,39 @@
   /* 넓은 화면: 결과는 검색창 폭에 맞춘 한 단 */
   .prototype-home-screen.desktop-wide .home-search-results { max-width: 640px; padding: 0 0 32px; }
 }
+
+/* 장소 카드 '이 근처'(시안 v58) - 맛집 · 카페 · 숙소 · 볼거리, 반경 2km 가까운 순 */
+.home-nearby { display: grid; gap: 8px; margin-top: 4px; padding: 12px; border: 1px solid var(--gray-200); border-radius: 16px; background: var(--color-bg-card); }
+.home-nearby h4 { margin: 0; font-size: 15px; }
+.home-nearby h4 .src { margin-left: 6px; font-size: 12px; font-weight: 500; color: var(--gray-600); }
+.home-nearby-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.home-nearby-tabs button {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 17px;
+  background: var(--color-bg-card);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.home-nearby-tabs button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: #fff; }
+.home-nearby-stay { margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--primary-50); color: var(--primary-700); font-size: 13px; }
+.home-nearby-row .tx { flex: 1; }
+.home-nearby-row .go { flex: none; color: var(--gray-600); }
+
+/* 혜택 이름을 친 말이면 상호명 장소는 접어 둔다 - 펼치기(10/3 사용자 조사) */
+.home-places-more {
+  min-height: 40px;
+  margin: 10px 0 0;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 20px;
+  background: var(--color-bg-card);
+  color: var(--gray-700);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.home-search-body a.home-area-row { color: inherit; text-decoration: none; }

@@ -3,15 +3,18 @@ import { useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import type { PlaceSearchItem, Policy } from "../../api";
 import { BenefitTile } from "../benefitTile";
 import { NATIONWIDE_REGION } from "../../utils/policyPrograms";
-import { geoToMap, nearTarget, type NearTarget } from "./nearby";
+import { geoToMap, nearTarget, shortCity, type NearTarget } from "./nearby";
+import { isChoseong, nameHas, nameWords } from "./searchText";
 import { REGION_PHOTOS } from "./regionPhotos";
 import {
   BROWSE_FILTERS,
   filterLabel,
+  programName,
   REGION_FULL_NAMES,
   regionSummary,
   regionTiles,
   searchBrowse,
+  type BrowseCombo,
   type BrowseFilter,
   type BrowseSearch,
 } from "./policyBrowse";
@@ -212,18 +215,21 @@ function nearGroups(policies: readonly Policy[], items: readonly PlaceSearchItem
     const key = `${item.sido}|${item.city ?? ""}`;
     by.set(key, [...(by.get(key) ?? []), item]);
   }
-  return Array.from(by, ([key, list]) => {
+  /* 장소 이름에 친 말(낱말 하나라도)이 든 곳 · 동 이름이 맞은 곳만. 예전엔 이름에 없어도 시군 + 찾을 말('양주 당일치기')을
+     지어 줄을 만들어, 그런 장소가 있는 줄 알았다(10/3 사용자 조사) */
+  const words = nameWords(q).filter((word) => word.length >= 2 || isChoseong(word));
+  const groups: NearGroup[] = [];
+  for (const [key, list] of by) {
     const area = list.find((item) => item.kind === "area");
-    const named = list.find((item) => item.kind === "place" && item.name.includes(q));
-    const item = area ?? named ?? list[0];
-    const city = item.city ?? "";
-    // 동 이름처럼 장소가 아니면 '여수 중앙동', 장소 이름이 맞으면 그 이름들
-    const label = area ? area.name : named ? named.name : q.includes(city) || !city ? q : `${city} ${q}`;
-    const places = list.filter((entry) => entry.kind === "place").map((entry) => entry.name);
-    const title = area || !named ? label : places.slice(0, 2).join(", ") + (places.length > 2 ? ` 외 ${places.length - 2}곳` : "");
+    const named = list.filter((item) => item.kind === "place" && words.some((word) => nameHas(item.name, word)));
+    if (!area && !named.length) continue;
+    const item = area ?? named[0];
+    const label = area ? area.name : named[0].name;
+    const title = area ? area.name : named.slice(0, 2).map((entry) => entry.name).join(", ") + (named.length > 2 ? ` 외 ${named.length - 2}곳` : "");
     const target = nearTarget(policies, item.sido ?? null, item.city ?? null, geoToMap(item.sido as string, item.latitude as number, item.longitude as number));
-    return { key, item, label, title, target };
-  });
+    groups.push({ key, item, label, title, target });
+  }
+  return groups;
 }
 
 export function PolicySearchPanel({
@@ -236,6 +242,9 @@ export function PolicySearchPanel({
   onPickRegion,
   onPickPlace,
   onPickProgram,
+  onPickCombo,
+  onPickFilter,
+  onBrowseAll,
   onPickNear,
   onClose,
 }: {
@@ -249,6 +258,12 @@ export function PolicySearchPanel({
   onPickRegion: (region: string) => void;
   onPickPlace: (region: string, place: string) => void;
   onPickProgram: (program: string) => void;
+  /** '지역 + 혜택' 줄('여수 숙박세일') */
+  onPickCombo: (combo: BrowseCombo) => void;
+  /** 혜택 형태 줄('숙소' · 'KTX') · 결과 없음의 '교통 혜택' */
+  onPickFilter: (filter: BrowseFilter) => void;
+  /** 결과 없음의 '전체 정책 보기' */
+  onBrowseAll: () => void;
   /** 위치로 찾기 줄 - 그 장소의 근처 혜택으로 */
   onPickNear?: (item: PlaceSearchItem, label: string, target: NearTarget) => void;
   /** 머리의 ‹ - 검색을 나온다(들어오기 전 화면의 반반) */
@@ -309,6 +324,8 @@ export function PolicySearchPanel({
             onPickRegion={onPickRegion}
             onPickPlace={onPickPlace}
             onPickProgram={onPickProgram}
+            onPickCombo={onPickCombo}
+            onPickFilter={onPickFilter}
             onShowAll={onShowAll}
           >
             {near.length > 0 && (
@@ -328,8 +345,9 @@ export function PolicySearchPanel({
               </>
             )}
             {searching && <p className="thmap-sres-empty">아는 장소로 찾는 중…</p>}
-            {!found.regions.length && !found.places.length && !found.programs.length && !fullTextCount && !near.length && !searching && (
-              <p className="thmap-sres-empty">‘{q}’에 맞는 지역 · 혜택 · 장소가 없어요.</p>
+            {!found.regions.length && !found.places.length && !found.programs.length && !found.filters.length && !found.combos.length
+              && !fullTextCount && !near.length && !searching && (
+              <SearchNoResults query={q} policies={policies} onPickProgram={onPickProgram} onPickFilter={onPickFilter} onBrowseAll={onBrowseAll} />
             )}
           </PolicySearchRows>
         )}
@@ -346,6 +364,8 @@ export function PolicySearchRows({
   onPickRegion,
   onPickPlace,
   onPickProgram,
+  onPickCombo,
+  onPickFilter,
   onShowAll,
   children,
 }: {
@@ -355,6 +375,8 @@ export function PolicySearchRows({
   onPickRegion: (region: string) => void;
   onPickPlace: (region: string, place: string) => void;
   onPickProgram: (program: string) => void;
+  onPickCombo: (combo: BrowseCombo) => void;
+  onPickFilter: (filter: BrowseFilter) => void;
   onShowAll: () => void;
   children?: ReactNode;
 }) {
@@ -362,6 +384,19 @@ export function PolicySearchRows({
   const regionLine = (name: string, count: number) => `${REGION_FULL_NAMES[name]} · ${count ? `혜택 ${count}건` : "전용 혜택 없음"}`;
   return (
     <>
+      {found.combos.length > 0 && (
+        <>
+          <h3>지역 + 혜택</h3>
+          {found.combos.slice(0, 6).map((combo) => (
+            <button className="thmap-sres-row" key={`${combo.region}|${combo.city}|${combo.program}|${combo.filter}`} type="button" onClick={() => onPickCombo(combo)}>
+              <span className="tx">
+                <b>{combo.city ? shortCity(combo.region, combo.city) : REGION_FULL_NAMES[combo.region]} · {combo.program ?? (combo.filter ? `${filterLabel(combo.filter)} 혜택` : "")}</b>
+                <span>{combo.region} · 혜택 {combo.count}건</span>
+              </span>
+            </button>
+          ))}
+        </>
+      )}
       {(found.regions.length > 0 || found.places.length > 0) && (
         <>
           <h3>지역</h3>
@@ -373,6 +408,20 @@ export function PolicySearchRows({
           {found.places.map(({ place, region: name, count }) => (
             <button className="thmap-sres-row" key={`${place}|${name}`} type="button" onClick={() => onPickPlace(name, place)}>
               <span className="tx"><b><Marked text={place} query={q} /></b><span>{name} · 혜택 {count}건</span></span>
+            </button>
+          ))}
+        </>
+      )}
+      {found.filters.length > 0 && (
+        <>
+          <h3>혜택 형태</h3>
+          {found.filters.map((entry) => (
+            <button className="thmap-sres-row" key={entry.key} type="button" onClick={() => onPickFilter(entry.key)}>
+              <BenefitTile kind={BROWSE_FILTERS.find((option) => option.key === entry.key)?.icon ?? "trip"} size="sm" />
+              <span className="tx">
+                <b>{entry.label} 혜택</b>
+                <span>{entry.count}건 · 고르면 {entry.label} 혜택만 보여요</span>
+              </span>
             </button>
           ))}
         </>
@@ -399,5 +448,38 @@ export function PolicySearchRows({
         </button>
       )}
     </>
+  );
+}
+
+/* 찾은 것이 없을 때 다음 행동(10/3 사용자 조사) - 혜택 많은 사업 셋 · 교통 · 전체 정책. 정책 탭 검색 칸과 홈 검색이 같이 쓴다 */
+export function SearchNoResults({
+  query,
+  policies,
+  onPickProgram,
+  onPickFilter,
+  onBrowseAll,
+}: {
+  query: string;
+  policies: readonly Policy[];
+  onPickProgram: (program: string) => void;
+  onPickFilter: (filter: BrowseFilter) => void;
+  onBrowseAll: () => void;
+}) {
+  const counts = new Map<string, number>();
+  for (const policy of policies) counts.set(programName(policy), (counts.get(programName(policy)) ?? 0) + 1);
+  const top = Array.from(counts).sort((left, right) => right[1] - left[1]).slice(0, 3).map(([name]) => name);
+  return (
+    <div className="thmap-sres-none">
+      <p className="thmap-sres-empty">‘{query}’에 맞는 지역 · 혜택 · 장소가 없어요. 이렇게 찾아 보세요.</p>
+      <div className="thmap-sres-hints">
+        {top.map((name) => (
+          <button key={name} type="button" onClick={() => onPickProgram(name)}>
+            {name}
+          </button>
+        ))}
+        <button type="button" onClick={() => onPickFilter("move")}>교통 혜택</button>
+        <button className="all" type="button" onClick={onBrowseAll}>전체 정책 보기</button>
+      </div>
+    </div>
   );
 }
