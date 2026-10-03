@@ -3,21 +3,28 @@
 ## Current Status
 
 - Merge-ready: 홈 · 정책 탭 통합 검색(`feature/unified-search`, 시안 v57 · v58). 홈 검색창이 그 자리에서 지역 · 혜택 · 장소를 찾고
-  장소 카드(근처 혜택 · 일정에 담기 · 카카오맵 · 이 근처)로 잇는다. 정책 탭 '위치로 찾기'는 아는 장소를 그 시군 혜택 · 지도 핀 · 가까운 시군으로 잇는다.
+  장소 카드(근처 혜택 · 카카오맵 · 이 근처)로 잇는다. 정책 탭 '위치로 찾기'는 아는 장소를 그 시군 혜택 · 지도 핀 · 가까운 시군으로 잇는다.
   검색 규칙(띄어쓰기 무시 · 별칭 · 초성 · 지역 + 혜택)은 `components/map/searchText.ts` 한 곳. 계획: `docs/superpowers/plans/2026-10-03-unified-search.md`.
 - Scope: 새 API `GET /api/places/search` · `GET /api/places/nearby`(카카오 로컬, 로그인 필요 - 계약 · 골든 갱신), frontend, 문서. DB · env 변경 없음(기존 `KAKAO_LOCAL_*`).
+  카카오 운영정책(장소값 저장 금지)에 맞춰 홈 '일정에 담기'는 설계 3단계(담는 흐름) 전까지 숨기고, 주소에는 카카오 장소 ID와 검색어만 둔다.
+  설계: `docs/superpowers/specs/2026-10-03-public-place-storage-design.md`, 계획: `docs/superpowers/plans/2026-10-03-unified-search-place-values.md`.
 - 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
 
 ## Recent Validation
 
-- PASS: backend `python -m pytest` 1200 passed · 24 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - 소유자 전용 폴더 권한 검사가 Windows 에서 실패, 이 변경과 무관).
-- PASS: `npm run typecheck`, `npm run test:mojibake`, `npm run build`, `npm run test:e2e:containers` 13/13.
-- 부분 PASS: `npx vitest run` 47파일 513개 중 507개. 실패 6개는 모두 `mypage.test.tsx` 다(아래 알려진 흔들림, 단독 실행도 같은 6개).
-- PASS: 4173 headless 실측(390) - 'constructor' · '__proto__'(정책 탭 · 홈)는 결과 없음 안내만, 결과 없을 때 Enter 는 칸 · 주소 · 초점 그대로,
-  '여수' Enter → '여수 1건' + 초점 빠짐 → 다시 누르면 열림, `place=__proto__` → '모든 지역 105건', 홈 `lv=2` 바로 열기의 ‹ → 검색 결과,
-  '일정에 담기' → 기존 일정 고르기 → 그 일정의 장소 추가 창(바구니에 오동도 · 날짜 칩 3개, 저장은 누르지 않음), 홈 검색창 Enter → 결과 · 주소 그대로 · 초점 빠짐.
-  페이지 오류 0 · 가로 넘침 없음, 백엔드 로그 5xx 0 · 비밀 문자열 0.
-- PASS: 코드 리뷰(BASE `27b8457`, HEAD `828aae7`) - HIGH 1건(검색어 'constructor' · '__proto__'가 별칭 표에서 Object 를 꺼내 정책 탭 · 홈 검색이 멈춤),
+- PASS: backend `python -m pytest` 1201 passed · 24 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - 소유자 전용 폴더 권한 검사가 Windows 에서 실패, 이 변경과 무관).
+- PASS: `npx tsc --noEmit`, `npm run test:mojibake`, `npm run build`, `npm run test:e2e:containers` 13/13.
+- 부분 PASS: `npx vitest run` 48파일 522개 중 516개. 실패 6개는 모두 `mypage.test.tsx` 다(아래 알려진 흔들림).
+- PASS: 4173 headless 실측(390) - 홈 '오동도' 카드의 주소는 `pl=kakao:…` 뿐(이름 · 주소 없음), '일정에 담기' 없음, 근처 혜택 링크의 near 키는 `city,id,note,q,region`,
+  새로 고침하면 같은 말로 한 번(장소 검색 1회) 다시 찾아 같은 카드, 정책 탭 '오동도 근처' · 핀(새로 고침 뒤에도), 다시 찾아도 없는 ID 는 near 만 지우고 시군(여수)은 남김,
+  예전 형식 near(이름 · 좌표)는 버림, 이어 본 카드(소노캄 여수 마레첼로)에서 새로 고침 → 쌓인 기록을 되감아 검색 결과 → 기기 뒤로가기는 홈(닫은 카드가 다시 안 뜸),
+  '중앙동' 동네 30줄 모두 법정동 · 행정동 번호 ID(전에는 16줄이 카카오 주소 글자) → 정책 탭 '관악구 중앙동 근처' · 핀.
+  페이지 오류 0 · 가로 넘침 없음. 빈 분류 안내(`home-nearby-tip`)는 오동도에 빈 분류가 없어 빌드 CSS · vitest 로 확인.
+- PASS: 최종 리뷰(`fe0c98a` + 이번 변경, 새 리뷰어) - Critical 0, Important 2건(메모리 30분 · 200곳에서 밀려난 장소가 다음 그리기에서 사라짐,
+  다시 못 찾으면 덮어써 층을 건너뛰어 기기 뒤로가기가 닫은 카드를 다시 염)을 고치고 시험을 더했다. 그린 장소는 같은 ID 동안 화면이 붙잡는다.
+  Minor 중 구역 ID(법정동 번호가 없으면 카카오 주소 글자로 대신해 주소창에 실림 - 실측 30곳 중 16곳)는 행정동 번호(`h_code`)로 채우고,
+  둘 다 없을 때의 글자 ID 는 프론트가 near 에 싣지 않게 했다. 나머지 Minor 2건(낡은 주석, 홈 검색 실패 직접 시험)은 다음으로.
+- PASS: 코드 리뷰(BASE `27b8457`, HEAD `567c3e7`) - HIGH 1건(검색어 'constructor' · '__proto__'가 별칭 표에서 Object 를 꺼내 정책 탭 · 홈 검색이 멈춤),
   MEDIUM 4건(카카오 설정 오류가 500, 카카오를 부르는 동안 DB 세션을 쥠, 결과 없을 때 Enter 가 추천 칩을 누름, 다른 날에 담아도 보던 날에 머묾),
   LOW 4건(뒤로 뒤 주소에 근처가 남음, 주소로 바로 연 이어 본 카드의 ‹ 가 무반응, 홈 건수 기준 주석, 문서 상태)을 고치고 시험을 더했다.
   같은 종류의 기존 결함 두 가지도 함께 고쳤다: 주소 `place=__proto__`(develop 부터), Enter 로 고른 뒤 초점이 칸에 남아 다시 눌러도 안 열림.
@@ -45,8 +52,11 @@
 - `/api/places/*` 에 호출 제한이 없다(로그인한 사용자 누구나). 프론트는 300ms 디바운스 · 화면 안 캐시뿐이라 카카오 일일 한도를 나눠 쓴다.
 - '이 근처'는 인기순이 아니라 가까운 순이다(카카오가 별점 · 리뷰를 주지 않는다). 장소 정보는 이름 · 분류 · 주소 · 좌표뿐 - 결정은 카카오맵 링크로.
 - 가까운 시군 거리는 시군 대표점 사이 직선 근사(약 45km 안)다.
-- 일정 고르기 창은 기기 뒤로가기로 닫히지 않는다(홈을 떠난다). 새 일정을 만들어 담은 뒤의 뒤로는 만들기 화면으로 간다.
-- 이어 본 장소 카드(`lv=2`)를 주소로 바로 열면 '‹ 앞 장소'는 앞 장소가 아니라 검색 결과로 간다 - 앞 장소 정보가 주소에 없다.
+- 주소로 연 장소 카드(새로 고침 · 휴대폰 탭 복원 · 받은 링크)는 같은 말로 다시 찾아 그린다. 다시 찾아도 없거나 카카오가 실패하면 홈은 검색 결과로
+  (쌓인 기록이 있으면 되감는다), 정책 탭은 근처 표시를 지우고 시군만 남긴다. 이어 본 장소(`lv` 2 이상)는 같은 말 검색 결과에 없으면 대개 이렇게 돌아간다.
+  받은 링크로 연 이어 본 카드가 그려져도 '‹ 앞 장소'는 앞 장소가 아니라 검색 결과로 간다(되감을 기록이 없다).
+  같은 화면에서도 30분 · 200곳이 지난 뒤 앞의 이어 본 장소로 돌아가면 검색 결과로 간다 - 화면은 지금 그린 한 곳만 붙잡는다.
+- 이 PR은 카카오 장소값 노출을 줄인 것이지 저장 문제의 해결이 아니다. 일정 안 장소 검색 · 추천 카드 · `?addPlace` 받기 · 편집 초안(localStorage)에 남아 있고, 설계 2~4단계에서 고친다.
 
 ### 필터 · 글 검색을 지도 안에서(PR #88)
 
@@ -89,7 +99,7 @@
 - 활성 정책 139건 중 87건의 마감일이 `2026-08-31` 이다. 목록은 `status='active'` 로만 필터링하고 `end_date` 를 보지 않으므로(`backend/app/repositories/policies.py:9`) 만료 후에도 지난 마감일이 그대로 노출된다.
 - 수집 스케줄러가 개발/운영 모두 비활성이다. 운영 관리자 승격으로 수동 실행 경로는 열렸으나, 자동 갱신 활성화 여부와 임계값 조정은 미결이다. 현재 `EXTERNAL_COLLECTION_MIN_PARSED_COUNT=1` 은 평상시 파싱량(70건) 대비 과도하게 낮고, `EXTERNAL_COLLECTION_POLL_SECONDS=60` 은 실패 시 당일 성공까지 60초 간격 재시도를 유발한다.
 - 전환 직전 운영에 있던 동일자 가입 계정 3건과 소셜연결 3건은 이번 전환으로 제거되었다. 백업 `prod-before-20260830-1824.dump` 와 `travelhunter_before_20260830_1824` DB 에 보존되어 있다.
-- 롤백 자산(이전 운영 DB, 덤프 2개)은 안정화 기간 종료 전까지 삭제하지 않는다.
+- 롤백 자산: 안정화 기간의 끝은 운영을 최신 develop으로 맞추는 배포다. 그 배포를 확인한 뒤 옛 운영 DB(`travelhunter_before_20260830_1824`)와 `prod-before-20260830-1824.dump`를 지운다(승인 후). 개발 원본 덤프 `dev-full-20260830-1824.dump` 두 벌은 카카오 값과 정제 전 개발 데이터가 있어 2026-10-03에 지웠다. 두 서버의 덤프 파일은 600, 폴더는 700이다. 근거: `docs/superpowers/specs/2026-10-03-public-place-storage-design.md` '백업과 보존'.
 - 운영 배포 Jenkins job 의 SCM 브랜치 지정이 아직 `*/ci/prod-jenkins` 다. `main` 머지가 운영 자동 배포로 이어지지 않는 상태이며, 별도 확인이 필요하다.
 
 ### #53 e2e·Jenkins
