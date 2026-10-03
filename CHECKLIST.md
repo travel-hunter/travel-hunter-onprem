@@ -2,20 +2,29 @@
 
 ## Current Status
 
-- Merge-ready: 정책 탭 필터 · 글 검색을 지도 화면 안에서(`feature/policy-filter-in-map`, 시안 v55). 필터 창 적용이나 검색 칸 '…모두 보기'가
-  지도를 떠나 예전 카드 목록을 띄우던 버그를 고치고, 그 목록 화면과 부품(`PolicyListCard` · 목록 썸네일)을 지웠다.
-  조건(마감 · 금액 · 관심 정책만 · 글 검색)은 주소 밖 `components/map/policyConditions.ts`(sessionStorage)에 둔다. 계획: `docs/superpowers/plans/2026-10-02-policy-filter-in-map.md`.
-- Scope: frontend 와 문서만. backend · API 계약 · DB · env 변경 없음.
-- 다음: 홈 통합 검색(지역 · 혜택 + 장소) - 시안 v56 승인 대기, 승인 뒤 별도 브랜치(새 장소 검색 API 가 필요하다).
+- Merge-ready: 홈 · 정책 탭 통합 검색(`feature/unified-search`, 시안 v57 · v58). 홈 검색창이 그 자리에서 지역 · 혜택 · 장소를 찾고
+  장소 카드(근처 혜택 · 일정에 담기 · 카카오맵 · 이 근처)로 잇는다. 정책 탭 '위치로 찾기'는 아는 장소를 그 시군 혜택 · 지도 핀 · 가까운 시군으로 잇는다.
+  검색 규칙(띄어쓰기 무시 · 별칭 · 초성 · 지역 + 혜택)은 `components/map/searchText.ts` 한 곳. 계획: `docs/superpowers/plans/2026-10-03-unified-search.md`.
+- Scope: 새 API `GET /api/places/search` · `GET /api/places/nearby`(카카오 로컬, 로그인 필요 - 계약 · 골든 갱신), frontend, 문서. DB · env 변경 없음(기존 `KAKAO_LOCAL_*`).
 - 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
 
 ## Recent Validation
 
-- PASS: `npm run typecheck`, `npm run test:mojibake`, `npx vitest run` 44파일 489개, `npm run build`, `npm run test:e2e:containers` 13/13.
-- PASS: 4173 실측(390 · 1440) - 필터 창 전남 + 마감 30일 이내 → 지도 그대로 '전남 1건' · 조건 줄 · '필터 1', 화면 안 ‹ 뒤에도 조건 남음, ✕ 로 풀림, '숙박' 모두 보기 → '모든 지역 94건', 예전 목록 없음, 가로 넘침 없음.
-- PASS: 코드 리뷰(BASE `f1f9e45`, HEAD `7f10ec4`) - HIGH 없음. MEDIUM 2건('모두 보기' 건수와 목록이 지역 선택 때문에 다름, 지도 중심에서 글 검색 조건이 안 보임)과 LOW(교통 + 지역 미리 세기, 로그아웃해도 조건 남음, 검색 칸 숫자가 조건 무시)를 고치고 시험 보강.
+- PASS: backend `python -m pytest` 1200 passed · 24 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - 소유자 전용 폴더 권한 검사가 Windows 에서 실패, 이 변경과 무관).
+- PASS: `npm run typecheck`, `npm run test:mojibake`, `npm run build`, `npm run test:e2e:containers` 13/13.
+- 부분 PASS: `npx vitest run` 47파일 513개 중 507개. 실패 6개는 모두 `mypage.test.tsx` 다(아래 알려진 흔들림, 단독 실행도 같은 6개).
+- PASS: 4173 headless 실측(390) - 'constructor' · '__proto__'(정책 탭 · 홈)는 결과 없음 안내만, 결과 없을 때 Enter 는 칸 · 주소 · 초점 그대로,
+  '여수' Enter → '여수 1건' + 초점 빠짐 → 다시 누르면 열림, `place=__proto__` → '모든 지역 105건', 홈 `lv=2` 바로 열기의 ‹ → 검색 결과,
+  '일정에 담기' → 기존 일정 고르기 → 그 일정의 장소 추가 창(바구니에 오동도 · 날짜 칩 3개, 저장은 누르지 않음), 홈 검색창 Enter → 결과 · 주소 그대로 · 초점 빠짐.
+  페이지 오류 0 · 가로 넘침 없음, 백엔드 로그 5xx 0 · 비밀 문자열 0.
+- PASS: 코드 리뷰(BASE `27b8457`, HEAD `828aae7`) - HIGH 1건(검색어 'constructor' · '__proto__'가 별칭 표에서 Object 를 꺼내 정책 탭 · 홈 검색이 멈춤),
+  MEDIUM 4건(카카오 설정 오류가 500, 카카오를 부르는 동안 DB 세션을 쥠, 결과 없을 때 Enter 가 추천 칩을 누름, 다른 날에 담아도 보던 날에 머묾),
+  LOW 4건(뒤로 뒤 주소에 근처가 남음, 주소로 바로 연 이어 본 카드의 ‹ 가 무반응, 홈 건수 기준 주석, 문서 상태)을 고치고 시험을 더했다.
+  같은 종류의 기존 결함 두 가지도 함께 고쳤다: 주소 `place=__proto__`(develop 부터), Enter 로 고른 뒤 초점이 칸에 남아 다시 눌러도 안 열림.
+  검토 밖에서 더한 것: 홈 검색창 Enter(검색 키)는 결과를 그대로 두고 휴대폰 키보드만 내린다.
 - PASS: `git diff --check`, 변경 파일 U+FFFD 0건.
-- 알려진 흔들림: `mypage.test.tsx` 의 즐겨찾기 빈 화면 시험은 같은 로컬 백엔드 시험 계정에 다른 시험이 저장한 정책이 남으면 가끔 실패한다(단독 재실행 통과, 이 변경과 무관).
+- 알려진 흔들림: `mypage.test.tsx` 는 공용 로컬 백엔드 시험 계정에 시험이 만든 일정이 쌓여(10/3 약 250개) `GET /api/trips` 가 1.1~1.6초 걸리면
+  waitFor 1초를 넘겨 실패한다(백엔드 로그 duration_ms). 이 변경과 무관 - 시험 데이터를 비우거나 `/api/trips` 를 빠르게 하는 일은 따로.
 
 ## Active Risks
 
@@ -30,7 +39,16 @@
 - 5분 주기다. 볼륨 보관 한도(스트림당 200MB)를 넘길 만큼 멈춰 있으면 그 사이는 잃는다. `docker logs` 로 회차 기록을 본다.
 - AWS 로 옮기면 빼 오는 곳이 CloudWatch 로 바뀐다(ASG·private subnet). 보관 형식은 그대로 둔다.
 
-### 필터 · 글 검색을 지도 안에서(`feature/policy-filter-in-map`)
+### 통합 검색(`feature/unified-search`)
+
+- 장소 결과는 카카오에 달려 있다. 꺼져 있거나 실패하면 빈 목록이라 화면에서는 '결과 없음'과 구분되지 않는다(설정 오류는 경고 로그 `place_search_kakao_misconfigured`).
+- `/api/places/*` 에 호출 제한이 없다(로그인한 사용자 누구나). 프론트는 300ms 디바운스 · 화면 안 캐시뿐이라 카카오 일일 한도를 나눠 쓴다.
+- '이 근처'는 인기순이 아니라 가까운 순이다(카카오가 별점 · 리뷰를 주지 않는다). 장소 정보는 이름 · 분류 · 주소 · 좌표뿐 - 결정은 카카오맵 링크로.
+- 가까운 시군 거리는 시군 대표점 사이 직선 근사(약 45km 안)다.
+- 일정 고르기 창은 기기 뒤로가기로 닫히지 않는다(홈을 떠난다). 새 일정을 만들어 담은 뒤의 뒤로는 만들기 화면으로 간다.
+- 이어 본 장소 카드(`lv=2`)를 주소로 바로 열면 '‹ 앞 장소'는 앞 장소가 아니라 검색 결과로 간다 - 앞 장소 정보가 주소에 없다.
+
+### 필터 · 글 검색을 지도 안에서(PR #88)
 
 - 새로 고친 직후 '관심 정책만'이 걸려 있으면 관심 정책 목록이 오기 전 잠깐 0건이 보인다(목록을 못 받으면 0건에 머문다 - 조건 줄 ✕ 로 푼다).
 - 조건은 탭(sessionStorage)에 남아 다른 탭에서 정책 탭으로 돌아와도 걸려 있다. 로그아웃하면 지운다.
