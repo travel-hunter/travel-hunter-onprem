@@ -11,7 +11,7 @@ import logging
 import re
 
 from app.data.travel_areas import normalize_municipality_name
-from app.services.kakao_local import KakaoLocalSearchProvider, build_kakao_local_client
+from app.services.kakao_local import KakaoLocalConfigurationError, KakaoLocalSearchProvider, build_kakao_local_client
 from app.services.travelmonth_normalizer import REGION_ALIASES
 
 logger = logging.getLogger(__name__)
@@ -40,6 +40,16 @@ def resolve_city(second: str) -> str | None:
 
     word = second.split()[0] if second.strip() else ""
     return normalize_municipality_name(word) if word else None
+
+
+def _client_or_none() -> KakaoLocalSearchProvider | None:
+    """카카오가 꺼져 있거나 설정이 틀렸으면(켜 두고 키가 비었으면) None - 계약대로 빈 목록이 되게. 키 값은 남기지 않는다."""
+
+    try:
+        return build_kakao_local_client()
+    except KakaoLocalConfigurationError:
+        logger.warning("place_search_kakao_misconfigured")
+        return None
 
 
 def _place_item(place) -> dict[str, object]:
@@ -83,7 +93,7 @@ def search_places(query: str, provider: KakaoLocalSearchProvider | None = None) 
     q = query.strip()
     if len(q) < MIN_QUERY_LENGTH:
         return []
-    client = provider or build_kakao_local_client()
+    client = provider or _client_or_none()
     if client is None:
         return []
     items: list[dict[str, object]] = []
@@ -122,7 +132,7 @@ def nearby_places(
 
     if category not in NEARBY_CATEGORIES:
         return []
-    client = provider or build_kakao_local_client()
+    client = provider or _client_or_none()
     if client is None:
         return []
     try:

@@ -21,6 +21,7 @@ import {
   testIsoDateFromToday,
 } from "../../test/fixtures";
 import { login, renderAppRoute, routeLocation } from "../../test/renderAppRoute";
+import { writePlaceParam } from "../../utils/placeHandoff";
 
 function policy(overrides: Partial<Policy> & Pick<Policy, "id" | "title">): Policy {
   return { ...examplePolicyDetail, slug: overrides.id, ...overrides };
@@ -882,6 +883,11 @@ describe("Travel Hunter app — home", () => {
       const row = await screen.findByRole("button", { name: /오동도.*섬/ });
       expect(row).toHaveTextContent("혜택 1");
       expect(searchPlacesSpy).toHaveBeenLastCalledWith("오동도", expect.anything());
+      // 검색 키(Enter)는 '다 쳤다' - 결과 · 주소는 그대로 두고 초점만 빼 휴대폰 키보드를 내린다
+      await user.keyboard("{Enter}");
+      expect(searchbox).not.toHaveFocus();
+      expect(row).toBeInTheDocument();
+      expect(new URLSearchParams(routeLocation().search).get("q")).toBe("오동도");
 
       // 장소 카드 - 뒤로(‹ 검색 결과)는 결과 그대로
       await user.click(row);
@@ -980,6 +986,16 @@ describe("Travel Hunter app — home", () => {
       const hotel = await screen.findByRole("article", { name: "오동도관광호텔 장소 카드" });
       await user.click(within(hotel).getByRole("button", { name: "‹ 오동도" }));
       expect(await screen.findByRole("article", { name: "오동도 장소 카드" })).toBeInTheDocument();
+
+      // 이어 본 카드를 주소로 바로 열었으면(되감을 기록 없음) ‹ 는 검색 결과로 - 예전엔 아무 일도 없었다(10/3 리뷰)
+      cleanup();
+      const hotelItem = near("kakao:n2", "오동도관광호텔", "여행 > 숙박 > 호텔", 1300);
+      renderAppRoute(`/home?${new URLSearchParams({ q: "오동도", pl: writePlaceParam(hotelItem), lv: "2", from: "오동도" })}`);
+      const direct = await screen.findByRole("article", { name: "오동도관광호텔 장소 카드" });
+      await user.click(within(direct).getByRole("button", { name: "‹ 오동도" }));
+      await waitFor(() => expect(screen.queryByRole("article", { name: "오동도관광호텔 장소 카드" })).toBeNull());
+      expect(new URLSearchParams(routeLocation().search).get("q")).toBe("오동도");
+      expect(await screen.findByRole("button", { name: /오동도.*섬/ })).toBeInTheDocument();
     } finally {
       listPoliciesSpy.mockRestore();
       getProfileSpy.mockRestore();
@@ -1033,6 +1049,13 @@ describe("Travel Hunter app — home", () => {
       expect(await screen.findByText("‘없는말’에 맞는 지역 · 혜택 · 장소가 없어요. 이렇게 찾아 보세요.")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "전체 정책 보기" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "대한민국 반값여행 지원" })).toBeInTheDocument();
+
+      // Object 의 이름을 쳐도 화면이 멈추지 않는다(10/3 리뷰) - 별칭 표가 Object 의 것을 꺼냈다
+      for (const word of ["constructor", "__proto__"]) {
+        await user.clear(searchbox);
+        await user.type(searchbox, word);
+        expect(await screen.findByText(`‘${word}’에 맞는 지역 · 혜택 · 장소가 없어요. 이렇게 찾아 보세요.`)).toBeInTheDocument();
+      }
     } finally {
       listPoliciesSpy.mockRestore();
       getProfileSpy.mockRestore();

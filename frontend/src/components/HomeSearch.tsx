@@ -73,7 +73,9 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
   const close = () => back(withParams({ q: null, pl: null, lv: null, from: null }));
   /* 이 근처로 이어 본 장소면 앞 장소로(쌓아 둔 기록 한 칸), 아니면 검색 결과로 */
   const level = placeLevelOf(searchParams);
-  const closePlace = () => (level > 1 ? back(null) : back(withParams({ pl: null, lv: null, from: null })));
+  const toResults = () => withParams({ pl: null, lv: null, from: null });
+  // 이어 본 장소면 앞 장소로 - 주소로 바로 열어 되감을 기록이 없으면 검색 결과로(10/3 리뷰)
+  const closePlace = () => (level > 1 ? back(null, toResults()) : back(toResults()));
   const [nearCode, setNearCode] = useState<NearbyCategory>("FD6");
   /* 이 근처 결과 - 이 화면을 쓰는 동안 같은 장소 · 분류는 다시 묻지 않는다(앞 장소로 돌아올 때 바로 보인다) */
   const nearbyCache = useRef(new Map<string, PlaceSearchItem[]>()).current;
@@ -117,6 +119,7 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
   });
 
   const query = text.trim();
+  /* 홈 건수는 정책 탭의 좁히기 조건(마감 · 금액 · 관심만)을 걸지 않은 전체로 센다 - 정책 탭으로 가면 조건 줄과 ✕ 가 함께 보인다 */
   const all = policies ?? [];
   const found = query ? searchBrowse(all, query) : null;
   const fullTextCount = useMemo(() => (query ? all.filter((policy) => matchesPolicySearch(policy, query)).length : 0), [all, query]);
@@ -146,6 +149,11 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
               if (!open) go(withParams({ q: "" }));
             }}
             onChange={(event) => typeText(event.target.value)}
+            onKeyDown={(event) => {
+              // 검색 키(Enter) = 다 쳤다. 결과는 치는 대로 이미 보이니 초점만 빼 휴대폰 키보드를 내린다 - 결과를 가리지 않게.
+              // 한글 조합을 끝내는 Enter 는 뺀다
+              if (event.key === "Enter" && !event.nativeEvent.isComposing) event.currentTarget.blur();
+            }}
           />
         </label>
         <Link className="prototype-home-avatar" to="/mypage" aria-label="마이페이지">

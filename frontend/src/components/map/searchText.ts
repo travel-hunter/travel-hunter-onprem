@@ -42,8 +42,13 @@ export function nameWords(query: string, keep: (word: string) => boolean = () =>
   return words.filter((word) => word === joined || keep(word) || (word.length >= 2 && !GENERIC_WORDS.has(word)));
 }
 
-/** 일상에서 부르는 지역 이름 → 지도 도(짧은 이름) */
-export const REGION_WORDS: Readonly<Record<string, readonly string[]>> = {
+/** 표에서 그 낱말의 값 - 자기 키만 본다. 'constructor' · '__proto__'를 치면 Object 의 것이 나와 화면이 통째로 멈췄다(10/3 리뷰) */
+function own<T>(table: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined;
+}
+
+/* 일상에서 부르는 지역 이름 → 지도 도(짧은 이름) */
+const REGION_WORDS: Readonly<Record<string, readonly string[]>> = {
   강원도: ["강원"], 경기도: ["경기"], 제주도: ["제주"],
   충청도: ["충북", "충남"], 충청: ["충북", "충남"], 충청북도: ["충북"], 충청남도: ["충남"],
   전라도: ["전북", "전남"], 전라: ["전북", "전남"], 전라북도: ["전북"], 전라남도: ["전남"],
@@ -52,6 +57,11 @@ export const REGION_WORDS: Readonly<Record<string, readonly string[]>> = {
   seoul: ["서울"], busan: ["부산"], incheon: ["인천"], daegu: ["대구"], gwangju: ["광주"], daejeon: ["대전"],
   ulsan: ["울산"], sejong: ["세종"], gyeonggi: ["경기"], gangwon: ["강원"], jeju: ["제주"],
 };
+
+/** 낱말이 가리키는 지도 도들('수도권' → 서울 · 경기 · 인천) */
+export function regionsOfWord(word: string): readonly string[] {
+  return own(REGION_WORDS, squash(word)) ?? [];
+}
 
 /* 혜택 형태를 가리키는 말 → 위 칩. 두 자 이상은 낱말 안에 들어 있어도(숙박할인 → 숙박), 한 자는 낱말이 그것일 때만 */
 const FILTER_WORDS: ReadonlyArray<readonly [string, BrowseFilter]> = [
@@ -80,5 +90,5 @@ export function textMatches(text: string, query: string) {
   if (!words.length) return true;
   const hay = squash(text);
   if (hay.includes(words.join(""))) return true;
-  return words.every((word) => hay.includes(word) || (TEXT_WORDS[word] ?? []).some((alt) => hay.includes(alt)));
+  return words.every((word) => hay.includes(word) || (own(TEXT_WORDS, word) ?? []).some((alt) => hay.includes(alt)));
 }

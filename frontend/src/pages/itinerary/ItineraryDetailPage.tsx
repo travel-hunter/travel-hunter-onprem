@@ -3266,6 +3266,7 @@ export function ItineraryDetailPage() {
         places,
       });
       setTrip(nextTrip);
+      selectTripDay(dayNumber);   // 창의 날짜 칩으로 다른 날을 골라 담았으면 그 날을 보여 준다(10/3 리뷰)
       setPlaceBasket([]);
       setPlaceEditor(null);
       clearPlacePreview();

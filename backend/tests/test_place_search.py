@@ -7,10 +7,11 @@ from datetime import datetime
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_current_user
+from app.db.session import get_optional_db
 from app.main import app
 from app.models import User
 from app.services import place_search
-from app.services.kakao_local import KakaoLocalArea, KakaoLocalClient, KakaoLocalPlace
+from app.services.kakao_local import KakaoLocalArea, KakaoLocalClient, KakaoLocalConfigurationError, KakaoLocalPlace
 
 
 def place(name: str, address: str, *, code: str = "AT4", category: str = "여행 > 관광,명소 > 섬", pid: str = "1",
@@ -208,3 +209,47 @@ def test_nearby_route_needs_login_and_checks_the_category_and_the_point(monkeypa
     assert found.status_code == 200
     assert [(i["kind"], i["name"], i["distanceMeters"]) for i in found.json()] == [("place", "오동도해양식당", 320)]
     assert bad_category.status_code == 422 and outside.status_code == 422
+
+
+def test_kakao_misconfiguration_is_an_empty_list_not_a_server_error(monkeypatch) -> None:
+    # 켜 두고 키가 비었을 때 - 계약대로 빈 목록(예전엔 500)
+    def broken():
+        raise KakaoLocalConfigurationError("KAKAO_LOCAL_REST_API_KEY is required when KAKAO_LOCAL_ENABLED=true.")
+
+    monkeypatch.setattr(place_search, "build_kakao_local_client", broken)
+    assert place_search.search_places("오동도") == []
+    assert place_search.nearby_places(latitude=34.7, longitude=127.7, category="FD6") == []
+
+
+def test_place_routes_release_the_db_session_before_calling_kakao(monkeypatch) -> None:
+    events: list[str] = []
+
+    class Session:
+        def close(self):
+            events.append("db closed")
+
+    class Kakao(FakeKakao):
+        def search_keyword(self, *, query, size=15, **_):
+            events.append("kakao")
+            return []
+
+        def search_category(self, **_):
+            events.append("kakao")
+            return []
+
+    def session():
+        yield Session()
+
+    user = User(id=1, email="u@example.com", nickname="u", onboarding_completed=True,
+                created_at=datetime(2026, 10, 3), updated_at=datetime(2026, 10, 3))
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_optional_db] = session
+    monkeypatch.setattr(place_search, "build_kakao_local_client", lambda: Kakao())
+    try:
+        client = TestClient(app)
+        assert client.get("/api/places/search", params={"query": "오동도"}).status_code == 200
+        assert client.get("/api/places/nearby", params={"lat": 34.7, "lng": 127.7, "category": "FD6"}).status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_optional_db, None)
+    assert events == ["db closed", "kakao", "db closed", "kakao"]

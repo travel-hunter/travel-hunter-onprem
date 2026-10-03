@@ -30,6 +30,8 @@ describe("주소로 넘기는 장소", () => {
     // 링크는 카카오 장소 주소만 - 카드가 그대로 그린다
     expect(readPlaceParam(JSON.stringify({ ...odongdo, placeUrl: "javascript:alert(1)" }))?.placeUrl).toBeNull();
     expect(readPlaceParam(JSON.stringify({ ...odongdo, latitude: "34" }))?.latitude).toBeNull();
+    // 지도 도는 아는 이름만 - '__proto__'가 지역 표에서 Object 를 꺼내 카드가 멈췄다(10/3 리뷰)
+    expect(readPlaceParam(JSON.stringify({ ...odongdo, sido: "__proto__" }))?.sido).toBeNull();
   });
 
   it("becomes the same trip place the trip's own place search would add", () => {

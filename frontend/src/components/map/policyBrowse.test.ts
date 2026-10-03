@@ -122,6 +122,13 @@ describe("policy tab browse model", () => {
     // 낱말이 여럿이면 한 자 낱말은 버린다
     expect(searchBrowse(policies, "완도 의").places.map((p) => p.place)).toEqual(["완도"]);
   });
+
+  it("finds nothing, without throwing, for words that only Object has", () => {
+    for (const word of ["constructor", "__proto__", "toString"]) {
+      const found = searchBrowse(policies, word);
+      expect([found.regions, found.places, found.programs, found.combos]).toEqual([[], [], [], []]);
+    }
+  });
 });
 
 describe("policy tab layers in the URL", () => {
@@ -159,6 +166,22 @@ describe("policy tab layers in the URL", () => {
     expect(nearOn({ ...read, city: "광양" })).toBeNull();
     expect(readBrowseState(new URLSearchParams("near=%7Bbroken")).near).toBeNull();
     expect(readBrowseState(new URLSearchParams(`near=${encodeURIComponent('{"name":1}')}`)).near).toBeNull();
+    // 한 칸 내려가면(뒤로 · ‹ · Esc) 주소에서도 지운다 - 남겨 두면 다시 그 시군을 고를 때 옛 핀이 살아났다
+    const lower = lowerBrowseState(read);
+    expect(lower).toMatchObject({ region: "전남", city: null });
+    expect(writeBrowseState(params, lower as BrowseState).get("near")).toBeNull();
+  });
+
+  it("drops a region or near place the map does not know", () => {
+    expect(readBrowseState(new URLSearchParams("place=__proto__")).region).toBeNull();
+    expect(readBrowseState(new URLSearchParams("region=constructor")).region).toBeNull();
+    expect(readBrowseState(new URLSearchParams("place=전국")).region).toBe("전국");
+    const near = JSON.stringify({ name: "오동도", lat: 34.745, lng: 127.766, sido: "전남", region: "전남", city: "여수", note: null });
+    const read = (raw: string) => readBrowseState(new URLSearchParams(`place=전남&city=여수&near=${encodeURIComponent(raw)}`)).near;
+    expect(read(near)).not.toBeNull();
+    expect(read(near.replace('"sido":"전남"', '"sido":"__proto__"'))).toBeNull();
+    expect(read(near.replace('"region":"전남"', '"region":"constructor"'))).toBeNull();
+    expect(read(near.replace('"lat":34.745', '"lat":1e999'))).toBeNull();
   });
 
   it("on wide screens peels the panel detail first and ignores the sheet stop", () => {

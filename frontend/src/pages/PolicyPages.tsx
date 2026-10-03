@@ -288,7 +288,7 @@ export function PolicyListPage() {
   const navigate = useNavigate();
   const browseHistory = useBrowseHistory(isDesktop ? deskBrowseDepthOf : browseDepthOf);
   const { go: goBrowse, back: backBrowse } = browseHistory;
-  const setBrowse = (next: BrowseState) => goBrowse(writeBrowseState(searchParams, next.near && !nearOn(next) ? { ...next, near: null } : next));
+  const setBrowse = (next: BrowseState) => goBrowse(writeBrowseState(searchParams, next));
   /* 지도·칩·검색으로 옮기면 패널 상세는 목록으로 돌아간다 */
   const base: BrowseState = { ...browse, detail: null };
   const openDetail = (policy: Policy) => setBrowse({ ...browse, detail: policy.slug, search: false });
@@ -653,7 +653,13 @@ export function PolicyListPage() {
               if (!panelOpen || event.key !== "Enter" || event.nativeEvent.isComposing) return;
               event.preventDefault();
               if (!panelQuery.trim()) return;
-              document.querySelector<HTMLButtonElement>("#policy-search-panel .thmap-search-body button")?.click();
+              // 결과 줄만 - 결과가 없을 때의 추천 칩을 누르지 않게(10/3 리뷰). 그때는 초점을 두어 바로 고쳐 친다
+              const input = event.currentTarget;
+              const row = document.querySelector<HTMLButtonElement>("#policy-search-panel .thmap-search-body .thmap-sres-row, #policy-search-panel .thmap-search-body .thmap-sres-all");
+              if (!row) return;
+              row.click();
+              // 클릭으로 고를 때처럼 초점을 칸 밖으로 - 칸을 다시 누르면 열리고(onFocus) 휴대폰 키보드도 내려가 결과 시트를 가리지 않는다
+              input.blur();
             }}
             placeholder="정책명, 지역, 혜택 검색"
             type="search"

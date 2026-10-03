@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { choseongOf, filterOfWord, nameHas, nameWords, searchWords, textMatches } from "./searchText";
+import { choseongOf, filterOfWord, nameHas, nameWords, regionsOfWord, searchWords, textMatches } from "./searchText";
 
 describe("사람이 치는 말", () => {
   it("splits words and also tries them stuck together", () => {
@@ -37,5 +37,14 @@ describe("사람이 치는 말", () => {
     expect(textMatches(text, "여수 숙소")).toBe(true);
     expect(textMatches(text, "여수 기차")).toBe(false);
     expect(textMatches(text, "")).toBe(true);
+  });
+
+  it("does not read words that only Object has as aliases", () => {
+    // 'constructor' · '__proto__'가 별칭 표에서 Object 의 것을 꺼내 화면이 멈췄다(10/3 리뷰)
+    expect(regionsOfWord("수도권")).toEqual(["서울", "경기", "인천"]);
+    expect(regionsOfWord("constructor")).toEqual([]);
+    expect(regionsOfWord("__proto__")).toEqual([]);
+    expect(textMatches("숙박 할인", "constructor")).toBe(false);
+    expect(textMatches("숙박 할인", "__proto__")).toBe(false);
   });
 });

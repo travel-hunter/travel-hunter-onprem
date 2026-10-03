@@ -2,7 +2,7 @@ import type { Policy } from "../../api";
 import { BENEFIT_TYPES, benefitTypeOf, type BenefitType } from "../benefitTile";
 import { daysUntilPolicyDeadline, isDigitalTourismResidentCardPolicy, isSafePolicyDeadline } from "../../utils";
 import { cityOf, NATIONWIDE_REGION, programOf } from "../../utils/policyPrograms";
-import { filterOfWord, nameHas, nameWords, REGION_WORDS, squash } from "./searchText";
+import { filterOfWord, nameHas, nameWords, regionsOfWord } from "./searchText";
 
 /* 정책 탭 지도 화면의 목록·검색·칩이 쓰는 계산. 화면 없이 돌아가는 순수 함수만 둔다. */
 
@@ -43,6 +43,8 @@ export const REGION_FULL_NAMES: Readonly<Record<string, string>> = {
 };
 /* 건수가 같을 때 쓰는 순서 */
 export const REGION_ORDER = Object.keys(REGION_FULL_NAMES);
+/** 지도 도의 짧은 이름인가 - 주소에서 온 값은 이것으로 거른다('__proto__' 같은 값이 표의 Object 를 꺼냈다) */
+export const isRegionName = (value: string) => Object.prototype.hasOwnProperty.call(REGION_FULL_NAMES, value);
 
 export function countByRegion(policies: Policy[]): Record<string, number> {
   const counts: Record<string, number> = {};
@@ -209,7 +211,7 @@ export function searchBrowse(policies: Policy[], query: string): BrowseSearch {
   const counts = countByRegion(policies);
   const regions = REGION_ORDER
     .filter((region) => words.some((word) =>
-      nameHas(region, word) || nameHas(REGION_FULL_NAMES[region], word) || (REGION_WORDS[squash(word)] ?? []).includes(region)))
+      nameHas(region, word) || nameHas(REGION_FULL_NAMES[region], word) || regionsOfWord(word).includes(region)))
     .map((region) => ({ region, count: counts[region] ?? 0 }));
   const places = new Map<string, { place: string; region: string; count: number }>();
   const programs = new Map<string, { name: string; count: number; type: BenefitType; nation: boolean }>();
@@ -290,6 +292,8 @@ function readNear(raw: string | null): NearAnchor | null {
   try {
     const v = JSON.parse(raw) as Partial<NearAnchor>;
     if (typeof v.name !== "string" || typeof v.lat !== "number" || typeof v.lng !== "number" || typeof v.region !== "string" || typeof v.sido !== "string") return null;
+    if (!Number.isFinite(v.lat) || !Number.isFinite(v.lng)) return null;
+    if (!isRegionName(v.sido) || (v.region !== NATIONWIDE_REGION && !isRegionName(v.region))) return null;
     return { name: v.name.slice(0, 60), lat: v.lat, lng: v.lng, sido: v.sido, region: v.region, city: typeof v.city === "string" ? v.city : null, note: typeof v.note === "string" ? v.note.slice(0, 120) : null };
   } catch {
     return null;
@@ -298,7 +302,8 @@ function readNear(raw: string | null): NearAnchor | null {
 
 export function readBrowseState(params: URLSearchParams): BrowseState {
   /* region= 은 예전 지역 필터 주소다(필터 목록 화면이 없어진 뒤로 지도 선택과 같다) */
-  const region = params.get("place") || params.get("region") || null;
+  const raw = params.get("place") || params.get("region") || null;
+  const region = raw && (raw === NATIONWIDE_REGION || isRegionName(raw)) ? raw : null;
   const sheet = params.get("sheet");
   const type = params.get("type");
   return {
@@ -329,7 +334,8 @@ export function writeBrowseState(params: URLSearchParams, state: BrowseState): U
   put("sheet", state.sheet === "mid" ? null : state.sheet);
   put("find", state.search ? "1" : null);
   put("detail", state.detail);
-  put("near", state.near ? JSON.stringify(state.near) : null);
+  // 근처는 그 지역 · 시군을 보고 있을 때만 - 다른 곳으로 옮기면(뒤로 · ‹ · Esc 포함) 주소에서도 지운다(10/3 리뷰)
+  put("near", nearOn(state) ? JSON.stringify(state.near) : null);
   // 예전 필터 목록 화면의 키 - 조건은 이제 주소 밖(policyConditions)에 있다
   for (const legacy of ["view", "region", "category", "period", "amount", "saved"]) next.delete(legacy);
   return next;

@@ -28,6 +28,7 @@ describe("위치로 찾기의 근처", () => {
     expect(nearTarget([yeonggwang], "전남", "여수", ODONGDO)).toMatchObject({ region: "전남", city: null, count: 1, note: "여수 전용 혜택이 없어 전라남도 혜택을 보여 드려요" });
     expect(nearTarget([nation], "전남", "여수", ODONGDO)).toMatchObject({ region: "전국", city: null, count: 1 });
     expect(nearTarget([nation], null, null, null)).toMatchObject({ region: "전국", count: 1 });
+    expect(nearTarget([nation], "__proto__", null, null)).toMatchObject({ region: "전국", count: 1 });
   });
 
   it("lists nearby cities closest first and skips the one already shown", () => {

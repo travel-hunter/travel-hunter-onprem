@@ -3130,6 +3130,8 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
       // 일정 안 장소 검색으로 같은 곳을 담을 때와 같은 기록(카카오 id · 분류 전체 경로)
       expect(addPlacesSpy).toHaveBeenCalledWith("128", 2, { expectedRevision: 3, places: [tripPlaceFromSearchItem(odongdo)] });
+      // 담은 날을 보여 준다 - 보던 Day 1 에 남으면 저장이 안 된 것처럼 보였다(10/3 리뷰)
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("day")).toBe("2"));
     } finally {
       getTripSpy.mockRestore();
       addPlacesSpy.mockRestore();

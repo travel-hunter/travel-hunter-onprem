@@ -1,6 +1,6 @@
 import type { Policy } from "../../api";
 import { cityOf, NATIONWIDE_REGION } from "../../utils/policyPrograms";
-import { REGION_FULL_NAMES } from "./policyBrowse";
+import { isRegionName, REGION_FULL_NAMES } from "./policyBrowse";
 import { INSET } from "./regionMapEngine";
 import { SIGUN_POINTS } from "./sigunPoints";
 
@@ -90,7 +90,7 @@ export function nearTarget(
   xy: readonly [number, number] | null,
 ): NearTarget {
   const nation = policies.filter((policy) => policy.region === NATIONWIDE_REGION).length;
-  if (!sido || !REGION_FULL_NAMES[sido]) return { region: NATIONWIDE_REGION, city: null, count: nation, note: "이 지역 전용 혜택이 없어 전국 공통 혜택을 보여 드려요" };
+  if (!sido || !isRegionName(sido)) return { region: NATIONWIDE_REGION, city: null, count: nation, note: "이 지역 전용 혜택이 없어 전국 공통 혜택을 보여 드려요" };
   const own = policyCityFor(policies, sido, city);
   if (own) return { region: sido, city: own, count: policies.filter((p) => p.region === sido && cityOf(p) === own).length, note: null };
   const here = city || REGION_FULL_NAMES[sido];

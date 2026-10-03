@@ -54,7 +54,8 @@ export function useBrowseHistory(depthOf: (params: URLSearchParams) => number) {
   /* 화면 안 ‹ · Esc - 늘 한 층만. 바로 아래 층이 쌓아 둔 기록 그대로면 브라우저 뒤로와 같고,
      같은 층끼리 덮어쓰며 부모가 한 층 넘게 아래가 됐으면(돋보기에서 시군을 고른 뒤 등) 한 층 아래로 덮어쓴다.
      앞 화면(홈 카드 등)이 이 층으로 바로 열었으면 뒤로 한 번에 그 화면으로. 주소로 바로 연 첫 칸이면 덮어쓴다. */
-  const back = (lower: URLSearchParams | null) => {
+  /* fallback: 한 칸 되감기(lower=null)를 바랐는데 되감을 기록이 없을 때(주소로 바로 연 깊은 칸) 대신 갈 곳 */
+  const back = (lower: URLSearchParams | null, fallback?: URLSearchParams) => {
     const target = lower?.toString() ?? null;
     if (chain.length > 0) {
       const parent = chain[chain.length - 1];
@@ -66,7 +67,8 @@ export function useBrowseHistory(depthOf: (params: URLSearchParams) => number) {
         navigate(-1);
       } else replace(target);
     } else if (state?.thLocal || location.key === "default") {
-      if (target !== null) replace(target);
+      const instead = target ?? fallback?.toString() ?? null;
+      if (instead !== null) replace(instead);
     } else navigate(-1);
   };
 

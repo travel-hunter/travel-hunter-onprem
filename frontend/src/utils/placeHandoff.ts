@@ -1,4 +1,5 @@
 import type { PlaceSearchItem, TripPlaceRequest } from "../api";
+import { isRegionName } from "../components/map/policyBrowse";
 
 /* 홈 장소 카드(?pl=)와 '일정에 담기'(?addPlace=)가 주소로 넘기는 장소 한 곳(시안 v57). 주소는 누구나 고칠 수 있어
    모양을 검사하고 길이를 자른다. 카카오맵 링크는 카카오 장소 주소만 받는다 - 카드가 그대로 링크로 그린다. */
@@ -7,6 +8,7 @@ const KAKAO_PLACE_URL = /^https?:\/\/place\.map\.kakao\.com\/\d+$/;
 
 const text = (value: unknown, max: number) => (typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null);
 const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+const knownRegion = (value: string | null) => (value && isRegionName(value) ? value : null);
 
 export function readPlaceParam(raw: string | null): PlaceSearchItem | null {
   if (!raw || raw.length > MAX_PARAM_LENGTH) return null;
@@ -26,7 +28,7 @@ export function readPlaceParam(raw: string | null): PlaceSearchItem | null {
       latitude: num(value.latitude),
       longitude: num(value.longitude),
       placeUrl: placeUrl && KAKAO_PLACE_URL.test(placeUrl) ? placeUrl : null,
-      sido: text(value.sido, 10),
+      sido: knownRegion(text(value.sido, 10)),
       city: text(value.city, 20),
     };
   } catch {

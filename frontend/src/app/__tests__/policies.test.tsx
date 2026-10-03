@@ -1311,10 +1311,13 @@ describe("Travel Hunter app — policies & trip picker", () => {
       await user.click(searchbox);
       const panel = await screen.findByRole("region", { name: "지역·혜택 검색 결과" });
 
-      // 지역 + 혜택을 한 번에('여수 숙박') - 그 시군의 그 사업으로 바로
+      // 지역 + 혜택을 한 번에('여수 숙박') - 그 시군의 그 사업으로 바로. Enter 는 첫 결과 줄을 고르고
+      // 초점을 칸 밖으로 뺀다 - 예전엔 초점이 남아 칸을 다시 눌러도 열리지 않았다(10/3)
       await user.type(searchbox, "여수 숙박");
-      await user.click(await within(panel).findByRole("button", { name: /^여수 · 숙박 할인/ }));
+      await within(panel).findByRole("button", { name: /^여수 · 숙박 할인/ });
+      await user.keyboard("{Enter}");
       await waitForSheet("여수 1건");
+      expect(searchbox).not.toHaveFocus();
 
       // 이름이 안 맞는 장소로는 위치로 찾기 줄을 만들지 않는다 - 대신 다음 행동
       await user.click(searchbox);
@@ -1324,8 +1327,15 @@ describe("Travel Hunter app — policies & trip picker", () => {
       expect(await within(again).findByText("‘당일치기’에 맞는 지역 · 혜택 · 장소가 없어요. 이렇게 찾아 보세요.")).toBeInTheDocument();
       expect(within(again).queryByText("위치로 찾기")).toBeNull();
       expect(within(again).queryByText(/양주 당일치기/)).toBeNull();
+      // 결과가 없을 때 Enter 는 추천 칩을 누르지 않는다(10/3 리뷰) - 칸도 주소도 그대로, 초점도 남아 바로 고쳐 친다
+      const beforeEnter = routeLocation().search;
+      await user.keyboard("{Enter}");
+      expect(screen.getByRole("region", { name: "지역·혜택 검색 결과" })).toBeInTheDocument();
+      expect(routeLocation().search).toBe(beforeEnter);
+      expect(searchbox).toHaveFocus();
       await user.click(within(again).getByRole("button", { name: "전체 정책 보기" }));
       await waitFor(() => expect(screen.queryByRole("region", { name: "지역·혜택 검색 결과" })).toBeNull());
+
     } finally {
       policyListSpy.mockRestore();
       placeSpy.mockRestore();
