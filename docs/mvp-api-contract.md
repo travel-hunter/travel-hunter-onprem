@@ -1362,6 +1362,48 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
 - 401: 인증 필요
 - 422: `lat` · `lng` 범위 밖, `category` 가 네 값이 아님
 
+### POST /places/match
+
+카카오 운영정책 2단계(설계 `docs/superpowers/specs/2026-10-03-public-place-storage-design.md`). 사용자가 고른 카카오 장소의 이름 · 좌표 · 분류를 우리 장소 기반(`public_places` - TourAPI 6개 유형, 소상공인 상가정보 음식 · 숙박 · 예술·스포츠)과 맞춰 본다. 서버는 받은 값을 비교에만 쓰고 저장하거나 로그에 남기지 않는다(`debug_capture` 도 장소 경로를 늘 뺀다). 반경은 카카오 분류가 관광명소 · 문화시설(`AT4` · `CT1`)이면 TourAPI 1km, 그 밖과 상가정보는 200m. 이름은 소문자로 바꾸고 띄어쓰기 · 기호를 빼고 견준다. 화면은 3단계 담는 흐름에서 쓴다. 로그인 필요.
+
+- `match`: 이름이 같은 공공데이터 장소가 반경 안에 하나뿐이고, 고른 카카오 분류와 맞는다(관광명소 → `sight` · `culture` · `leisure` · `shopping`, 문화시설 → `culture` · `sight` · `leisure`, 음식점 · 카페 → `food` · `cafe`, 숙박 → `stay`). `places` 에 한 곳.
+- `candidates`: 이름이 같은 곳이 둘 이상이거나(TourAPI 와 상가정보에 함께 있어도 둘로 센다), 하나뿐인데 분류가 맞지 않거나 카카오 분류가 없거나 위 다섯 코드가 아니거나, 한쪽 이름이 다른 쪽에 들어 있다(두 이름 모두 두 글자 이상). 가까운 순 최대 3곳.
+- `none`: 맞는 곳이 없다 - 나만의 장소로 담는다. `places` 는 빈 배열.
+
+**Request**
+```json
+{ "name": "오동도", "latitude": 34.7443, "longitude": 127.7663, "categoryCode": "AT4" }
+```
+- `name`: string, 1-100 chars. `latitude` 33-39, `longitude` 124-132. `categoryCode`: 카카오 분류 코드(선택, 10자 이하). 카카오 장소 ID 는 받지 않는다.
+
+**Response 200** → `PlaceMatchResult`
+```json
+{
+  "result": "match",
+  "places": [
+    {
+      "source": "tourapi",
+      "sourceId": "126508",
+      "name": "오동도",
+      "address": "전남광주통합특별시 여수시 오동도로 222",
+      "latitude": 34.7443,
+      "longitude": 127.7663,
+      "category": "sight",
+      "sido": "전남",
+      "city": "여수",
+      "photoUrl": "http://tong.visitkorea.or.kr/cms/resource/23/3074123_image2_1.jpg",
+      "photoLicense": "Type3",
+      "distanceMeters": 0
+    }
+  ]
+}
+```
+- `category`: `sight` · `culture` · `leisure` · `stay` · `shopping` · `food` · `cafe`. `photoUrl` · `photoLicense`(공공누리 `Type1` · `Type3`)는 TourAPI 만.
+
+**Errors**
+- 401: 인증 필요
+- 422: 필드 누락 · 범위 위반
+
 ### GET /trips/{trip_id}/recommendations
 
 Returns additional AI place candidates for the trip. The backend treats `(sourceProvider, externalPlaceId)` as the durable external identity, then applies a conservative same-provider `externalPlaceId` and normalized-title duplicate exclusion for existing MVP data. Kakao-backed candidates include official Kakao Local API map metadata when available; ratings/reviews are not exposed because the official API response does not provide those fields. When official Kakao data can supply enough non-duplicate places, the response targets at least 10 candidates with a useful mix of attractions, food, and stays; sparse categories are backfilled from other official candidates instead of creating synthetic places. The endpoint returns dynamic `sourceType="freshCandidate"` items first and reads `recommendations.result` only when no fresh candidate is available. New trip creation does not seed saved summaries. `sourceType="savedSummary"` is reserved for existing persisted rows or a future explicit recommendation-persistence contract. The current live row is a development-seed specimen, not proven production legacy history. No runtime writer, TTL, or purge is added until that product contract exists.

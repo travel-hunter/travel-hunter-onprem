@@ -266,3 +266,24 @@ describe("backendApi trip mutation methods", () => {
     );
   });
 });
+
+describe("backendApi place matching", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the picked place to the match endpoint and returns the server's answer", async () => {
+    const answer = { result: "none", places: [] };
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(answer), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const request = { name: "오동도", latitude: 34.7443, longitude: 127.7663, categoryCode: "AT4" };
+
+    await expect(backendApi.matchPlace(request)).resolves.toEqual(answer);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/places/match`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify(request) }),
+    );
+  });
+});

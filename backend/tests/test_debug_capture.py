@@ -110,6 +110,21 @@ def test_auth_and_password_paths_are_excluded_even_if_the_rule_names_them(lines)
     assert debug_lines(lines) == []
 
 
+def test_place_paths_are_excluded_even_if_the_rule_names_them(lines):
+    # 일정 장소 · 맞춰 보기 본문에는 카카오 장소값(이름 · 주소 · 좌표)이 온다 - 설정과 무관하게 남기지 않는다(카카오 운영정책)
+    capture = build(log_debug_body_paths=("POST /api/places/*", "POST /api/trips/*", "PATCH /api/trips/*"))
+    for method, path in (
+        ("POST", "/api/places/match"),
+        ("POST", "/api/trips/1/days/1/places"),
+        ("POST", "/api/trips/1/days/1/places/batch"),
+        ("PATCH", "/api/trips/1/places/2"),
+    ):
+        capture.observe(method=method, path=path, user_id=42, body=b'{"policyId": 1}')
+    assert debug_lines(lines) == []
+    capture.observe(method="POST", path="/api/trips/1/policies", user_id=42, body=b'{"policyId": 1}')
+    assert len(debug_lines(lines)) == 1   # 장소가 아닌 일정 경로는 그대로 잡는다
+
+
 def test_incomplete_or_non_object_bodies_are_skipped(lines):
     capture = build()
     capture.observe(method="POST", path="/api/trips/1/policies", user_id=42, body=None)

@@ -10,7 +10,9 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    Float,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     Numeric,
@@ -718,6 +720,12 @@ class TripDay(Base):
 
 class TripPlace(Base):
     __tablename__ = "trip_places"
+    __table_args__ = (
+        CheckConstraint(
+            "place_origin IS NULL OR place_origin IN ('public', 'custom', 'needs_review')",
+            name="ck_trip_places_place_origin",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     trip_day_id: Mapped[int] = mapped_column(
@@ -732,11 +740,75 @@ class TripPlace(Base):
     category_group_code: Mapped[str | None] = mapped_column(String(20))
     category_group_name: Mapped[str | None] = mapped_column(String(80))
     place_url: Mapped[str | None] = mapped_column(String(500))
+    # 담는 값의 출처(카카오 운영정책, 0048): public = 공공데이터 장소, custom = 나만의 장소, needs_review = 변환 뒤 확인 필요.
+    # 3단계 담는 흐름부터 채운다. 비어 있으면 예전 행(카카오 값 - 4단계에서 변환)
+    place_origin: Mapped[str | None] = mapped_column(String(20))
+    public_source: Mapped[str | None] = mapped_column(String(10))
+    public_source_id: Mapped[str | None] = mapped_column(String(40))
+    photo_url: Mapped[str | None] = mapped_column(String(500))
+    photo_license: Mapped[str | None] = mapped_column(String(20))
     visit_time: Mapped[time | None] = mapped_column(Time)
     order_num: Mapped[int | None] = mapped_column(Integer)
     memo: Mapped[str | None] = mapped_column(Text)
 
     trip_day: Mapped[TripDay] = relationship(back_populates="places")
+
+
+class PublicPlace(Base):
+    """우리 장소 기반(카카오 운영정책 2단계, 0048) - TourAPI 6개 유형 + 상가정보 음식 · 숙박 · 예술·스포츠. 카카오 값은 없다.
+    일정 장소는 담을 때 값을 복사한다(외래키 없음 - 공공데이터가 바뀌거나 지워져도 일정은 담은 값 그대로)."""
+
+    __tablename__ = "public_places"
+    __table_args__ = (
+        CheckConstraint("source IN ('tourapi', 'sangga')", name="ck_public_places_source"),
+        CheckConstraint(
+            "category IN ('sight', 'culture', 'leisure', 'stay', 'shopping', 'food', 'cafe')",
+            name="ck_public_places_category",
+        ),
+        Index("ix_public_places_lat_lng", "latitude", "longitude"),
+        Index("ix_public_places_name_key", "name_key"),
+    )
+
+    # tourapi = contentid, sangga = 상가업소번호
+    source: Mapped[str] = mapped_column(String(10), primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # 비교용 이름 - 소문자, 띄어쓰기 · 기호를 뺀 것(services/public_places.name_key)
+    name_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    address: Mapped[str | None] = mapped_column(String(300))
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    category: Mapped[str] = mapped_column(String(20), nullable=False)
+    sido: Mapped[str | None] = mapped_column(String(20))
+    city: Mapped[str | None] = mapped_column(String(40))
+    # TourAPI 만 - 저작권 유형은 cpyrhtDivCd(Type1 · Type3)
+    photo_url: Mapped[str | None] = mapped_column(String(500))
+    photo_license: Mapped[str | None] = mapped_column(String(20))
+    # 이 행을 마지막으로 넣거나 고친 시각(UTC). 출처의 시도 · 성공 기록은 public_place_sync_state 에 따로 있다
+    synced_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class PublicPlaceSyncState(Base):
+    """출처마다 한 줄(0048). 받기 시작할 때(첫 호출 전) running, 끝나면 success · partial · error 로 바꾼다. success 만
+    last_success_at 을 바꾼다. 자동 동기화는 last_attempt_at(오늘 이미 시도했나)과 last_success_at(7일)을 본다."""
+
+    __tablename__ = "public_place_sync_state"
+    __table_args__ = (
+        CheckConstraint("source IN ('tourapi', 'sangga')", name="ck_public_place_sync_state_source"),
+        CheckConstraint(
+            "last_outcome IN ('running', 'success', 'partial', 'error')", name="ck_public_place_sync_state_outcome"
+        ),
+    )
+
+    source: Mapped[str] = mapped_column(String(10), primary_key=True)
+    last_attempt_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime)
+    received_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    written_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    pruned_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # 짧은 이유만 - TourAPI 오류 문구(키 없음) 또는 예외 이름
+    last_error: Mapped[str | None] = mapped_column(String(300))
 
 
 class TripMember(Base):

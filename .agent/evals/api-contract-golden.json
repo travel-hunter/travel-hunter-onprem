@@ -1033,6 +1033,23 @@
       "dbModeBehavior": "Authenticated users get up to 6 Kakao Local places of one category (FD6 food, CE7 cafe, AD5 stay, AT4 attraction) within 2 km of the point, nearest first, with distanceMeters from the point (the home place card's 'nearby' section). Kakao category search as-is: no ratings, reviews, or popularity. lat 33-39 and lng 124-132 or 422; other categories 422. Kakao disabled or failing returns []."
     },
     {
+      "method": "POST",
+      "path": "/api/places/match",
+      "status": 200,
+      "authRequired": true,
+      "request": {
+        "name": "오동도",
+        "latitude": 34.7443,
+        "longitude": 127.7663,
+        "categoryCode": "AT4"
+      },
+      "requiredFields": {
+        "result": "string enum(match|candidates|none)",
+        "places": "array"
+      },
+      "dbModeBehavior": "Authenticated users match a Kakao place they picked (name, coordinates, optional Kakao category code; no Kakao place id) against our own public place base (public_places: TourAPI six content types and SBIZ store data food/stay/arts-sports). The server compares in memory and never stores or logs the received values (debug capture always excludes place paths). Radius: TourAPI 1 km when the Kakao category is AT4/CT1, otherwise 200 m; store data always 200 m. Names compare lowercased without spaces or symbols. result=match only when exactly one same-named place is within the radius and its category fits the Kakao category (AT4: sight/culture/leisure/shopping, CT1: culture/sight/leisure, FD6/CE7: food/cafe, AD5: stay); candidates when two or more same-named places (a TourAPI row and a store row count as two), a single same-named place whose category does not fit or when the Kakao category is missing or not one of those five codes, or a partial name overlap (both names 2+ chars), nearest first, at most 3; none otherwise with an empty places array. Each place has source (tourapi|sangga), sourceId, name, address|null, latitude, longitude, category (sight|culture|leisure|stay|shopping|food|cafe), sido|null, city|null, photoUrl|null, photoLicense|null (TourAPI only), distanceMeters. latitude 33-39, longitude 124-132, name 1-100 chars or 422; 401 without login."
+    },
+    {
       "method": "GET",
       "path": "/api/trips/1/recommendations",
       "status": 200,

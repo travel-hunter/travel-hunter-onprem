@@ -19,6 +19,10 @@ from app.services.notification_scheduler import (
     start_notification_scheduler,
     stop_notification_scheduler,
 )
+from app.services.public_places_scheduler import (
+    start_public_places_sync_scheduler,
+    stop_public_places_sync_scheduler,
+)
 
 settings.validate_runtime()
 configure_logging(
@@ -33,9 +37,11 @@ configure_logging(
 async def lifespan(_app: FastAPI):
     notification_scheduler_task = start_notification_scheduler()
     external_collection_scheduler_task = start_external_collection_scheduler()
+    public_places_sync_task = start_public_places_sync_scheduler()
     try:
         yield
     finally:
+        await stop_public_places_sync_scheduler(public_places_sync_task)
         await stop_external_collection_scheduler(external_collection_scheduler_task)
         await stop_notification_scheduler(notification_scheduler_task)
 

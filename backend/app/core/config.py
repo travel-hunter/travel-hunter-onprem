@@ -91,6 +91,14 @@ class Settings:
     external_collection_min_parsed_count: int = int(
         os.getenv("EXTERNAL_COLLECTION_MIN_PARSED_COUNT", "1")
     )
+    # 공공데이터 장소(public_places) TourAPI 주 1회 동기화 - 기본 꺼짐. RUN_AT 은 KST. 처음 적재는 scripts/sync_public_places_tourapi.py
+    public_places_sync_enabled: bool = os.getenv(
+        "PUBLIC_PLACES_SYNC_ENABLED", "false"
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    public_places_sync_run_at: str = os.getenv("PUBLIC_PLACES_SYNC_RUN_AT", "04:00")
+    public_places_sync_poll_seconds: int = int(
+        os.getenv("PUBLIC_PLACES_SYNC_POLL_SECONDS", "300")
+    )
     travel_hunter_public_base_url: str = os.getenv(
         "TRAVEL_HUNTER_PUBLIC_BASE_URL", ""
     )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from typing import Any
 
@@ -9,6 +10,7 @@ import httpx
 import pytest
 
 from app.core.config import Settings
+from app.core.logging import JsonFormatter
 from app.services.tour_api import (
     CONTENT_TYPE_TOURIST_SPOT,
     TourApiConfigurationError,
@@ -190,3 +192,41 @@ def test_http_error_does_not_include_service_key_in_configuration_error() -> Non
         client.list_area_codes()
 
     assert secret not in str(error.value)
+
+
+def test_area_based_page_asks_one_whole_country_type_page_and_keeps_the_total() -> None:
+    calls: list[dict[str, Any]] = []
+    client = make_client(tour_api_body([{"contentid": "1", "mapx": "127.7", "mapy": "34.7"}]), calls)
+    page = client.list_area_based_page(content_type_id="39", page=3, rows=1000, timeout=60.0)
+
+    assert page.items == [{"contentid": "1", "mapx": "127.7", "mapy": "34.7"}]
+    assert page.total_count == 2   # tour_api_body 의 totalCount
+    assert calls[0]["url"].endswith("/areaBasedList2")
+    params = calls[0]["params"]
+    assert {key: params[key] for key in ("contentTypeId", "pageNo", "numOfRows", "arrange")} == {
+        "contentTypeId": "39", "pageNo": 3, "numOfRows": 1000, "arrange": "A",
+    }
+    assert "areaCode" not in params   # 전국
+    assert calls[0]["timeout"] == 60.0
+
+
+def test_area_based_page_refuses_an_error_code_or_a_missing_total_instead_of_an_empty_page() -> None:
+    quota = {"response": {"header": {"resultCode": "22", "resultMsg": "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR"}}}
+    with pytest.raises(TourApiConfigurationError, match="resultCode 22"):
+        make_client(quota).list_area_based_page(content_type_id="12", page=1, rows=1000)
+    no_total = {"response": {"header": {"resultCode": "0000", "resultMsg": "OK"}, "body": {"items": ""}}}
+    with pytest.raises(TourApiConfigurationError, match="totalCount"):
+        make_client(no_total).list_area_based_page(content_type_id="12", page=1, rows=1000)
+
+
+def test_an_http_error_logged_with_its_traceback_never_carries_the_service_key() -> None:
+    # 2026-10-02 개발서버: 사진 후보 수집이 TourAPI HTTP 오류를 logger.exception 으로 남기며 키가 든 주소가 로그에 실렸다
+    def http_get(url: str, *, params: dict[str, object], timeout: float) -> httpx.Response:
+        return httpx.Response(500, request=httpx.Request("GET", url, params=params))
+
+    client = TourApiClient(settings_obj=make_settings(), http_get=http_get)
+    with pytest.raises(TourApiConfigurationError) as error:
+        client.list_area_based_page(content_type_id="12", page=1, rows=10)
+    record = logging.LogRecord("x", logging.ERROR, __file__, 1, "public_places_sync_failed", None,
+                               (error.type, error.value, error.tb))
+    assert "test-service-key" not in JsonFormatter().format(record)

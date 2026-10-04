@@ -204,6 +204,12 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 - `photo_review_candidates`: 대상마다 후보. `(target_id, image_url)` UNIQUE, `target_id` CASCADE. 제목 · `content_type_id`(TourAPI 분류) · 원본/썸네일 주소 · `copyright_type` · 크기 · 주소, `source`(`collect` 수집 / `search` 이름으로 찾기 + `search_keyword`, CHECK). 확정할 때 받아 둔 원본: `stored_path`(`MEDIA_ROOT` 아래 `photos/<해시 앞 2자>/<sha256>.<확장자>`, 같은 사진은 한 파일), `byte_size`, `content_type` - 다시 확정하면 받아 둔 파일을 그대로 쓴다. 파일은 볼륨 `travelhunter-media`(`/media`)에 있고 백엔드가 `/api/media` 로 내보낸다.
 - 마이그레이션 데이터: 기존 `active` 사진 줄을 `status='review'` 로 내린다(검토 전으로 돌림). 후보로 옮기지 않는다 - 수집 기준(0046) 이전 사진이라 저작권 유형을 몰라 확정할 수 없다. 대상과 후보는 수집이 만든다. downgrade 는 `review` → `active`.
 
+공공데이터 장소 (2026-10-04, `0048_public_places`):
+
+- `public_places`: 우리 장소 기반(카카오 운영정책 2단계, 설계 `docs/superpowers/specs/2026-10-03-public-place-storage-design.md`). PK `(source, source_id)` - `source` 는 `tourapi`(contentid) · `sangga`(상가업소번호), CHECK. `name`(상가정보는 상호명 + 지점명), `name_key`(비교용 - 소문자, 띄어쓰기 · 기호를 뺌), `address`(TourAPI `addr1`, 상가정보 도로명 → 없으면 지번), `latitude` · `longitude`(double precision), `category`(`sight`/`culture`/`leisure`/`stay`/`shopping`/`food`/`cafe`, CHECK), `sido` · `city`(지도 도 · 시군 짧은 이름, 가리지 못하면 NULL), `photo_url` · `photo_license`(TourAPI 만, `cpyrhtDivCd`), `synced_at`(이 행을 마지막으로 넣거나 고친 시각 UTC). 색인 `ix_public_places_lat_lng`(위도, 경도) · `ix_public_places_name_key`. 일정 장소와 외래키로 묶지 않는다. 오래된 행은 단위마다 끝까지 받았을 때 그 단위만 지운다(TourAPI 유형 · 상가정보 시도).
+- `public_place_sync_state`: 출처마다 한 줄(PK `source`). `last_attempt_at` · `last_outcome`(`running`/`success`/`partial`/`error`, CHECK - 받기 시작할 때 `running`) · `last_success_at`(끝까지 받은 마지막 시각 - 성공만 바꾼다) · `received_count` · `written_count`(이번 실행의 고유 행) · `pruned_count` · `last_error`(짧은 이유). 자동 TourAPI 동기화는 오늘(KST) 시도 여부와 `last_success_at`(7일)을 본다.
+- `trip_places` 에 `place_origin`(`public`/`custom`/`needs_review`, CHECK `ck_trip_places_place_origin`) · `public_source` · `public_source_id` · `photo_url` · `photo_license` 를 더했다. 모두 nullable - 3단계 담는 흐름부터 채우고, 비어 있으면 예전 행이다.
+
 수집 소스·검토 후보 테이블 (2026-09-13, `0038_policy_source_catalog`; `0039_external_source_status_text`는 `external_source_records.status_text`를 Text로 넓혔다):
 
 - `policy_collection_sources`: 코드 소유 수집 소스 카탈로그. `key` UNIQUE, `adapter_key`, `official_url`, `source_category`, `display_name`, `enabled`, `publication_mode`(`review` | `auto_after_reviewed_baseline`, CHECK), `expected_min_records`, 최근 실행 상태(`last_outcome`/`last_collected_at`/`last_successful_at`/`last_error`). 행은 마이그레이션이 아니라 저장소(`ensure_builtin_collection_sources`)가 만든다.

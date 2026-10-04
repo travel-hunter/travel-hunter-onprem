@@ -35,6 +35,8 @@ def test_current_schema_tables_are_registered() -> None:
         "eligible_islands",
         "photo_review_targets",
         "photo_review_candidates",
+        "public_places",
+        "public_place_sync_state",
     }
 
     assert expected_tables.issubset(set(Base.metadata.tables))
@@ -232,3 +234,36 @@ def test_alembic_revision_ids_fit_version_table() -> None:
 def test_external_source_status_text_preserves_long_official_notice() -> None:
     external_source_records = Base.metadata.tables["external_source_records"]
     assert isinstance(external_source_records.c["status_text"].type, sa.Text)
+
+
+def _check_names(table: sa.Table) -> set[str]:
+    return {constraint.name for constraint in table.constraints if constraint.__class__.__name__ == "CheckConstraint"}
+
+
+def test_public_places_table_is_registered() -> None:
+    places = Base.metadata.tables["public_places"]
+    assert [column.name for column in places.primary_key.columns] == ["source", "source_id"]
+    for column in ("name", "name_key", "latitude", "longitude", "category", "synced_at"):
+        assert places.c[column].nullable is False
+    for column in ("address", "sido", "city", "photo_url", "photo_license"):
+        assert places.c[column].nullable is True
+    index_columns = {index.name: [column.name for column in index.columns] for index in places.indexes}
+    assert index_columns["ix_public_places_lat_lng"] == ["latitude", "longitude"]
+    assert index_columns["ix_public_places_name_key"] == ["name_key"]
+    assert {"ck_public_places_source", "ck_public_places_category"} <= _check_names(places)
+
+
+def test_public_place_sync_state_table_is_registered() -> None:
+    state = Base.metadata.tables["public_place_sync_state"]
+    assert [column.name for column in state.primary_key.columns] == ["source"]
+    assert state.c["last_success_at"].nullable is True
+    assert state.c["last_attempt_at"].nullable is False
+    assert {"ck_public_place_sync_state_source", "ck_public_place_sync_state_outcome"} <= _check_names(state)
+
+
+def test_trip_place_public_origin_columns_are_registered() -> None:
+    trip_places = Base.metadata.tables["trip_places"]
+    for column in ("place_origin", "public_source", "public_source_id", "photo_url", "photo_license"):
+        assert column in trip_places.c
+        assert trip_places.c[column].nullable is True
+    assert "ck_trip_places_place_origin" in _check_names(trip_places)

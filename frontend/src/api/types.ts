@@ -404,6 +404,39 @@ export type PlaceSearchItem = {
 /** 장소 카드 '이 근처'의 분류: 맛집 · 카페 · 숙소 · 볼거리(카카오 분류 코드) */
 export type NearbyCategory = "FD6" | "CE7" | "AD5" | "AT4";
 
+/** 맞춰 보기(POST /places/match) - 고른 카카오 장소를 우리 장소 기반과 견준다. 서버는 받은 값을 저장 · 로그에 남기지 않는다(카카오 운영정책) */
+export type PlaceMatchRequest = {
+  name: string;
+  latitude: number;
+  longitude: number;
+  categoryCode?: string | null;
+};
+
+/** 공공데이터 장소 분류 - 서버 public_places.category 와 같은 7개 */
+export type PublicPlaceCategory = "sight" | "culture" | "leisure" | "stay" | "shopping" | "food" | "cafe";
+
+/** 우리 장소 기반(public_places)의 한 곳 - 공공데이터 값. source + sourceId 가 담을 때 쓰는 열쇠다(3단계) */
+export type PublicPlaceItem = {
+  source: "tourapi" | "sangga";
+  sourceId: string;
+  name: string;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+  category: PublicPlaceCategory;
+  sido?: string | null;
+  city?: string | null;
+  photoUrl?: string | null;
+  photoLicense?: string | null;
+  distanceMeters: number;
+};
+
+/** match = 바로 담기, candidates = '이 장소가 맞나요?' 후보 1~3곳, none = 나만의 장소 */
+export type PlaceMatchResult = {
+  result: "match" | "candidates" | "none";
+  places: PublicPlaceItem[];
+};
+
 export type RegionRecommendation = {
   region: string;
   title: string;
