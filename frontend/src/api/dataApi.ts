@@ -29,6 +29,8 @@ import {
   PlaceSearchCandidate,
   PlaceSearchItem,
   NearbyCategory,
+  PlaceMatchRequest,
+  PlaceMatchResult,
   Policy,
   Profile,
   ProfileSkipResponse,
@@ -329,6 +331,7 @@ export type AppDataApi = {
   searchPlaces: (query: string, control?: ApiRequestControl) => Promise<PlaceSearchItem[]>;
   /** 장소 카드 '이 근처' - 좌표 반경 2km 안의 그 분류 장소, 가까운 순 */
   listNearbyPlaces: (latitude: number, longitude: number, category: NearbyCategory, control?: ApiRequestControl) => Promise<PlaceSearchItem[]>;
+  matchPlace: (request: PlaceMatchRequest) => Promise<PlaceMatchResult>;
   getInviteState: (tripId: string) => Promise<InviteState>;
   confirmInviteSent: (tripId: string) => Promise<InviteState>;
   sendInviteEmail: (tripId: string, request: SendInviteEmailRequest) => Promise<InviteEmailResult>;

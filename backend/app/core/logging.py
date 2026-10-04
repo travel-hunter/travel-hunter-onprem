@@ -28,8 +28,11 @@ MESSAGE_MAX = 2000
 EXC_MESSAGE_MAX = 500
 FRAMES_MAX = 20
 CAUSE_CHAIN_MAX = 3
-_SECRET_PAIR = re.compile(r"(?i)\b(token|key|password|passwd|secret|code|state|authorization)=[^&\s'\"]+")
-_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+# 이름 앞에 글자가 붙어도 가린다(serviceKey= · access_token= - data.go.kr 는 키를 주소에 싣는다). 앞 글자 묶음에 '-' 를 넣지
+# 않는다 - \b 가 '-' 마다 다시 시작해 하이픈이 긴 요청 경로에서 제곱 시간이 된다(api-key= 는 \b 가 key 앞에서 잡는다)
+_SECRET_PAIR = re.compile(r"(?i)\b(\w*?(?:token|key|password|passwd|secret|code|state|authorization))=[^&\s'\"]+")
+# 이메일 앞부분 글자가 이어진 한 덩어리 안에서는 시작점을 다시 잡지 않는다 - '@' 없는 긴 경로에서 제곱 시간이 되지 않게
+_EMAIL = re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
 
 def mask_text(value: str, limit: int) -> str:
@@ -49,6 +52,13 @@ def _frames(tb: TracebackType | None) -> list[str]:
     return frames[-FRAMES_MAX:]
 
 
+def _next_cause(exc: BaseException) -> BaseException | None:
+    # raise ... from None 으로 숨긴 맥락은 따라가지 않는다(traceback 과 같다) - TourAPI 는 키가 든 주소를 품은 httpx 오류를 이렇게 숨긴다
+    if exc.__cause__ is not None:
+        return exc.__cause__
+    return None if exc.__suppress_context__ else exc.__context__
+
+
 def serialize_exception(exc_info: tuple[type[BaseException], BaseException, TracebackType | None] | Any) -> dict[str, Any]:
     exc_type, exc, tb = exc_info
     payload: dict[str, Any] = {
@@ -57,10 +67,10 @@ def serialize_exception(exc_info: tuple[type[BaseException], BaseException, Trac
         "frames": _frames(tb),
     }
     causes = []
-    current = exc.__cause__ or exc.__context__ if exc else None
+    current = _next_cause(exc) if exc else None
     while current is not None and len(causes) < CAUSE_CHAIN_MAX:
         causes.append({"exc_type": type(current).__name__, "exc_message": mask_text(str(current), EXC_MESSAGE_MAX)})
-        current = current.__cause__ or current.__context__
+        current = _next_cause(current)
     if causes:
         payload["causes"] = causes
     return payload

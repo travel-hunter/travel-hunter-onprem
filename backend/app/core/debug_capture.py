@@ -30,7 +30,8 @@ MAX_ACTIVE = timedelta(hours=4)
 MAX_REQUESTS = 200
 MAX_BODY_BYTES = 16 * 1024
 ALWAYS_EXCLUDED_PREFIXES = ("/api/auth/", "/api/invites")
-ALWAYS_EXCLUDED_MARKERS = ("password", "token", "invite", "reset")
+# place: 일정 장소 · 통합 검색 · 맞춰 보기 본문에는 카카오 장소값(이름 · 주소 · 좌표)이 온다 - 설정과 무관하게 남기지 않는다(카카오 운영정책)
+ALWAYS_EXCLUDED_MARKERS = ("password", "token", "invite", "reset", "place")
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 
 AuditWriter = Callable[[str, dict[str, Any]], None]  # (action, payload). 실패하면 예외를 던진다.

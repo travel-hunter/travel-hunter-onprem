@@ -775,6 +775,47 @@ ALTER SEQUENCE public.policy_review_candidates_id_seq OWNED BY public.policy_rev
 
 
 --
+-- Name: public_place_sync_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.public_place_sync_state (
+    source character varying(10) NOT NULL,
+    last_attempt_at timestamp without time zone NOT NULL,
+    last_outcome character varying(20) NOT NULL,
+    last_success_at timestamp without time zone,
+    received_count integer DEFAULT 0 NOT NULL,
+    written_count integer DEFAULT 0 NOT NULL,
+    pruned_count integer DEFAULT 0 NOT NULL,
+    last_error character varying(300),
+    CONSTRAINT ck_public_place_sync_state_outcome CHECK (((last_outcome)::text = ANY ((ARRAY['running'::character varying, 'success'::character varying, 'partial'::character varying, 'error'::character varying])::text[]))),
+    CONSTRAINT ck_public_place_sync_state_source CHECK (((source)::text = ANY ((ARRAY['tourapi'::character varying, 'sangga'::character varying])::text[])))
+);
+
+
+--
+-- Name: public_places; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.public_places (
+    source character varying(10) NOT NULL,
+    source_id character varying(40) NOT NULL,
+    name character varying(200) NOT NULL,
+    name_key character varying(200) NOT NULL,
+    address character varying(300),
+    latitude double precision NOT NULL,
+    longitude double precision NOT NULL,
+    category character varying(20) NOT NULL,
+    sido character varying(20),
+    city character varying(40),
+    photo_url character varying(500),
+    photo_license character varying(20),
+    synced_at timestamp without time zone NOT NULL,
+    CONSTRAINT ck_public_places_category CHECK (((category)::text = ANY ((ARRAY['sight'::character varying, 'culture'::character varying, 'leisure'::character varying, 'stay'::character varying, 'shopping'::character varying, 'food'::character varying, 'cafe'::character varying])::text[]))),
+    CONSTRAINT ck_public_places_source CHECK (((source)::text = ANY ((ARRAY['tourapi'::character varying, 'sangga'::character varying])::text[])))
+);
+
+
+--
 -- Name: recommendations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1002,7 +1043,13 @@ CREATE TABLE public.trip_places (
     external_place_id character varying(80),
     category_group_code character varying(20),
     category_group_name character varying(80),
-    place_url character varying(500)
+    place_url character varying(500),
+    place_origin character varying(20),
+    public_source character varying(10),
+    public_source_id character varying(40),
+    photo_url character varying(500),
+    photo_license character varying(20),
+    CONSTRAINT ck_trip_places_place_origin CHECK (((place_origin IS NULL) OR ((place_origin)::text = ANY ((ARRAY['public'::character varying, 'custom'::character varying, 'needs_review'::character varying])::text[]))))
 );
 
 
@@ -1626,6 +1673,22 @@ ALTER TABLE ONLY public.policy_review_candidates
 
 
 --
+-- Name: public_place_sync_state public_place_sync_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_place_sync_state
+    ADD CONSTRAINT public_place_sync_state_pkey PRIMARY KEY (source);
+
+
+--
+-- Name: public_places public_places_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_places
+    ADD CONSTRAINT public_places_pkey PRIMARY KEY (source, source_id);
+
+
+--
 -- Name: recommendations recommendations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2108,6 +2171,20 @@ CREATE INDEX ix_policy_review_candidates_published_policy_id ON public.policy_re
 --
 
 CREATE INDEX ix_policy_review_candidates_reviewed_by_user_id ON public.policy_review_candidates USING btree (reviewed_by_user_id);
+
+
+--
+-- Name: ix_public_places_lat_lng; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_public_places_lat_lng ON public.public_places USING btree (latitude, longitude);
+
+
+--
+-- Name: ix_public_places_name_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_public_places_name_key ON public.public_places USING btree (name_key);
 
 
 --

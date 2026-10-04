@@ -2,38 +2,54 @@
 
 ## Current Status
 
-- Merge-ready: 홈 · 정책 탭 통합 검색(`feature/unified-search`, 시안 v57 · v58). 홈 검색창이 그 자리에서 지역 · 혜택 · 장소를 찾고
-  장소 카드(근처 혜택 · 카카오맵 · 이 근처)로 잇는다. 정책 탭 '위치로 찾기'는 아는 장소를 그 시군 혜택 · 지도 핀 · 가까운 시군으로 잇는다.
-  검색 규칙(띄어쓰기 무시 · 별칭 · 초성 · 지역 + 혜택)은 `components/map/searchText.ts` 한 곳. 계획: `docs/superpowers/plans/2026-10-03-unified-search.md`.
-- Scope: 새 API `GET /api/places/search` · `GET /api/places/nearby`(카카오 로컬, 로그인 필요 - 계약 · 골든 갱신), frontend, 문서. DB · env 변경 없음(기존 `KAKAO_LOCAL_*`).
-  카카오 운영정책(장소값 저장 금지)에 맞춰 홈 '일정에 담기'는 설계 3단계(담는 흐름) 전까지 숨기고, 주소에는 카카오 장소 ID와 검색어만 둔다.
-  설계: `docs/superpowers/specs/2026-10-03-public-place-storage-design.md`, 계획: `docs/superpowers/plans/2026-10-03-unified-search-place-values.md`.
+- Merge-ready: 공공데이터 장소 기반(`feature/public-places`, 카카오 운영정책 2단계). 화면 변화 없음.
+  새 표 `public_places` · `public_place_sync_state`(Alembic `0048`, `trip_places` 출처 열 5개 nullable - 3단계부터 채움), TourAPI 주 1회 동기화
+  (`PUBLIC_PLACES_SYNC_ENABLED` 기본 꺼짐) · 손 스크립트 2개(`sync_public_places_tourapi.py` · `load_public_places_sangga.py`), 맞춰 보기 API `POST /api/places/match`
+  (계약 · 골든 · 프론트 타입 갱신), `debug_capture` 가 장소 경로를 늘 뺀다. 공용 로그 함수는 숨긴 예외 맥락과 `serviceKey=` 를 더는 남기지 않는다.
+  env 3개 추가(`.env.example` · `compose.local.yaml`). 설계: `docs/superpowers/specs/2026-10-03-public-place-storage-design.md`, 계획: `docs/superpowers/plans/2026-10-04-public-places-stage2.md`.
+- 통합 검색(1단계)은 PR #89 로 develop 에 머지됐다(`bb8c841`).
 - 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
 
 ## Recent Validation
 
-- PASS: backend `python -m pytest` 1201 passed · 24 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - 소유자 전용 폴더 권한 검사가 Windows 에서 실패, 이 변경과 무관).
-- PASS: `npx tsc --noEmit`, `npm run test:mojibake`, `npm run build`, `npm run test:e2e:containers` 13/13.
-- 부분 PASS: `npx vitest run` 48파일 522개 중 516개. 실패 6개는 모두 `mypage.test.tsx` 다(아래 알려진 흔들림).
-- PASS: 4173 headless 실측(390) - 홈 '오동도' 카드의 주소는 `pl=kakao:…` 뿐(이름 · 주소 없음), '일정에 담기' 없음, 근처 혜택 링크의 near 키는 `city,id,note,q,region`,
-  새로 고침하면 같은 말로 한 번(장소 검색 1회) 다시 찾아 같은 카드, 정책 탭 '오동도 근처' · 핀(새로 고침 뒤에도), 다시 찾아도 없는 ID 는 near 만 지우고 시군(여수)은 남김,
-  예전 형식 near(이름 · 좌표)는 버림, 이어 본 카드(소노캄 여수 마레첼로)에서 새로 고침 → 쌓인 기록을 되감아 검색 결과 → 기기 뒤로가기는 홈(닫은 카드가 다시 안 뜸),
-  '중앙동' 동네 30줄 모두 법정동 · 행정동 번호 ID(전에는 16줄이 카카오 주소 글자) → 정책 탭 '관악구 중앙동 근처' · 핀.
-  페이지 오류 0 · 가로 넘침 없음. 빈 분류 안내(`home-nearby-tip`)는 오동도에 빈 분류가 없어 빌드 CSS · vitest 로 확인.
-- PASS: 최종 리뷰(`fe0c98a` + 이번 변경, 새 리뷰어) - Critical 0, Important 2건(메모리 30분 · 200곳에서 밀려난 장소가 다음 그리기에서 사라짐,
-  다시 못 찾으면 덮어써 층을 건너뛰어 기기 뒤로가기가 닫은 카드를 다시 염)을 고치고 시험을 더했다. 그린 장소는 같은 ID 동안 화면이 붙잡는다.
-  Minor 중 구역 ID(법정동 번호가 없으면 카카오 주소 글자로 대신해 주소창에 실림 - 실측 30곳 중 16곳)는 행정동 번호(`h_code`)로 채우고,
-  둘 다 없을 때의 글자 ID 는 프론트가 near 에 싣지 않게 했다. 나머지 Minor 2건(낡은 주석, 홈 검색 실패 직접 시험)은 다음으로.
-- PASS: 코드 리뷰(BASE `27b8457`, HEAD `567c3e7`) - HIGH 1건(검색어 'constructor' · '__proto__'가 별칭 표에서 Object 를 꺼내 정책 탭 · 홈 검색이 멈춤),
-  MEDIUM 4건(카카오 설정 오류가 500, 카카오를 부르는 동안 DB 세션을 쥠, 결과 없을 때 Enter 가 추천 칩을 누름, 다른 날에 담아도 보던 날에 머묾),
-  LOW 4건(뒤로 뒤 주소에 근처가 남음, 주소로 바로 연 이어 본 카드의 ‹ 가 무반응, 홈 건수 기준 주석, 문서 상태)을 고치고 시험을 더했다.
-  같은 종류의 기존 결함 두 가지도 함께 고쳤다: 주소 `place=__proto__`(develop 부터), Enter 로 고른 뒤 초점이 칸에 남아 다시 눌러도 안 열림.
-  검토 밖에서 더한 것: 홈 검색창 Enter(검색 키)는 결과를 그대로 두고 휴대폰 키보드만 내린다.
-- PASS: `git diff --check`, 변경 파일 U+FFFD 0건.
+- PASS: backend `python -m pytest` 1249 passed · 24 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - 소유자 전용 폴더 권한 검사가 Windows 에서 실패, 이 변경과 무관).
+- PASS: `npx tsc --noEmit`, `npm run test:mojibake`, `npm run build`, `npm run test:e2e:containers` 13/13, `docker compose -f compose.yaml config`(출력은 버림).
+- 부분 PASS: `npx vitest run` 48파일 523개 중 517개. 실패 6개는 모두 `mypage.test.tsx` 다(아래 알려진 흔들림).
+- 부분 PASS: `alembic upgrade head --sql` 을 처음부터 돌리면 기존 데이터 마이그레이션 `0044` 에서 멈춘다(오프라인인데 DB 를 읽음 - develop 그대로).
+  `0045_traffic_detail:head --sql`(0046 ~ 0048)은 통과.
+- PASS: 로컬 실측(세 컨테이너를 이 브랜치로, DB 볼륨 유지). 앞서 덤프를 떠 `pg_restore -l` 목차 314 · SHA-256 `26ef4268…efcd4`(저장소 밖) 확인, 0047 → 0048,
+  TourAPI 전체 동기화 received 47,656 · written 47,619 · success(약 35초, 호출 약 50회), 상가정보 `--only 세종` written 5,923 · partial(지우지 않음),
+  상자 조회 `EXPLAIN` 은 `ix_public_places_lat_lng` Index Scan, 정책 · 일정 · 사용자 · 수집 기록 · 일정 장소 행 수 전후 같음(202 · 291 · 4 · 118 · 180).
+  맞춰 보기: '오동도 등대'(관광명소) → match 60m, 같은 이름에 카페 분류 → 후보, '오동도' → 후보 2곳(TourAPI 에는 '오동도' 단독 항목이 없다).
+  상가정보 20260630판 `--dry-run` 여행 업종 1,036,750건(food 717,632 · cafe 122,623 · leisure 105,158 · stay 80,483 · culture 10,854).
+- PASS: 계획 코덱스 검토 2회를 반영했다(오류 알림만 보류). 최종 리뷰(새 리뷰어) Critical 1(TourAPI 키가 오류 로그에 남음) · Important 1(크게 줄어든 단위를
+  손으로도 지울 수 없음)을 고치고 시험을 더했다(사용자 결정: `--accept-shrink`). 최종 커밋 재리뷰 Critical 1(넓힌 가리기 규칙이 하이픈이 긴
+  요청 경로에서 제곱 시간 - 16KB 에 9.5초)과 같은 꼴의 기존 이메일 규칙을 고치고 시간 상한 시험을 더했다. Minor 중 운영에 닿는 것은 아래 위험으로.
+- PASS: `git diff --check`, 변경 · 새 파일 U+FFFD 0건 · 한자 0건.
 - 알려진 흔들림: `mypage.test.tsx` 는 공용 로컬 백엔드 시험 계정에 시험이 만든 일정이 쌓여(10/3 약 250개) `GET /api/trips` 가 1.1~1.6초 걸리면
   waitFor 1초를 넘겨 실패한다(백엔드 로그 duration_ms). 이 변경과 무관 - 시험 데이터를 비우거나 `/api/trips` 를 빠르게 하는 일은 따로.
 
 ## Active Risks
+
+### 공공데이터 장소 기반(`feature/public-places`)
+
+- **TourAPI(data.go.kr) 키 교체 필요.** 2026-10-02 14:23 개발서버 사진 후보 수집이 TourAPI 오류를 만나 지금 쓰는 키를 백엔드 로그 파일과
+  장기 보관본(`dev/backend-2026-10.log`)에 한 줄씩 남겼다(개수와 같은지만 셌다). 이 브랜치의 로그 수정 뒤로는 남지 않는다.
+  키를 재발급해 개발서버 env · 로컬 `.env`(같은 키) · 운영 env(있다면)를 바꾼다(사용자). 남은 두 줄은 교체 뒤 쓸모없다 - 지우려면 서버 쓰기 승인.
+- 서버 적재는 머지 뒤 승인받아 손으로 한다: 개발서버 TourAPI 첫 동기화, 상가정보 zip(336MB)을 서버로 옮겨 약 104만 행 적재(옮긴 파일 600, 끝나면 지움).
+  운영은 최신 develop 배포 뒤 같은 순서. DB 가 수백 MB 커져 덤프 · 백업 · 로컬 동기화도 그만큼 커진다.
+- 주 1회 동기화는 사용자가 서버 env 에 `PUBLIC_PLACES_SYNC_ENABLED=true` 를 넣어야 돈다. 켜면 운영자가 매주 동기화 다음 날 `public_place_sync_state` 를
+  읽기 전용으로 본다(시각은 UTC, KST 는 +9시간). success 가 아니거나 `last_success_at` 이 8일을 넘으면 로그 `public_places_sync_failed` · `public_places_prune_limited` 를 본다.
+  `kept=39:10000->7000` 처럼 끝까지 받았는데 줄어든 단위는 원인을 확인한 뒤 손 스크립트 `--accept-shrink 39`(상가정보는 `--accept-shrink 세종`)로 지운다. 알림은 없다(에러 알림 보류).
+- 바로 담기 비율은 실측 63%보다 낮다(두 출처 같은 이름, 분류가 다르거나 모름, TourAPI 의 비슷한 이름은 후보). 3단계에서 실데이터로 다시 잰다.
+  상가정보 '예술·스포츠'에는 헬스장 · 당구장 같은 동네 시설이 섞인다(3단계 추천 카드에서 거른다).
+- 로컬 DB 는 0048 이라 개발서버 배포 전까지 로컬 정책 동기화 스크립트가 Alembic 불일치로 멈춘다.
+- 최종 리뷰 Minor(다음으로): 손 실행이 자동 동기화와 겹치면 서로 쓴 행을 지울 수 있다(잠금 없음 - 04시 무렵 손으로 돌리지 말 것),
+  관광명소 1km 조회가 200m 만 쓰는 상가정보까지 읽는다(전체 적재 뒤 밀집 지점 실측), 읽은 뒤 단계에서 실패하면 상태가 `running` 으로 남는다,
+  시도를 못 가린 상가정보 행은 지우기 판정에서 빠진다(전체 적재 뒤 `sido` NULL 건수 확인), `totalCount` 폭주 상한이 없다,
+  맞춰 보기 요청이 모르는 필드를 조용히 받는다. 재리뷰 Minor: TourAPI 실패 이유가 'request failed' 뿐이라 시간 초과인지 연결 오류인지 모른다,
+  가리기가 `areaCode=` 같은 일반 값까지 가린다, 스크립트 인자 오류도 종료 코드 2(partial 과 같다), 상가정보 `--accept-shrink` 이름 오타를 알리지 않는다,
+  한 건도 못 쓴 partial 은 `kept` 가 비어 까닭이 안 보인다.
 
 ### 로그 장기 보관(PR #84 + `logarchive` 컨테이너)
 
@@ -46,7 +62,7 @@
 - 5분 주기다. 볼륨 보관 한도(스트림당 200MB)를 넘길 만큼 멈춰 있으면 그 사이는 잃는다. `docker logs` 로 회차 기록을 본다.
 - AWS 로 옮기면 빼 오는 곳이 CloudWatch 로 바뀐다(ASG·private subnet). 보관 형식은 그대로 둔다.
 
-### 통합 검색(`feature/unified-search`)
+### 통합 검색(PR #89, 머지됨)
 
 - 장소 결과는 카카오에 달려 있다. 꺼져 있거나 실패하면 빈 목록이라 화면에서는 '결과 없음'과 구분되지 않는다(설정 오류는 경고 로그 `place_search_kakao_misconfigured`).
 - `/api/places/*` 에 호출 제한이 없다(로그인한 사용자 누구나). 프론트는 300ms 디바운스 · 화면 안 캐시뿐이라 카카오 일일 한도를 나눠 쓴다.

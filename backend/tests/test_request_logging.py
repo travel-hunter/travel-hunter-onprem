@@ -10,6 +10,8 @@ import hashlib
 import io
 import json
 import logging
+import sys
+import time
 from datetime import datetime
 from typing import Any
 
@@ -363,6 +365,46 @@ def test_mask_text_hides_pairs_and_emails_and_truncates():
     assert mask_text("token=abc&key=k password=p code=c", 500) == "token=***&key=*** password=*** code=***"
     assert mask_text("mail me@example.com now", 500) == "mail ***@*** now"
     assert mask_text("x" * 600, 500).endswith("…") and len(mask_text("x" * 600, 500)) == 501
+
+
+def test_mask_text_hides_keys_inside_longer_parameter_names():
+    # data.go.kr 는 키를 주소의 serviceKey= 로 싣는다 - 이름 앞에 글자가 붙어도 가린다(2026-10-02 개발서버 로그에 키가 남았다)
+    assert mask_text("GET https://apis.data.go.kr/x?serviceKey=SECRET&numOfRows=1", 500) == (
+        "GET https://apis.data.go.kr/x?serviceKey=***&numOfRows=1"
+    )
+    assert mask_text("access_token=t api-key=k", 500) == "access_token=*** api-key=***"
+    assert mask_text("--key=v x%26serviceKey=s", 500) == "--key=*** x%26serviceKey=***"
+
+
+def _mask_seconds(text: str) -> float:
+    started = time.perf_counter()
+    mask_text(text, 2000)
+    return time.perf_counter() - started
+
+
+def test_mask_text_stays_linear_on_long_request_paths():
+    # 접근 로그 메시지에는 요청 경로가 그대로 들어가고 늘 가리기를 거친다 - 가리기가 긴 경로에서 제곱 시간이 되면
+    # 로그인 없는 요청 하나가 워커 하나뿐인 서버를 몇 초씩 멈춘다(재리뷰, 16KB 하이픈 경로에 9.5초)
+    assert _mask_seconds("/api/" + "a-" * 8192) < 0.5   # 비밀 이름 규칙 - '-' 마다 다시 시작하지 않는다
+    assert _mask_seconds("/api/" + "a" * 65536) < 0.5   # 이메일 규칙 - 한 덩어리 안에서 시작점을 다시 잡지 않는다
+
+
+def _logged_chain(*, suppress: bool) -> str:
+    try:
+        try:
+            raise RuntimeError("Server error for url 'https://apis.example/x?q=INNER-DETAIL'")
+        except RuntimeError:
+            if suppress:
+                raise ValueError("TourAPI request failed (HTTP 500).") from None
+            raise ValueError("TourAPI request failed (HTTP 500).")
+    except ValueError:
+        return JsonFormatter().format(logging.LogRecord("x", logging.ERROR, __file__, 1, "failed", None, sys.exc_info()))
+
+
+def test_a_context_hidden_with_from_none_is_not_followed_into_the_log_line():
+    # TourAPI 클라이언트는 키가 든 주소를 품은 httpx 오류를 raise ... from None 으로 숨긴다 - 로그도 traceback 처럼 따라가지 않는다
+    assert "INNER-DETAIL" not in _logged_chain(suppress=True)
+    assert "INNER-DETAIL" in _logged_chain(suppress=False)   # 숨기지 않은 맥락은 그대로 남긴다
 
 
 def test_production_logging_config_silences_url_logging_libraries():

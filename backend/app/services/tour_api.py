@@ -27,6 +27,7 @@ CONTENT_TYPE_TOURIST_SPOT = "12"
 TOUR_API_DEFAULT_ROWS = 10
 # arrange=P: 대표이미지가 있는 항목을 조회순으로(2026-10-01 실측 - Q 는 수정일순이었다. A/O 제목순, C/Q 수정일순).
 TOUR_API_DEFAULT_ARRANGE = "P"
+TOUR_API_OK_CODES = frozenset({"0000", "00"})
 
 
 class TourApiConfigurationError(RuntimeError):
@@ -54,6 +55,14 @@ class TourApiSpot:
     category_code: str | None = None
     # 관광공사 분류(contenttypeid): 12 관광지 · 14 문화시설 · 15 축제 · 38 쇼핑 · 32 숙박 · 39 음식점 …
     content_type_id: str | None = None
+
+
+@dataclass(frozen=True)
+class TourApiPage:
+    """목록 한 페이지 - 항목과 전체 건수(totalCount). 공공데이터 장소 동기화가 유형마다 끝까지 받았는지 이것으로 가린다."""
+
+    items: list[dict[str, Any]]
+    total_count: int
 
 
 class TourApiPhotoProvider(Protocol):
@@ -134,6 +143,22 @@ def _items_from_payload(payload: object) -> list[dict[str, Any]]:
     return []
 
 
+def _page_from_payload(payload: object) -> TourApiPage:
+    """결과 코드가 정상이고 totalCount 가 있어야 한 페이지다 - 아니면 설정 오류로 올린다(오류 응답을 빈 마지막 페이지로 읽지 않게)."""
+
+    response = payload.get("response") if isinstance(payload, dict) else None
+    header = response.get("header") if isinstance(response, dict) else None
+    body = response.get("body") if isinstance(response, dict) else None
+    code = str(header.get("resultCode", "")).strip() if isinstance(header, dict) else ""
+    if code not in TOUR_API_OK_CODES:
+        raise TourApiConfigurationError(f"TourAPI returned resultCode {code or 'missing'}.")
+    try:
+        total = int(body.get("totalCount"))   # type: ignore[union-attr]
+    except (AttributeError, TypeError, ValueError):
+        raise TourApiConfigurationError("TourAPI response has no totalCount.") from None
+    return TourApiPage(_items_from_payload(payload), total)
+
+
 def _to_area_code(entry: dict[str, Any]) -> TourApiAreaCode:
     code = _string_or_none(entry.get("code"))
     name = _string_or_none(entry.get("name"))
@@ -174,6 +199,11 @@ class TourApiClient:
     def _request_items(
         self, path: str, params: dict[str, object]
     ) -> list[dict[str, Any]]:
+        return _items_from_payload(self._request_payload(path, params))
+
+    def _request_payload(
+        self, path: str, params: dict[str, object], *, timeout: float | None = None
+    ) -> object:
         # data.go.kr presents both encoded and decoded service keys. httpx
         # encodes query values itself, so normalize an encoded copy once.
         key = unquote(self._settings.tour_api_service_key.strip())
@@ -191,7 +221,7 @@ class TourApiClient:
             response = self._http_get(
                 f"{base_url}{path}",
                 params=request_params,
-                timeout=self._settings.tour_api_timeout_seconds,
+                timeout=timeout or self._settings.tour_api_timeout_seconds,
             )
             response.raise_for_status()
             payload = response.json()
@@ -207,7 +237,7 @@ class TourApiClient:
             raise TourApiConfigurationError(
                 "TourAPI returned a non-JSON response."
             ) from None
-        return _items_from_payload(payload)
+        return payload
 
     def list_area_codes(
         self, *, area_code: str | None = None
@@ -260,6 +290,20 @@ class TourApiClient:
         if content_type_id:
             params["contentTypeId"] = content_type_id
         return self._parse_spots(self._request_items(SEARCH_KEYWORD_PATH, params))
+
+    def list_area_based_page(
+        self, *, content_type_id: str, page: int, rows: int, timeout: float | None = None
+    ) -> TourApiPage:
+        """전국 한 유형의 한 페이지 - 원본 항목과 totalCount(공공데이터 장소 동기화, public_places). 제목순이라 받는 사이에
+        수정된 항목이 있어도 페이지가 밀리지 않는다."""
+
+        params: dict[str, object] = {
+            "contentTypeId": content_type_id,
+            "numOfRows": rows,
+            "pageNo": page,
+            "arrange": "A",
+        }
+        return _page_from_payload(self._request_payload(AREA_BASED_LIST_PATH, params, timeout=timeout))
 
     @staticmethod
     def _parse_spots(entries: list[dict[str, Any]]) -> list[TourApiSpot]:
