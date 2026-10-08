@@ -13,11 +13,13 @@ from app.schemas.trip import (
     DeleteTripResponse,
     InviteEmailResult,
     InviteState,
+    LegacyPlaceCandidatesResponse,
     MoveTripPlaceRequest,
     PlaceSearchCandidate,
     Recommendation,
     SendInviteEmailRequest,
     Trip,
+    TripAreaCenter,
     TripPolicyResponse,
     UpdateTripSettingsRequest,
     UpdateTripPlaceRequest,
@@ -322,6 +324,25 @@ def delete_trip_places(
     return Trip(**trip)
 
 
+@router.get("/{trip_id}/places/{place_id}/public-candidates", response_model=LegacyPlaceCandidatesResponse)
+def list_legacy_place_candidates(
+    trip_id: str,
+    place_id: int,
+    db: Session | None = Depends(get_optional_db),
+    current_user: User | None = Depends(get_current_user),
+) -> LegacyPlaceCandidatesResponse:
+    try:
+        places = trip_service.list_legacy_place_candidates(
+            _require_db(db),
+            _require_user(current_user),
+            trip_id,
+            place_id,
+        )
+    except trip_service.TripServiceError as error:
+        _raise_trip_error(error)
+    return LegacyPlaceCandidatesResponse(places=places)
+
+
 @router.get("/{trip_id}/recommendations", response_model=list[Recommendation])
 def list_recommendations(
     trip_id: str,
@@ -336,6 +357,19 @@ def list_recommendations(
     if recommendations is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
     return [Recommendation(**item) for item in recommendations]
+
+
+@router.get("/{trip_id}/area-center", response_model=TripAreaCenter)
+def get_trip_area_center(
+    trip_id: str,
+    db: Session | None = Depends(get_optional_db),
+    current_user: User | None = Depends(get_current_user),
+) -> TripAreaCenter:
+    try:
+        center = trip_service.get_trip_area_center(_require_db(db), _require_user(current_user), trip_id)
+    except trip_service.TripServiceError as error:
+        _raise_trip_error(error)
+    return TripAreaCenter(**center)
 
 
 @router.get("/{trip_id}/place-search", response_model=list[PlaceSearchCandidate])

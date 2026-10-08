@@ -7,7 +7,7 @@ from collections.abc import Collection, Sequence
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, case, delete, func, not_, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -107,14 +107,96 @@ def get_sync_state(db: Session, *, source: str) -> PublicPlaceSyncState | None:
     return db.get(PublicPlaceSyncState, source)
 
 
-def public_places_in_box(db: Session, *, south: float, north: float, west: float, east: float) -> list[PublicPlace]:
-    """위도 · 경도 상자 안의 장소(ix_public_places_lat_lng). 반경 거르기는 서비스가 한다."""
+def public_places_in_box(
+    db: Session, *, south: float, north: float, west: float, east: float, source: str | None = None
+) -> list[PublicPlace]:
+    """위도 · 경도 상자 안의 장소(ix_public_places_lat_lng). source 를 주면 그 출처만 - 밀집 지역의 넓은 상자가 가게 줄을
+    수천 개 읽지 않게 한다. 반경 거르기는 서비스가 한다."""
 
-    return list(
-        db.scalars(
-            select(PublicPlace).where(
-                PublicPlace.latitude.between(south, north),
-                PublicPlace.longitude.between(west, east),
-            )
-        )
+    statement = select(PublicPlace).where(
+        PublicPlace.latitude.between(south, north),
+        PublicPlace.longitude.between(west, east),
     )
+    if source is not None:
+        statement = statement.where(PublicPlace.source == source)
+    return list(db.scalars(statement))
+
+
+def public_places_in_boxes(db: Session, boxes: Sequence[dict[str, float]], *, source: str) -> list[PublicPlace]:
+    """여러 상자 가운데 하나에라도 드는 그 출처의 장소 - 검색 결과 여러 줄을 질의 한 번으로 맞추려고(결정 23).
+    상자마다 ix_public_places_lat_lng 를 쓴다(PostgreSQL 은 BitmapOr). 반경 거르기는 서비스가 한다."""
+
+    if not boxes:
+        return []
+    statement = select(PublicPlace).where(
+        PublicPlace.source == source,
+        or_(
+            *(
+                and_(
+                    PublicPlace.latitude.between(box["south"], box["north"]),
+                    PublicPlace.longitude.between(box["west"], box["east"]),
+                )
+                for box in boxes
+            )
+        ),
+    )
+    return list(db.scalars(statement))
+
+
+def get_public_place(db: Session, source: str, source_id: str) -> PublicPlace | None:
+    """(출처, 출처 ID)로 한 곳 - 일정에 담을 때 서버가 이 값으로 장소 열을 채운다."""
+
+    return db.get(PublicPlace, (source, source_id))
+
+
+def _in_area(statement, *, sido: str, cities: Collection[str] | None):
+    """일정 지역(시도 + 시군)의 장소로 거른다. cities 가 None 이면 시도 전체 - 같은 시군 이름이 여러 시도에 있어 시도와 함께 건다(ix_public_places_sido_city)."""
+
+    statement = statement.where(PublicPlace.sido == sido)
+    return statement if cities is None else statement.where(PublicPlace.city.in_(sorted(cities)))
+
+
+def recommended_public_places(
+    db: Session,
+    *,
+    sido: str,
+    cities: Collection[str] | None,
+    categories: Collection[str],
+    shuffle_key: str,
+    exclude_keys: Collection[tuple[str, str]],
+    exclude_names: Collection[str],
+    limit: int,
+) -> list[PublicPlace]:
+    """추천 후보 - 일정 지역의 이 분류들 가운데 TourAPI 사진 있음 → TourAPI 사진 없음 → 상가정보 순이고, 같은 묶음 안은
+    md5(출처 ID + shuffle_key) 순(일정마다 고정된 섞음 - md5 는 Postgres 내장이다). 이미 담은 장소((출처, 출처 ID)와 비교용 이름)와
+    상가정보 예술·스포츠(동네 헬스장 · 당구장 같은 시설이 섞인다)는 뺀다. ponytail: 큰 지역은 DB 가 수만 행을 정렬해 18곳만 돌려준다 -
+    느려지면 md5 로 섞기 전에 층 순서로 앞 N행만 남긴다."""
+
+    tier = case(
+        (and_(PublicPlace.source == "tourapi", PublicPlace.photo_url.is_not(None)), 0),
+        (PublicPlace.source == "tourapi", 1),
+        else_=2,
+    )
+    statement = _in_area(select(PublicPlace).where(PublicPlace.category.in_(sorted(categories))), sido=sido, cities=cities)
+    statement = statement.where(not_(and_(PublicPlace.source == "sangga", PublicPlace.category == "leisure")))
+    if exclude_keys:
+        statement = statement.where(tuple_(PublicPlace.source, PublicPlace.source_id).not_in(sorted(exclude_keys)))
+    if exclude_names:
+        statement = statement.where(PublicPlace.name_key.not_in(sorted(exclude_names)))
+    statement = statement.order_by(
+        tier, func.md5(PublicPlace.source_id + shuffle_key), PublicPlace.source, PublicPlace.source_id
+    ).limit(limit)
+    return list(db.scalars(statement))
+
+
+def area_coordinates(db: Session, *, sido: str, cities: Collection[str] | None) -> list[tuple[float, float]]:
+    """일정 지역의 장소 좌표(위도, 경도). TourAPI 장소가 있으면 그 좌표만, 없으면 상가정보 좌표다 - 큰 지역에서 상가정보
+    수십만 행을 읽지 않으려는 순서이고, 관광지 중심이 가게 밀집지보다 지도를 열 자리로 알맞다."""
+
+    for source in ("tourapi", "sangga"):
+        rows = db.execute(
+            _in_area(select(PublicPlace.latitude, PublicPlace.longitude).where(PublicPlace.source == source), sido=sido, cities=cities)
+        ).all()
+        if rows:
+            return [(latitude, longitude) for latitude, longitude in rows]
+    return []

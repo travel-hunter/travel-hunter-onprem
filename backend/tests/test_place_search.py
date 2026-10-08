@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from fastapi.testclient import TestClient
@@ -276,3 +277,32 @@ def test_place_routes_release_the_db_session_before_calling_kakao(monkeypatch) -
         app.dependency_overrides.pop(get_current_user, None)
         app.dependency_overrides.pop(get_optional_db, None)
     assert events == ["db closed", "kakao", "db closed", "kakao"]
+
+
+def test_failed_kakao_calls_log_only_the_error_name(monkeypatch, caplog) -> None:
+    class Leaky:
+        def search_address(self, *, query, size):
+            raise RuntimeError(f"GET https://dapi.kakao.com/v2/local/search/address.json?query={query}")
+
+        def search_keyword(self, *, query, size):
+            raise RuntimeError(f"GET https://dapi.kakao.com/v2/local/search/keyword.json?query={query}")
+
+        def search_category(self, **kwargs):
+            raise RuntimeError(f"GET https://dapi.kakao.com/v2/local/search/category.json?x={kwargs['x']}&y={kwargs['y']}")
+
+    monkeypatch.setattr(place_search.logger, "handlers", [caplog.handler])
+    caplog.set_level(logging.WARNING)
+    assert place_search.search_places("비밀동", Leaky()) == []
+    assert place_search.nearby_places(latitude=34.7447, longitude=127.7678, category="FD6", provider=Leaky()) == []
+    for name in ("place_search_area_failed", "place_search_keyword_failed", "place_search_nearby_failed"):
+        assert name in caplog.text
+    for leaked in ("비밀동", "dapi.kakao.com", "34.7447", "127.7678", "Traceback"):
+        assert leaked not in caplog.text
+
+
+def test_an_unknown_region_is_logged_without_the_kakao_address(caplog) -> None:
+    # 카카오 주소의 첫 낱말도 카카오 값이다(Global Constraints) - 운영 JSON 로거가 `token=` 값을 가려 주지만 그 우연에 기대지 않는다
+    caplog.set_level(logging.INFO)
+    place_search.search_places("어딘가", FakeKakao(places=[place("어딘가", "대구경북통합특별시 안동시 1")]))
+    assert "place_search_unknown_region" in caplog.text   # 지역을 못 읽었다는 사실은 남기고
+    assert "대구경북통합특별시" not in caplog.text and "안동시" not in caplog.text   # 카카오 주소 낱말은 남기지 않는다

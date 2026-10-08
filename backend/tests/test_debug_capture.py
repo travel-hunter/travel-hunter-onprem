@@ -115,6 +115,7 @@ def test_place_paths_are_excluded_even_if_the_rule_names_them(lines):
     capture = build(log_debug_body_paths=("POST /api/places/*", "POST /api/trips/*", "PATCH /api/trips/*"))
     for method, path in (
         ("POST", "/api/places/match"),
+        ("POST", "/api/places/locate"),
         ("POST", "/api/trips/1/days/1/places"),
         ("POST", "/api/trips/1/days/1/places/batch"),
         ("PATCH", "/api/trips/1/places/2"),

@@ -210,6 +210,22 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 - `public_place_sync_state`: 출처마다 한 줄(PK `source`). `last_attempt_at` · `last_outcome`(`running`/`success`/`partial`/`error`, CHECK - 받기 시작할 때 `running`) · `last_success_at`(끝까지 받은 마지막 시각 - 성공만 바꾼다) · `received_count` · `written_count`(이번 실행의 고유 행) · `pruned_count` · `last_error`(짧은 이유). 자동 TourAPI 동기화는 오늘(KST) 시도 여부와 `last_success_at`(7일)을 본다.
 - `trip_places` 에 `place_origin`(`public`/`custom`/`needs_review`, CHECK `ck_trip_places_place_origin`) · `public_source` · `public_source_id` · `photo_url` · `photo_license` 를 더했다. 모두 nullable - 3단계 담는 흐름부터 채우고, 비어 있으면 예전 행이다.
 
+담는 흐름 (2026-10-05, `0049_trip_place_public_category`):
+
+- `trip_places.public_category` String(20) nullable, CHECK `ck_trip_places_public_category`: `sight`/`culture`/`leisure`/`stay`/`shopping`/`food`/`cafe`(`public_places.category` 와 같은 7개) 또는 NULL. 공공데이터 장소를 담을 때 그 분류를 복사한다. 나만의 장소 · 예전 카카오 행은 NULL.
+- `trip_places.user_label` String(100) nullable: 사용자가 붙인 이름. 공공데이터 장소(`place_origin='public'`)의 이름을 고쳐도 `place_name`(공공데이터 이름)은 그대로 두고 여기에 담는다 - 화면 이름은 `user_label` 이 있으면 그것, 없으면 `place_name`. 나만의 장소(`custom`)는 이름 자체가 `place_name` 이라 NULL 이고, 다른 장소로 바꾸면 NULL 로 돌아간다. 예전 카카오 행도 NULL.
+- `public_places` 에 색인 `ix_public_places_sido_city`(시도, 시군)를 더했다 - 추천 · 지역 중심 조회가 일정 지역으로 거른다. `CREATE INDEX CONCURRENTLY` 라 `public_places` 쓰기를 막지 않는다(마이그레이션이 이 단계만 트랜잭션 밖에서 돈다).
+- 3단계부터 `trip_places` 에는 카카오 장소명 · 주소 · 좌표 · 분류를 새로 쓰지 않는다. 공공데이터 장소(`place_origin='public'`)는 그 장소의 이름 · 주소 · 좌표 · 분류 · 사진을 복사하고 `public_source` · `public_source_id` 를 남기며, 나만의 장소(`place_origin='custom'`)는 사용자가 쓴 이름만 두고, 지번을 채웠으면 그 주소 · 중심 좌표(공공데이터)를 둔다(`0050` - 지도에서 찍은 좌표는 저장하지 않는다). 카카오 장소를 골랐으면 `source_provider='kakao'` · `external_place_id` · `place_url`(`https://place.map.kakao.com/{id}`, 서버가 만든다)만 남는다. `place_origin` 이 NULL 이고 `source_provider` 가 `kakao`/`kakao_local` 이면 예전 행이다(4단계에서 변환 - 화면은 '확인 필요'로 보인다).
+
+주소 채움 (2026-10-08, `0050_geo_reference`, 계획 `docs/superpowers/plans/2026-10-07-place-add-address-fill.md`):
+
+- `postgis` 확장(없을 때만 만든다 - AWS RDS 는 프로비저닝 때 마스터 사용자가 먼저 설치한다)과 스키마 `geo`. 국토교통부 GIS건물통합정보(건물) · 연속지적도(땅, 농지 · 임야 제외)의 도형과 고유번호(PNU)다. 이 마이그레이션은 **빈 표만** 만들고, 데이터는 적재 도구(`backend/scripts/geo_load.py`, 운영 `docs/geo-reference-monthly-load.md`)가 월 1회 `*_next` 표에 넣어 바꿔치기한다. 앱 표와 스키마가 달라 백업(`pg_dump --exclude-schema=geo`)과 로컬 복사에서 뺀다.
+- 시퀀스 `geo.feature_id_seq`: `geo.building.id` 와 `geo.parcel.id` 가 함께 쓴다 - 판을 바꿔도 같은 id 가 다른 건물 · 땅을 가리키지 않는다(옛 `geoRef` 는 404).
+- `geo.building` · `geo.parcel`: `id` bigint PK(위 시퀀스), `feature_key` varchar(40)(건물 식별번호, 땅은 고유번호), `pnu` varchar(19), `la`/`lo` 중심 위경도, `rx`/`ry` 중심 EPSG:5186 좌표(모두 double precision), `geom` geometry(Geometry, 5186). 땅은 `jimok` varchar(4)(지목 약식 부호, 못 읽으면 NULL)가 더 있다. 색인 `{table}_geom_gix`(GiST)와 `{table}_pnu_ix`(`pnu`).
+- `geo.legal_dong`: `code` varchar(10) PK(법정동코드), `name` varchar(100) - 주소(법정동 + 지번)를 만든다. `geo.load_run`: 적재마다 한 줄(`finished_at`, `building_rows`, `parcel_rows`, `building_base_date`, `parcel_base_date`).
+- `trip_places.geo_kind` varchar(10) nullable + CHECK `ck_trip_places_geo_kind`(`building`/`parcel` 또는 NULL), `trip_places.geo_pnu` varchar(19) nullable: 나만의 장소의 주소(와 좌표)를 건물 · 땅 지번에서 채웠을 때 그 출처. 일정 장소와 `geo` 표는 외래키로 묶지 않는다(판이 바뀌어도 담은 값은 유지). 다른 장소로 바꾸면 NULL 로 돌아간다.
+- downgrade 는 `geo` 스키마를 CASCADE 로 지우고 두 열을 뺀다(`postgis` 확장은 남긴다).
+
 수집 소스·검토 후보 테이블 (2026-09-13, `0038_policy_source_catalog`; `0039_external_source_status_text`는 `external_source_records.status_text`를 Text로 넓혔다):
 
 - `policy_collection_sources`: 코드 소유 수집 소스 카탈로그. `key` UNIQUE, `adapter_key`, `official_url`, `source_category`, `display_name`, `enabled`, `publication_mode`(`review` | `auto_after_reviewed_baseline`, CHECK), `expected_min_records`, 최근 실행 상태(`last_outcome`/`last_collected_at`/`last_successful_at`/`last_error`). 행은 마이그레이션이 아니라 저장소(`ensure_builtin_collection_sources`)가 만든다.

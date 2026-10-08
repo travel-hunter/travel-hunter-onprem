@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { PlaceSearchItem } from "../api";
-import { readPlaceParam, tripPlaceFromSearchItem, writePlaceParam } from "./placeHandoff";
+import { pickInputFromItem, pickInputFromKakaoId, readAddPlaceParam, writeAddPlaceParam } from "./placeHandoff";
 
 const odongdo: PlaceSearchItem = {
   kind: "place",
   id: "kakao:8193468",
   name: "오동도",
-  category: "여행 > 관광,명소 > 섬 > 섬(내륙)",
+  category: "여행 > 관광,명소 > 섬(내륙)",
   categoryCode: "AT4",
   address: "전남광주통합특별시 여수시 수정동 1-1",
   latitude: 34.744,
@@ -16,37 +16,54 @@ const odongdo: PlaceSearchItem = {
   city: "여수",
 };
 
-describe("주소로 넘기는 장소", () => {
-  it("round-trips a place through the URL", () => {
-    expect(readPlaceParam(writePlaceParam(odongdo))).toEqual(odongdo);
+describe("일정으로 넘기는 장소 - 주소에는 카카오 장소 ID 와 친 말만", () => {
+  it("writes only the Kakao id and the typed words", () => {
+    const params = writeAddPlaceParam(new URLSearchParams(), { kakaoPlaceId: "8193468", query: " 오동도 " });
+
+    expect(params.get("addPlace")).toBe("kakao:8193468");
+    expect(params.get("q")).toBe("오동도");
+    expect([...params.keys()].sort()).toEqual(["addPlace", "q"]);
   });
 
-  it("drops anything that is not a well-formed place", () => {
-    expect(readPlaceParam(null)).toBeNull();
-    expect(readPlaceParam("{broken")).toBeNull();
-    expect(readPlaceParam(JSON.stringify({ ...odongdo, kind: "area" }))).toBeNull();
-    expect(readPlaceParam(JSON.stringify({ ...odongdo, name: 7 }))).toBeNull();
-    expect(readPlaceParam("x".repeat(2001))).toBeNull();
-    // 링크는 카카오 장소 주소만 - 카드가 그대로 그린다
-    expect(readPlaceParam(JSON.stringify({ ...odongdo, placeUrl: "javascript:alert(1)" }))?.placeUrl).toBeNull();
-    expect(readPlaceParam(JSON.stringify({ ...odongdo, latitude: "34" }))?.latitude).toBeNull();
-    // 지도 도는 아는 이름만 - '__proto__'가 지역 표에서 Object 를 꺼내 카드가 멈췄다(10/3 리뷰)
-    expect(readPlaceParam(JSON.stringify({ ...odongdo, sido: "__proto__" }))?.sido).toBeNull();
+  it("leaves other params alone and writes no q when nothing was typed", () => {
+    const params = writeAddPlaceParam(new URLSearchParams({ day: "2" }), { kakaoPlaceId: "8193468", query: "  " });
+
+    expect(params.get("day")).toBe("2");
+    expect(params.has("q")).toBe(false);
   });
 
-  it("becomes the same trip place the trip's own place search would add", () => {
-    expect(tripPlaceFromSearchItem(odongdo)).toEqual({
-      time: "",
-      label: "오동도",
-      meta: "여행 > 관광,명소 > 섬 > 섬(내륙) · 전남광주통합특별시 여수시 수정동 1-1",
-      address: "전남광주통합특별시 여수시 수정동 1-1",
+  it("reads what it wrote, from a search string or from URLSearchParams", () => {
+    const params = writeAddPlaceParam(new URLSearchParams(), { kakaoPlaceId: "8193468", query: "오동도" });
+
+    expect(readAddPlaceParam(params)).toEqual({ kakaoPlaceId: "8193468", query: "오동도" });
+    expect(readAddPlaceParam(`?${params.toString()}`)).toEqual({ kakaoPlaceId: "8193468", query: "오동도" });
+  });
+
+  it("drops anything that is not a numeric Kakao id", () => {
+    expect(readAddPlaceParam("")).toBeNull();
+    expect(readAddPlaceParam("addPlace=kakao:abc")).toBeNull();
+    expect(readAddPlaceParam("addPlace=area:4613010100")).toBeNull();
+    expect(readAddPlaceParam(`addPlace=kakao:${"1".repeat(21)}`)).toBeNull();
+    // 예전 형식(장소 값을 통째로 실은 JSON)은 받지 않는다
+    expect(readAddPlaceParam(new URLSearchParams({ addPlace: JSON.stringify({ kind: "place", id: "kakao:8193468", name: "오동도" }) }))).toBeNull();
+  });
+
+  it("treats a missing q as empty and caps the typed words", () => {
+    expect(readAddPlaceParam("addPlace=kakao:8193468")).toEqual({ kakaoPlaceId: "8193468", query: "" });
+    expect(readAddPlaceParam(new URLSearchParams({ addPlace: "kakao:8193468", q: "가".repeat(300) }))?.query).toHaveLength(100);
+  });
+
+  it("hands the picked place to the match step as just the five values it reads, in memory only", () => {
+    expect(pickInputFromItem(odongdo)).toEqual({
+      id: "kakao:8193468",
+      title: "오동도",
       latitude: 34.744,
       longitude: 127.766,
-      category: "여행 > 관광,명소 > 섬 > 섬(내륙)",
       categoryCode: "AT4",
-      placeUrl: "http://place.map.kakao.com/8193468",
-      sourceProvider: "kakao",
-      externalPlaceId: "8193468",
     });
+  });
+
+  it("falls back to an input without coordinates that keeps only the Kakao id", () => {
+    expect(pickInputFromKakaoId("8193468")).toEqual({ id: "kakao:8193468", title: "" });
   });
 });

@@ -20,7 +20,7 @@ import {
   getSokchoTravelAreaResponse,
   getYeonggwangTravelAreaResponse,
 } from "../../test/fixtures";
-import { login, renderAppRoute } from "../../test/renderAppRoute";
+import { login, renderAppRoute, routeLocation } from "../../test/renderAppRoute";
 import { addDaysToDateInput, getKstDateInputValue } from "../../utils/dateDefaults";
 
 describe("Travel Hunter app — trip creation", () => {
@@ -1166,4 +1166,51 @@ describe("Travel Hunter app — trip creation", () => {
       travelAreasSpy.mockRestore();
     }
   }, 10000);
+
+  it("lets the user pick the region of a new trip that carries a place from the home search, and hands only the Kakao id and typed words on", async () => {
+    await login();
+    cleanup();
+    const travelAreasSpy = vi
+      .spyOn(appDataApi, "listTravelAreaRecommendations")
+      .mockResolvedValue(getBusanTravelAreaResponse());
+    const createdTrip: Trip = {
+      ...getPreviewTrip(),
+      id: "46",
+      title: "부산 추천 여행",
+      dates: "2026.06.15 - 06.17",
+      days: { 1: [], 2: [], 3: [] },
+    };
+    const createTripSpy = vi.spyOn(appDataApi, "createTrip").mockResolvedValue(createdTrip);
+    // 일정 화면은 열지 않는다 - 만든 뒤 넘긴 주소만 본다
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockReturnValue(new Promise<Trip>(() => undefined));
+
+    try {
+      // 홈이 만든 주소 그대로다: 지역(region · sido)은 카카오 주소에서 나온 값이라 싣지 않는다
+      renderAppRoute(`/trips/new?${new URLSearchParams({ addPlace: "kakao:8193468", q: "오동도" })}`);
+      const user = userEvent.setup();
+      // 주소에는 이름이 없다 - 배너도 이름 없이 알린다
+      expect(await screen.findByText("만들고 나면 고른 장소를 담을 날을 골라요")).toBeInTheDocument();
+      // 지역은 여기서 고른다
+      await user.click(screen.getByRole("button", { name: "부산" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: /부산 전체/ })).toHaveAttribute("aria-pressed", "true"));
+      const nextButton = screen.getByRole("button", { name: "다음" });
+      await waitFor(() => expect(nextButton).toBeEnabled());
+      await user.click(nextButton);
+      const titleInput = screen.getByRole("textbox", { name: "일정 제목" });
+      await user.clear(titleInput);
+      await user.type(titleInput, "부산 추천 여행");
+      await user.click(screen.getByRole("button", { name: "일정 생성" }));
+
+      await waitFor(() => expect(createTripSpy).toHaveBeenCalledWith(expect.objectContaining({ region: "부산 전체", travelAreaId: "busan-all" })));
+      await waitFor(() => expect(routeLocation().pathname).toBe("/trips/46"));
+      const params = new URLSearchParams(routeLocation().search);
+      expect(params.get("addPlace")).toBe("kakao:8193468");
+      expect(params.get("q")).toBe("오동도");
+      expect([...params.keys()].sort()).toEqual(["addPlace", "q"]);
+    } finally {
+      createTripSpy.mockRestore();
+      getTripSpy.mockRestore();
+      travelAreasSpy.mockRestore();
+    }
+  });
 });

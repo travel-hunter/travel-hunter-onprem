@@ -69,16 +69,20 @@ import {
   PlaceSearchCandidate,
   PlaceSearchItem,
   NearbyCategory,
+  LegacyPlaceCandidatesResponse,
   PlaceMatchRequest,
   PlaceMatchResult,
+  LocateResult,
   Policy,
   Profile,
   ProfileOptions,
+  PublicPlaceItem,
   Recommendation,
   RegionRecommendation,
   TravelAreaCatalog,
   TravelAreaRecommendationResponse,
   Trip,
+  TripAreaCenter,
   User,
 } from "./types";
 
@@ -207,6 +211,12 @@ export const backendApi: AppDataApi = {
     apiClient.get<PlaceSearchItem[]>(`/api/places/nearby${queryString({ lat: latitude, lng: longitude, category })}`, { signal: control?.signal }),
   matchPlace: (request: PlaceMatchRequest): Promise<PlaceMatchResult> =>
     apiClient.post<PlaceMatchResult>("/api/places/match", request),
+  locatePlace: (latitude: number, longitude: number): Promise<LocateResult> =>
+    apiClient.post<LocateResult>("/api/places/locate", { latitude, longitude }),
+  getTripAreaCenter: (tripId: string): Promise<TripAreaCenter> =>
+    apiClient.get<TripAreaCenter>(`/api/trips/${tripId}/area-center`),
+  listLegacyPlaceCandidates: async (tripId: string, placeId: string): Promise<PublicPlaceItem[]> =>
+    (await apiClient.get<LegacyPlaceCandidatesResponse>(`/api/trips/${tripId}/places/${placeId}/public-candidates`)).places,
   getInviteState: (tripId: string): Promise<InviteState> => apiClient.get<InviteState>(`/api/trips/${tripId}/invite`),
   confirmInviteSent: (tripId: string): Promise<InviteState> => apiClient.post<InviteState>(`/api/trips/${tripId}/invite`),
   sendInviteEmail: (tripId: string, request: SendInviteEmailRequest): Promise<InviteEmailResult> => apiClient.post<InviteEmailResult>(`/api/trips/${tripId}/invite/email`, request),

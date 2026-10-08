@@ -31,7 +31,7 @@ def resolve_region(first: str, second: str) -> str | None:
         return "광주" if second.endswith("구") else "전남"
     region = REGION_ALIASES.get(first)
     if region is None and first:
-        logger.info("place_search_unknown_region token=%s", first)
+        logger.info("place_search_unknown_region")
     return region
 
 
@@ -107,12 +107,12 @@ def search_places(query: str, provider: KakaoLocalSearchProvider | None = None) 
                 if key not in seen:   # '중앙동1가 · 2가'처럼 잘게 나뉜 구역은 같은 시군 같은 이름이면 한 줄
                     seen.add(key)
                     items.append(item)
-        except Exception:   # noqa: BLE001 - 장소 검색이 안 돼도 키워드 결과는 쓴다
-            logger.warning("place_search_area_failed", exc_info=True)
+        except Exception as error:   # noqa: BLE001 - 장소 검색이 안 돼도 키워드 결과는 쓴다
+            logger.warning("place_search_area_failed error=%s", type(error).__name__)
     try:
         items += [_place_item(place) for place in client.search_keyword(query=q, size=KEYWORD_SIZE)]
-    except Exception:   # noqa: BLE001
-        logger.warning("place_search_keyword_failed", exc_info=True)
+    except Exception as error:   # noqa: BLE001
+        logger.warning("place_search_keyword_failed error=%s", type(error).__name__)
     return items
 
 
@@ -140,7 +140,7 @@ def nearby_places(
         places = client.search_category(
             category_group_code=category, x=longitude, y=latitude, radius=NEARBY_RADIUS_M, size=NEARBY_SIZE, sort="distance"
         )
-    except Exception:  # noqa: BLE001 - 이 근처가 안 돼도 카드의 나머지는 쓴다
-        logger.warning("place_search_nearby_failed", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - 이 근처가 안 돼도 카드의 나머지는 쓴다
+        logger.warning("place_search_nearby_failed error=%s", type(error).__name__)
         return []
     return [{**_place_item(place), "distanceMeters": place.distance_meters} for place in places]

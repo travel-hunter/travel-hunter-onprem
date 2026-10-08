@@ -118,6 +118,15 @@ def add_trip_place(
     category_group_code: str | None = None,
     category_group_name: str | None = None,
     place_url: str | None = None,
+    place_origin: str | None = None,
+    public_source: str | None = None,
+    public_source_id: str | None = None,
+    public_category: str | None = None,
+    photo_url: str | None = None,
+    photo_license: str | None = None,
+    user_label: str | None = None,
+    geo_kind: str | None = None,
+    geo_pnu: str | None = None,
 ) -> TripPlace:
     place = TripPlace(
         trip_day_id=trip_day_id,
@@ -133,6 +142,15 @@ def add_trip_place(
         category_group_code=category_group_code,
         category_group_name=category_group_name,
         place_url=place_url,
+        place_origin=place_origin,
+        public_source=public_source,
+        public_source_id=public_source_id,
+        public_category=public_category,
+        photo_url=photo_url,
+        photo_license=photo_license,
+        user_label=user_label,
+        geo_kind=geo_kind,
+        geo_pnu=geo_pnu,
     )
     db.add(place)
     db.flush()

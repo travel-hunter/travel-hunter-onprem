@@ -90,7 +90,7 @@ def test_viewer_cannot_add_place(monkeypatch) -> None:
             user=viewer,
             trip_handle="10",
             day_number=1,
-            payload=CreateTripPlaceRequest(expectedRevision=1, label="New Place"),
+            payload=CreateTripPlaceRequest(expectedRevision=1, customPlace={"name": "New Place"}),
         )
 
     assert exc_info.value.status_code == 403
@@ -192,7 +192,7 @@ def test_nonmember_cannot_add_place(monkeypatch) -> None:
             user=outsider,
             trip_handle="10",
             day_number=1,
-            payload=CreateTripPlaceRequest(expectedRevision=1, label="Sneaky Place"),
+            payload=CreateTripPlaceRequest(expectedRevision=1, customPlace={"name": "Sneaky Place"}),
         )
 
     assert exc_info.value.status_code == 404

@@ -261,7 +261,8 @@
   transform: translateY(-1px);
 }
 
-.btn:disabled {
+.btn:disabled,
+.btn[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.62;
   transform: none;
@@ -3322,6 +3323,65 @@
   overflow-wrap: anywhere;
 }
 
+/* 시안 v61: 검색어가 있는 동안 결과 칸 높이를 고정한다 - 상태 줄도 칸 안이라 칠 때 아래 칸이 오르내리지 않는다 */
+.place-search-area {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.place-search-area .place-search-results {
+  max-height: none;
+  overflow: visible;
+}
+
+.place-search-area > .place-search-status:not(.sr-only) {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 2px 0 4px;
+  background: var(--gray-50);
+}
+
+.place-search-results.is-stale {
+  opacity: 0.55;
+}
+
+.place-search-result:disabled {
+  cursor: default;
+}
+
+/* 시안 v62: 미리 맞춘 갈래 - 주소 줄 오른쪽 끝 */
+.place-search-result .place-search-result-foot {
+  align-items: flex-end;
+}
+
+.place-search-result-state {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--gray-100);
+  color: var(--gray-600);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.place-search-result-state.ready {
+  background: #eaf8ef;
+  color: #177245;
+}
+
+.place-search-result-state.similar,
+.place-preview-state.similar {
+  background: #fff4e0;
+  color: #8a5300;
+}
+
 .place-search-status {
   margin: 0;
   color: var(--gray-600);
@@ -3544,6 +3604,270 @@
   font-weight: 800;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+/* 시안 v59: 담는 흐름 - '직접 적기' 입구 · 후보 확인 · 나만의 장소 · 위치 찍기 */
+.place-direct-entry {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px dashed var(--primary-500);
+  border-radius: var(--radius-sm);
+  background: var(--primary-50);
+  color: var(--primary-600);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.place-direct-entry:hover,
+.place-direct-entry:focus-visible {
+  border-style: solid;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+}
+
+.place-match-choices,
+.custom-place-form {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--primary-100);
+  border-radius: var(--radius-sm);
+  background: var(--primary-50);
+}
+
+.place-match-head strong {
+  display: block;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.place-match-head p,
+.custom-place-intro {
+  margin: 4px 0 0;
+  color: var(--gray-600);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.place-match-list {
+  display: grid;
+  gap: 8px;
+}
+
+.place-match-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  color: var(--ink);
+  text-align: left;
+}
+
+.place-match-card.has-photo {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.place-match-card:hover,
+.place-match-card:focus-visible {
+  border-color: var(--primary-500);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+}
+
+.place-photo {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.place-photo img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--gray-100);
+}
+
+.place-photo-credit {
+  color: var(--gray-500);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.place-photo--compact {
+  width: 72px;
+}
+
+.place-photo--compact img {
+  height: 56px;
+  aspect-ratio: auto;
+  border-radius: var(--radius-xs);
+}
+
+.place-photo--compact .place-photo-credit {
+  font-size: 10px;
+}
+
+.place-match-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.place-match-body strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.place-match-body em {
+  color: var(--primary-600);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.place-match-body small {
+  color: var(--gray-600);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.custom-place-point {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--primary-600);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.custom-place-actions,
+.map-point-picker-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.map-point-picker {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.map-point-picker-help {
+  margin: 0;
+  color: var(--gray-600);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.map-point-picker-search {
+  display: grid;
+  gap: 6px;
+}
+
+.mpp-results {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mpp-result {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+}
+
+.mpp-result strong {
+  font-size: 13px;
+}
+
+.mpp-result small {
+  color: var(--gray-500);
+  font-size: 11px;
+}
+
+.mpp-moved {
+  margin: 0;
+  color: var(--primary-600);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.map-point-picker-map {
+  position: relative;
+}
+
+.map-point-picker-canvas {
+  height: 220px;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: var(--gray-100);
+}
+
+.map-point-picker-canvas:focus-visible {
+  outline: 3px solid var(--primary-500);
+  outline-offset: 2px;
+}
+
+/* 지도 가운데에 고정된 십자선 - 지도가 움직이고 십자선은 그대로다. 누르기 · 끌기는 지도로 보낸다 */
+.map-point-picker-pin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  border: 2px solid var(--primary-600);
+  border-radius: 50%;
+  background: rgba(var(--primary-rgb), 0.12);
+  box-shadow: 0 0 0 2px var(--white);
+  pointer-events: none;
+}
+
+.map-point-picker-pin::before,
+.map-point-picker-pin::after {
+  content: "";
+  position: absolute;
+  background: var(--primary-600);
+}
+
+.map-point-picker-pin::before {
+  top: 50%;
+  right: -8px;
+  left: -8px;
+  height: 2px;
+  margin-top: -1px;
+}
+
+.map-point-picker-pin::after {
+  top: -8px;
+  bottom: -8px;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
 }
 
 .place-time-picker {
@@ -12108,4 +12432,98 @@ a.prototype-stat-card:active {
     width: var(--trip-lane);
     transform: none;
   }
+}
+
+
+/* 시안 v59: 예전 카카오 행 확인 화면 - 후보 · 이름 칸은 장소 추가 창 부품(place-match-choices · custom-place-form)의 모양을 따른다 */
+.legacy-place-confirm h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+/* 시안 v59 · 결정 26: 어느 행인지 알려 주는 단서 한 줄 */
+.legacy-place-clue {
+  margin: 0;
+  color: var(--gray-600);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.legacy-place-confirm .meta {
+  margin: 0;
+}
+
+/* 시안 v64 주소 채움 · 지도에서 찾기 */
+.place-search-result-state.fill,
+.place-preview-state.fill {
+  background: #e8f1fb;
+  color: #1f5f99;
+}
+
+.cpf-hint {
+  margin: -4px 0 0;
+  color: var(--gray-500);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.custom-place-fill {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--primary-100);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.custom-place-fill.nopin,
+.custom-place-fill:not(:has(.kakao-map-view)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.custom-place-fill .kakao-map-view {
+  height: 76px;
+  min-height: 76px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cpf-fill-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cpf-fill-body strong {
+  color: var(--gray-600);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.cpf-fill-body p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.cpf-fill-body small {
+  color: var(--gray-500);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cpf-nopin {
+  color: var(--primary-600);
+  font-weight: 800;
+}
+
+.custom-place-fill .cpf-pair {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

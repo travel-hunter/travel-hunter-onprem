@@ -1,5 +1,7 @@
 const DRAFT_STORAGE_PREFIX = "travel-hunter:draft:";
-const DRAFT_VERSION = 1;
+/** 판을 올리면 예전 판 초안은 읽지 않고(readDraft) 앱을 켤 때 지운다(purgeStaleDrafts).
+    2판 = 장소 수정 초안에서 카카오 이름 · 메모(1판 label · meta)를 뺀 모양(설계 2026-10-03 3절 6번) */
+export const DRAFT_VERSION = 2;
 const DEFAULT_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 
 type StoredDraft<T> = {
@@ -63,6 +65,29 @@ export function clearDraft(key: string): void {
     storage.removeItem(key);
   } catch {
     // Ignore unavailable storage.
+  }
+}
+
+/** 앱을 켤 때 한 번 - 현재 판이 아닌(또는 읽을 수 없는) 초안 키를 지운다. 1판 장소 수정 초안에는 카카오 이름 · 메모가 들어 있을 수 있다.
+    지우면 색인이 당겨지므로 뒤에서부터 돈다. 저장소를 못 쓰면 조용히 넘어간다 - readDraft 가 예전 판을 읽지 않는 것으로 충분하다 */
+export function purgeStaleDrafts(storage: Storage | null = getDraftStorage()): void {
+  if (!storage) return;
+  try {
+    for (let index = storage.length - 1; index >= 0; index -= 1) {
+      const key = storage.key(index);
+      if (!key?.startsWith(DRAFT_STORAGE_PREFIX)) continue;
+      if (draftVersionOf(storage.getItem(key)) !== DRAFT_VERSION) storage.removeItem(key);
+    }
+  } catch {
+    // 초안 정리는 최선만 한다.
+  }
+}
+
+function draftVersionOf(rawValue: string | null): unknown {
+  try {
+    return (JSON.parse(rawValue ?? "null") as { version?: unknown } | null)?.version;
+  } catch {
+    return undefined;
   }
 }
 

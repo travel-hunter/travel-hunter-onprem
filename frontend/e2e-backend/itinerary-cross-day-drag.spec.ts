@@ -50,8 +50,7 @@ async function createTripWithOnePlaceOnDayOne(page: Page, accessToken: string) {
       data: {
         expectedRevision: 1,
         time: "10:00",
-        label: placeLabel,
-        meta: "Day 1 에서 Day 2 로 옮길 카드",
+        customPlace: { name: placeLabel },
       },
     },
   );

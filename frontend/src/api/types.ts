@@ -171,10 +171,25 @@ export type ItineraryPlace = {
   placeUrl?: string | null;
   sourceProvider?: string | null;
   externalPlaceId?: string | null;
+  /** 3단계: public = 공공데이터 장소 · custom = 나만의 장소 · needs_review = 변환 뒤 확인 필요. 예전 카카오 행은 null */
+  placeOrigin?: "public" | "custom" | "needs_review" | null;
+  /** 공공데이터 행은 사진 · 주소 · 위치 · 분류가 공공데이터 그대로다. 사용자가 이름을 고쳤으면 `label` 에 그 이름이 온다(서버가 user_label 에 따로 담는다) */
+  publicSource?: "tourapi" | "sangga" | null;
+  publicSourceId?: string | null;
+  publicCategory?: PublicPlaceCategory | null;
+  /** 주소 채움으로 담은 나만의 장소의 지번 종류(건물 · 땅). 주소 · 좌표는 공공데이터 값이다 */
+  geoKind?: GeoKind | null;
+  photoUrl?: string | null;
+  photoLicense?: string | null;
+  /** 예전 카카오 행(place_origin 이 없고 카카오에서 온 행) - 이름을 다시 적어야 한다 */
+  needsConfirmation?: boolean;
+  /** 사용자가 쓴 메모 그대로. meta 는 표시용 문구라 따로 온다 */
+  memo?: string | null;
 };
 
-export type RecommendationCategoryGroup = "stay" | "food" | "attraction" | "other";
-export type RecommendationSourceType = "freshCandidate" | "savedSummary";
+/* cafe 는 공공데이터 추천(public_place)의 분류다 */
+export type RecommendationCategoryGroup = "stay" | "food" | "cafe" | "attraction" | "other";
+export type RecommendationSourceType = "freshCandidate" | "savedSummary" | "public_place";
 
 export type LinkedTripPolicy = {
   slug: string;
@@ -366,6 +381,12 @@ export type Recommendation = {
   sourceProvider?: string | null;
   externalPlaceId?: string | null;
   sourceType?: RecommendationSourceType | null;
+  /** 3단계: sourceType 이 public_place 인 추천에만 - 공공데이터 장소 참조와 사진 */
+  publicSource?: "tourapi" | "sangga" | null;
+  publicSourceId?: string | null;
+  publicCategory?: PublicPlaceCategory | null;
+  photoUrl?: string | null;
+  photoLicense?: string | null;
 };
 
 export type PlaceSearchCandidate = {
@@ -382,6 +403,8 @@ export type PlaceSearchCandidate = {
   placeUrl?: string | null;
   sourceProvider?: string | null;
   externalPlaceId?: string | null;
+  /** 결정 23: 서버가 검색과 같은 요청에서 맞춰 본 결과. 좌표가 없거나 실패하면 null */
+  publicMatch?: PlaceMatchResult | null;
 };
 
 /** 통합 검색의 장소 한 곳(place) 또는 동 · 읍 · 면 구역(area). sido · city 는 서버가 주소로 가린 지도 도 · 시군 */
@@ -434,6 +457,56 @@ export type PublicPlaceItem = {
 /** match = 바로 담기, candidates = '이 장소가 맞나요?' 후보 1~3곳, none = 나만의 장소 */
 export type PlaceMatchResult = {
   result: "match" | "candidates" | "none";
+  places: PublicPlaceItem[];
+  /** 주소 채움 - 맞춘 자리를 품은 건물 · 땅. 없으면 null 이거나 빠진다 */
+  fill?: AddressFill | null;
+};
+
+/** 건물 · 땅 지번의 종류(국토교통부 GIS건물통합정보 · 연속지적도) */
+export type GeoKind = "building" | "parcel";
+
+/** 주소 채움 - 고른 자리를 품은 건물 · 땅의 지번 주소와 중심. 공공데이터 값이다(카카오 값 아님). id 는 이 판의 행 번호 */
+export type AddressFill = {
+  kind: GeoKind;
+  id: number;
+  pnu: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  distanceMeters: number;
+};
+
+/** 담을 때 보내는 지번 참조 - pin 이 false 면 주소만(넓은 땅). 주소 · 좌표는 서버가 다시 읽는다 */
+export type GeoRef = { kind: GeoKind; id: number; pin: boolean };
+
+/** POST /places/locate - 찍은 자리를 품은 건물 · 땅. nearCenter = 건물이거나 땅 중심이 30m 안(핀까지) */
+export type LocateResult = { fill: AddressFill | null; nearCenter: boolean };
+
+/** 장소 담기 요청의 공공데이터 참조 - 서버가 자기 표(public_places)에서 값을 채운다. 클라이언트가 이름 · 주소 · 좌표를 보내지 않는다 */
+export type PublicPlaceRef = {
+  source: "tourapi" | "sangga";
+  sourceId: string;
+};
+
+/** 나만의 장소 - 사용자가 쓴 이름과 (선택) 지번 참조뿐. 위도 · 경도 · 주소는 보내지 않는다(데브톡 151842 - 서버 422) */
+export type CustomPlaceInput = { name: string; geoRef?: GeoRef };
+
+/** 일정에 장소를 담는 한 건(단일 · 묶음 공통). publicPlace 와 customPlace 중 정확히 하나. kakaoPlaceId 는 '카카오맵에서 보기' 링크용 숫자 ID 뿐이다 */
+export type TripPlaceAddItem = {
+  time?: string | null;
+  publicPlace?: PublicPlaceRef;
+  customPlace?: CustomPlaceInput;
+  kakaoPlaceId?: string | null;
+};
+
+/** GET /trips/{id}/area-center - 일정 지역 공공데이터 장소의 위경도 중앙값. 가릴 수 없으면 둘 다 null */
+export type TripAreaCenter = {
+  latitude: number | null;
+  longitude: number | null;
+};
+
+/** GET /trips/{id}/places/{placeId}/public-candidates 의 응답. 클라이언트는 places 만 쓴다(listLegacyPlaceCandidates) */
+export type LegacyPlaceCandidatesResponse = {
   places: PublicPlaceItem[];
 };
 

@@ -8,6 +8,7 @@ import time as monotonic_time
 from datetime import date, datetime, timedelta, time
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -15,18 +16,24 @@ from app.core import security
 from app.data import seed
 
 DEFAULT_TRIP_REGION = "제주"
-from app.models import ExternalSourceRecord, Policy, Trip, TripDay, TripInvite, TripPlace, TripPolicy, User
+from app.models import ExternalSourceRecord, Policy, PublicPlace, Trip, TripDay, TripInvite, TripPlace, TripPolicy, User
 from app.models.policy_status import is_policy_deadline_current
 from app.repositories import external_sources as external_source_repository
+from app.repositories import geo as geo_repository
 from app.repositories import policies as policy_repository
+from app.repositories import public_places as public_place_repository
 from app.repositories import trips as trip_repository
 from app.schemas.trip import (
     CreateTripPlacesRequest,
     CreateTripPlaceRequest,
     CreateTripRequest,
+    CustomPlaceInput,
+    GeoRef,
     MAX_TRIP_PARTICIPANTS,
     MoveTripPlaceRequest,
+    PublicPlaceRef,
     SendInviteEmailRequest,
+    TripPlaceAddItem,
     UpdateTripSettingsRequest,
     UpdateTripPlaceRequest,
     UpdateTripStatusRequest,
@@ -34,9 +41,13 @@ from app.schemas.trip import (
 from app.repositories.eligible_islands import normalize_island_name
 from app.models import policy_status as policy_status_module
 from app.schemas.trip import UpdateTripPolicyApplicationRequest
+from app.services import address_fill
 from app.services import island_application
 from app.services import email as email_service
 from app.services import itinerary_recommendations
+from app.services import public_places as public_place_service
+from app.services import trip_public_places
+from app.services.geo_reference import GeoHit
 from app.services.eligible_island_catalog import (
     ISLAND_POLICY_SOURCE_CATEGORY,
     EligibleIslandSummary,
@@ -45,7 +56,7 @@ from app.services.eligible_island_catalog import (
 from app.services import local_half_trip_display
 from app.services import stay_discount_aliases
 from app.services import digital_tourism_policy_aliases
-from app.services.kakao_local import KakaoLocalClient, build_kakao_local_client
+from app.services.kakao_local import KakaoLocalClient, KakaoLocalConfigurationError, KakaoLocalPlace, build_kakao_local_client
 from app.services.policy_semantics import (
     benefit_display_amount,
     is_public_policy,
@@ -152,16 +163,6 @@ class KakaoItineraryPlaceProvider:
                     )
                 )
         return candidates
-
-
-def _build_external_place_provider() -> KakaoItineraryPlaceProvider | None:
-    if not settings.kakao_local_enabled:
-        return None
-    try:
-        return KakaoItineraryPlaceProvider(KakaoLocalClient(settings_obj=settings))
-    except Exception:
-        logger.warning("kakao_local_provider_bootstrap_failed", exc_info=True)
-        return None
 
 
 class TripServiceError(Exception):
@@ -902,7 +903,7 @@ def trip_to_api(
             {
                 "id": str(place.id) if place.id is not None else None,
                 "time": place.visit_time.strftime("%H:%M") if place.visit_time else "",
-                "label": place.place_name,
+                "label": place.user_label or place.place_name,   # 사용자가 붙인 이름이 있으면 그것(공공데이터 장소의 이름은 place_name 에 그대로 있다)
                 "meta": place.memo or place.address or "",
                 "address": place.address,
                 "latitude": float(place.latitude) if place.latitude is not None else None,
@@ -912,6 +913,15 @@ def trip_to_api(
                 "placeUrl": getattr(place, "place_url", None),
                 "sourceProvider": getattr(place, "source_provider", None),
                 "externalPlaceId": getattr(place, "external_place_id", None),
+                "memo": place.memo,
+                "placeOrigin": place.place_origin,
+                "publicSource": place.public_source,
+                "publicSourceId": place.public_source_id,
+                "publicCategory": place.public_category,
+                "photoUrl": place.photo_url,
+                "photoLicense": place.photo_license,
+                "geoKind": place.geo_kind,
+                "needsConfirmation": trip_public_places.is_legacy_kakao_place(place),
             }
             for place in places
         ]
@@ -1026,6 +1036,13 @@ def _delete_trip_day(db: Session, trip_day: TripDay) -> None:
 def _flush(db: Session) -> None:
     if hasattr(db, "flush"):
         db.flush()
+
+
+def _release_session(db: Session) -> None:
+    """접근 확인이 끝난 세션을 놓는다 - 카카오를 기다리는 동안(최대 수 초) DB 연결을 쥐고 있으면 몰린 요청이 풀을 말린다(/api/places 와 같은 꼴)."""
+    close = getattr(db, "close", None)
+    if close is not None:
+        close()
 
 
 def _apply_trip_date_range(
@@ -1406,6 +1423,66 @@ def update_trip_settings(
     return _refresh_trip_payload(db, trip.id, user)
 
 
+PUBLIC_PLACE_NOT_FOUND = "Public place not found"
+GEO_REF_NOT_FOUND = "Address reference not found"
+GEO_LOOKUP_UNAVAILABLE = "Address lookup is unavailable"
+
+
+def _geo_ref_hit(db: Session, ref: GeoRef) -> GeoHit:
+    """담을 때 지번 참조를 다시 읽는다 - SAVEPOINT 안에서(실패가 이 요청의 트랜잭션을 막지 않게). revision 을 올리기 전에 부른다."""
+
+    try:
+        with db.begin_nested():
+            hit = geo_repository.get_by_ref(db, ref.kind, ref.id)
+    except SQLAlchemyError as error:   # geo 표가 없거나 DB 가 실패 - 값은 싣지 않는다. 그 밖의 오류(코드 결함)는 숨기지 않고 올린다
+        logger.warning("trip_place_geo_ref_failed error=%s", type(error).__name__)
+        raise TripServiceError(503, GEO_LOOKUP_UNAVAILABLE) from None
+    if hit is None:
+        raise TripServiceError(404, GEO_REF_NOT_FOUND)   # 월 갱신으로 바뀐 판 - 화면이 다시 찾게 한다
+    return hit
+
+
+def _value_columns(
+    db: Session,
+    public_ref: PublicPlaceRef | None,
+    custom: CustomPlaceInput | None,
+    found: dict[tuple[str, str], PublicPlace],
+) -> dict[str, object] | None:
+    """공공데이터 참조 또는 나만의 장소 → trip_places 열 값(둘 다 없으면 None). 참조는 서버 표에서 찾아 그 값을 복사한다 -
+    없으면 404. 나만의 장소의 geoRef 도 geo 표에서 다시 읽는다(주소 · 출처 · pin 이면 중심) - 그 id 가 없으면 404,
+    geo 조회가 실패하면 503. revision 을 올리기 전에 부른다. found 는 같은 요청에서 이미 찾은 장소(묶음 추가에서 되풀이를 줄인다)."""
+
+    if public_ref is not None:
+        key = (public_ref.source, public_ref.sourceId)
+        if key not in found:
+            public_place = public_place_repository.get_public_place(db, *key)
+            if public_place is None:
+                raise TripServiceError(404, PUBLIC_PLACE_NOT_FOUND)
+            found[key] = public_place
+        return trip_public_places.public_place_columns(found[key])
+    if custom is not None:
+        if custom.geoRef is None:
+            return trip_public_places.custom_place_columns(custom.name)
+        hit = _geo_ref_hit(db, custom.geoRef)
+        point = {"latitude": hit.latitude, "longitude": hit.longitude} if custom.geoRef.pin else {}
+        return trip_public_places.custom_place_columns(custom.name, address=hit.address, geo_kind=hit.kind, geo_pnu=hit.pnu, **point)
+    return None
+
+
+def _new_place_columns(db: Session, items: list[TripPlaceAddItem]) -> list[dict[str, object]]:
+    """담을 장소마다 trip_places 열 값을 만든다(trip_public_places). 공공데이터 참조는 revision 을 올리기 전에 모두 찾는다 -
+    하나라도 없으면 404 로 멈춰 아무것도 쓰지 않고 revision 도 그대로다. 시간 형식 오류(422)도 여기서 먼저 걸린다."""
+
+    found: dict[tuple[str, str], PublicPlace] = {}
+    rows: list[dict[str, object]] = []
+    for item in items:
+        columns = _value_columns(db, item.publicPlace, item.customPlace, found)   # 스키마가 둘 중 정확히 하나를 보장한다
+        columns.update(trip_public_places.kakao_link_columns(item.kakaoPlaceId))
+        columns["visit_time"] = _parse_optional_time(item.time)
+        rows.append(columns)
+    return rows
+
+
 def add_place_to_trip_day(
     db: Session,
     user: User,
@@ -1416,28 +1493,11 @@ def add_place_to_trip_day(
     trip = _resolve_required_trip(db, trip_handle, user)
     _require_trip_editor(trip, user)
     trip_day = _find_trip_day(trip, day_number)
-    label = payload.label.strip()
-    if not label:
-        raise TripServiceError(422, "Place label is required")
+    (columns,) = _new_place_columns(db, [payload])
     _bump_trip_revision_or_conflict(db, trip, payload.expectedRevision)
 
     next_order = max((place.order_num or 0 for place in trip_day.places), default=0) + 1
-    trip_repository.add_trip_place(
-        db,
-        trip_day_id=trip_day.id,
-        place_name=label,
-        visit_time=_parse_optional_time(payload.time),
-        order_num=next_order,
-        memo=payload.meta.strip() if payload.meta is not None else None,
-        address=payload.address.strip() if payload.address else None,
-        latitude=payload.latitude,
-        longitude=payload.longitude,
-        category_group_code=payload.categoryCode,
-        category_group_name=payload.category,
-        place_url=payload.placeUrl,
-        source_provider=payload.sourceProvider,
-        external_place_id=payload.externalPlaceId,
-    )
+    trip_repository.add_trip_place(db, trip_day_id=trip_day.id, order_num=next_order, memo=None, **columns)
     db.commit()
     return _refresh_trip_payload(db, trip.id, user)
 
@@ -1452,29 +1512,12 @@ def add_places_to_trip_day(
     trip = _resolve_required_trip(db, trip_handle, user)
     _require_trip_editor(trip, user)
     trip_day = _find_trip_day_for_batch(trip, day_number)
-    labels = [place.label.strip() for place in payload.places]
-    if any(not label for label in labels):
-        raise TripServiceError(422, "Place label is required")
+    rows = _new_place_columns(db, payload.places)
     _bump_trip_revision_or_conflict(db, trip, payload.expectedRevision)
 
     next_order = max((place.order_num or 0 for place in trip_day.places), default=0) + 1
-    for index, place in enumerate(payload.places):
-        trip_repository.add_trip_place(
-            db,
-            trip_day_id=trip_day.id,
-            place_name=labels[index],
-            visit_time=_parse_optional_time(place.time),
-            order_num=next_order + index,
-            memo=place.meta.strip() if place.meta is not None else None,
-            address=place.address.strip() if place.address else None,
-            latitude=place.latitude,
-            longitude=place.longitude,
-            category_group_code=place.categoryCode,
-            category_group_name=place.category,
-            place_url=place.placeUrl,
-            source_provider=place.sourceProvider,
-            external_place_id=place.externalPlaceId,
-        )
+    for index, columns in enumerate(rows):
+        trip_repository.add_trip_place(db, trip_day_id=trip_day.id, order_num=next_order + index, memo=None, **columns)
 
     db.commit()
     return _refresh_trip_payload(db, trip.id, user)
@@ -1492,21 +1535,65 @@ def update_trip_place(
     place = _find_trip_place(trip, place_id)
     values = payload.model_dump(exclude_unset=True, exclude={"expectedRevision"})
 
+    label = None
     if "label" in values:
         label = (values["label"] or "").strip()
         if not label:
             raise TripServiceError(422, "Place label is required")
+    visit_time = _parse_optional_time(values["time"]) if "time" in values else None
+    replacement = _value_columns(db, payload.publicPlace, payload.customPlace, {})   # 없는 공공데이터 장소는 revision 전에 404
     _bump_trip_revision_or_conflict(db, trip, payload.expectedRevision)
 
-    if "label" in values:
-        place.place_name = label
+    legacy = trip_public_places.is_legacy_kakao_place(place)
+    if replacement is None and legacy and label is not None:
+        # 예전 카카오 행은 이름만 고쳐도 나만의 장소로 바뀐다 - 카카오 이름 · 주소 · 좌표 · 분류를 남기지 않는다
+        replacement = trip_public_places.custom_place_columns(label)
+    if replacement is not None:
+        for column, value in replacement.items():
+            setattr(place, column, value)   # 사용자가 붙인 이름(user_label)도 이때 비워진다
+        if legacy:
+            place.memo = None   # 카카오 '분류 · 주소' 문구. 카카오 ID · place_url · source_provider 는 남긴다
+    if label is not None:
+        if place.place_origin == "public":
+            place.user_label = label   # 공공데이터 장소는 이름을 따로 담는다 - place_name · 주소 · 좌표 · 사진 · 출처는 공공데이터 값 그대로
+        else:
+            place.place_name = label
     if "time" in values:
-        place.visit_time = _parse_optional_time(values["time"])
-    if "meta" in values:
-        place.memo = values["meta"].strip() if values["meta"] is not None else None
+        place.visit_time = visit_time
+    if "memo" in values:
+        place.memo = (values["memo"] or "").strip() or None
 
     db.commit()
     return _refresh_trip_payload(db, trip.id, user)
+
+
+def list_legacy_place_candidates(
+    db: Session,
+    user: User,
+    trip_handle: str,
+    place_id: int,
+) -> list[dict[str, object]]:
+    """예전 카카오 행과 겹치는 공공데이터 후보(가까운 순 최대 3곳, 바로 맞는 곳 포함). 저장된 이름 · 좌표 · 분류는 서버 메모리에서
+    견주기만 하고 저장 · 로그에 남기지 않는다. 예전 행이 아니거나 이름 · 좌표가 없으면 빈 목록."""
+
+    trip = _resolve_required_trip(db, trip_handle, user)
+    _require_trip_editor(trip, user)
+    place = _find_trip_place(trip, place_id)
+    if (
+        not trip_public_places.is_legacy_kakao_place(place)
+        or not place.place_name
+        or place.latitude is None
+        or place.longitude is None
+    ):
+        return []
+    found = public_place_service.match_place(
+        db,
+        name=place.place_name,
+        latitude=float(place.latitude),
+        longitude=float(place.longitude),
+        category_code=place.category_group_code,
+    )
+    return [public_place_service.public_place_item(candidate, distance) for candidate, distance in found.places]
 
 
 def move_trip_place(
@@ -1621,77 +1708,6 @@ def _recommendation_items(value: Any, *, source_type: str = "savedSummary") -> l
     return items
 
 
-def _existing_place_keys(trip: Trip) -> tuple[set[tuple[str, str]], set[str], set[str]]:
-    provider_ids: set[tuple[str, str]] = set()
-    external_ids: set[str] = set()
-    titles: set[str] = set()
-    for trip_day in trip.days:
-        for place in trip_day.places:
-            source_provider = getattr(place, "source_provider", None)
-            external_place_id = getattr(place, "external_place_id", None)
-            if source_provider and external_place_id:
-                provider_ids.add((source_provider, external_place_id))
-            if external_place_id:
-                external_ids.add(external_place_id)
-            normalized_title = _normalized_text(place.place_name)
-            if normalized_title:
-                titles.add(normalized_title)
-    return provider_ids, external_ids, titles
-
-
-def _is_duplicate_candidate(
-    candidate: itinerary_recommendations.ExternalPlaceCandidate,
-    *,
-    provider_ids: set[tuple[str, str]],
-    external_ids: set[str],
-    titles: set[str],
-) -> bool:
-    if candidate.source_provider and candidate.external_place_id:
-        if (candidate.source_provider, candidate.external_place_id) in provider_ids:
-            return True
-    if candidate.external_place_id and candidate.external_place_id in external_ids:
-        return True
-    normalized_title = _normalized_text(candidate.title)
-    return bool(normalized_title and normalized_title in titles)
-
-
-def _additional_recommendation_items(trip: Trip) -> list[dict[str, object]]:
-    provider = _build_external_place_provider()
-    if provider is None:
-        return []
-
-    day_numbers = sorted(day.day_number for day in trip.days) or [1]
-    region = trip.region or trip.title
-    style = trip.description or ""
-    provider_ids, external_ids, titles = _existing_place_keys(trip)
-    candidates = itinerary_recommendations.additional_place_candidates(
-        region=region,
-        style=style,
-        day_count=max(len(day_numbers), 6),
-        travel_area_id=trip.travel_area_id,
-        external_provider=provider,
-        limit=18,
-        exclude_candidate=lambda candidate: _is_duplicate_candidate(
-            candidate,
-            provider_ids=provider_ids,
-            external_ids=external_ids,
-            titles=titles,
-        ),
-    )
-    items: list[dict[str, object]] = []
-    for candidate in candidates:
-        suggested_day = day_numbers[len(items) % len(day_numbers)]
-        items.append(
-            itinerary_recommendations.recommendation_from_candidate(
-                candidate,
-                suggested_day=suggested_day,
-                region=region,
-                style=style,
-            )
-        )
-    return items
-
-
 def list_recommendations(
     db: Session,
     user: User,
@@ -1701,14 +1717,24 @@ def list_recommendations(
     if trip is None:
         return None
 
-    additional_items = _additional_recommendation_items(trip)
-    if additional_items:
-        return additional_items
+    # 카카오 검색 대신 공공데이터(public_places)에서 일정 지역으로 고른다. 지역을 못 가리거나 고를 장소가 없으면 저장 요약으로 넘어간다
+    public_items = trip_public_places.recommend_public_places(
+        db, trip=trip, area=get_travel_area(trip.travel_area_id), region=trip.region or trip.title
+    )
+    if public_items:
+        return public_items
 
     items: list[dict[str, object]] = []
     for recommendation in trip_repository.list_recommendations(db, trip_id=trip.id, user_id=user.id):
         items.extend(_recommendation_items(recommendation.result))
     return items
+
+
+def get_trip_area_center(db: Session, user: User, trip_handle: str) -> dict[str, float | None]:
+    """일정 지역의 공공데이터 장소 위경도 중앙값 - 위치 찍기 지도가 여기서 연다. 보기 권한이면 된다."""
+
+    trip = _resolve_required_trip(db, trip_handle, user)
+    return trip_public_places.area_center(db, get_travel_area(trip.travel_area_id))
 
 
 def _place_search_meta(*, category_name: str | None, address: str | None) -> str:
@@ -1733,16 +1759,23 @@ def search_places_for_trip(
     trimmed_query = query.strip()
     if not trimmed_query:
         return []
-    provider = build_kakao_local_client()
+    _release_session(db)   # 접근 확인이 끝났다 - 카카오를 기다리는 동안 DB 연결을 쥐지 않는다
+    try:
+        provider = build_kakao_local_client()
+    except KakaoLocalConfigurationError:
+        # 켜 두었는데 설정이 틀렸다(키 없음 등) - 500 이 아니라 503. 일부러 끈 경우(None)의 빈 목록과 구별한다. 키 · 설정 값은 로그 · 응답에 남기지 않는다
+        logger.warning("trip_place_search_kakao_misconfigured")
+        raise TripServiceError(503, "Place search is unavailable") from None
     if provider is None:
         return []
     try:
-        places = provider.search_keyword(query=trimmed_query, size=10)
-    except Exception:
-        logger.warning("trip_place_search_failed trip=%s", trip_handle, exc_info=True)
+        places = provider.search_keyword(query=trimmed_query, size=PLACE_SEARCH_SIZE)
+    except Exception as error:
+        logger.warning("trip_place_search_failed trip=%s error=%s", trip_handle, type(error).__name__)
         return []
+    matches = _prematch(db, places)
     candidates: list[dict[str, object]] = []
-    for place in places:
+    for place, public_match in zip(places, matches):
         candidates.append(
             {
                 "id": f"kakao:{place.external_place_id}",
@@ -1758,9 +1791,32 @@ def search_places_for_trip(
                 "placeUrl": place.place_url,
                 "sourceProvider": "kakao",
                 "externalPlaceId": place.external_place_id,
+                "publicMatch": public_match,
             }
         )
     return candidates
+
+
+PLACE_SEARCH_SIZE = 6   # 담기 창이 보이는 결과 수(시안 v61) - 줄마다 맞춰 보므로 더 받지 않는다
+
+
+def _prematch(db: Session, places: list[KakaoLocalPlace]) -> list[dict[str, object] | None]:
+    """검색 결과를 우리 장소 기반과 한 번에 미리 맞춰 본다(결정 23). 카카오 값은 이 안에서 견주고 버린다 - 저장 · 로그 금지.
+    세션은 카카오를 부르기 전에 놓았다(_release_session) - SQLAlchemy 2 의 Session 은 close 뒤 다시 쓰면 새 연결을 잡는다(실제 Session 시험이 붙잡는다).
+    좌표가 없는 줄은 None. DB 읽기가 실패하면 모든 줄이 None 이고, 화면은 고른 뒤 예전처럼 맞춰 본다."""
+
+    rows = [
+        public_place_service.PlaceMatchInput(place.name, place.latitude, place.longitude, place.category_group_code)
+        if place.latitude is not None and place.longitude is not None
+        else None
+        for place in places
+    ]
+    try:
+        answers = public_place_service.match_places(db, rows)
+    except Exception as error:
+        logger.warning("trip_place_search_prematch_failed error=%s", type(error).__name__)   # 검색어 · 장소 값은 싣지 않는다
+        return [None] * len(places)
+    return address_fill.with_fill(db, rows, answers)   # 방식1: match 가 아닌 줄에 건물 · 땅 지번(같은 세션, 질의 1번)
 
 
 def _new_invite_token() -> str:

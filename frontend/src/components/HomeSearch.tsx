@@ -2,6 +2,10 @@ import { ChevronLeft, MapPin, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { appDataApi, type NearbyCategory, type PlaceSearchItem, type Policy } from "../api";
+import { useAsyncResource } from "../api/useAsyncResource";
+import { tripStatus } from "../utils";
+import { writeAddPlaceParam } from "../utils/placeHandoff";
+import { kakaoPlaceIdOf } from "./itinerary/placeAdd/usePlaceMatch";
 import { cityOf, NATIONWIDE_REGION } from "../utils/policyPrograms";
 import { KakaoMapView } from "./map/KakaoMapView";
 import { geoToMap, nearTarget, policyCityFor, shortCity, type NearTarget } from "./map/nearby";
@@ -206,7 +210,7 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
                   </button>
                 ))}
               </div>
-              <p>지역이나 혜택 이름은 정책 탭으로, 장소는 카드로 열려요. 장소 카드에서 그 근처 혜택을 볼 수 있어요.</p>
+              <p>지역이나 혜택 이름은 정책 탭으로, 장소는 카드로 열려요. 장소 카드에서 그 근처 혜택을 보거나 일정에 담을 수 있어요.</p>
             </div>
           ) : (
             <div className="home-search-body">
@@ -341,6 +345,8 @@ function HomePlaceCard({
   onOpenNearby: (item: PlaceSearchItem) => void;
   onBack: () => void;
 }) {
+  const [picking, setPicking] = useState(false);
+  const kakaoPlaceId = kakaoPlaceIdOf(item);
   const xy = xyOf(item);
   const target = nearTarget(policies, item.sido ?? null, item.city ?? null, xy);
   /* 근처 혜택 = 정책 탭 위치로 찾기와 같은 화면(핀 · '근처' 줄 · 가까운 시군) */
@@ -361,6 +367,11 @@ function HomePlaceCard({
         />
       </div>
       <div className="home-place-acts">
+        {kakaoPlaceId && (
+          <button className="home-place-primary" type="button" aria-expanded={picking} onClick={() => setPicking((value) => !value)}>
+            일정에 담기
+          </button>
+        )}
         {target.note && <p className="home-place-note">{target.note}</p>}
         <Link className="home-place-near" to={nearUrl}>
           {nearLinkLabel(target)}<span aria-hidden="true">›</span>
@@ -371,8 +382,54 @@ function HomePlaceCard({
           </a>
         )}
       </div>
+      {picking && kakaoPlaceId && <TripPicker kakaoPlaceId={kakaoPlaceId} query={query} />}
       <NearbySection item={item} policies={policies} code={nearCode} cache={nearbyCache} onCode={onNearCode} onOpen={onOpenNearby} />
     </article>
+  );
+}
+
+/* 일정에 담기(시안 v57): 일정만 고른다. 고르면 그 일정 상세의 '장소 추가' 창이 이 장소를 우리 장소와 맞춰 본 뒤 바구니에 담아 열리고 날은 거기서 고른다.
+   주소에는 카카오 장소 ID 와 친 말만 싣는다(카카오 운영정책) - 이름 · 주소 · 좌표는 받는 쪽이 화면 메모리(없으면 같은 말 재검색)에서 꺼낸다.
+   담을 곳은 끝나지 않은 일정 중 고칠 수 있는 것만(보기 권한이면 열자마자 막힌다) */
+function TripPicker({ kakaoPlaceId, query }: { kakaoPlaceId: string; query: string }) {
+  const navigate = useNavigate();
+  const { data, error, isLoading } = useAsyncResource(() => appDataApi.listTrips(), []);
+  const trips = (data ?? [])
+    .filter((trip) => tripStatus(trip.startDate, trip.endDate)?.tone !== "past" && trip.currentUserRole !== "viewer")
+    .sort((left, right) => left.startDate.localeCompare(right.startDate));
+  const handoff = writeAddPlaceParam(new URLSearchParams(), { kakaoPlaceId, query }).toString();
+  const newTripUrl = `/trips/new?${handoff}`;
+  return (
+    <div className="home-trip-pick" role="group" aria-label="일정 고르기">
+      {isLoading ? (
+        <p className="home-nearby-tip">일정을 불러오는 중…</p>
+      ) : error ? (
+        <p className="home-nearby-tip">일정 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
+      ) : trips.length > 0 ? (
+        <>
+          <h4>어느 일정에 담을까요?</h4>
+          <p className="home-nearby-tip">고르면 그 일정의 장소 추가 창이 열려요. 날은 거기서 골라요.</p>
+          {trips.map((trip) => (
+            <button
+              className="home-trip-pick-row"
+              key={trip.id}
+              type="button"
+              onClick={() => navigate(`/trips/${trip.id}?${handoff}`)}
+            >
+              <b>{trip.title}</b>
+              <span>{trip.dates}</span>
+            </button>
+          ))}
+          <Link className="home-trip-pick-new" to={newTripUrl}>새 일정 만들기</Link>
+        </>
+      ) : (
+        <>
+          <h4>다가오는 일정이 없어요</h4>
+          <p className="home-nearby-tip">일정을 만들면 그 일정의 장소 추가 창이 이 장소를 담은 채 열려요.</p>
+          <Link className="home-place-primary" to={newTripUrl}>새 일정 만들기</Link>
+        </>
+      )}
+    </div>
   );
 }
 

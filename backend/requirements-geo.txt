@@ -1,0 +1,5 @@
+# 적재 도구(scripts/geo_load.py) 전용 - 앱 런타임 이미지에는 넣지 않는다(Dockerfile geo-loader 단계)
+pyogrio==0.13.0
+shapely==2.1.2
+pyproj==3.8.0
+numpy==2.5.3

@@ -164,6 +164,13 @@ pipeline {
 
                     cd ${PROJECT_DIR}
 
+                    # db 를 compose 정의(이미지 포함)대로 먼저 맞춘다 - 이미지가 바뀐 배포에서도 마이그레이션이 새 db 에 돈다
+                    docker compose \
+                      -p ${COMPOSE_PROJECT_NAME} \
+                      --env-file ${ENV_FILE} \
+                      -f ${COMPOSE_FILE} \
+                      up -d --no-deps --wait --wait-timeout 120 db
+
                     docker compose \
                       -p ${COMPOSE_PROJECT_NAME} \
                       --env-file ${ENV_FILE} \

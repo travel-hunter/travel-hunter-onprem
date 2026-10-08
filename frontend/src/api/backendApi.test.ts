@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { backendApi } from "./backendApi";
 import { apiConfig, setApiAccessToken } from "./client";
+import type { PublicPlaceItem, TripPlaceAddItem } from "./types";
 
 describe("backendApi account methods", () => {
   afterEach(() => {
@@ -202,7 +203,7 @@ describe("backendApi trip mutation methods", () => {
     );
   });
 
-  it("posts multiple places through the batch endpoint", async () => {
+  it("posts public and custom places through the batch endpoint without Kakao place values", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(tripResponse), {
         status: 200,
@@ -210,36 +211,20 @@ describe("backendApi trip mutation methods", () => {
       }),
     );
     vi.stubGlobal("fetch", fetchSpy);
+    const places: TripPlaceAddItem[] = [
+      { publicPlace: { source: "tourapi", sourceId: "126508" }, kakaoPlaceId: "8193468" },
+      { customPlace: { name: "할머니 댁", geoRef: { kind: "building", id: 501, pin: true } } },
+    ];
 
     await expect(
-      backendApi.addTripPlaces("7", 2, {
-        expectedRevision: 4,
-        places: [
-          {
-            time: "",
-            label: "Cafe stop",
-            meta: "Dessert",
-            sourceProvider: "kakao",
-          },
-        ],
-      }),
+      backendApi.addTripPlaces("7", 2, { expectedRevision: 4, places }),
     ).resolves.toMatchObject({ id: "7" });
 
     expect(fetchSpy).toHaveBeenCalledWith(
       `${apiConfig.baseUrl}/api/trips/7/days/2/places/batch`,
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({
-          expectedRevision: 4,
-          places: [
-            {
-              time: "",
-              label: "Cafe stop",
-              meta: "Dessert",
-              sourceProvider: "kakao",
-            },
-          ],
-        }),
+        body: JSON.stringify({ expectedRevision: 4, places }),
       }),
     );
   });
@@ -285,5 +270,134 @@ describe("backendApi place matching", () => {
       `${apiConfig.baseUrl}/api/places/match`,
       expect.objectContaining({ method: "POST", body: JSON.stringify(request) }),
     );
+  });
+});
+
+describe("backendApi place add flow", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setApiAccessToken(null);
+  });
+
+  const tripResponse = {
+    id: "7",
+    title: "담는 흐름 여행",
+    status: "draft",
+    revision: 5,
+    region: "전남",
+    travelAreaId: "whole:%EC%A0%84%EB%82%A8",
+    dates: "2026.11.01 - 11.02",
+    startDate: "2026-11-01",
+    endDate: "2026-11-02",
+    people: ["Test User"],
+    participantCount: 1,
+    expectedSaving: "0원",
+    linkedPolicies: [],
+    recommendedPolicies: [],
+    days: { 1: [] },
+    currentUserRole: "owner",
+  };
+  const jsonResponse = (body: unknown) =>
+    new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  it("posts one custom place with the Kakao place id as a link key only", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(tripResponse));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await backendApi.addTripPlace("7", 1, {
+      expectedRevision: 4,
+      customPlace: { name: "숙소 앞 편의점" },
+      kakaoPlaceId: "8193468",
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/trips/7/days/1/places`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          expectedRevision: 4,
+          customPlace: { name: "숙소 앞 편의점" },
+          kakaoPlaceId: "8193468",
+        }),
+      }),
+    );
+  });
+
+  it("patches a place with only the changed fields", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(tripResponse));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await backendApi.updateTripPlace("7", "31", {
+      expectedRevision: 5,
+      customPlace: { name: "다시 적은 이름" },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/trips/7/places/31`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          expectedRevision: 5,
+          customPlace: { name: "다시 적은 이름" },
+        }),
+      }),
+    );
+  });
+
+  it("reads the trip area center that the map picker opens on", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(jsonResponse({ latitude: 34.76, longitude: 127.66 }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(backendApi.getTripAreaCenter("7")).resolves.toEqual({ latitude: 34.76, longitude: 127.66 });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/trips/7/area-center`,
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
+  it("asks the server which building or parcel holds a picked point", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(jsonResponse({ fill: null, nearCenter: false }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(backendApi.locatePlace(37.7712, 128.948)).resolves.toEqual({ fill: null, nearCenter: false });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/places/locate`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ latitude: 37.7712, longitude: 128.948 }) }),
+    );
+  });
+
+  it("unwraps the public candidates of a legacy Kakao place", async () => {
+    const candidate: PublicPlaceItem = {
+      source: "sangga",
+      sourceId: "MA010120220800000001",
+      name: "여수 해물집",
+      address: "전남 여수시 중앙로 1",
+      latitude: 34.74,
+      longitude: 127.74,
+      category: "food",
+      distanceMeters: 40,
+    };
+    const fetchSpy = vi.fn().mockResolvedValue(jsonResponse({ places: [candidate] }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(backendApi.listLegacyPlaceCandidates("7", "31")).resolves.toEqual([candidate]);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/trips/7/places/31/public-candidates`,
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
+  it("keeps Kakao place values out of the add request type", () => {
+    // tsc 가 보는 시험이다 - 카카오 값(이름 · 주소 · 좌표 · 분류)을 싣는 칸은 담기 요청에 없다
+    const request: TripPlaceAddItem = {
+      customPlace: { name: "직접 적은 곳" },
+      // @ts-expect-error label 은 담기 요청에 없다(사용자가 쓴 이름은 customPlace.name)
+      label: "카카오가 준 이름",
+    };
+
+    expect(Object.keys(request)).toContain("customPlace");
   });
 });

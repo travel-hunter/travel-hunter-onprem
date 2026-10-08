@@ -1,10 +1,22 @@
+/** 카카오맵 SDK 의 좌표 - 지도를 눌렀을 때 이벤트가 이것을 준다 */
+export type KakaoLatLng = { getLat: () => number; getLng: () => number };
+/** 지도를 눌렀을 때(click) 이벤트 */
+export type KakaoMouseEvent = { latLng: KakaoLatLng };
+
 export type KakaoMapsNamespace = {
   maps: {
-    LatLng: new (lat: number, lng: number) => unknown;
+    LatLng: new (lat: number, lng: number) => KakaoLatLng;
     LatLngBounds: new () => { extend: (latLng: unknown) => void };
     Map: new (container: HTMLElement, options: Record<string, unknown>) => {
       setBounds: (bounds: unknown) => void;
       setCenter: (latLng: unknown) => void;
+      /** 지도 가운데 - 위치 찍기가 십자선이 가리키는 곳을 읽는다 */
+      getCenter: () => KakaoLatLng;
+      /** 지도를 화면 픽셀만큼 옮긴다(양수 dx = 오른쪽, 양수 dy = 아래쪽) - 방향키로 옮길 때 쓴다 */
+      panBy: (dx: number, dy: number) => void;
+      /** 확대 수준(1 이 가장 가깝다) - 위치 찍기의 + · - 키가 한 단계씩 바꾼다 */
+      getLevel: () => number;
+      setLevel: (level: number) => void;
     };
     Marker: new (options: Record<string, unknown>) => {
       setMap: (map: unknown | null) => void;
@@ -12,7 +24,7 @@ export type KakaoMapsNamespace = {
     CustomOverlay: new (options: Record<string, unknown>) => {
       setMap: (map: unknown | null) => void;
     };
-    event: { addListener: (target: unknown, eventName: string, handler: () => void) => void };
+    event: { addListener: (target: unknown, eventName: string, handler: (event: KakaoMouseEvent) => void) => void };
     services?: {
       Status: { OK: string };
       Geocoder: new () => {

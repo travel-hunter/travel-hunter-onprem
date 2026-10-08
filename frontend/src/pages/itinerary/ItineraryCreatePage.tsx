@@ -1,7 +1,7 @@
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { readPlaceParam } from "../../utils/placeHandoff";
+import { readAddPlaceParam, writeAddPlaceParam } from "../../utils/placeHandoff";
 import {
   appDataApi,
   type TravelAreaOption,
@@ -121,9 +121,9 @@ export function ItineraryCreatePage() {
     [],
   );
   const policySlug = searchParams.get("policySlug") ?? undefined;
-  /* 홈 장소 카드에서 왔으면(시안 v57) 만든 일정에서 그 장소를 담은 장소 추가 창이 열리게 넘긴다 */
-  const handoffPlace = searchParams.get("addPlace");
-  const handoffPlaceName = readPlaceParam(handoffPlace)?.name ?? null;
+  /* 홈 장소 카드에서 왔으면(시안 v57) 만든 일정에서 그 장소를 맞춰 보고 담는 창이 열리게 넘긴다.
+     주소에는 카카오 장소 ID 와 친 말뿐이라 이름을 모른다 - 배너도 이름 없이 알린다(카카오 값을 화면 밖에 두지 않는다) */
+  const handoff = readAddPlaceParam(searchParams);
   const requestedTravelAreaId = normalizeTravelAreaIdParam(
     searchParams.get("travelAreaId"),
   );
@@ -548,8 +548,8 @@ export function ItineraryCreatePage() {
         addPolicy(linkablePolicySlug);
       }
       navigate(
-        handoffPlace && handoffPlaceName
-          ? `/trips/${trip.id}?${new URLSearchParams({ addPlace: handoffPlace })}`
+        handoff
+          ? `/trips/${trip.id}?${writeAddPlaceParam(new URLSearchParams(), handoff)}`
           : `/trips/${trip.id}`,
       );
     } catch {
@@ -578,10 +578,11 @@ export function ItineraryCreatePage() {
       </div>
 
       <div className="prototype-create-content">
-        {handoffPlaceName && (
+        {handoff && (
           <div className="prototype-linked-policy-banner">
             <span aria-hidden="true">장소</span>
-            <strong>만들고 나면 ‘{handoffPlaceName}’ 담을 날을 골라요</strong>
+            {/* 시안 v59 */}
+            <strong>만들고 나면 고른 장소를 담을 날을 골라요</strong>
           </div>
         )}
         {linkedPolicyLabel &&

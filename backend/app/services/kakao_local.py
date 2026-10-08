@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -128,12 +129,37 @@ def _to_place_payload(document: dict[str, Any]) -> KakaoLocalPlace:
     )
 
 
+_shared_lock = threading.Lock()
+_shared_client: httpx.Client | None = None
+
+
+def shared_http_get(url: str, **kwargs) -> httpx.Response:
+    """카카오 로컬 호출이 함께 쓰는 연결 풀(keep-alive) - 검색마다 TCP · TLS 를 새로 맺지 않는다. httpx.Client 는 스레드 간에 같이 써도 된다."""
+
+    global _shared_client
+    client = _shared_client   # 전역을 한 번만 지역 변수로 읽는다 - close_shared_http() 가 사이에 끼어도 None 을 쓰지 않는다
+    if client is None:
+        with _shared_lock:
+            client = _shared_client
+            if client is None:
+                client = _shared_client = httpx.Client()
+    return client.get(url, **kwargs)
+
+
+def close_shared_http() -> None:
+    global _shared_client
+    with _shared_lock:
+        client, _shared_client = _shared_client, None
+    if client is not None:
+        client.close()
+
+
 class KakaoLocalClient:
     def __init__(
         self,
         *,
         settings_obj: Settings = settings,
-        http_get: callable = httpx.get,
+        http_get: callable = shared_http_get,
     ) -> None:
         validate_kakao_local_settings(settings_obj)
         self._settings = settings_obj
@@ -191,7 +217,7 @@ class KakaoLocalClient:
             response.raise_for_status()
             payload = response.json()
         except httpx.HTTPError as exc:
-            raise KakaoLocalConfigurationError(str(exc))
+            raise KakaoLocalConfigurationError(f"Kakao local request failed: {type(exc).__name__}") from None
 
         documents = payload.get("documents", []) if isinstance(payload, dict) else []
         if not isinstance(documents, list):
@@ -222,7 +248,7 @@ class KakaoLocalClient:
             response.raise_for_status()
             payload = response.json()
         except httpx.HTTPError as exc:
-            raise KakaoLocalConfigurationError(str(exc))
+            raise KakaoLocalConfigurationError(f"Kakao local request failed: {type(exc).__name__}") from None
         documents = payload.get("documents", []) if isinstance(payload, dict) else []
         if not isinstance(documents, list):
             return []

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -33,12 +33,19 @@ from app.repositories.public_places import (
     record_sync_state,
     upsert_public_places,
 )
-from app.services import public_places
+from app.services import address_fill, public_places
+from app.services import trips as trip_service
+from app.services.geo_reference import GeoHit
+from app.services.kakao_local import KakaoLocalPlace
 from app.services.public_places import (
+    METERS_PER_DEGREE,
     WIDE_RADIUS_M,
+    PlaceMatchInput,
     iter_sangga_rows,
     load_sangga_places,
     match_place,
+    match_place_response,
+    match_places,
     name_key,
     sangga_row,
     sync_tourapi_places,
@@ -62,10 +69,11 @@ def db() -> Iterator[Session]:
 
 
 def place_row(source: str, source_id: str, name: str, lat: float = 34.7443, lng: float = 127.7663,
-              category: str = "food", *, photo: str | None = None, synced_at: datetime = T1, sido: str = "전남") -> dict[str, object]:
+              category: str = "food", *, photo: str | None = None, synced_at: datetime = T1, sido: str = "전남",
+              address: str = "전남광주통합특별시 여수시 수정동 1") -> dict[str, object]:
     return {
         "source": source, "source_id": source_id, "name": name, "name_key": name_key(name),
-        "address": "전남광주통합특별시 여수시 수정동 1", "latitude": lat, "longitude": lng, "category": category,
+        "address": address, "latitude": lat, "longitude": lng, "category": category,
         "sido": sido, "city": "여수", "photo_url": photo, "photo_license": "Type3" if photo else None, "synced_at": synced_at,
     }
 
@@ -435,10 +443,108 @@ def test_a_same_named_place_of_another_or_unknown_kind_is_only_a_candidate(db: S
 
 
 def test_two_shops_with_the_same_name_ask_which_one(db: Session) -> None:
-    seed(db, place_row("sangga", "A", "이디야커피", 34.7443, 127.7663), place_row("sangga", "B", "이디야커피", 34.7455, 127.7663))
+    seed(db, place_row("sangga", "A", "이디야커피", 34.7443, 127.7663),
+         place_row("sangga", "B", "이디야커피", 34.7455, 127.7663, address="전남광주통합특별시 여수시 수정동 9"))
     found = match_place(db, name="이디야 커피", latitude=34.7449, longitude=127.7663, category_code="CE7")
     assert found.result == "candidates"
     assert {place.source_id for place, _ in found.places} == {"A", "B"}
+
+
+def test_identical_rows_of_one_source_count_as_one_place(db: Session) -> None:
+    # 결정 27: 상가정보에 같은 가게가 두 줄(이름 열쇠 · 주소 · 분류 같음) - 후보에 두 번 나오지 않고, 하나뿐이면 바로 담긴다(가까운 줄)
+    seed(db, place_row("sangga", "A", "이디야커피", 34.7443, 127.7663, "cafe"), place_row("sangga", "B", "이디야 커피", 34.7444, 127.7663, "cafe"))
+    found = match_place(db, name="이디야커피", latitude=34.7443, longitude=127.7663, category_code="CE7")
+    assert found.result == "match"
+    assert [place.source_id for place, _ in found.places] == ["A"]
+
+
+def test_rows_without_an_address_are_never_folded_together(db: Session) -> None:
+    seed(db, place_row("sangga", "A", "이디야커피", 34.7443, 127.7663, "cafe", address=""),
+         place_row("sangga", "B", "이디야커피", 34.7444, 127.7663, "cafe", address=""))
+    assert match_place(db, name="이디야커피", latitude=34.7443, longitude=127.7663, category_code="CE7").result == "candidates"
+
+
+def test_rows_of_another_kind_at_the_same_address_are_not_folded(db: Session) -> None:
+    # 결정 27: 분류가 다르면 같은 곳으로 보지 않는다 - 가까운 줄의 분류로 바로 담기가 나지 않게
+    seed(db, place_row("sangga", "A", "바다정원", 34.7443, 127.7663, "cafe"), place_row("sangga", "B", "바다정원", 34.7444, 127.7663, "food"))
+    found = match_place(db, name="바다정원", latitude=34.7443, longitude=127.7663, category_code="CE7")
+    assert found.result == "candidates"
+    assert {place.source_id for place, _ in found.places} == {"A", "B"}
+
+
+def test_match_places_answers_each_row_like_match_place(db: Session) -> None:
+    # 결정 23: 묶음 맞춰 보기는 줄마다 match_place 와 같은 답이다. 좌표 없는 줄(None)은 None
+    seed(db, place_row("tourapi", "T1", "죽녹원", 35.3270, 126.9860, "sight"),
+         place_row("sangga", "S1", "오동도횟집1", 34.7443, 127.7663), place_row("sangga", "S2", "오동도횟집2", 34.7445, 127.7663))
+    rows = [PlaceMatchInput("죽녹원", 35.3271, 126.9861, "AT4"), None,
+            PlaceMatchInput("오동도", 34.7443, 127.7663, "FD6"), PlaceMatchInput("없는 곳", 34.7443, 127.7663, "FD6")]
+    answers = match_places(db, rows)
+    assert answers[1] is None
+    for row, answer in zip(rows, answers):
+        if row is not None:
+            assert answer == match_place_response(db, name=row.name, latitude=row.latitude, longitude=row.longitude, category_code=row.category_code)
+    assert [answer["result"] if answer else None for answer in answers] == ["match", None, "candidates", "none"]
+
+
+def test_match_places_reads_each_source_once_for_all_rows(db: Session) -> None:
+    # 결정 23 · 코덱스 검토: 여섯 줄이어도 질의는 출처마다 한 번(두 번)
+    seed(db, place_row("tourapi", "T1", "죽녹원", 35.3270, 126.9860, "sight"))
+    statements: list[str] = []
+    event.listen(db.get_bind(), "before_cursor_execute", lambda *args: statements.append(args[2]))
+    match_places(db, [PlaceMatchInput(f"장소{n}", 35.3270 + n * 0.01, 126.9860, "AT4") for n in range(6)])
+    assert len([sql for sql in statements if sql.lstrip().upper().startswith("SELECT")]) == 2
+
+
+def test_match_places_keeps_the_other_rows_when_one_row_fails(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    # 코덱스 검토: 한 줄을 가리다 실패해도 앞뒤 줄의 답은 남는다(성공 → 실패 → 성공)
+    seed(db, place_row("tourapi", "T1", "죽녹원", 35.3270, 126.9860, "sight"), place_row("tourapi", "T2", "관방제림", 35.3290, 126.9850, "sight"),
+         place_row("tourapi", "T3", "메타세쿼이아길", 35.3230, 126.9870, "sight"))
+    real_decide = public_places._decide
+
+    def flaky(key, near, category_code):
+        if key == name_key("관방제림"):
+            raise ValueError("boom")
+        return real_decide(key, near, category_code)
+
+    monkeypatch.setattr(public_places, "_decide", flaky)
+    answers = match_places(db, [PlaceMatchInput("죽녹원", 35.3270, 126.9860, "AT4"), PlaceMatchInput("관방제림", 35.3290, 126.9850, "AT4"),
+                                PlaceMatchInput("메타세쿼이아길", 35.3230, 126.9870, "AT4")])
+    assert [answer["result"] if answer else None for answer in answers] == ["match", None, "match"]
+
+
+def test_match_places_without_live_rows_reads_nothing(db: Session) -> None:
+    statements: list[str] = []
+    event.listen(db.get_bind(), "before_cursor_execute", lambda *args: statements.append(args[2]))
+    assert match_places(db, [None, None]) == [None, None]
+    assert statements == []
+
+
+def test_trip_search_prematches_with_the_session_it_released_before_kakao(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    # 코덱스 검토: 접근 확인 뒤 놓은(close) 실제 세션을 미리 맞춤이 다시 쓴다 - 가짜 db 가 아니라 실제 Session 으로 close → 다시 읽기
+    seed(db, place_row("tourapi", "126", "죽녹원", 35.3270, 126.9860, "sight"))
+
+    class FakeSearchProvider:
+        def search_keyword(self, *, query: str, size: int = 10):
+            return [KakaoLocalPlace(external_place_id="1", name="죽녹원", category_name="여행 > 관광,명소", category_group_code="AT4",
+                                    category_group_name="관광명소", phone=None, address="전남 담양군 담양읍", latitude=35.3270,
+                                    longitude=126.9861, place_url="https://place.map.kakao.com/1")]
+
+    closed: list[bool] = []
+    real_close = db.close
+
+    def spy_close() -> None:
+        closed.append(True)
+        real_close()
+
+    monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: True, raising=False)
+    monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: FakeSearchProvider())
+    monkeypatch.setattr(db, "close", spy_close)
+
+    rows = trip_service.search_places_for_trip(db, USER, trip_handle="7", query="죽녹원")
+
+    assert closed == [True]
+    assert rows[0]["publicMatch"]["result"] == "match"
+    assert rows[0]["publicMatch"]["places"][0]["sourceId"] == "126"
 
 
 def test_radius_is_1km_for_tourapi_sights_and_200m_otherwise_and_for_sangga(db: Session) -> None:
@@ -489,9 +595,26 @@ def test_match_route_needs_login_and_answers_in_camel_case(db: Session) -> None:
     assert found.json() == {"result": "match", "places": [{
         "source": "tourapi", "sourceId": "126508", "name": "오동도", "address": "전남광주통합특별시 여수시 수정동 1",
         "latitude": 34.7443, "longitude": 127.7663, "category": "sight", "sido": "전남", "city": "여수",
-        "photoUrl": "http://tong.visitkorea.or.kr/a.jpg", "photoLicense": "Type3", "distanceMeters": 0,
-    }]}
+        "photoUrl": "https://tong.visitkorea.or.kr/a.jpg", "photoLicense": "Type3", "distanceMeters": 0,
+    }], "fill": None}
     assert outside.status_code == 422
+
+
+def test_match_route_adds_the_address_fill_when_nothing_matches(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    # 홈에서 넘어온 장소도 검색 결과와 같은 갈래 - match 가 아니면 건물 · 땅 지번이 fill 로 실린다(조회는 SAVEPOINT 안에서 돈다)
+    monkeypatch.setattr(address_fill.geo_repository, "locate",
+                        lambda session, points: [GeoHit("building", 31, "1213010200100010006", "여수시 수정동 1-6", 34.7447, 127.7677, 3.0)])
+    app.dependency_overrides[get_optional_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: USER
+    try:
+        response = TestClient(app).post("/api/places/match", json={"name": "오동도 선착장", "latitude": 34.7448, "longitude": 127.7679})
+    finally:
+        app.dependency_overrides.pop(get_optional_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
+    assert response.json() == {"result": "none", "places": [], "fill": {
+        "kind": "building", "id": 31, "pnu": "1213010200100010006", "address": "여수시 수정동 1-6",
+        "latitude": 34.7447, "longitude": 127.7677, "distanceMeters": 3,
+    }}
 
 
 def test_match_never_writes_or_logs_the_values_it_received(db: Session, caplog: pytest.LogCaptureFixture) -> None:
@@ -504,6 +627,41 @@ def test_match_never_writes_or_logs_the_values_it_received(db: Session, caplog: 
     finally:
         app.dependency_overrides.pop(get_optional_db, None)
         app.dependency_overrides.pop(get_current_user, None)
-    assert response.json() == {"result": "none", "places": []}
+    assert response.json() == {"result": "none", "places": [], "fill": None}
     assert "카카오에서온가게이름" not in caplog.text
     assert db.scalar(select(func.count()).select_from(PublicPlace)) == 0
+
+
+def north_of(latitude: float, meters: float) -> float:
+    return latitude + meters / METERS_PER_DEGREE
+
+
+def test_dense_area_matching_reads_only_a_200m_box_of_stores(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str | None, float, list[str]]] = []
+    real = public_places.public_places_in_boxes
+
+    def spy(session: Session, boxes, *, source: str):
+        rows = real(session, boxes, source=source)
+        calls.append((source, boxes[0]["north"] - boxes[0]["south"], [row.source_id for row in rows]))
+        return rows
+
+    monkeypatch.setattr(public_places, "public_places_in_boxes", spy)
+    seed(db, place_row("sangga", "S300", "향일암", north_of(34.7443, 300), 127.7663, "leisure"),
+         place_row("tourapi", "T900", "향일암", north_of(34.7443, 900), 127.7663, "sight"))
+
+    found = match_place(db, name="향일암", latitude=34.7443, longitude=127.7663, category_code="AT4")
+
+    assert found.result == "match" and [place.source_id for place, _ in found.places] == ["T900"]   # 900m 떨어진 TourAPI 장소는 맞는다
+    assert [(source, ids) for source, _span, ids in calls] == [("tourapi", ["T900"]), ("sangga", [])]   # 가게 300m 는 읽지도 않았다
+    assert calls[1][1] < calls[0][1] / 4   # 가게 상자(약 400m)는 TourAPI 상자(약 2km)보다 훨씬 좁다
+    calls.clear()
+    match_place(db, name="향일암", latitude=34.7443, longitude=127.7663, category_code="FD6")
+    assert [source for source, _span, _ids in calls] == ["tourapi", "sangga"]   # 넓은 반경이 필요 없으면 두 출처 모두 200m 상자
+    assert calls[0][1] == calls[1][1]
+
+
+def test_box_query_can_be_limited_to_one_source(db: Session) -> None:
+    seed(db, place_row("tourapi", "T", "a"), place_row("sangga", "S", "b"))
+    bounds = {"south": 34.74, "north": 34.75, "west": 127.76, "east": 127.77}
+    assert {row.source_id for row in public_places_in_box(db, **bounds)} == {"T", "S"}
+    assert [row.source_id for row in public_places_in_box(db, **bounds, source="sangga")] == ["S"]

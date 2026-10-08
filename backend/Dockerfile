@@ -20,4 +20,10 @@ FROM runtime AS review
 
 COPY tests ./tests
 
+# 월 1회 건물 · 땅 적재 도구(방식1). compose 는 마지막 단계(final)만 빌드한다 - 이 단계는 --target geo-loader 로만 만든다
+FROM runtime AS geo-loader
+
+COPY requirements-geo.txt ./
+RUN pip install --no-cache-dir -r requirements-geo.txt
+
 FROM runtime AS final

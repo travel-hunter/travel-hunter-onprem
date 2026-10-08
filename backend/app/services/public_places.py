@@ -27,7 +27,7 @@ from app.repositories.public_places import (
     count_public_places_by,
     get_sync_state,
     prune_public_places,
-    public_places_in_box,
+    public_places_in_boxes,
     record_sync_state,
     upsert_public_places,
 )
@@ -431,6 +431,14 @@ def _fits(category_code: str | None, place: PublicPlace) -> bool:
     return allowed is not None and place.category in allowed
 
 
+def _box(latitude: float, longitude: float, radius_m: float) -> dict[str, float]:
+    """반경(m)을 덮는 위경도 상자 - 거리 함수와 같은 지구 반경에 여유 1%, 상자 북쪽 끝의 좁은 경도까지 덮는다."""
+
+    dlat = radius_m * BOX_MARGIN / METERS_PER_DEGREE
+    dlng = dlat / math.cos(math.radians(latitude + dlat))
+    return {"south": latitude - dlat, "north": latitude + dlat, "west": longitude - dlng, "east": longitude + dlng}
+
+
 def match_place(
     db: Session, *, name: str, latitude: float, longitude: float, category_code: str | None
 ) -> PlaceMatch:
@@ -440,17 +448,58 @@ def match_place(
     key = name_key(name)
     if not key:
         return PlaceMatch("none", [])
-    tour_radius = WIDE_RADIUS_M if category_code in WIDE_KAKAO_CATEGORIES else NEAR_RADIUS_M
-    dlat = max(tour_radius, NEAR_RADIUS_M) * BOX_MARGIN / METERS_PER_DEGREE
-    dlng = dlat / math.cos(math.radians(latitude + dlat))   # 상자 북쪽 끝의 좁은 경도까지 덮는다
+    places = _read_boxes(db, [(latitude, longitude, category_code)])
+    return _decide(key, _near(latitude, longitude, category_code, places), category_code)
+
+
+def _tour_radius(category_code: str | None) -> int:
+    return WIDE_RADIUS_M if category_code in WIDE_KAKAO_CATEGORIES else NEAR_RADIUS_M
+
+
+def _read_boxes(db: Session, points: Sequence[tuple[float, float, str | None]]) -> list[PublicPlace]:
+    """맞춰 볼 자리들의 상자를 출처마다 질의 한 번으로 읽는다(결정 23). 넓은 반경(1km)은 TourAPI 만 쓰고 가게는 200m 상자만 읽는다
+    - 명동 · 종로에서는 1km 상자가 가게 수천 줄을 읽고 버렸다(결정 16)."""
+
+    if not points:
+        return []
+    return [
+        *public_places_in_boxes(db, [_box(lat, lng, _tour_radius(code)) for lat, lng, code in points], source=TOURAPI),
+        *public_places_in_boxes(db, [_box(lat, lng, NEAR_RADIUS_M) for lat, lng, _ in points], source=SANGGA),
+    ]
+
+
+def _one_per_listing(near: list[tuple[PublicPlace, float]]) -> list[tuple[PublicPlace, float]]:
+    """같은 출처에 이름 열쇠 · 주소 · 분류가 같은 줄이 여럿이면(상가정보 중복 등록) 가까운 하나만 남긴다(결정 27).
+    주소가 빈 줄은 같은 곳인지 알 수 없어 묶지 않는다. 분류가 다르거나 출처가 다르면 그대로 둘이다(결정 15)."""
+
+    seen: set[tuple[str, str, str, str]] = set()
+    kept: list[tuple[PublicPlace, float]] = []
+    for place, distance in near:   # 가까운 순
+        address = (place.address or "").strip()
+        listing = (place.source, place.name_key, address, place.category)
+        if address and listing in seen:
+            continue
+        seen.add(listing)
+        kept.append((place, distance))
+    return kept
+
+
+def _near(latitude: float, longitude: float, category_code: str | None, places: Iterable[PublicPlace]) -> list[tuple[PublicPlace, float]]:
+    """반경 안의 장소를 가까운 순으로(TourAPI 는 분류에 따라 1km · 200m, 상가정보는 200m), 같은 줄은 하나로."""
+
+    tour_radius = _tour_radius(category_code)
     near: list[tuple[PublicPlace, float]] = []
-    for place in public_places_in_box(
-        db, south=latitude - dlat, north=latitude + dlat, west=longitude - dlng, east=longitude + dlng
-    ):
+    for place in places:
         distance = distance_m(latitude, longitude, place.latitude, place.longitude)
         if distance <= (tour_radius if place.source == TOURAPI else NEAR_RADIUS_M):
             near.append((place, distance))
     near.sort(key=lambda pair: pair[1])
+    return _one_per_listing(near)
+
+
+def _decide(key: str, near: list[tuple[PublicPlace, float]], category_code: str | None) -> PlaceMatch:
+    """바로 담기는 이름이 같은 곳이 반경 안에 하나뿐이고 분류가 맞을 때만. 같은 이름이 여럿이거나 이름 일부만 겹치면 후보(가까운 순 3곳)."""
+
     exact = [pair for pair in near if pair[0].name_key == key]
     if exact:
         if len(exact) == 1 and _fits(category_code, exact[0][0]):
@@ -461,6 +510,17 @@ def match_place(
         if loose:
             return PlaceMatch("candidates", loose[:MAX_CANDIDATES])
     return PlaceMatch("none", [])
+
+
+TOUR_API_PHOTO_HTTP_PREFIX = "http://tong.visitkorea.or.kr/"
+
+
+def secure_photo_url(url: str | None) -> str | None:
+    """TourAPI 사진 주소는 http 로 오지만 같은 이미지가 https 로도 열린다(2026-10-05 확인) - https 페이지에서 막히지 않게 바꾼다."""
+
+    if url and url.startswith(TOUR_API_PHOTO_HTTP_PREFIX):
+        return "https://" + url.removeprefix("http://")
+    return url
 
 
 def public_place_item(place: PublicPlace, distance: float) -> dict[str, object]:
@@ -474,7 +534,7 @@ def public_place_item(place: PublicPlace, distance: float) -> dict[str, object]:
         "category": place.category,
         "sido": place.sido,
         "city": place.city,
-        "photoUrl": place.photo_url,
+        "photoUrl": secure_photo_url(place.photo_url),
         "photoLicense": place.photo_license,
         "distanceMeters": round(distance),
     }
@@ -485,3 +545,33 @@ def match_place_response(
 ) -> dict[str, object]:
     found = match_place(db, name=name, latitude=latitude, longitude=longitude, category_code=category_code)
     return {"result": found.result, "places": [public_place_item(place, distance) for place, distance in found.places]}
+
+
+@dataclass(frozen=True)
+class PlaceMatchInput:
+    """미리 맞춤 한 줄 - 카카오 결과의 이름 · 좌표 · 분류. 맞춰 보는 동안만 쓰고 버린다(저장 · 로그 금지)."""
+
+    name: str
+    latitude: float
+    longitude: float
+    category_code: str | None
+
+
+def match_places(db: Session, rows: Sequence[PlaceMatchInput | None]) -> list[dict[str, object] | None]:
+    """검색 결과 여러 줄을 한 번에 맞춘다(결정 23) - 출처마다 질의 한 번으로 읽고 줄마다 match_place 와 같은 규칙으로 가린다.
+    None 줄(좌표 없음)은 None, 한 줄을 가리다 실패하면 그 줄만 None 이다. DB 읽기가 실패하면 예외를 올린다 - 부른 쪽이 모든 줄을 None 으로 둔다."""
+
+    live = [row for row in rows if row is not None and name_key(row.name)]
+    places = _read_boxes(db, [(row.latitude, row.longitude, row.category_code) for row in live])
+    answers: list[dict[str, object] | None] = []
+    for row in rows:
+        if row is None:
+            answers.append(None)
+            continue
+        try:
+            key = name_key(row.name)
+            found = _decide(key, _near(row.latitude, row.longitude, row.category_code, places), row.category_code) if key else PlaceMatch("none", [])
+            answers.append({"result": found.result, "places": [public_place_item(place, distance) for place, distance in found.places]})
+        except Exception:   # 한 줄의 실패가 다른 줄의 답을 지우지 않게 - 값은 로그에 남기지 않는다
+            answers.append(None)
+    return answers

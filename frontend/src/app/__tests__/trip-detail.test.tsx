@@ -10,16 +10,19 @@ import {
 import { readFileSync } from "node:fs";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   appDataApi,
   type LinkedTripPolicy,
+  type PlaceSearchCandidate,
   type PlaceSearchItem,
+  type PublicPlaceItem,
   type Recommendation,
   type Trip,
 } from "../../api";
-import { tripPlaceFromSearchItem, writePlaceParam } from "../../utils/placeHandoff";
+import { rememberPlaces } from "../../components/map/placeMemory";
+import { writeAddPlaceParam } from "../../utils/placeHandoff";
 import { App } from "../App";
 import { AppProviders } from "../AppRoot";
 import {
@@ -33,6 +36,7 @@ import { getLink, login, renderAppRoute, routeLocation } from "../../test/render
 import {
   buildTimelineRenderItems,
   buildTimelineSortableIds,
+  findAddedPlaceId,
   isCrossDayTimelineDrag,
   DAY_EDGE_WIDTH_PX,
   DAY_EDGE_FIRST_DELAY_MS,
@@ -74,7 +78,50 @@ import {
   shouldScheduleDaySwitch,
 } from "../../pages/itinerary/ItineraryDetailPage";
 
+/* 3단계 담는 흐름: 검색 후보를 고르면 공공데이터와 맞춰 본다(matchPlace). 후보에 좌표가 있어야 맞춰 보고, 장소 ID 는 kakao:{숫자}다 */
+function kakaoCandidate(id: string, title: string): PlaceSearchCandidate {
+  return {
+    id: `kakao:${id}`,
+    label: "📍",
+    title,
+    meta: `카카오 주소 ${title}`,
+    address: `카카오 주소 ${title}`,
+    categoryCode: "AT4",
+    categoryName: "카카오 분류",
+    latitude: 33.4584,
+    longitude: 126.9425,
+    placeUrl: `https://place.map.kakao.com/${id}`,
+    sourceProvider: "kakao",
+    externalPlaceId: id,
+  };
+}
+
+function publicPlaceFor(name: string, sourceId = name.replace(/\s+/g, "-")): PublicPlaceItem {
+  return {
+    source: "tourapi",
+    sourceId,
+    name,
+    address: `공공데이터 주소 ${name}`,
+    latitude: 33.46,
+    longitude: 126.94,
+    category: "sight",
+    distanceMeters: 15,
+  };
+}
+
+/* 이름이 같은 공공데이터 장소 하나로 바로 맞는다 */
+function mockMatchByName() {
+  return vi.spyOn(appDataApi, "matchPlace").mockImplementation(async (request) => ({
+    result: "match",
+    places: [publicPlaceFor(request.name)],
+  }));
+}
+
 describe("Travel Hunter app — trip detail & itinerary", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("keeps place search input responsive while deferring parent updates", async () => {
     const onSearchChange = vi.fn();
 
@@ -2696,7 +2743,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
-  it("renders a trip detail coordinate-less Kakao map through the shared query fallback", async () => {
+  it("renders a coordinate-less old Kakao row on the trip detail map through the shared query fallback", async () => {
     vi.stubEnv("VITE_KAKAO_MAP_JS_KEY", "test-js-key");
     const kakao = installAppKakaoSdkMock();
     const expectedQuery = "부산 중구 자갈치해안로 52";
@@ -2756,6 +2803,204 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       getTripSpy.mockRestore();
       vi.unstubAllEnvs();
       delete window.kakao;
+    }
+  });
+
+  it("does not look up a coordinate-less custom place by its name", async () => {
+    vi.stubEnv("VITE_KAKAO_MAP_JS_KEY", "test-js-key");
+    const kakao = installAppKakaoSdkMock();
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "55",
+      title: "나만의 장소 지도 여행",
+      dates: "2026.06.15 - 06.17",
+      days: {
+        1: [{ id: "custom-no-spot", time: "10:00", label: "내가 아는 식당", meta: "", placeOrigin: "custom", latitude: null, longitude: null }],
+      },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/55?day=1&view=map");
+
+      // 좌표도 찾을 말도 없으니 실제 지도는 그리지 않고 폴백 지도만 남는다 - 이름으로 카카오에 다시 묻지 않는다
+      expect(await screen.findByRole("button", { name: "1번 장소: 내가 아는 식당" })).toBeInTheDocument();
+      expect(kakao.addressSearch).not.toHaveBeenCalled();
+      expect(kakao.keywordSearch).not.toHaveBeenCalled();
+      expect(kakao.mapInstances).toHaveLength(0);
+    } finally {
+      getTripSpy.mockRestore();
+      vi.unstubAllEnvs();
+      delete window.kakao;
+    }
+  });
+
+  it("draws a pin for a custom place only when the user picked a spot", async () => {
+    vi.stubEnv("VITE_KAKAO_MAP_JS_KEY", "test-js-key");
+    const kakao = installAppKakaoSdkMock();
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "55",
+      title: "나만의 장소 지도 여행",
+      dates: "2026.06.15 - 06.17",
+      days: {
+        1: [
+          { id: "custom-spot", time: "10:00", label: "찍은 곳", meta: "", placeOrigin: "custom", latitude: 35.1, longitude: 129.1 },
+          { id: "custom-no-spot", time: "12:00", label: "안 찍은 곳", meta: "", placeOrigin: "custom", latitude: null, longitude: null },
+        ],
+      },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/55?day=1&view=map");
+
+      await waitFor(() => expect(kakao.mapInstances).toHaveLength(1));
+      expect(kakao.markerInstances).toHaveLength(1);
+      expect(kakao.addressQueries).toEqual([]);
+      expect(kakao.keywordQueries).toEqual([]);
+    } finally {
+      getTripSpy.mockRestore();
+      vi.unstubAllEnvs();
+      delete window.kakao;
+    }
+  });
+
+  it("shows a public place's photo with its credit, its address and the Kakao link in the detail sheet", async () => {
+    const address = "전남광주통합특별시 여수시 오동도로 222";
+    const photoUrl = "https://tong.visitkorea.or.kr/cms/resource/23/3074123_image2_1.jpg";
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "57",
+      currentUserRole: "owner",
+      days: {
+        1: [
+          {
+            id: "1",
+            time: "09:00",
+            label: "오동도",
+            meta: address,
+            address,
+            latitude: 34.7443,
+            longitude: 127.7663,
+            placeOrigin: "public",
+            publicSource: "tourapi",
+            publicSourceId: "126508",
+            publicCategory: "sight",
+            photoUrl,
+            photoLicense: "Type3",
+            placeUrl: "https://place.map.kakao.com/8193468",
+          },
+        ],
+      },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/57?day=1");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "오동도 상세 열기" }));
+
+      const sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+      expect(within(sheet).getByRole("img", { name: "오동도 사진" })).toHaveAttribute("src", photoUrl);
+      expect(within(sheet).getByText("사진: 한국관광공사 · 변경 금지")).toBeInTheDocument();
+      expect(within(sheet).getByText("관광지")).toBeInTheDocument();
+      expect(within(sheet).getByText(address)).toBeInTheDocument();
+      expect(within(sheet).getByRole("link", { name: "카카오맵에서 보기" })).toHaveAttribute("href", "https://place.map.kakao.com/8193468");
+      // 위치는 지도 핀이 보여 준다 - 좌표 글자는 예전 행에만 있다
+      expect(within(sheet).queryByText("좌표")).not.toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
+  it("links an own place to Kakao Map only when a place url was kept, and shows no address or coordinates it does not have", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "58",
+      currentUserRole: "owner",
+      days: {
+        1: [
+          { id: "1", time: "09:00", label: "내가 아는 식당", meta: "", placeOrigin: "custom", latitude: null, longitude: null },
+          { id: "2", time: "11:00", label: "링크 있는 곳", meta: "", placeOrigin: "custom", latitude: 35.1, longitude: 129.1, placeUrl: "https://place.map.kakao.com/555" },
+        ],
+      },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/58?day=1");
+      const user = userEvent.setup();
+
+      await user.click(await screen.findByRole("button", { name: "내가 아는 식당 상세 열기" }));
+      let sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+      expect(within(sheet).getByText("나만의 장소")).toBeInTheDocument();
+      expect(within(sheet).queryByRole("link", { name: "카카오맵에서 보기" })).not.toBeInTheDocument();
+      expect(within(sheet).queryByText("주소")).not.toBeInTheDocument();
+      expect(within(sheet).queryByText("좌표")).not.toBeInTheDocument();
+      await user.click(within(sheet).getByRole("button", { name: "닫기" }));
+
+      await user.click(screen.getByRole("button", { name: "링크 있는 곳 상세 열기" }));
+      sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+      expect(within(sheet).getByRole("link", { name: "카카오맵에서 보기" })).toHaveAttribute("href", "https://place.map.kakao.com/555");
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
+  it("shows the name the user gave a public place on its card and in its sheet while the photo, address and category stay public", async () => {
+    const address = "전남광주통합특별시 여수시 오동도로 222";
+    const photoUrl = "https://tong.visitkorea.or.kr/cms/resource/23/3074123_image2_1.jpg";
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "59",
+      currentUserRole: "owner",
+      days: {
+        1: [
+          {
+            id: "1",
+            time: "09:00",
+            label: "내가 부르는 이름",
+            meta: address,
+            address,
+            latitude: 34.7443,
+            longitude: 127.7663,
+            placeOrigin: "public",
+            publicSource: "tourapi",
+            publicSourceId: "126508",
+            publicCategory: "sight",
+            photoUrl,
+            photoLicense: "Type1",
+          },
+        ],
+      },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/59?day=1");
+      const user = userEvent.setup();
+      // 서버가 label 에 사용자 이름을 내려 주므로 카드 · 이름 칸 · 사진 설명이 모두 그 이름이다
+      await user.click(await screen.findByRole("button", { name: "내가 부르는 이름 상세 열기" }));
+
+      const sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+      expect(sheet.querySelector('input[name="place-label"]')).toHaveValue("내가 부르는 이름");
+      expect(within(sheet).getByRole("img", { name: "내가 부르는 이름 사진" })).toHaveAttribute("src", photoUrl);
+      expect(within(sheet).getByText("사진: 한국관광공사")).toBeInTheDocument();
+      expect(within(sheet).getByText("관광지")).toBeInTheDocument();
+      expect(within(sheet).getByText(address)).toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
     }
   });
 
@@ -2885,6 +3130,9 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(screen.getByLabelText("장소 검색")).toBeInTheDocument();
       expect(screen.queryByLabelText("장소명")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("메모")).not.toBeInTheDocument();
+      // 직접 적는 칸은 입구를 눌러야 열린다 - 검색 전에는 이름 칸이 없다(3단계)
+      expect(screen.queryByLabelText("장소 이름")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "찾는 곳이 없어요 · 직접 적기" })).toBeInTheDocument();
 
       await user.type(screen.getByLabelText("장소 검색"), "등록되지 않은 장소");
 
@@ -2994,7 +3242,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
-  it("keeps selected place search candidates in an add-sheet place basket", async () => {
+  it("keeps matched public places in an add-sheet place basket", async () => {
     const trip: Trip = {
       ...getPreviewTrip(),
       id: "126",
@@ -3006,39 +3254,19 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     const searchTripPlacesSpy = vi
       .spyOn(appDataApi, "searchTripPlaces")
       .mockImplementation(async (_tripId, request) => {
-        if (request.query.includes("성산")) {
-          return [
-            {
-              id: "search-a",
-              label: "성산일출봉",
-              title: "성산일출봉",
-              meta: "제주 서귀포시",
-              address: "제주 서귀포시 성산읍",
-              categoryCode: "AT4",
-              categoryName: "관광명소",
-              sourceProvider: "kakao",
-              externalPlaceId: "kakao-a",
-            },
-          ];
-        }
-        if (request.query.includes("시장")) {
-          return [
-            {
-              id: "search-b",
-              label: "동문시장",
-              title: "동문시장",
-              meta: "제주 제주시",
-              address: "제주 제주시 관덕로",
-              categoryCode: "FD6",
-              categoryName: "음식점",
-              sourceProvider: "kakao",
-              externalPlaceId: "kakao-b",
-            },
-          ];
-        }
+        if (request.query.includes("성산")) return [kakaoCandidate("8001", "성산일출봉")];
+        if (request.query.includes("시장")) return [kakaoCandidate("8002", "동문시장")];
         return [];
       });
+    const matchPlaceSpy = vi.spyOn(appDataApi, "matchPlace").mockImplementation(async (request) => ({
+      result: "match",
+      // 공공데이터의 표기가 카카오와 다르다 - 바구니에는 공공데이터 이름 · 주소가 보여야 한다
+      places: [
+        request.name === "동문시장" ? publicPlaceFor("동문 시장", "200") : publicPlaceFor("성산 일출봉", "126508"),
+      ],
+    }));
     const addPlaceSpy = vi.spyOn(appDataApi, "addTripPlace");
+    const addPlacesSpy = vi.spyOn(appDataApi, "addTripPlaces").mockRejectedValue(new Error("offline"));
 
     try {
       await login();
@@ -3052,41 +3280,63 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.click(await screen.findByRole("button", { name: "성산일출봉 선택" }));
 
       expect(screen.getByRole("dialog", { name: "장소 추가" })).toBeInTheDocument();
+      // 맞춰 보기에는 이름 · 좌표 · 분류만 간다
+      await waitFor(() =>
+        expect(matchPlaceSpy).toHaveBeenCalledWith({
+          name: "성산일출봉",
+          latitude: 33.4584,
+          longitude: 126.9425,
+          categoryCode: "AT4",
+        }),
+      );
+      const firstBasket = await screen.findByRole("region", { name: "추가할 장소 목록" });
       expect(searchInput).toHaveValue("");
       expect(screen.queryByRole("button", { name: "성산일출봉 선택" })).not.toBeInTheDocument();
-      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("추가할 장소 1개");
-      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("관광명소");
-      expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("제주 서귀포시 성산읍");
+      expect(firstBasket).toHaveTextContent("추가할 장소 1개");
+      expect(firstBasket).toHaveTextContent("성산 일출봉");
+      expect(firstBasket).toHaveTextContent("관광지");
+      expect(firstBasket).toHaveTextContent("공공데이터 주소 성산 일출봉");
+      // 카카오가 준 주소 · 분류는 바구니에 없다
+      expect(firstBasket).not.toHaveTextContent("카카오");
       expect(screen.queryByLabelText("장소명")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("메모")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Day 1에 1개 저장하기" })).toBeInTheDocument();
 
       await user.type(searchInput, "시장");
       await user.click(await screen.findByRole("button", { name: "동문시장 선택" }));
+      await waitFor(() =>
+        expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("추가할 장소 2개"),
+      );
       await user.type(searchInput, "성산");
       await user.click(await screen.findByRole("button", { name: "성산일출봉 선택" }));
 
+      await waitFor(() =>
+        expect(screen.getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("추가할 장소 3개"),
+      );
       const basket = screen.getByRole("region", { name: "추가할 장소 목록" });
-      expect(basket).toHaveTextContent("추가할 장소 3개");
-      expect(within(basket).getAllByText("성산일출봉")).toHaveLength(2);
-      expect(within(basket).getByText("동문시장")).toBeInTheDocument();
+      expect(within(basket).getAllByText("성산 일출봉")).toHaveLength(2);
+      expect(within(basket).getByText("동문 시장")).toBeInTheDocument();
 
-      const removeButton = within(basket).getAllByRole("button", { name: "성산일출봉 제거" })[0];
+      const removeButton = within(basket).getAllByRole("button", { name: "성산 일출봉 제거" })[0];
       expect(removeButton).toHaveTextContent(/^제거$/);
       await user.click(removeButton);
 
       expect(basket).toHaveTextContent("추가할 장소 2개");
-      expect(within(basket).getAllByText("성산일출봉")).toHaveLength(1);
+      expect(within(basket).getAllByText("성산 일출봉")).toHaveLength(1);
       expect(screen.getByRole("button", { name: "Day 1에 2개 저장하기" })).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "Day 1에 2개 저장하기" }));
 
+      await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
       expect(addPlaceSpy).not.toHaveBeenCalled();
+      // 저장이 실패해도 창과 바구니는 그대로다
       expect(screen.getByRole("dialog", { name: "장소 추가" })).toBeInTheDocument();
     } finally {
       getTripSpy.mockRestore();
       searchTripPlacesSpy.mockRestore();
+      matchPlaceSpy.mockRestore();
       addPlaceSpy.mockRestore();
+      addPlacesSpy.mockRestore();
     }
   });
 
@@ -3114,27 +3364,140 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     };
     const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
     const addPlacesSpy = vi.spyOn(appDataApi, "addTripPlaces").mockResolvedValue({ ...trip, revision: 4 });
+    const matchPlaceSpy = vi.spyOn(appDataApi, "matchPlace").mockResolvedValue({
+      result: "match",
+      places: [publicPlaceFor("오동도", "126508")],
+    });
     try {
       await login();
       cleanup();
-      renderAppRoute(`/trips/128?${new URLSearchParams({ addPlace: writePlaceParam(odongdo) })}`);
+      rememberPlaces([odongdo]);
+      renderAppRoute(`/trips/128?${writeAddPlaceParam(new URLSearchParams(), { kakaoPlaceId: "8193468", query: "오동도" })}`);
       const user = userEvent.setup();
       // 홈 장소 카드의 '일정에 담기'(시안 v57): 넘어온 장소가 바구니에 담긴 채 열리고, 주소의 넘김은 한 번 읽고 지운다
       const sheet = await screen.findByRole("dialog", { name: "장소 추가" });
-      expect(within(sheet).getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("오동도");
+      expect(await within(sheet).findByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("오동도");
+      // 넘어온 카카오 장소는 검색 결과를 고른 것과 같이 맞춰 본다 - 이름 · 좌표 · 분류만 간다
+      expect(matchPlaceSpy).toHaveBeenCalledWith({ name: "오동도", latitude: 34.745, longitude: 127.766, categoryCode: "AT4" });
       await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("addPlace")).toBeNull());
+      expect(new URLSearchParams(routeLocation().search).has("q")).toBe(false);
       // 추가 창에서도 날짜 칩으로 저장할 날을 고른다 - 고르기만 하고 옮기지 않는다
       await user.click(within(sheet).getByRole("radio", { name: /Day 2/ }));
       expect(addPlacesSpy).not.toHaveBeenCalled();
       await user.click(within(sheet).getByRole("button", { name: "Day 2에 1개 저장하기" }));
       await waitFor(() => expect(addPlacesSpy).toHaveBeenCalledTimes(1));
-      // 일정 안 장소 검색으로 같은 곳을 담을 때와 같은 기록(카카오 id · 분류 전체 경로)
-      expect(addPlacesSpy).toHaveBeenCalledWith("128", 2, { expectedRevision: 3, places: [tripPlaceFromSearchItem(odongdo)] });
+      // 일정 안 장소 검색으로 같은 곳을 담을 때와 같은 기록 - 공공데이터 참조와 카카오 장소 ID 뿐이다
+      expect(addPlacesSpy).toHaveBeenCalledWith("128", 2, {
+        expectedRevision: 3,
+        places: [{ publicPlace: { source: "tourapi", sourceId: "126508" }, kakaoPlaceId: "8193468" }],
+      });
+      // 카카오 이름 · 주소 · 좌표 · 분류는 요청 어디에도 없다
+      expect(JSON.stringify(addPlacesSpy.mock.calls[0][2])).not.toMatch(/수정동|34\.745|127\.766|AT4|관광,명소/);
       // 담은 날을 보여 준다 - 보던 Day 1 에 남으면 저장이 안 된 것처럼 보였다(10/3 리뷰)
       await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("day")).toBe("2"));
     } finally {
       getTripSpy.mockRestore();
       addPlacesSpy.mockRestore();
+    }
+  });
+
+  it("asks Kakao again with the same words when the handed-over place is no longer in memory", async () => {
+    const trip: Trip = { ...getPreviewTrip(), id: "128", revision: 3, days: { 1: [], 2: [] }, currentUserRole: "owner" };
+    const odongdo: PlaceSearchItem = {
+      kind: "place",
+      id: "kakao:8193468",
+      name: "오동도",
+      category: "여행 > 관광,명소 > 섬",
+      categoryCode: "AT4",
+      address: "전남광주통합특별시 여수시 수정동 1-1",
+      latitude: 34.745,
+      longitude: 127.766,
+      placeUrl: "http://place.map.kakao.com/8193468",
+      sido: "전남",
+      city: "여수",
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const searchSpy = vi.spyOn(appDataApi, "searchPlaces").mockResolvedValue([odongdo]);
+    const matchSpy = vi.spyOn(appDataApi, "matchPlace").mockResolvedValue({ result: "match", places: [publicPlaceFor("오동도", "126508")] });
+    try {
+      await login();
+      cleanup();
+      renderAppRoute(`/trips/128?${writeAddPlaceParam(new URLSearchParams(), { kakaoPlaceId: "8193468", query: "오동도" })}`);
+
+      const sheet = await screen.findByRole("dialog", { name: "장소 추가" });
+      expect(searchSpy).toHaveBeenCalledWith("오동도", expect.anything());
+      await waitFor(() => expect(matchSpy).toHaveBeenCalledTimes(1));
+      expect(await within(sheet).findByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("오동도");
+    } finally {
+      getTripSpy.mockRestore();
+      searchSpy.mockRestore();
+      matchSpy.mockRestore();
+    }
+  });
+
+  it("goes to the custom-place step with only the Kakao id when the handed-over place cannot be found again", async () => {
+    const trip: Trip = { ...getPreviewTrip(), id: "128", revision: 3, days: { 1: [], 2: [] }, currentUserRole: "owner" };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const searchSpy = vi.spyOn(appDataApi, "searchPlaces").mockResolvedValue([]);
+    const matchSpy = vi.spyOn(appDataApi, "matchPlace");
+    const addPlacesSpy = vi.spyOn(appDataApi, "addTripPlaces").mockResolvedValue({ ...trip, revision: 4 });
+    try {
+      await login();
+      cleanup();
+      renderAppRoute(`/trips/128?${writeAddPlaceParam(new URLSearchParams(), { kakaoPlaceId: "8193468", query: "오동도" })}`);
+      const user = userEvent.setup();
+
+      const sheet = await screen.findByRole("dialog", { name: "장소 추가" });
+      await waitFor(() => expect(searchSpy).toHaveBeenCalled());
+      // 맞춰 볼 이름 · 좌표가 없다 - 바로 나만의 장소 칸(이름은 넘어온 친 말 오동도)이다
+      const form = await within(sheet).findByRole("form", { name: "나만의 장소" });
+      expect(within(form).getByLabelText("장소 이름")).toHaveValue("오동도");
+      expect(matchSpy).not.toHaveBeenCalled();
+      // 카카오 장소 ID 는 남는다 - '카카오맵에서 보기' 링크용
+      await user.clear(within(form).getByLabelText("장소 이름"));
+      await user.type(within(form).getByLabelText("장소 이름"), "오동도 앞 매점");
+      await user.click(within(form).getByRole("button", { name: "담기" }));
+      await user.click(await within(sheet).findByRole("button", { name: "Day 1에 1개 저장하기" }));
+      await waitFor(() =>
+        expect(addPlacesSpy).toHaveBeenCalledWith("128", 1, {
+          expectedRevision: 3,
+          places: [{ customPlace: { name: "오동도 앞 매점" }, kakaoPlaceId: "8193468" }],
+        }),
+      );
+    } finally {
+      getTripSpy.mockRestore();
+      searchSpy.mockRestore();
+      matchSpy.mockRestore();
+      addPlacesSpy.mockRestore();
+    }
+  });
+
+  it("only tells a viewer that editing needs permission when a place is handed over", async () => {
+    const trip: Trip = { ...getPreviewTrip(), id: "128", revision: 3, days: { 1: [], 2: [] }, currentUserRole: "viewer" };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const matchSpy = vi.spyOn(appDataApi, "matchPlace");
+    try {
+      await login();
+      cleanup();
+      rememberPlaces([
+        {
+          kind: "place",
+          id: "kakao:8193468",
+          name: "오동도",
+          categoryCode: "AT4",
+          latitude: 34.745,
+          longitude: 127.766,
+        },
+      ]);
+      renderAppRoute(`/trips/128?${writeAddPlaceParam(new URLSearchParams(), { kakaoPlaceId: "8193468", query: "오동도" })}`);
+
+      expect(await screen.findByText(/편집 권한이 필요해요/)).toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: "장소 추가" })).not.toBeInTheDocument();
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).has("addPlace")).toBe(false));
+      expect(matchSpy).not.toHaveBeenCalled();
+    } finally {
+      getTripSpy.mockRestore();
+      matchSpy.mockRestore();
     }
   });
 
@@ -3162,38 +3525,11 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     const searchTripPlacesSpy = vi
       .spyOn(appDataApi, "searchTripPlaces")
       .mockImplementation(async (_tripId, request) => {
-        if (request.query.includes("Alpha")) {
-          return [
-            {
-              id: "alpha",
-              label: "Alpha cafe",
-              title: "Alpha cafe",
-              meta: "Cafe",
-              address: "Alpha address",
-              categoryCode: "CE7",
-              categoryName: "Cafe",
-              sourceProvider: "kakao",
-              externalPlaceId: "kakao-alpha",
-            },
-          ];
-        }
-        if (request.query.includes("Beta")) {
-          return [
-            {
-              id: "beta",
-              label: "Beta park",
-              title: "Beta park",
-              meta: "Park",
-              address: "Beta address",
-              categoryCode: "AT4",
-              categoryName: "Park",
-              sourceProvider: "kakao",
-              externalPlaceId: "kakao-beta",
-            },
-          ];
-        }
+        if (request.query.includes("Alpha")) return [kakaoCandidate("9001", "Alpha cafe")];
+        if (request.query.includes("Beta")) return [kakaoCandidate("9002", "Beta park")];
         return [];
       });
+    mockMatchByName();
     const addPlacesSpy = vi
       .spyOn(appDataApi, "addTripPlaces")
       .mockResolvedValue(savedTrip);
@@ -3217,6 +3553,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
         expect(document.querySelector(".place-search-results button")).toBeInTheDocument(),
       );
       await user.click(document.querySelector<HTMLButtonElement>(".place-search-results button")!);
+      await screen.findByText("추가할 장소 1개");
       await user.type(searchInput, "Beta");
       await waitFor(() =>
         expect(document.querySelector(".place-search-results button")).toBeInTheDocument(),
@@ -3229,32 +3566,8 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(addPlacesSpy).toHaveBeenCalledWith("127", 1, {
         expectedRevision: 7,
         places: [
-          {
-            time: "",
-            label: "Alpha cafe",
-            meta: "Cafe",
-            address: "Alpha address",
-            latitude: null,
-            longitude: null,
-            category: "Cafe",
-            categoryCode: "CE7",
-            placeUrl: null,
-            sourceProvider: "kakao",
-            externalPlaceId: "kakao-alpha",
-          },
-          {
-            time: "",
-            label: "Beta park",
-            meta: "Park",
-            address: "Beta address",
-            latitude: null,
-            longitude: null,
-            category: "Park",
-            categoryCode: "AT4",
-            placeUrl: null,
-            sourceProvider: "kakao",
-            externalPlaceId: "kakao-beta",
-          },
+          { publicPlace: { source: "tourapi", sourceId: "Alpha-cafe" }, kakaoPlaceId: "9001" },
+          { publicPlace: { source: "tourapi", sourceId: "Beta-park" }, kakaoPlaceId: "9002" },
         ],
       });
       await waitFor(() =>
@@ -3289,14 +3602,8 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       .mockResolvedValueOnce(latestTrip);
     const searchTripPlacesSpy = vi
       .spyOn(appDataApi, "searchTripPlaces")
-      .mockResolvedValue([
-        {
-          id: "gamma",
-          label: "Gamma beach",
-          title: "Gamma beach",
-          meta: "Beach",
-        },
-      ]);
+      .mockResolvedValue([kakaoCandidate("8301", "Gamma beach")]);
+    mockMatchByName();
     const addPlacesSpy = vi
       .spyOn(appDataApi, "addTripPlaces")
       .mockRejectedValueOnce(new ApiError("conflict", { status: 409, statusText: "Conflict" }))
@@ -3370,14 +3677,8 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       .mockResolvedValueOnce(latestTrip);
     const searchTripPlacesSpy = vi
       .spyOn(appDataApi, "searchTripPlaces")
-      .mockResolvedValue([
-        {
-          id: "delta",
-          label: "Delta museum",
-          title: "Delta museum",
-          meta: "Museum",
-        },
-      ]);
+      .mockResolvedValue([kakaoCandidate("8302", "Delta museum")]);
+    mockMatchByName();
     const addPlacesSpy = vi
       .spyOn(appDataApi, "addTripPlaces")
       .mockRejectedValueOnce(
@@ -3453,14 +3754,8 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       }));
     const searchTripPlacesSpy = vi
       .spyOn(appDataApi, "searchTripPlaces")
-      .mockResolvedValue([
-        {
-          id: "delta-refresh-failure",
-          label: "Delta museum",
-          title: "Delta museum",
-          meta: "Museum",
-        },
-      ]);
+      .mockResolvedValue([kakaoCandidate("8303", "Delta museum")]);
+    mockMatchByName();
     const addPlacesSpy = vi
       .spyOn(appDataApi, "addTripPlaces")
       .mockRejectedValueOnce(
@@ -3514,14 +3809,8 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
     const searchTripPlacesSpy = vi
       .spyOn(appDataApi, "searchTripPlaces")
-      .mockResolvedValue([
-        {
-          id: "epsilon",
-          label: "Epsilon market",
-          title: "Epsilon market",
-          meta: "Market",
-        },
-      ]);
+      .mockResolvedValue([kakaoCandidate("8304", "Epsilon market")]);
+    mockMatchByName();
     const addPlacesSpy = vi
       .spyOn(appDataApi, "addTripPlaces")
       .mockRejectedValue(
@@ -3666,7 +3955,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
-      expect(addPlaceSpy).toHaveBeenCalledWith("102", 1, expect.objectContaining({ label: "성산일출봉", time: "10:00", meta: "관광명소", category: "관광명소", categoryCode: "AT4", expectedRevision: 4 }));
+      expect(addPlaceSpy).toHaveBeenCalledWith("102", 1, { time: "10:00", customPlace: { name: "성산일출봉" }, expectedRevision: 4 });
       await waitFor(() => expect(screen.queryByText("저장 전 미리보기")).not.toBeInTheDocument());
       await waitFor(() => expect(screen.queryByRole("button", { name: "성산일출봉 후보 저장" })).not.toBeInTheDocument());
       expect(screen.queryByText("추천 후보")).not.toBeInTheDocument();
@@ -3712,7 +4001,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(updatePlaceSpy).toHaveBeenCalledTimes(1));
-      expect(updatePlaceSpy).toHaveBeenCalledWith("121", "existing-time-1", expect.objectContaining({ time: "10:00", expectedRevision: 8 }));
+      expect(updatePlaceSpy).toHaveBeenCalledWith("121", "existing-time-1", { time: "10:00", expectedRevision: 8 });
       expect(addPlaceSpy).not.toHaveBeenCalled();
       await waitFor(() => expect(screen.queryByText("저장 전 미리보기")).not.toBeInTheDocument());
       expect(screen.queryByText("추천 후보")).not.toBeInTheDocument();
@@ -3957,7 +4246,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
       expect(deletePlaceSpy).not.toHaveBeenCalled();
-      expect(addPlaceSpy).toHaveBeenCalledWith("104", 1, expect.objectContaining({ label: "오설록", expectedRevision: 10 }));
+      expect(addPlaceSpy).toHaveBeenCalledWith("104", 1, expect.objectContaining({ customPlace: { name: "오설록" }, expectedRevision: 10 }));
       await waitFor(() => expect(screen.queryByText("저장 전 미리보기")).not.toBeInTheDocument());
     } finally {
       getTripSpy.mockRestore();
@@ -3991,7 +4280,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.click(await screen.findByRole("button", { name: "전체 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
-      expect(addPlaceSpy).toHaveBeenCalledWith("105", 1, expect.objectContaining({ label: "새 추천", expectedRevision: 20 }));
+      expect(addPlaceSpy).toHaveBeenCalledWith("105", 1, expect.objectContaining({ customPlace: { name: "새 추천" }, expectedRevision: 20 }));
       expect(deletePlaceSpy).not.toHaveBeenCalled();
       await waitFor(() => expect(screen.queryByText("저장 전 미리보기")).not.toBeInTheDocument());
       expect(screen.queryByRole("button", { name: "새 추천 후보 저장" })).not.toBeInTheDocument();
@@ -4038,7 +4327,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(2));
-      expect(addPlaceSpy).toHaveBeenLastCalledWith("106", 1, expect.objectContaining({ label: "우도", time: "10:00", meta: "섬", expectedRevision: 31 }));
+      expect(addPlaceSpy).toHaveBeenLastCalledWith("106", 1, { time: "10:00", customPlace: { name: "우도" }, expectedRevision: 31 });
     } finally {
       getTripSpy.mockRestore();
       recommendationsSpy.mockRestore();
@@ -4076,8 +4365,8 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       await user.click(screen.getByRole("button", { name: "선택 저장" }));
 
       await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(2));
-      expect(addPlaceSpy).toHaveBeenNthCalledWith(1, "107", 1, expect.objectContaining({ label: "동백정원", time: "10:00", meta: "꽃", expectedRevision: 40 }));
-      expect(addPlaceSpy).toHaveBeenNthCalledWith(2, "107", 1, expect.objectContaining({ label: "동백정원", time: "10:00", meta: "꽃", expectedRevision: 40 }));
+      expect(addPlaceSpy).toHaveBeenNthCalledWith(1, "107", 1, { time: "10:00", customPlace: { name: "동백정원" }, expectedRevision: 40 });
+      expect(addPlaceSpy).toHaveBeenNthCalledWith(2, "107", 1, { time: "10:00", customPlace: { name: "동백정원" }, expectedRevision: 40 });
       await waitFor(() => expect(screen.queryByText("저장 전 미리보기")).not.toBeInTheDocument());
     } finally {
       getTripSpy.mockRestore();
@@ -4112,13 +4401,13 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     ]);
     let mountainAttempts = 0;
     const addPlaceSpy = vi.spyOn(appDataApi, "addTripPlace").mockImplementation(async (_tripId, _dayNumber, payload) => {
-      if (payload.label === "오설록") return afterFirstSave;
-      if (payload.label === "한라산") {
+      if (payload.customPlace?.name === "오설록") return afterFirstSave;
+      if (payload.customPlace?.name === "한라산") {
         mountainAttempts += 1;
         if (mountainAttempts === 1) throw new Error("temporary network");
         return afterRetrySave;
       }
-      throw new Error(`Unexpected place ${payload.label}`);
+      throw new Error(`Unexpected place ${payload.customPlace?.name}`);
     });
 
     try {
@@ -4143,8 +4432,8 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
 
       await waitFor(() => expect(screen.queryByRole("button", { name: "한라산 후보 저장" })).not.toBeInTheDocument());
       expect(screen.queryByRole("button", { name: /기존 유지하고 추가|추천 일정 추가하기|이 일정으로 저장|추천으로 대체/ })).not.toBeInTheDocument();
-      expect(addPlaceSpy.mock.calls.map((call) => call[2].label)).toEqual(["오설록", "한라산", "한라산"]);
-      expect(addPlaceSpy).toHaveBeenLastCalledWith("108", 2, expect.objectContaining({ label: "한라산", expectedRevision: 51 }));
+      expect(addPlaceSpy.mock.calls.map((call) => call[2].customPlace?.name)).toEqual(["오설록", "한라산", "한라산"]);
+      expect(addPlaceSpy).toHaveBeenLastCalledWith("108", 2, expect.objectContaining({ customPlace: { name: "한라산" }, expectedRevision: 51 }));
     } finally {
       getTripSpy.mockRestore();
       recommendationsSpy.mockRestore();
@@ -4183,6 +4472,149 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       addPlaceSpy.mockRestore();
       deletePlaceSpy.mockRestore();
     }
+  });
+
+  it("shows public recommendations with their photo and credit, files them by category, and saves them by reference", async () => {
+    const photoUrl = "https://tong.visitkorea.or.kr/cms/resource/23/3074123_image2_1.jpg";
+    const trip: Trip = { ...getPreviewTrip(), id: "130", revision: 6, title: "공공데이터 추천 여행", days: { 1: [], 2: [] } };
+    const savedTrip: Trip = {
+      ...trip,
+      revision: 7,
+      days: {
+        1: [{ id: "new-1", time: "10:00", label: "오동도", meta: "관광지 · 전남광주통합특별시 여수시 오동도로 222", placeOrigin: "public", publicSource: "tourapi", publicSourceId: "126508" }],
+        2: [],
+      },
+    };
+    const recommendations: Recommendation[] = [
+      {
+        id: "public:tourapi:126508",
+        title: "오동도",
+        label: "📍",
+        meta: "관광지 · 전남광주통합특별시 여수시 오동도로 222",
+        reason: "일정 지역의 관광지",
+        categoryGroup: "attraction",
+        address: "전남광주통합특별시 여수시 오동도로 222",
+        latitude: 34.7443,
+        longitude: 127.7663,
+        suggestedDay: 1,
+        sourceType: "public_place",
+        publicSource: "tourapi",
+        publicSourceId: "126508",
+        publicCategory: "sight",
+        photoUrl,
+        photoLicense: "Type3",
+      },
+      {
+        id: "public:tourapi:2",
+        title: "바다 카페",
+        label: "📍",
+        meta: "카페 · 관광로 12",
+        reason: "일정 지역의 카페",
+        categoryGroup: "cafe",
+        address: "관광로 12",
+        latitude: 34.74,
+        longitude: 127.74,
+        suggestedDay: 1,
+        sourceType: "public_place",
+        publicSource: "tourapi",
+        publicSourceId: "2",
+        publicCategory: "cafe",
+      },
+      {
+        id: "public:sangga:3",
+        title: "여수 횟집",
+        label: "📍",
+        meta: "음식점 · 여수시 중앙로 3",
+        reason: "일정 지역의 음식점",
+        categoryGroup: "food",
+        address: "여수시 중앙로 3",
+        latitude: 34.76,
+        longitude: 127.66,
+        suggestedDay: 1,
+        sourceType: "public_place",
+        publicSource: "sangga",
+        publicSourceId: "3",
+        publicCategory: "food",
+      },
+      {
+        id: "public:tourapi:4",
+        title: "여수 호텔",
+        label: "📍",
+        meta: "숙박 · 여수시 해안로 4",
+        reason: "일정 지역의 숙박",
+        categoryGroup: "stay",
+        address: "여수시 해안로 4",
+        latitude: 34.75,
+        longitude: 127.7,
+        suggestedDay: 1,
+        sourceType: "public_place",
+        publicSource: "tourapi",
+        publicSourceId: "4",
+        publicCategory: "stay",
+      },
+    ];
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const recommendationsSpy = vi.spyOn(appDataApi, "listRecommendations").mockResolvedValue(recommendations);
+    const addPlaceSpy = vi.spyOn(appDataApi, "addTripPlace").mockResolvedValue(savedTrip);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/130");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: /추천 일정만들기/ }));
+      expect(await screen.findByText("저장 전 미리보기")).toBeInTheDocument();
+
+      // 분류는 공공데이터 분류로 가른다 - 주소의 '관광로' 글자 때문에 카페가 관광지가 되지 않는다
+      const previewOrder = screen
+        .getAllByRole("button", { name: /지도에서 보기$/ })
+        .map((button) => button.getAttribute("aria-label")?.replace(" 지도에서 보기", ""));
+      expect(previewOrder).toEqual(["오동도", "여수 횟집", "바다 카페", "여수 호텔"]);
+      const cafeCard = screen.getByRole("button", { name: "바다 카페 지도에서 보기" });
+      expect(within(cafeCard).getByText("15:00")).toBeInTheDocument();
+      expect(within(cafeCard).getByText("카페")).toHaveClass("preview-phase-label");
+      expect(within(screen.getByRole("button", { name: "여수 횟집 지도에서 보기" })).getByText("점심")).toBeInTheDocument();
+      expect(within(screen.getByRole("button", { name: "여수 호텔 지도에서 보기" })).getByText("숙소")).toBeInTheDocument();
+
+      // 사진과 출처는 사진이 있는 추천에만
+      const odongdoCard = screen.getByRole("button", { name: "오동도 지도에서 보기" });
+      expect(odongdoCard.querySelector("img")).toHaveAttribute("src", photoUrl);
+      expect(within(odongdoCard).getByText("사진: 한국관광공사 · 변경 금지")).toBeInTheDocument();
+      expect(cafeCard.querySelector("img")).toBeNull();
+
+      await user.click(screen.getByRole("button", { name: "오동도 후보 저장" }));
+      await user.click(screen.getByRole("button", { name: "선택 저장" }));
+
+      // 담는 요청에는 공공데이터 참조뿐이다 - 이름 · 주소 · 좌표 · 분류는 서버가 자기 표에서 채운다
+      await waitFor(() => expect(addPlaceSpy).toHaveBeenCalledTimes(1));
+      expect(addPlaceSpy).toHaveBeenCalledWith("130", 1, {
+        time: "10:00",
+        publicPlace: { source: "tourapi", sourceId: "126508" },
+        expectedRevision: 6,
+      });
+    } finally {
+      getTripSpy.mockRestore();
+      recommendationsSpy.mockRestore();
+      addPlaceSpy.mockRestore();
+    }
+  });
+
+  it("matches an added place by its public source id before its name and time", () => {
+    const previous = { ...getPreviewTrip(), days: { 1: [] } } as Trip;
+    const next = {
+      ...previous,
+      days: {
+        1: [
+          { id: "a1", time: "10:00", label: "스타벅스 여수점", meta: "", publicSource: "tourapi", publicSourceId: "1" },
+          { id: "a2", time: "10:00", label: "스타벅스 여수점", meta: "", publicSource: "sangga", publicSourceId: "2" },
+        ],
+      },
+    } as Trip;
+
+    // 이름 · 시간이 같아도 출처 ID 가 가른다
+    expect(findAddedPlaceId(previous, next, 1, { time: "10:00", label: "스타벅스 여수점", publicSource: "sangga", publicSourceId: "2" }, new Set())).toBe("a2");
+    // 공공데이터 참조가 없는 추천(나만의 장소로 담김)은 지금처럼 이름 · 시간으로
+    expect(findAddedPlaceId(previous, next, 1, { time: "10:00", label: "스타벅스 여수점" }, new Set())).toBe("a1");
   });
 
 });
