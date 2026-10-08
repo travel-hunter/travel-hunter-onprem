@@ -2,33 +2,22 @@
 
 ## Current Status
 
-- Merge-ready: 공공데이터 장소 기반(`feature/public-places`, 카카오 운영정책 2단계). 화면 변화 없음.
-  새 표 `public_places` · `public_place_sync_state`(Alembic `0048`, `trip_places` 출처 열 5개 nullable - 3단계부터 채움), TourAPI 주 1회 동기화
-  (`PUBLIC_PLACES_SYNC_ENABLED` 기본 꺼짐) · 손 스크립트 2개(`sync_public_places_tourapi.py` · `load_public_places_sangga.py`), 맞춰 보기 API `POST /api/places/match`
-  (계약 · 골든 · 프론트 타입 갱신), `debug_capture` 가 장소 경로를 늘 뺀다. 공용 로그 함수는 숨긴 예외 맥락과 `serviceKey=` 를 더는 남기지 않는다.
-  env 3개 추가(`.env.example` · `compose.local.yaml`). 설계: `docs/superpowers/specs/2026-10-03-public-place-storage-design.md`, 계획: `docs/superpowers/plans/2026-10-04-public-places-stage2.md`.
+- Merge-ready: 로그 하루 단위 보관(`feature/log-daily-archive`). 보관 폴더가 달 단위 파일에서 `YYYY-MM/<stem>-YYYY-MM-DD.log`(지난날은 다음 날 01시에
+  `.pNN-<해시>.log.gz` 로 압축, 12개월 보존은 달 폴더 단위)로 바뀐다. `scripts/trace` 는 옛 달 파일과 새 날짜 파일을 함께 읽는다.
+  옛 달 파일은 일회성 `scripts/convert_log_archive.py`(convert · verify · remove)로 나눠 옮기고 원본은 `.legacy-monthly/` 에 남긴다(사용자 결정: 지금은 지우지 않음).
+  계획: `docs/superpowers/plans/2026-10-08-log-daily-archive.md`, 운영: `docs/deployment-cicd/log-archive-runbook.md`.
+- 공공데이터 장소 기반(2단계)은 PR #90 으로 develop 에 머지됐다(`4612926`).
 - 통합 검색(1단계)은 PR #89 로 develop 에 머지됐다(`bb8c841`).
 - 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
 
 ## Recent Validation
 
-- PASS: backend `python -m pytest` 1249 passed · 24 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - 소유자 전용 폴더 권한 검사가 Windows 에서 실패, 이 변경과 무관).
-- PASS: `npx tsc --noEmit`, `npm run test:mojibake`, `npm run build`, `npm run test:e2e:containers` 13/13, `docker compose -f compose.yaml config`(출력은 버림).
-- 부분 PASS: `npx vitest run` 48파일 523개 중 517개. 실패 6개는 모두 `mypage.test.tsx` 다(아래 알려진 흔들림).
-- 부분 PASS: `alembic upgrade head --sql` 을 처음부터 돌리면 기존 데이터 마이그레이션 `0044` 에서 멈춘다(오프라인인데 DB 를 읽음 - develop 그대로).
-  `0045_traffic_detail:head --sql`(0046 ~ 0048)은 통과.
-- PASS: 로컬 실측(세 컨테이너를 이 브랜치로, DB 볼륨 유지). 앞서 덤프를 떠 `pg_restore -l` 목차 314 · SHA-256 `26ef4268…efcd4`(저장소 밖) 확인, 0047 → 0048,
-  TourAPI 전체 동기화 received 47,656 · written 47,619 · success(약 35초, 호출 약 50회), 상가정보 `--only 세종` written 5,923 · partial(지우지 않음),
-  상자 조회 `EXPLAIN` 은 `ix_public_places_lat_lng` Index Scan, 정책 · 일정 · 사용자 · 수집 기록 · 일정 장소 행 수 전후 같음(202 · 291 · 4 · 118 · 180).
-  맞춰 보기: '오동도 등대'(관광명소) → match 60m, 같은 이름에 카페 분류 → 후보, '오동도' → 후보 2곳(TourAPI 에는 '오동도' 단독 항목이 없다).
-  상가정보 20260630판 `--dry-run` 여행 업종 1,036,750건(food 717,632 · cafe 122,623 · leisure 105,158 · stay 80,483 · culture 10,854).
-- PASS: 계획 코덱스 검토 2회를 반영했다(오류 알림만 보류). 최종 리뷰(새 리뷰어) Critical 1(TourAPI 키가 오류 로그에 남음) · Important 1(크게 줄어든 단위를
-  손으로도 지울 수 없음)을 고치고 시험을 더했다(사용자 결정: `--accept-shrink`). 최종 커밋 재리뷰 Critical 1(넓힌 가리기 규칙이 하이픈이 긴
-  요청 경로에서 제곱 시간 - 16KB 에 9.5초)과 같은 꼴의 기존 이메일 규칙을 고치고 시간 상한 시험을 더했다. Minor 중 운영에 닿는 것은 아래 위험으로.
-- PASS: `git diff --check`, 변경 · 새 파일 U+FFFD 0건 · 한자 0건.
-- 알려진 흔들림: `mypage.test.tsx` 는 공용 로컬 백엔드 시험 계정에 시험이 만든 일정이 쌓여(10/3 약 250개) `GET /api/trips` 가 1.1~1.6초 걸리면
-  waitFor 1초를 넘겨 실패한다(백엔드 로그 duration_ms). 이 변경과 무관 - 시험 데이터를 비우거나 `/api/trips` 를 빠르게 하는 일은 따로.
-
+- PASS: 로그 시험 `tests/test_pull_logs.py` · `test_trace_script.py` · `test_convert_log_archive.py` 122 passed. 핵심 규칙 변이 5개(01시 닫기 · 확정 크기 무시 ·
+  원본 옮기기 생략 · 다른 p00 무시 · 검증 실패에도 remove)를 시험이 모두 잡았고 파일은 sha256 으로 그대로 되돌렸다.
+- PASS: 스크립트 Python 3.10 문법(`python:3.10-alpine`), `git diff --check`, 바뀐 파일 U+FFFD 0건 · 한자 0건.
+- 부분 PASS: backend 전체 1285 passed · 24 skipped · 1 failed - 실패는 `test_stay_discount_semantics_snapshot.py`(소유자 전용 권한 검사가 Windows 에서만 실패, develop 그대로, 보통 뺀다).
+- PASS: 계획 자체 검토(Opus) 반영 뒤, 과제마다 구현 · 검토(Opus)와 브랜치 최종 검토(Opus). 최종 검토는 옛 코드로 만든 달 파일 → 새 코드 배포 → convert →
+  00:30 · 01:30 회차 · 늦게 온 줄을 임시 폴더에서 돌려 중복 0 · 빠짐 0 을 확인했다. 지적은 문서 4곳(보존 마감 문장 등)이었고 고쳤다.
 ## Active Risks
 
 ### 공공데이터 장소 기반(`feature/public-places`)
@@ -61,6 +50,9 @@
 - profile 로 꺼진 서비스는 `--remove-orphans` 로 안 지워진다. 끌 때는 `--profile logarchive rm -sf logarchive`.
 - 5분 주기다. 볼륨 보관 한도(스트림당 200MB)를 넘길 만큼 멈춰 있으면 그 사이는 잃는다. `docker logs` 로 회차 기록을 본다.
 - AWS 로 옮기면 빼 오는 곳이 CloudWatch 로 바뀐다(ASG·private subnet). 보관 형식은 그대로 둔다.
+- (날짜별 보관) 머지 뒤 개발서버에서 일회성 변환을 단계마다 승인받아 돌린다: 옛 달 파일 크기만 먼저 확인(한 달 1GiB 넘으면 convert · verify 가 멈춤) → convert → verify → trace 중복 수 비교.
+  변환이 중간에 멈추면 다시 돌릴 때까지 그 달 줄이 trace 에 두 번 보일 수 있다.
+- (날짜별 보관) 원본 `.legacy-monthly/` 를 지우지 않기로 했다. 가장 오래된 옛 달(2026-09)이 보존 밖으로 나가는 2027-09 전에 정해야 한다 - 그 뒤로는 `remove` 가 거부되어 손으로 지워야 하고, 원본에는 사용자 ID · IP 앞자리가 12개월을 넘겨 남는다.
 
 ### 통합 검색(PR #89, 머지됨)
 

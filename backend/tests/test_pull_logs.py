@@ -110,14 +110,14 @@ def run(dest: Path, max_bytes: int = 1024 * 1024, containers=("caddy", "backend"
     return pull_logs.pull("dev", dest, max_bytes, list(containers), **kwargs)
 
 
-def parts(dest: Path, stem: str, month: str) -> list[Path]:
-    return sorted((dest / "dev").glob(f"{stem}-{month}.p*.log.gz"))
+def parts(dest: Path, stem: str, day: str) -> list[Path]:
+    return sorted((dest / "dev" / day[:7]).glob(f"{stem}-{day}.p*.log.gz"))
 
 
-def local(dest: Path, stem: str, month: str = "2026-09") -> str:
-    """보관본 한 달치. 압축 조각(번호순)과 그 뒤 붙은 .log 를 순서대로 합친다."""
-    text = "".join(gzip.decompress(path.read_bytes()).decode("utf-8") for path in parts(dest, stem, month))
-    plain = dest / "dev" / f"{stem}-{month}.log"
+def local(dest: Path, stem: str, day: str = "2026-09-28") -> str:
+    """보관본 하루치(기본: NOW 의 날). 압축 조각(번호순)과 그 뒤 붙은 .log 를 순서대로 합친다."""
+    text = "".join(gzip.decompress(path.read_bytes()).decode("utf-8") for path in parts(dest, stem, day))
+    plain = dest / "dev" / day[:7] / f"{stem}-{day}.log"
     if plain.exists():
         text += plain.read_bytes().decode("utf-8")
     return text
@@ -259,66 +259,90 @@ def test_a_stale_lock_is_cleared(remote, tmp_path):
     assert local(tmp_path, "caddy-access") == "a\n" and not lock.exists()
 
 
-# ----------------------------------------------------------------------------- 장기 보관(달별·압축·보존)
-def test_lines_go_to_the_month_of_their_own_time(remote, tmp_path):
+# ----------------------------------------------------------------------------- 장기 보관(날짜별·압축·보존)
+def test_lines_go_to_the_day_of_their_own_time(remote, tmp_path):
+    remote.write("backend.log", json_line("2026-09-27T23:59:59.999999+09:00", "/before")
+                 + json_line("2026-09-28T00:00:00+09:00", "/midnight")
+                 + json_line("2026-09-27T15:00:00+00:00", "/utc"))  # UTC 15시 = KST 28일 0시
+    run(tmp_path)
+    assert "/before" in local(tmp_path, "backend", "2026-09-27")
+    assert "/midnight" not in local(tmp_path, "backend", "2026-09-27") and "/utc" not in local(tmp_path, "backend", "2026-09-27")
+    assert local(tmp_path, "backend").count("\n") == 2
+
+
+def test_month_boundary_days_go_to_their_own_month_folder(remote, tmp_path):
     remote.write("backend.log", json_line("2026-08-31T23:59:00+09:00", "/aug") + json_line("2026-09-01T00:01:00+09:00", "/sep"))
     run(tmp_path)
-    assert "/aug" in local(tmp_path, "backend", "2026-08") and "/sep" not in local(tmp_path, "backend", "2026-08")
-    assert "/sep" in local(tmp_path, "backend", "2026-09")
+    assert "/aug" in local(tmp_path, "backend", "2026-08-31") and "/sep" in local(tmp_path, "backend", "2026-09-01")
+    assert sorted(p.name for p in (tmp_path / "dev").iterdir() if p.is_dir()) == ["2026-08", "2026-09"]
 
 
 def test_caddy_epoch_time_is_split_in_kst(remote, tmp_path):
-    # 2026-08-31T15:30Z = 2026-09-01 00:30 KST - UTC 로 나누면 8월로 잘못 간다.
-    epoch = datetime(2026, 8, 31, 15, 30, tzinfo=timezone.utc).timestamp()
+    # 2026-09-27T15:30Z = 2026-09-28 00:30 KST - UTC 로 나누면 27일로 잘못 간다.
+    epoch = datetime(2026, 9, 27, 15, 30, tzinfo=timezone.utc).timestamp()
     remote.write("caddy-access.log", json.dumps({"ts": epoch, "status": 200}) + "\n")
     run(tmp_path)
-    assert local(tmp_path, "caddy-access", "2026-09") and not local(tmp_path, "caddy-access", "2026-08")
+    assert local(tmp_path, "caddy-access", "2026-09-28") and not local(tmp_path, "caddy-access", "2026-09-27")
 
 
-def test_past_months_are_compressed_and_the_current_month_is_not(remote, tmp_path):
-    remote.write("backend.log", json_line("2026-08-10T10:00:00+09:00") + json_line("2026-09-10T10:00:00+09:00"))
+def test_closed_days_are_compressed_and_today_is_not(remote, tmp_path):
+    remote.write("backend.log", json_line("2026-09-27T10:00:00+09:00") + json_line("2026-09-28T10:00:00+09:00"))
     run(tmp_path)
-    folder = tmp_path / "dev"
-    assert len(parts(tmp_path, "backend", "2026-08")) == 1 and not (folder / "backend-2026-08.log").exists()
-    assert (folder / "backend-2026-09.log").exists() and not parts(tmp_path, "backend", "2026-09")
+    month = tmp_path / "dev" / "2026-09"
+    assert len(parts(tmp_path, "backend", "2026-09-27")) == 1 and not (month / "backend-2026-09-27.log").exists()
+    assert (month / "backend-2026-09-28.log").exists() and not parts(tmp_path, "backend", "2026-09-28")
 
 
-def test_late_lines_for_a_compressed_month_are_kept(remote, tmp_path):
-    remote.write("backend.log", json_line("2026-08-10T10:00:00+09:00", "/first"))
+def test_yesterday_stays_open_for_the_grace_hour(remote, tmp_path):
+    """자정 직후 회차는 어제 줄을 받는다. 한 시간 열어 두어 하루가 조각 하나로 닫힌다(매일 p02 가 생기지 않게)."""
+    remote.write("backend.log", json_line("2026-09-27T23:58:00+09:00", "/a"))
+    run(tmp_path, now=datetime(2026, 9, 28, 0, 3, tzinfo=KST))
+    remote.write("backend.log", json_line("2026-09-27T23:59:30+09:00", "/b"))
+    run(tmp_path, now=datetime(2026, 9, 28, 0, 8, tzinfo=KST))
+    assert not parts(tmp_path, "backend", "2026-09-27"), "자정 뒤 한 시간은 평문으로 이어 붙인다"
+    run(tmp_path, now=datetime(2026, 9, 28, 1, 5, tzinfo=KST))
+    [packed] = parts(tmp_path, "backend", "2026-09-27")
+    assert gzip.decompress(packed.read_bytes()).decode().count("\n") == 2
+
+
+def test_late_lines_for_a_compressed_day_are_kept(remote, tmp_path):
+    remote.write("backend.log", json_line("2026-09-27T10:00:00+09:00", "/first"))
     run(tmp_path)
-    remote.write("backend.log", json_line("2026-08-31T23:58:00+09:00", "/late"))  # 늦게 도착한 8월 줄
+    remote.write("backend.log", json_line("2026-09-27T23:58:00+09:00", "/late"))  # 닫힌 뒤 늦게 도착한 27일 줄
     run(tmp_path)
-    august = local(tmp_path, "backend", "2026-08")
-    assert august.index("/first") < august.index("/late")
-    assert [p.name.split(".")[1][:3] for p in parts(tmp_path, "backend", "2026-08")] == ["p01", "p02"]
-    assert not (tmp_path / "dev" / "backend-2026-08.log").exists()
+    day = local(tmp_path, "backend", "2026-09-27")
+    assert day.index("/first") < day.index("/late")
+    assert [p.name.split(".")[1][:3] for p in parts(tmp_path, "backend", "2026-09-27")] == ["p01", "p02"]
+    assert not (tmp_path / "dev" / "2026-09" / "backend-2026-09-27.log").exists()
 
 
-def test_month_rollover_compresses_last_month_on_the_next_run(remote, tmp_path):
+def test_month_rollover_compresses_the_last_day_after_the_grace_hour(remote, tmp_path):
     remote.write("backend.log", json_line("2026-09-30T23:00:00+09:00"))
-    run(tmp_path)
-    assert (tmp_path / "dev" / "backend-2026-09.log").exists()
-    run(tmp_path, now=datetime(2026, 10, 1, 0, 5, tzinfo=KST))
-    assert len(parts(tmp_path, "backend", "2026-09")) == 1
-    assert not (tmp_path / "dev" / "backend-2026-09.log").exists()
+    run(tmp_path, now=datetime(2026, 9, 30, 23, 5, tzinfo=KST))
+    assert (tmp_path / "dev" / "2026-09" / "backend-2026-09-30.log").exists()
+    run(tmp_path, now=datetime(2026, 10, 1, 1, 5, tzinfo=KST))
+    assert len(parts(tmp_path, "backend", "2026-09-30")) == 1
+    assert not (tmp_path / "dev" / "2026-09" / "backend-2026-09-30.log").exists()
 
 
-def test_months_older_than_the_keep_window_are_deleted(remote, tmp_path):
+def test_month_folders_older_than_the_keep_window_are_emptied(remote, tmp_path):
     folder = tmp_path / "dev"
-    folder.mkdir()
     for month in ("2025-08", "2025-09", "2025-10"):
-        (folder / f"backend-{month}.log.gz").write_bytes(gzip.compress(b"old\n"))
-    (folder / "notes.txt").write_text("keep me", "utf-8")
+        (folder / month).mkdir(parents=True)
+        (folder / month / f"backend-{month}-01.p01-000000000000.log.gz").write_bytes(gzip.compress(b"old\n"))
+    (folder / "2025-09" / "notes.txt").write_text("keep me", "utf-8")
+    (folder / "backend-2025-08.log.gz").write_bytes(gzip.compress(b"legacy\n"))  # 옛 달별 파일은 변환 스크립트의 몫
     run(tmp_path, keep_months=12)  # 2026-09 기준 12개월 = 2025-10 ~ 2026-09
-    names = sorted(p.name for p in folder.iterdir())
-    assert "backend-2025-08.log.gz" not in names and "backend-2025-09.log.gz" not in names
-    assert "backend-2025-10.log.gz" in names and "notes.txt" in names, "보관 형식이 아닌 파일은 건드리지 않는다"
+    assert not (folder / "2025-08").exists(), "빈 달 폴더는 지운다"
+    assert [p.name for p in (folder / "2025-09").iterdir()] == ["notes.txt"], "보관 형식이 아닌 파일과 그 폴더는 남긴다"
+    assert (folder / "2025-10" / "backend-2025-10-01.p01-000000000000.log.gz").exists()
+    assert (folder / "backend-2025-08.log.gz").exists(), "맨 위의 옛 파일은 건드리지 않는다"
 
 
 def test_label_names_the_archive_folder(remote, tmp_path):
     remote.write("caddy-access.log", "a\n")
     pull_logs.pull("local", tmp_path, 1024, ["caddy"], label="dev", now=NOW)
-    assert (tmp_path / "dev" / "caddy-access-2026-09.log").exists()
+    assert (tmp_path / "dev" / "2026-09" / "caddy-access-2026-09-28.log").exists()
     assert not (tmp_path / "local").exists()
 
 
@@ -347,7 +371,7 @@ def test_append_without_saved_state_is_rolled_back(remote, tmp_path):
     remote.write("caddy-access.log", "a\n")
     run(tmp_path)
     remote.write("caddy-access.log", "b\n")
-    with open(tmp_path / "dev" / "caddy-access-2026-09.log", "ab") as handle:
+    with open(tmp_path / "dev" / "2026-09" / "caddy-access-2026-09-28.log", "ab") as handle:
         handle.write(b"b\n")  # 붙였지만 저장은 못 했다
     run(tmp_path)
     assert local(tmp_path, "caddy-access") == "a\nb\n"
@@ -356,9 +380,10 @@ def test_append_without_saved_state_is_rolled_back(remote, tmp_path):
 def test_an_untracked_archive_file_from_a_crash_is_removed(remote, tmp_path):
     remote.write("caddy-access.log", "a\n")
     run(tmp_path)
-    (tmp_path / "dev" / "backend-2026-09.log").write_bytes(b"never saved\n")  # 만들고 저장 전에 멈췄다
+    stray = tmp_path / "dev" / "2026-09" / "backend-2026-09-28.log"
+    stray.write_bytes(b"never saved\n")  # 만들고 저장 전에 멈췄다
     run(tmp_path)
-    assert not (tmp_path / "dev" / "backend-2026-09.log").exists()
+    assert not stray.exists()
 
 
 def test_missing_state_keeps_existing_archive(remote, tmp_path):
@@ -372,20 +397,20 @@ def test_missing_state_keeps_existing_archive(remote, tmp_path):
 
 def test_interrupted_compression_is_finished_without_duplicates(remote, tmp_path):
     """압축본은 만들었는데 원본을 못 지우고 멈췄다. 다음 실행은 같은 해시를 찾고 원본만 지운다."""
-    folder = tmp_path / "dev"
-    remote.write("backend.log", json_line("2026-08-10T10:00:00+09:00", "/aug"))
+    month = tmp_path / "dev" / "2026-09"
+    remote.write("backend.log", json_line("2026-09-27T10:00:00+09:00", "/day"))
     run(tmp_path)
-    [packed] = parts(tmp_path, "backend", "2026-08")
+    [packed] = parts(tmp_path, "backend", "2026-09-27")
     restored = gzip.decompress(packed.read_bytes())
-    (folder / "backend-2026-08.log").write_bytes(restored)  # 원본이 남아 있는 상태로 되돌린다
+    (month / "backend-2026-09-27.log").write_bytes(restored)  # 원본이 남아 있는 상태로 되돌린다
     state_data = state(tmp_path)
-    state_data["_files"]["backend-2026-08.log"] = len(restored)
-    (folder / ".state.json").write_text(json.dumps(state_data), "utf-8")
-    # 그 사이 8월 줄이 늦게 도착한다. 압축을 먼저 마무리하지 않으면 원본+새 줄이 새 조각이 돼 /aug 가 두 번 남는다.
-    remote.write("backend.log", json_line("2026-08-31T23:59:00+09:00", "/late"))
+    state_data["_files"]["2026-09/backend-2026-09-27.log"] = len(restored)
+    (tmp_path / "dev" / ".state.json").write_text(json.dumps(state_data), "utf-8")
+    # 그 사이 27일 줄이 늦게 도착한다. 압축을 먼저 마무리하지 않으면 원본+새 줄이 새 조각이 돼 /day 가 두 번 남는다.
+    remote.write("backend.log", json_line("2026-09-27T23:59:00+09:00", "/late"))
     run(tmp_path)
-    august = local(tmp_path, "backend", "2026-08")
-    assert august.count("/aug") == 1 and august.count("/late") == 1
+    day = local(tmp_path, "backend", "2026-09-27")
+    assert day.count("/day") == 1 and day.count("/late") == 1
 
 
 def test_only_log_stems_are_archived_or_deleted(remote, tmp_path):
@@ -465,17 +490,21 @@ def test_directory_source_skips_a_file_rotated_between_listing_and_read(volume, 
 
 
 def test_directory_source_state_continues_from_docker_mode_inodes(volume, tmp_path):
-    """cron(docker exec)에서 컨테이너(직접 읽기)로 바꿔도 같은 inode 라 이어받는다."""
+    """배포 순간: 옛 달별 파일과 상태가 있다. 받은 위치(inode)는 이어받고, 옛 파일은 자르지도 압축하지도 않는다."""
     append(volume / "caddy-access.log", "old\n")
     inode = str(os.stat(volume / "caddy-access.log").st_ino)
     folder = tmp_path / "dev"
     folder.mkdir()
-    (folder / "caddy-access-2026-09.log").write_bytes(b"old\n")
-    (folder / ".state.json").write_text(json.dumps({"_files": {"caddy-access-2026-09.log": 4},
+    (folder / "caddy-access-2026-09.log").write_bytes(b"old\nunsaved\n")  # 확정은 4바이트 - 뒤는 저장 전에 멈춘 꼬리
+    (folder / "backend-2026-08.log").write_bytes(b"august\n")  # 지난달인데 아직 평문 - 옛 코드라면 압축했다
+    (folder / ".state.json").write_text(json.dumps({"_files": {"caddy-access-2026-09.log": 4, "backend-2026-08.log": 7},
                                                      "caddy-access": {inode: 4}}), "utf-8")
     append(volume / "caddy-access.log", "new\n")
     run_dir(volume, tmp_path)
-    assert local(tmp_path, "caddy-access") == "old\nnew\n"
+    assert local(tmp_path, "caddy-access") == "new\n", "받은 위치를 이어받아 old 를 다시 받지 않는다"
+    assert (folder / "caddy-access-2026-09.log").read_bytes() == b"old\nunsaved\n", "꼬리는 변환이 확정 크기로 자른다"
+    assert (folder / "backend-2026-08.log").read_bytes() == b"august\n" and not list(folder.glob("backend-2026-08.p*"))
+    assert state(tmp_path)["_files"]["caddy-access-2026-09.log"] == 4, "변환이 읽을 확정 크기를 남긴다"
 
 
 def test_directory_source_ignores_links_and_odd_names(volume, tmp_path):
