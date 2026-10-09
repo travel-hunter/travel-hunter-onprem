@@ -134,6 +134,55 @@ def test_a_failing_load_keeps_its_own_error_when_the_unlock_fails_too(capsys: py
     assert conn.closed and "pg_locks" in capsys.readouterr().err
 
 
+def write_month_names(tmp_path: Path) -> tuple[Path, Path]:
+    """이름만 시도 16개가 다 맞는 판 - 파일을 열지 않는 시험용(_file_problems 와 load 는 시험이 바꿔 낀다)."""
+
+    buildings, parcels = tmp_path / "buildings", tmp_path / "parcels"
+    buildings.mkdir()
+    parcels.mkdir()
+    for code in sorted(EXPECTED_REGION_CODES):
+        (buildings / f"AL_D010_{code}_20260909.shp").write_bytes(b"x")
+        (parcels / f"AL_D002_{code}_20260908.shp").write_bytes(b"x")
+    return buildings, parcels
+
+
+def test_a_building_table_that_fails_the_quality_check_stops_before_the_parcels_are_read(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_load(_cur, table, _paths, _dongs, _prefixes):
+        calls.append(table)
+        if table == "parcel":
+            pytest.fail("땅 파일을 읽었다")   # 실제로는 약 2시간
+        return 16, 1, 0, 0   # 식별자 빈 줄 1/17 - 0.1% 를 넘는다
+
+    monkeypatch.setattr("scripts.geo_load._file_problems", lambda _files: [])
+    monkeypatch.setattr("scripts.geo_load.load", fake_load)
+    conn = FakeConnection((1, True), (16,), (1, True))   # 잠금 · 건물 고유 식별자 수 · 잠금 풀기
+    assert run(*write_month_names(tmp_path), connect=lambda: conn, accept_row_count_change=True) == 3
+    out, err = capsys.readouterr()
+    assert calls == ["building"] and "building: rows without a feature key" in err
+    assert "만들다 만 geo.building_next · geo.parcel_next 를 지웠다" in out and conn.closed and not conn.answers
+
+
+def test_exit_4_also_prints_the_quality_problems_found_so_far(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_load(_cur, table, _paths, dongs, prefixes):
+        prefixes.update({"1111010100", "1111010200"})
+        dongs.setdefault("1111010100", "시험시 시험동")   # 1111010200 은 어디에도 이름이 없다
+        return (16, 0, 0, 0) if table == "building" else (16, 0, 1, 0)   # 땅은 지목 못 읽음 1/16 - 1% 를 넘는다
+
+    monkeypatch.setattr("scripts.geo_load._file_problems", lambda _files: [])
+    monkeypatch.setattr("scripts.geo_load.load", fake_load)
+    conn = FakeConnection((1, True), (16,), (16,), (1, True))
+    conn.rowcount = 1   # 표마다 이름 없는 코드의 줄 1개를 뺀다 - 1/16 이 1% 를 넘는다
+    assert run(*write_month_names(tmp_path), connect=lambda: conn, accept_row_count_change=True) == 4
+    err = capsys.readouterr().err
+    assert "parcel: unknown land category" in err and "rows with an unnamed legal-dong code" in err
+
+
 class FakeSwapConnection:
     """_swap 이 쓰는 연결의 대역 - 문장을 실행할 때마다 errors 를 하나씩 던지고, 다 던진 뒤에는 성공한다."""
 

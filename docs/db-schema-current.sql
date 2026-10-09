@@ -2510,7 +2510,7 @@ ALTER TABLE ONLY public.user_saved_policies
 --
 -- geo 스키마 (0050_geo_reference) - 사람이 쓴 요약. 빈 표만 만들고 데이터는 적재 도구가 넣는다.
 -- 앞서 postgis 확장이 필요하다(CREATE EXTENSION IF NOT EXISTS postgis).
--- 백업은 pg_dump --exclude-schema=geo 로 이 스키마를 뺀다.
+-- 백업은 pg_dump --exclude-table-data='geo.building' --exclude-table-data='geo.parcel' 로 큰 데이터만 뺀다(정의 · 시퀀스 값은 남는다).
 --
 
 CREATE SCHEMA geo;

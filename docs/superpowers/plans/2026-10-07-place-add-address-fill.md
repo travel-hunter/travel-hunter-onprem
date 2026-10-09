@@ -3531,7 +3531,7 @@ def test_the_contract_documents_address_fill_locate_and_geo_reference_without_ra
    - 품질 검사(같은 식별자 비율 · 고유번호 · 식별자가 없거나 잘못된 줄 · 지목 못 읽음)로 종료 코드 3 이 나면 파일 문제가 아니라 판의 성질이 바뀐 것일 수 있다 - 숫자를 들고 판단하고, 상수(`MAX_DUP_RATIO` 등)를 실측에 맞추는 PR(과제 2 시험 함께) 뒤에 다시 돌린다. 넘기는 옵션은 없다.
    - 운영 배포: db 이미지를 PostGIS 로 바꾼 첫 배포는 마이그레이션 앞에서 db 를 다시 만들어야 한다(과제 1 Step 7 · 과제 15 Step 6).
    - 확인: `select (select count(*) from geo.building), (select count(*) from geo.parcel), (select max(finished_at) from geo.load_run)`.
-   - 백업: `pg_dump … --exclude-schema=geo`(원본 파일에서 다시 넣을 수 있다). 로컬 정책 복사 스크립트도 geo 를 건드리지 않는다.
+   - 백업: `pg_dump … --exclude-table-data='geo.building' --exclude-table-data='geo.parcel'`(원본 파일에서 다시 넣을 수 있다 - 데이터만 빼고 정의는 남겨 복원 뒤 다시 적재한다). 로컬 정책 복사 스크립트도 geo 를 건드리지 않는다.
    - 실패: 바꿔치기 앞에서 멈추면 지금 표는 그대로, `*_next` 는 다음 실행이 지운다. 바꿔치기는 잠금 5초 · 3번 시도 뒤 멈춘다(종료 코드 6). 다른 적재가 돌면 종료 코드 5.
    - 출처 표시: 화면의 '국토교통부 공공데이터'(GIS건물통합정보 공공누리 1유형 · 연속지적도 CC BY).
 
@@ -3612,7 +3612,7 @@ Expected: 백엔드 전부 통과, 프론트 타입 0 · 시험은 mypage 기준
 - [ ] **Step 2: 배포** - 과제 1 Step 7 의 Jenkinsfile 이 마이그레이션 앞에서 `up -d --no-deps --wait db` 로 db 컨테이너를 PostGIS 이미지로 다시 만든다(같은 볼륨, 몇 초 끊김). 그 뒤 `run --rm backend python -m alembic upgrade head` 가 0050 을 올린다. 확인: `postgis_lib_version()` · 버전 표 · 앱 표 행 수 그대로.
 - [ ] **Step 3: 파일 올리기 · 적재** - 받은 zip(건물 약 2.4GB · 땅 약 6.6GB)을 서버의 저장소 밖 폴더로 옮기고, 서버 backend 와 같은 env 파일로 `th-geo-loader` 를 돌린다(과제 14 Step 3 과 같은 명령, 네트워크 · 경로만 서버 것 - 리눅스라 `MSYS_NO_PATHCONV` 는 빼도 된다). 확인 질의 · 걸린 시간 · 크기 · 최대 디스크를 적는다.
 - [ ] **Step 4: 서버 실측** - 검색 p95 · locate p95 · 248줄 자동 비율(개발서버 시험 계정).
-- [ ] **Step 5: 백업 제외** - 서버의 정기 백업이 `pg_dump` 를 쓰면 `--exclude-schema=geo` 한 줄을 사용자에게 전한다.
+- [ ] **Step 5: 백업 제외** - 서버의 정기 백업이 `pg_dump` 를 쓰면 `--exclude-table-data='geo.building' --exclude-table-data='geo.parcel'` 두 옵션을 사용자에게 전한다(`--exclude-schema=geo` 는 복원 뒤 적재 도구가 돌지 못해 쓰지 않는다).
 - [ ] **Step 6: 운영(온프레미스) 승격 전 게이트** - main 에 올리기 전에 끝낸다. 하나하나 사용자에게 묻고 승인받는다.
   - 왜: 운영 Jenkins(`ci/prod-jenkins` 의 `deploy/jenkins/prod/Jenkinsfile`)도 마이그레이션(`run --rm backend`)이 `up -d` 앞이라, 고치지 않으면 첫 승격 배포가 옛 postgres 컨테이너에서 `CREATE EXTENSION postgis` 로 멈춘다(과제 1 Step 7 끝).
   - 운영 db 덤프(권한 600, 저장소 밖) · `pg_restore -l` 로 목록 확인 · 보호 표 여섯 건수(과제 1 Step 1 의 질의)를 먼저 적는다.

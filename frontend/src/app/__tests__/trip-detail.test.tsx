@@ -15,6 +15,7 @@ import {
   ApiError,
   appDataApi,
   type LinkedTripPolicy,
+  type PlaceMatchResult,
   type PlaceSearchCandidate,
   type PlaceSearchItem,
   type PublicPlaceItem,
@@ -3364,10 +3365,11 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     };
     const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
     const addPlacesSpy = vi.spyOn(appDataApi, "addTripPlaces").mockResolvedValue({ ...trip, revision: 4 });
-    const matchPlaceSpy = vi.spyOn(appDataApi, "matchPlace").mockResolvedValue({
-      result: "match",
-      places: [publicPlaceFor("오동도", "126508")],
-    });
+    // 맞춰 본 답은 시트가 열린 뒤에 온다(실제 서버처럼)
+    let answerMatch!: (answer: PlaceMatchResult) => void;
+    const matchPlaceSpy = vi.spyOn(appDataApi, "matchPlace").mockImplementation(
+      () => new Promise<PlaceMatchResult>((resolve) => { answerMatch = resolve; }),
+    );
     try {
       await login();
       cleanup();
@@ -3376,7 +3378,11 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       const user = userEvent.setup();
       // 홈 장소 카드의 '일정에 담기'(시안 v57): 넘어온 장소가 바구니에 담긴 채 열리고, 주소의 넘김은 한 번 읽고 지운다
       const sheet = await screen.findByRole("dialog", { name: "장소 추가" });
+      await waitFor(() => expect(matchPlaceSpy).toHaveBeenCalledTimes(1));
+      answerMatch({ result: "match", places: [publicPlaceFor("오동도", "126508")] });
       expect(await within(sheet).findByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("오동도");
+      // 시트를 만지기 전에 담긴 것이라 검색 칸으로 초점을 옮기지 않는다 - 옮기면 키보드가 올라와 날짜 칩 · 저장 단추를 가린다
+      expect(within(sheet).getByLabelText("장소 검색")).not.toHaveFocus();
       // 넘어온 카카오 장소는 검색 결과를 고른 것과 같이 맞춰 본다 - 이름 · 좌표 · 분류만 간다
       expect(matchPlaceSpy).toHaveBeenCalledWith({ name: "오동도", latitude: 34.745, longitude: 127.766, categoryCode: "AT4" });
       await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("addPlace")).toBeNull());

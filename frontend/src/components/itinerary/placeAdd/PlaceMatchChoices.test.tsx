@@ -44,6 +44,15 @@ describe("PlaceMatchChoices", () => {
     expect(second).toHaveTextContent("고른 곳에서 약 340m");
   });
 
+  it("gives two candidates with the same name different button names that carry the category, address and distance", () => {
+    const twin: PublicPlaceItem = { ...withoutPhoto, name: "오동도", address: "전남 여수시 수정동 3", category: "food", distanceMeters: 120 };
+    render(<PlaceMatchChoices candidates={[withPhoto, twin]} onChoose={vi.fn()} onNone={vi.fn()} />);
+
+    const first = screen.getByRole("button", { name: "오동도 선택 · 관광지 · 전남 여수시 오동도로 222 · 고른 곳과 같은 자리" });
+    const second = screen.getByRole("button", { name: /^오동도 선택 · .* · 전남 여수시 수정동 3 · 고른 곳에서 약 120m$/ });
+    expect(first).not.toBe(second);
+  });
+
   it("shows a small photo with its credit only for a candidate that has a photo", () => {
     const group = renderChoices();
 

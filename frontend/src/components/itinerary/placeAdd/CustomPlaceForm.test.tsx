@@ -182,6 +182,20 @@ describe("CustomPlaceForm", () => {
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ name: "오동도 선착장", address: FILL.address, geoRef: { kind: "parcel", id: 4401, pin: true }, latitude: FILL.latitude, longitude: FILL.longitude });
   });
 
+  it("keeps the filled spot's small map when the name is edited", async () => {
+    vi.stubEnv("VITE_KAKAO_MAP_JS_KEY", "test-js-key");
+    const kakao = installAppKakaoSdkMock();
+    const { form } = renderForm("building", { typedName: "스타벅스", fill: { ...FILL, kind: "building" }, openAt: null });
+    const user = userEvent.setup();
+    await waitFor(() => expect(kakao.mapInstances).toHaveLength(1));
+
+    await user.type(within(form).getByLabelText("장소 이름"), " 강남역점");
+    await act(async () => {});
+
+    // 마커 라벨이 이름을 따라가면 글자마다 지도를 새로 만든다
+    expect(kakao.mapInstances).toHaveLength(1);
+  });
+
   it("cuts a long typed query to 100 characters and keeps the button off for an empty one", () => {
     vi.stubEnv("VITE_KAKAO_MAP_JS_KEY", "");
     const long = renderForm("direct", { typedName: "가".repeat(130), fill: null, openAt: null });

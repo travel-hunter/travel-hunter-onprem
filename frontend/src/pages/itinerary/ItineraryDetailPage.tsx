@@ -1740,6 +1740,11 @@ export function isAddressLookupUnavailable(error: unknown): boolean {
   return isApiError(error) && error.status === 503 && error.detail === "Address lookup is unavailable";
 }
 
+/* 고른 뒤 저장하기 전에 주간 동기화가 그 공공데이터 장소를 지웠다 - 어느 줄인지는 응답에 없고, 다시 눌러도 같은 404 다 */
+export function isMissingPublicPlace(error: unknown): boolean {
+  return isApiError(error) && error.status === 404 && error.detail === "Public place not found";
+}
+
 export function ItineraryDetailPage() {
   const { tripId } = useParams();
   const navigate = useNavigate();
@@ -3285,6 +3290,8 @@ export function ItineraryDetailPage() {
           ),
         );
         setPlaceError(MISSING_ADDRESS_REFERENCE_MESSAGE);
+      } else if (isMissingPublicPlace(error)) {
+        setPlaceError("담은 장소 중 목록에서 사라진 곳이 있어요. 다시 찾아 담아 주세요.");
       } else if (isAddressLookupUnavailable(error)) {
         setPlaceError(ADDRESS_LOOKUP_UNAVAILABLE_MESSAGE);
       } else if (isStaleScreenError(error)) {
@@ -3399,6 +3406,9 @@ export function ItineraryDetailPage() {
         await refreshTripAfterConflict(setPlaceError);
       } else if (isMissingAddressReference(error)) {
         setPlaceError("주소 정보가 바뀌었어요. 지도에서 위치를 다시 찾아 담아 주세요.");
+      } else if (isMissingPublicPlace(error)) {
+        // 예전 행 확인에서 고른 후보가 지워졌다
+        setPlaceError("고른 장소가 목록에서 사라졌어요. 다른 곳을 고르거나 이름을 직접 적어 주세요.");
       } else if (isAddressLookupUnavailable(error)) {
         setPlaceError(ADDRESS_LOOKUP_UNAVAILABLE_MESSAGE);
       } else if (isStaleScreenError(error)) {
@@ -4612,7 +4622,7 @@ export function ItineraryDetailPage() {
           }
           batchRecovery={batchPlaceRecovery}
           placeBasket={placeBasket}
-          hidePreview={placeMatch.state.status !== "idle"}
+          isMatching={placeMatch.state.status !== "idle"}
           matchPanel={
             placeEditor.mode === "add"
               ? (typedQuery) => (
@@ -5927,7 +5937,7 @@ export function PlaceEditorSheet({
   dayOptions,
   error,
   form,
-  hidePreview = false,
+  isMatching = false,
   isLoadingSearch,
   isMovingDay = false,
   isSaving,
@@ -5961,8 +5971,9 @@ export function PlaceEditorSheet({
   dayOptions: { dayNumber: number; dateLabel: string; count: number }[];
   error: string;
   form: PlaceEditorForm;
-  /** 맞춰 보는 동안 지도 미리보기를 접는다(카카오 이름이 나만의 장소 칸 옆에 남지 않게) */
-  hidePreview?: boolean;
+  /** 맞춰 보는 중(후보 확인 · 나만의 장소 칸) - 지도 미리보기를 접고(카카오 이름이 나만의 장소 칸 옆에 남지 않게),
+      아래 저장 단추를 끈다(칸에서 담기 전에 저장하면 적던 장소 · 찍던 위치가 말없이 버려진다) */
+  isMatching?: boolean;
   isLoadingSearch: boolean;
   isMovingDay?: boolean;
   isSaving: boolean;
@@ -6024,6 +6035,16 @@ export function PlaceEditorSheet({
     [],
   );
 
+  /* 결정 24: 바구니에 담기면 다음 장소를 찾게 검색 칸으로 돌아온다. 바로 담기뿐 아니라 후보를 고르거나 나만의 장소를 담아도 -
+     초점을 가진 단추가 든 칸이 통째로 사라지므로 옮기지 않으면 초점이 body 로 떨어진다.
+     시트 안에서 한 동작 뒤에만 - 홈에서 넘어와 저절로 담긴 때 옮기면 키보드가 올라와 날짜 칩 · 저장 단추를 가린다 */
+  const basketCountRef = useRef(placeBasket.length);
+  const hadFocusRef = useRef(false);
+  useEffect(() => {
+    if (placeBasket.length > basketCountRef.current && hadFocusRef.current) searchInputRef.current?.focus();
+    basketCountRef.current = placeBasket.length;
+  }, [placeBasket.length]);
+
   /* 날짜 칩 줄 - 수정은 고르면 바로 옮기고, 추가는 저장할 날을 고른다(시안 v57: 홈에서 넘어온 장소는 날을 고를 곳이 여기뿐이다) */
   const dayPicker =
     !readOnly && dayOptions.length > 1 ? (
@@ -6078,6 +6099,7 @@ export function PlaceEditorSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="place-editor-title"
+        onFocusCapture={() => { hadFocusRef.current = true; }}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="sheet-head">
@@ -6170,11 +6192,7 @@ export function PlaceEditorSheet({
                               className="place-search-result"
                               disabled={isSearchPending}
                               type="button"
-                              onClick={() => {
-                                onSelectSearchCandidate(candidate);
-                                // 결정 24: 바로 담기는 바구니에 들어가고 다음 장소를 찾게 검색 칸으로 돌아온다
-                                if (badge?.tone === "ready") searchInputRef.current?.focus();
-                              }}
+                              onClick={() => onSelectSearchCandidate(candidate)}
                             >
                               <span>
                                 <strong>{candidate.title}</strong>
@@ -6262,7 +6280,7 @@ export function PlaceEditorSheet({
               )}
             </div>
           )}
-          {mode === "add" && !hidePreview && (
+          {mode === "add" && !isMatching && (
             <PlacePreviewMapCard
               preview={preview}
               saveEligibility={saveEligibility}
@@ -6290,6 +6308,7 @@ export function PlaceEditorSheet({
             <label className="field">
               장소명
               <input
+                maxLength={100}
                 name="place-label"
                 placeholder="성산일출봉"
                 value={form.label}
@@ -6304,6 +6323,7 @@ export function PlaceEditorSheet({
             <label className="field">
               메모
               <textarea
+                maxLength={500}
                 name="place-meta"
                 placeholder="이동 메모나 예약 정보를 적어주세요"
                 value={form.meta ?? ""}
@@ -6315,6 +6335,7 @@ export function PlaceEditorSheet({
             </label>
           )}
           {error && <p className="form-error">{error}</p>}
+          {isMatching && <p className="meta">위에서 장소를 고르거나 담은 뒤 저장할 수 있어요.</p>}
           {/* 시안 v59: 저장이 422 로 거절됐을 때의 새로 고침 안내 */}
           {error === STALE_SCREEN_MESSAGE && (
             <button className="btn sm line" onClick={() => window.location.reload()} type="button">
@@ -6335,7 +6356,7 @@ export function PlaceEditorSheet({
               </button>
             )}
             {/* 이동이 날아가는 중에 저장하면 낡은 revision 으로 PATCH 가 나가 엉뚱한 409 가 뜬다. */}
-            <Button full disabled={isSaving || isMovingDay} onClick={onSubmit}>
+            <Button full disabled={isSaving || isMovingDay || isMatching} onClick={onSubmit}>
               {isSaving
                 ? "저장 중입니다"
                 : hasPlaceBasket

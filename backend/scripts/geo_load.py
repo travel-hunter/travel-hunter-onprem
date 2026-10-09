@@ -327,11 +327,15 @@ def run(buildings: Path, parcels: Path, *, connect: Callable[[], object], accept
                     raw.commit()   # 표마다 확정 - 같은 연결이라 잠금은 그대로다. 바꿔치기 앞까지 실패해도 지금 표는 그대로다
                     structural += quality_problems(table, rows, distinct, missing_keys=missing_keys, unknown_jimok=unknown_jimok)
                     print(f"{table}: 새 {rows:,}줄 · 고유 {distinct:,} · 식별자 빈 줄 {missing_keys:,} · 지목 못 읽음 {unknown_jimok:,} · 도형 빠짐 {skipped_geometry:,} · {time.perf_counter() - started:.0f}s", flush=True)
+                    if structural and table == "building":   # 건물에서 이미 걸렸다 - 땅(약 2시간)은 읽지 않는다. 땅에서 걸린 것은 법정동 검사와 함께 아래에서 알린다
+                        print("\n".join(structural), file=sys.stderr)
+                        _drop_next(raw)
+                        return 3
                 if missing := prefixes - dongs.keys():
                     removed = _remove_unnamed(raw, missing, counts)
                     prefixes -= missing
                 if unnamed := [p for table in counts for p in unnamed_dong_problems(table, counts[table], removed.get(table, 0))]:
-                    print("\n".join(unnamed), file=sys.stderr)   # 4 - 이름 없는 코드의 줄이 한도를 넘었다(예전에는 하나라도 있으면 4)
+                    print("\n".join(structural + unnamed), file=sys.stderr)   # 4 - 이름 없는 코드의 줄이 한도를 넘었다(예전에는 하나라도 있으면 4). 함께 걸린 품질 문제도 찍는다
                     _drop_next(raw)
                     return 4
                 row_counts = [p for table in counts for p in row_count_problems(table, counts[table])]   # 뺀 뒤의 줄 수로

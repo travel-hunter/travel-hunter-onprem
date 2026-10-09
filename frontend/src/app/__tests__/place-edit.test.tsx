@@ -898,4 +898,68 @@ describe("Travel Hunter app — place editing", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("limits the name and memo fields to what the server accepts (100 · 500)", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "85",
+      revision: 3,
+      currentUserRole: "owner",
+      days: { 1: [{ id: "1", time: "09:00", label: "Sunrise peak", meta: "Nature" }] },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/85");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Sunrise peak 상세 열기" }));
+      const sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+
+      // 서버(UpdateTripPlaceRequest)는 label 1~100자 · memo 0~500자 - 넘게 적으면 일반 오류 문구만 보인다
+      expect(sheet.querySelector('input[name="place-label"]')).toHaveAttribute("maxlength", "100");
+      expect(sheet.querySelector('textarea[name="place-meta"]')).toHaveAttribute("maxlength", "500");
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
+  it("says the picked place has left our list when replacing an old row is refused with 404 Public place not found", async () => {
+    const legacyRow: ItineraryPlace = {
+      id: "9",
+      time: "09:00",
+      label: "카카오 예전 식당",
+      meta: "음식점",
+      sourceProvider: "kakao",
+      externalPlaceId: "777",
+      needsConfirmation: true,
+    };
+    const trip: Trip = { ...getPreviewTrip(), id: "86", revision: 3, currentUserRole: "owner", days: { 1: [legacyRow] } };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const listSpy = vi.spyOn(appDataApi, "listLegacyPlaceCandidates").mockResolvedValue([
+      { source: "tourapi", sourceId: "126508", name: "자갈치시장", address: "부산 중구 자갈치해안로 52", latitude: 35.0966, longitude: 129.0306, category: "shopping", distanceMeters: 40 },
+    ]);
+    const updateSpy = vi
+      .spyOn(appDataApi, "updateTripPlace")
+      .mockRejectedValue(new ApiError("Public place not found", { status: 404, statusText: "Not Found", detail: "Public place not found" }));
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/86");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "카카오 예전 식당 상세 열기" }));
+      const sheet = await screen.findByRole("dialog", { name: "장소 확인" });
+
+      await user.click(await within(sheet).findByRole("button", { name: "자갈치시장 선택" }));
+
+      await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+      // 후보를 받은 뒤 동기화가 그 장소를 지웠다 - 다른 후보를 고르거나 이름을 적으면 풀린다
+      expect(await within(sheet).findByText("고른 장소가 목록에서 사라졌어요. 다른 곳을 고르거나 이름을 직접 적어 주세요.")).toBeInTheDocument();
+      expect(within(sheet).queryByText(/입력값을 확인하고 다시 시도해 주세요/)).not.toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
+      listSpy.mockRestore();
+      updateSpy.mockRestore();
+    }
+  });
 });

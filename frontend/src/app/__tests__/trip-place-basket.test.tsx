@@ -740,4 +740,68 @@ describe("Travel Hunter app trip place add flow", () => {
     // 지번은 그대로 - 위치를 빼지 않는다
     expect(within(dialog).getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent(BUILDING_FILL.address);
   });
+
+  it("turns the save button below off while the own-place form is open, so the place being written is not dropped", async () => {
+    const trip = addTrip("124");
+    mockSearch(kakaoCandidate("8701", "해변카페"));
+    vi.spyOn(appDataApi, "matchPlace").mockResolvedValue({ result: "match", places: [publicPlace("해변 카페", "T-70")] });
+    const addBatchSpy = vi.spyOn(appDataApi, "addTripPlaces").mockResolvedValue({ ...trip, revision: 4 });
+    const { user, dialog } = await openAddSheet(trip);
+
+    await searchAndPick(user, dialog, "해변", "해변카페");
+    await within(dialog).findByRole("region", { name: "추가할 장소 목록" });
+    await user.click(within(dialog).getByRole("button", { name: "찾는 곳이 없어요 · 직접 적기" }));
+    const form = await within(dialog).findByRole("form", { name: "나만의 장소" });
+    await user.type(within(form).getByLabelText("장소 이름"), "친구네 집");
+
+    // 칸이 열린 동안 아래 단추로 저장하면 적던 장소가 말없이 버려진다 - 끄고, 왜 꺼졌는지 알린다
+    expect(within(dialog).getByRole("button", { name: "Day 1에 1개 저장하기" })).toBeDisabled();
+    expect(dialog).toHaveTextContent("위에서 장소를 고르거나 담은 뒤 저장할 수 있어요.");
+
+    await user.click(within(form).getByRole("button", { name: "담기" }));
+    expect(within(dialog).getByRole("button", { name: "Day 1에 2개 저장하기" })).toBeEnabled();
+    expect(dialog).not.toHaveTextContent("위에서 장소를 고르거나 담은 뒤 저장할 수 있어요.");
+    expect(addBatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("brings focus back to the search box after a candidate is chosen or an own place is added", async () => {
+    const trip = addTrip("125");
+    mockSearch(kakaoCandidate("8702", "오동도"));
+    vi.spyOn(appDataApi, "matchPlace").mockResolvedValue({
+      result: "candidates",
+      places: [publicPlace("오동도", "T-71"), publicPlace("오동도 공원", "S-72", { source: "sangga" })],
+    });
+    const { user, dialog } = await openAddSheet(trip);
+
+    await searchAndPick(user, dialog, "오동", "오동도");
+    const choices = await within(dialog).findByRole("region", { name: "이 장소가 맞나요?" });
+    await user.click(within(choices).getByRole("button", { name: "오동도 공원 선택" }));
+    // 고른 후보 칸이 사라져도 초점이 body 로 떨어지지 않고 다음 장소를 찾는 검색 칸으로 간다(바로 담기와 같다)
+    expect(within(dialog).getByLabelText("장소 검색")).toHaveFocus();
+
+    await user.click(within(dialog).getByRole("button", { name: "찾는 곳이 없어요 · 직접 적기" }));
+    const form = await within(dialog).findByRole("form", { name: "나만의 장소" });
+    await user.type(within(form).getByLabelText("장소 이름"), "친구네 집");
+    await user.click(within(form).getByRole("button", { name: "담기" }));
+    expect(within(dialog).getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("추가할 장소 2개");
+    expect(within(dialog).getByLabelText("장소 검색")).toHaveFocus();
+  });
+
+  it("says a basket place has left our list when saving is refused with 404 Public place not found", async () => {
+    const trip = addTrip("126");
+    mockSearch(kakaoCandidate("8703", "사라진카페"));
+    vi.spyOn(appDataApi, "matchPlace").mockResolvedValue({ result: "match", places: [publicPlace("사라진 카페", "T-73")] });
+    vi.spyOn(appDataApi, "addTripPlaces").mockRejectedValue(
+      new ApiError("Public place not found", { status: 404, statusText: "Not Found", detail: "Public place not found" }),
+    );
+    const { user, dialog } = await openAddSheet(trip);
+    await searchAndPick(user, dialog, "사라", "사라진카페");
+    await within(dialog).findByRole("region", { name: "추가할 장소 목록" });
+    await user.click(within(dialog).getByRole("button", { name: "Day 1에 1개 저장하기" }));
+
+    // 주간 동기화가 담아 둔 공공데이터 장소를 지웠다 - '입력값을 확인' 은 고칠 것이 없어 맞지 않는다
+    expect(await within(dialog).findByText("담은 장소 중 목록에서 사라진 곳이 있어요. 다시 찾아 담아 주세요.")).toBeInTheDocument();
+    expect(within(dialog).queryByText(/입력값을 확인하고 다시 시도해 주세요/)).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("사라진 카페");
+  });
 });

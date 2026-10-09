@@ -120,7 +120,8 @@ export function CustomPlaceForm({
             <KakaoMapView
               ariaLabel="채운 자리"
               fallback={null}
-              markers={[{ id: "fill", label: trimmed || "선택한 위치", latitude: spot.latitude, longitude: spot.longitude }]}
+              // 라벨은 고정 - 이름을 실으면 글자를 칠 때마다 지도를 새로 만든다(라벨이 지도 키에 들어간다)
+              markers={[{ id: "fill", label: "채운 자리", latitude: spot.latitude, longitude: spot.longitude }]}
               onSelectMarker={() => undefined}
               selectedMarkerId="fill"
             />

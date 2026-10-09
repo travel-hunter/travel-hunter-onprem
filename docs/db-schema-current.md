@@ -219,7 +219,7 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 
 주소 채움 (2026-10-08, `0050_geo_reference`, 계획 `docs/superpowers/plans/2026-10-07-place-add-address-fill.md`):
 
-- `postgis` 확장(없을 때만 만든다 - AWS RDS 는 프로비저닝 때 마스터 사용자가 먼저 설치한다)과 스키마 `geo`. 국토교통부 GIS건물통합정보(건물) · 연속지적도(땅, 농지 · 임야 제외)의 도형과 고유번호(PNU)다. 이 마이그레이션은 **빈 표만** 만들고, 데이터는 적재 도구(`backend/scripts/geo_load.py`, 운영 `docs/geo-reference-monthly-load.md`)가 월 1회 `*_next` 표에 넣어 바꿔치기한다. 앱 표와 스키마가 달라 백업(`pg_dump --exclude-schema=geo`)과 로컬 복사에서 뺀다.
+- `postgis` 확장(없을 때만 만든다 - AWS RDS 는 프로비저닝 때 마스터 사용자가 먼저 설치한다)과 스키마 `geo`. 국토교통부 GIS건물통합정보(건물) · 연속지적도(땅, 농지 · 임야 제외)의 도형과 고유번호(PNU)다. 이 마이그레이션은 **빈 표만** 만들고, 데이터는 적재 도구(`backend/scripts/geo_load.py`, 운영 `docs/geo-reference-monthly-load.md`)가 월 1회 `*_next` 표에 넣어 바꿔치기한다. 로컬 복사에서는 뺀다. 백업은 큰 건물 · 땅 데이터만 뺀다(`pg_dump --exclude-table-data='geo.building' --exclude-table-data='geo.parcel'` - 스키마 · 시퀀스 현재 값 · 색인 · `legal_dong` · `load_run` 은 남아 복원 뒤 적재 도구를 다시 돌리면 된다).
 - 시퀀스 `geo.feature_id_seq`: `geo.building.id` 와 `geo.parcel.id` 가 함께 쓴다 - 판을 바꿔도 같은 id 가 다른 건물 · 땅을 가리키지 않는다(옛 `geoRef` 는 404).
 - `geo.building` · `geo.parcel`: `id` bigint PK(위 시퀀스), `feature_key` varchar(40)(건물 식별번호, 땅은 고유번호), `pnu` varchar(19), `la`/`lo` 중심 위경도, `rx`/`ry` 중심 EPSG:5186 좌표(모두 double precision), `geom` geometry(Geometry, 5186). 땅은 `jimok` varchar(4)(지목 약식 부호, 못 읽으면 NULL)가 더 있다. 색인 `{table}_geom_gix`(GiST)와 `{table}_pnu_ix`(`pnu`).
 - `geo.legal_dong`: `code` varchar(10) PK(법정동코드), `name` varchar(100) - 주소(법정동 + 지번)를 만든다. `geo.load_run`: 적재마다 한 줄(`finished_at`, `building_rows`, `parcel_rows`, `building_base_date`, `parcel_base_date`).
