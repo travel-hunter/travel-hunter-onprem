@@ -55,7 +55,13 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
      주소가 밖에서 바뀌었을 때(뒤로 등)만 따라간다 */
   const [text, setText] = useState(q ?? "");
   const writtenRef = useRef(q);
+  // 멈춰서 주소에 쓴 말 - 주소가 따라오기 전에 다음 낱자를 쳤으면 그 말이 돌아와도 입력칸을 되돌리지 않는다
+  const committedRef = useRef<string | null>(null);
   useEffect(() => {
+    if (q !== null && q === committedRef.current) {
+      committedRef.current = null;
+      return;
+    }
     if (q === writtenRef.current) return;
     writtenRef.current = q;
     setText(q ?? "");
@@ -68,14 +74,17 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
     }
     return next;
   };
-  const typeText = (value: string) => {
+  /* now = 예시 단추 - 혜택 줄이 바로 그려져 칸을 떠나지 않고 누를 수 있으니 기다리지 않고 쓴다 */
+  const typeText = (value: string, now = false) => {
     setText(value);
     writtenRef.current = value;
     // 장소 카드에서 치면 카드를 닫고 결과로 - 층이 바뀌니 바로 쓴다. 결과 층 안에서는 아래 commitText 가 쓴다
-    if (!open || placeId) go(withParams({ q: value, pl: null, lv: null, from: null }));
+    if (now || !open || placeId) go(withParams({ q: value, pl: null, lv: null, from: null }));
   };
   const commitText = () => {
-    if (open && !placeId && text !== q) go(withParams({ q: text }));
+    if (!open || placeId || text === q) return;
+    committedRef.current = text;
+    go(withParams({ q: text }));
   };
   useEffect(() => {
     if (!open || placeId || text === q) return;
@@ -219,7 +228,7 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
               <h3>이렇게 찾아 보세요</h3>
               <div className="home-search-examples">
                 {EXAMPLES.map((example) => (
-                  <button key={example} type="button" onClick={() => typeText(example)}>
+                  <button key={example} type="button" onClick={() => typeText(example, true)}>
                     {example}
                   </button>
                 ))}

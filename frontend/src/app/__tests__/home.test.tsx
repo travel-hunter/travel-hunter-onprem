@@ -1222,6 +1222,11 @@ describe("Travel Hunter app — home", () => {
         await user.type(searchbox, word);
         expect(await screen.findByText(`‘${word}’에 맞는 지역 · 혜택 · 장소가 없어요. 이렇게 찾아 보세요.`)).toBeInTheDocument();
       }
+
+      // 예시 단추는 기다리지 않고 주소에 쓴다 - 혜택 줄을 바로 눌러 다른 화면으로 가도 뒤로 오면 같은 말이다
+      await user.clear(searchbox);
+      await user.click(await screen.findByRole("button", { name: "여수" }));
+      expect(new URLSearchParams(routeLocation().search).get("q")).toBe("여수");
     } finally {
       listPoliciesSpy.mockRestore();
       getProfileSpy.mockRestore();
