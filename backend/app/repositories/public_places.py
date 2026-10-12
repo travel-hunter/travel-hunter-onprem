@@ -218,8 +218,8 @@ def area_coordinates(db: Session, *, sido: str, cities: Collection[str] | None) 
 
 @dataclass(frozen=True)
 class SuggestCandidate:
-    """완성 검색어 후보 한 묶음 - (tier, 이름, 출처, 분류, 시도, 시군)이 같은 행 count 개. tier 0 = 일정 지역 안(지역이 없으면 전국
-    TourAPI), 1 = 지역 밖(지역이 있을 때만). 순위는 services/place_suggest 가 매긴다."""
+    """완성 검색어 후보 한 묶음 - (tier, 이름, 출처, 분류, 시도, 시군)이 같은 행 count 개. tier 0 = 일정 지역 안(지역이 없으면 전국),
+    1 = 지역 밖(지역이 있을 때만). 순위는 services/place_suggest 가 매긴다."""
 
     name: str
     source: str
@@ -240,7 +240,7 @@ def suggest_candidates(
     """이름에 query(앞뒤 공백을 자른 2~80자)가 든 후보(ix_public_places_name_trgm). scope = (시도, 시군 목록 | None) 또는 지역 없음(None).
     - 지역 안(tier 0): TourAPI 전부 + 상가정보 중 예술·스포츠가 아닌 것(유흥 이름 제외).
     - 지역 밖(tier 1, 지역이 있을 때만): TourAPI 관광지(sight · culture · leisure)만.
-    - 지역 없음: 전국 TourAPI(tier 0).
+    - 지역 없음: 전국(tier 0) - 2자는 TourAPI 만, 3자 이상은 지역 안 갈래와 같은 거름(상가정보 포함).
     - 2자 검색어는 지역 안 TourAPI 만 어절 속을 맞추고 나머지는 어절 앞만 맞춘다(스타 -> 블라스타 같은 잡음).
     갈래마다 정렬 · 상한을 달지 않고(SQLite 가 거부한다) 합친 뒤 한 번에 묶고 tier -> 이름 길이 -> 이름 순으로 limit 개만 받는다."""
 
@@ -254,12 +254,17 @@ def suggest_candidates(
         columns = (PublicPlace.name, PublicPlace.source, PublicPlace.category, PublicPlace.sido, PublicPlace.city)
         return select(*columns, literal_column(str(tier), Integer).label("tier")).where(contains, *conditions)
 
+    nightlife = and_(PublicPlace.source == "sangga", or_(*(PublicPlace.name.contains(word, autoescape=True) for word in _NIGHTLIFE)))
+    # TourAPI 전부 + 상가정보 중 예술·스포츠가 아닌 것(유흥 이름 제외) - 지역 안 갈래와 지역 없음 3자 이상이 같이 쓴다
+    places_and_shops = (or_(PublicPlace.source == "tourapi", PublicPlace.category != "leisure"), not_(nightlife))
+
     if scope is None:
-        branches = [branch(0, PublicPlace.source == "tourapi")]
+        # 지역 없음: 전국. 2자는 TourAPI 만 - 전국 상가 108만 행을 2자로 훑으면 1~4초다(10/12 실측: 스타 1.2초 · 카페 2~3.7초).
+        # 3자 이상은 상가도 본다('스타벅' 8ms) - 덜 친 체인 이름을 상표('스타벅스')로 이어 대신 찾기에 쓴다
+        branches = [branch(0, PublicPlace.source == "tourapi") if short else branch(0, *places_and_shops)]
     else:
         sido, cities = scope
-        nightlife = and_(PublicPlace.source == "sangga", or_(*(PublicPlace.name.contains(word, autoescape=True) for word in _NIGHTLIFE)))
-        inside = branch(0, or_(PublicPlace.source == "tourapi", PublicPlace.category != "leisure"), not_(nightlife))
+        inside = branch(0, *places_and_shops)
         outside = branch(
             1,
             PublicPlace.source == "tourapi",

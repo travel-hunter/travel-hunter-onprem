@@ -143,6 +143,8 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
   const [placesOpen, setPlacesOpen] = useState(false);
   useEffect(() => setPlacesOpen(false), [query]);
   const loadingPlaces = query.length >= MIN_PLACE_QUERY && places === null;
+  // 친 말로 카카오가 0곳이라 서버가 우리 완성어로 대신 찾은 줄이면 그 말들(줄 순서)
+  const placeViaWords = [...new Set((places ?? []).flatMap((item) => (item.viaWord ? [item.viaWord] : [])))];
 
   return (
     <>
@@ -238,13 +240,18 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
                   ))}
                 </>
               )}
-              {places && places.length > 0 && (benefitWords && !placesOpen ? (
+              {places && places.length > 0 && (benefitWords && !placesOpen && placeViaWords.length === 0 ? (
                 <button className="home-places-more" type="button" onClick={() => setPlacesOpen(true)}>
                   ‘{query}’ 이름이 든 장소도 보기 · {places.length}곳
                 </button>
               ) : (
                 <>
                   <h3>장소<span className="src">카카오 지도</span></h3>
+                  {placeViaWords.length > 0 && (
+                    <p className="home-places-via">
+                      {`‘${placeViaWords[0]}’${placeViaWords.length > 1 ? ` 외 ${placeViaWords.length - 1}개` : ""} 검색 결과`}
+                    </p>
+                  )}
                   {places.map((item) => (
                     <HomePlaceRow key={item.id} item={item} policies={all} onOpen={() => go(withParams({ pl: item.id, lv: null, from: null }))} />
                   ))}

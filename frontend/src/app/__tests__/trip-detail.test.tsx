@@ -10,7 +10,7 @@ import {
 import { readFileSync } from "node:fs";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   appDataApi,
@@ -119,11 +119,6 @@ function mockMatchByName() {
 }
 
 describe("Travel Hunter app — trip detail & itinerary", () => {
-  beforeEach(() => {
-    // 장소 추가 창의 검색 칸에 2자 이상 치면 완성 검색어 요청이 나간다 - 진짜 백엔드 · 로컬 DB 에 닿지 않게 기본은 빈 목록
-    vi.spyOn(appDataApi, "suggestTripPlaceNames").mockResolvedValue([]);
-  });
-
   afterEach(() => {
     vi.restoreAllMocks();
   });

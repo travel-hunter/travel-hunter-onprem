@@ -7,17 +7,18 @@
   주소 채움은 국토교통부 건물 · 땅 지번(PostGIS `geo` 스키마, Alembic `0049` · `0050`, db 이미지 `postgis/postgis:16-3.5-alpine`)으로 채우고, 찍은 좌표는 `POST /api/places/locate` 로
   비교만 하고 버린다. 월 적재 도구 `backend/scripts/geo_load.py`(geo-loader 이미지 단계), 운영 문서 `docs/geo-reference-monthly-load.md`.
   개발 Jenkins 는 마이그레이션 앞에서 db 를 먼저 맞춘다. 계획: `docs/superpowers/plans/2026-10-05-place-add-flow-stage3.md`, `docs/superpowers/plans/2026-10-07-place-add-address-fill.md`.
-  같은 브랜치에 장소 검색 완성 검색어(`GET /api/trips/{trip_id}/place-suggest`, 우리 공공데이터 이름 최대 6줄, Alembic `0051` `pg_trgm` GIN)와
-  카카오 검색 '지역 먼저'(일정 지역 중심 반경 20km 1차, 6곳 미만이면 반경 없이 2차로 채움)를 더했다. 계획: `docs/superpowers/plans/2026-10-12-place-search-suggestions.md`.
+  같은 브랜치에 장소 검색 한 칸 정리를 더했다: 일정 검색 15곳씩(`page` 1~3, '더 보기' 45곳) · 일정 지역 20km 먼저 → 전국('다른 지역' 구분 줄, 줄마다 `nearby`),
+  덜 친 말('스타벅')은 우리 공공데이터 완성어 상위 3개로 대신 찾기(`viaWord`, Alembic `0051` `pg_trgm` GIN), 홈 검색도 대신 찾기 · 장소 카드 지도 260/360px.
+  검색창 밑 완성 검색어 서브창과 `place-suggest` API 는 걷었다(사용자 결정). 계획: `docs/superpowers/plans/2026-10-12-place-search-area-first-list.md`(앞 계획 `2026-10-12-place-search-suggestions.md` 의 순위 규칙을 쓴다).
 - 공공데이터 장소 기반(2단계)은 PR #90 으로 develop 에 머지됐다(`4612926`).
 - 통합 검색(1단계)은 PR #89 로 develop 에 머지됐다(`bb8c841`).
 - 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
 
 ## Recent Validation
 
-- PASS: backend `python -m pytest` 1487 passed · 27 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - Windows 권한 검사, 무관). PostGIS 시험(geo 조회 · 저장 SAVEPOINT · 적재 도구)은 일회용 PostGIS 에서 통과.
-- PASS: `npm run typecheck`, `npm run test:mojibake`, `vite build`, `npm run test:e2e:containers` 13/13(완성 검색어 고친 뒤 4173 다시 빌드, 로컬 DB `0051`), `git diff --check`, 바뀐 파일 U+FFFD 0건.
-- 부분 PASS: `npx vitest run` 755개 중 749개 - 실패 6개는 모두 `mypage.test.tsx`(쌓인 시험 일정 탓, 무관). `npm test` 래퍼는 로컬에 `CLOUDFLARE_TUNNEL_TOKEN` 이 없어 compose 보간에서 멈춘다(시험 전 단계).
+- PASS: backend `python -m pytest` 1509 passed · 27 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - Windows 권한 검사, 무관). PostGIS 시험(geo 조회 · 저장 SAVEPOINT · 적재 도구)은 일회용 PostGIS 에서 통과.
+- PASS: `npm run typecheck`, `npm run test:mojibake`, `vite build`, `npm run test:e2e:containers` 13/13(한 칸 정리 뒤 4173 다시 빌드, 로컬 DB `0051`), `git diff --check`, 바뀐 파일 U+FFFD 0건.
+- 부분 PASS: `npx vitest run` 736개 중 730개 - 실패 6개는 모두 `mypage.test.tsx`(쌓인 시험 일정 탓, 무관). `npm test` 래퍼는 로컬에 `CLOUDFLARE_TUNNEL_TOKEN` 이 없어 compose 보간에서 멈춘다(시험 전 단계).
 - 부분 PASS: `alembic upgrade head --sql` 처음부터는 기존 `0044` 에서 멈춘다(develop 그대로). `0049_trip_place_public_category:head --sql` 통과, 로컬 DB 실제 `upgrade head` 0050 통과(보호 표 6개 건수 전후 같음, 덤프는 저장소 밖 · 소유자 전용).
 - PASS: 로컬 전국 적재(2026-09 판) 6,601초 - 건물 14,346,608 · 땅 19,406,691(농지 · 임야 제외) · 법정동 18,846, 이름 없는 옛 법정동코드 줄 45,515 뺌(0.32%, 사용자 결정),
   geo 표 건물 5,046MB · 땅 9,622MB, DB 15GB, 적재 중 최대 DB 15,097MB · WAL 1,024MB.
@@ -26,9 +27,10 @@
 - PASS: 계획 코덱스 검토 2회 + 자체 교차 검토(55건 반영), 과제마다 구현 · 검토, 브랜치 최종 검토(Critical 0, Important 5 고침).
 - PASS: 커밋 뒤 2차 자체 검토(6관점 · 발견마다 반박 검증) - 확인된 10건 모두 Minor, 9건으로 묶어 고침(적재 도구 품질 실패 시 땅 건너뛰기, 맞춰 보는 동안 아래 저장 단추 끄기, 담은 뒤 검색 칸 초점, 404 사라진 장소 안내, 수정 창 100 · 500자, 작은 지도 재생성, 같은 이름 후보 읽기, 디스크 산정 · 백업 안내).
 - PASS: 사용자 브라우저 확인(localhost:4173, 카카오 JS 키 로컬 도메인 등록 뒤) - 위치 찍기 · 지도에서 찾기 · 작은 지도 포함 전체 정상.
-- PASS(완성 검색어): 실데이터 20개 순위가 설계표와 같다(실제 지역 카탈로그가 여러 시군인 3개만 범위 차이). API 왕복 p95 49ms(2자 54ms · 3자 이상 23ms, 목표 80 · 50ms),
-  실제 서버 p95 57ms. 지역 먼저: 스타벅스@서울 · 남산@경주 · 해수욕장@강릉 · 메타세쿼이아@담양 · 순두부@강릉 모두 6줄 중 6줄이 지역 안(개수만 셌다).
-  과제마다 구현 · 검토, 브랜치 최종 검토 3관점(Critical 0, Important 3 - 2건 고침 · 1건 판정, Minor 고침).
+- PASS(완성어 순위): 실데이터 20개 순위가 설계표와 같다. 지역 먼저 실측: 스타벅스@서울 · 남산@경주 · 해수욕장@강릉 · 메타세쿼이아@담양 · 순두부@강릉 모두 지역 안(개수만 셌다).
+- PASS(한 칸 정리, 컨테이너 데운 상태): 스타벅@전남 전체 15곳 대신 찾기 0.64초, 메타세쿼@담양 7곳(주변 5) 0.41초, 스타벅스@서울 1 · 2 · 3쪽 15곳씩 0.52 · 0.28 · 0.31초,
+  홈 스타벅 · 메타세쿼 · 순천만습 15곳씩 대신 찾기 0.16~0.19초. 막 띄운 뒤 첫 검색은 DB 캐시가 차가워 최대 5.9초. 사용자 보고('타임스퀘'가 지역 일정에서 0곳 - 지역 밖 완성어가 관광지만)를 전국 완성어로 채워 고쳤다.
+  계획 교차 검토 2갈래 → 과제마다 구현 · 검토 → 브랜치 최종 검토 1회(Critical 0 · Important 0).
 ## Active Risks
 
 ### 장소 담기 3단계 + 주소 채움(`feature/place-add-flow`)
@@ -43,10 +45,13 @@
 - 월 갱신: 브이월드 전체데이터(건물 AL_D010 · 땅 AL_D002, 시도 16개)를 사람이 받아 돌린다. 구조 검사는 넘길 수 없고 행 수만 `--accept-row-count-change` 로 받는다.
 - 완성 검색어 `0051`: `pg_trgm` 확장 + `public_places.name` GIN(108만 행에 약 78MB, 로컬 7초, CONCURRENTLY). 운영 승격 게이트는 0050 과 같이 물려받는다.
   서버 DB 사용자가 `CREATE EXTENSION pg_trgm` 을 만들 수 있는지(신뢰 확장 - DB 소유자면 된다) 배포 전에 확인한다.
-- 장소 검색은 지역이 있으면 카카오를 한 번에 최대 2번 부른다(1차 20km에서 6곳 미만일 때만 2차) - 일일 한도를 그만큼 더 쓴다.
+- 카카오 호출이 늘었다: 일정 검색 1쪽 1~2번 · 2쪽 최대 5번 · 3쪽 최대 6번(서버가 쪽마다 앞 쪽을 다시 부른다), 덜 친 말로 0곳이면 대신 찾기까지 최대 8번(직렬),
+  홈은 최대 4번. 화면이 요청을 끊어도 서버는 끝까지 돈다 - 배포 뒤 카카오 일 사용량과 0곳 검색 응답 시간을 한 번 본다. 지역 일정의 3자 이상 덜 친 말은 전국 완성어 질의가 하나 더 붙는다.
 - '도 전체' 일정은 도 공공데이터 중앙값 둘레 20km 만 먼저 본다(실측: 스타벅스@경북 · 경기 4/6, 남이섬@강원 2/6). 예전 전국 검색보다 나빠지지는 않는다.
-  더 맞추려면 카카오 `rect`(시도 사각 범위)로 1차를 부르는 후속안 - 사용자 결정 대기.
-- 브라우저로만 볼 것(사용자 확인 목록): 한글 조합 중 줄 누르기, 휴대폰 키보드가 올라온 채 줄 탭, 6줄 목록 모양(360~1440), 목록이 결과 칸을 가리는 동선.
+  더 맞추려면 카카오 `rect`(시도 사각 범위)로 1차를 부르는 후속안 - 사용자 결정(2026-10-12): 지금은 그대로.
+- 최종 검토 Minor(기록만): 반경 쪽 0곳 + 전국 쪽 실패도 대신 찾기가 돈다(부분 장애 때 대기 증가, 드묾), '더 보기'는 줄 수가 쪽 × 15 와 같아야 보여 카카오 순서가 쪽마다 바뀌면
+  '여기까지예요' 없이 사라질 수 있다, 정책 탭 위치로 찾기 · 지도에서 찾기도 대신 찾은 줄을 안내 줄 없이 받는다(계획 0.4 에서 받아들임).
+- 브라우저로만 볼 것(사용자 확인 목록): 15줄 · '다른 지역' 줄 · '더 보기'가 220px 칸 안에서만 스크롤(360~1440), 더 보기 뒤 초점 · 오류 줄, 홈 카드 지도 크기, 덜 친 말 첫 검색 체감 대기.
 
 ### 공공데이터 장소 기반(`feature/public-places`)
 

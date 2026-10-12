@@ -828,6 +828,25 @@ describe("Travel Hunter app — home", () => {
     }
   });
 
+  it("says which completed word found the home place rows", async () => {
+    vi.spyOn(appDataApi, "listPolicies").mockResolvedValue([]);
+    withoutPreferredRegions();
+    vi.spyOn(appDataApi, "searchPlaces").mockResolvedValue([
+      { kind: "place", id: "kakao:1", name: "스타벅스 강남점", category: "음식점 > 카페", address: "서울 강남구 역삼동 1", latitude: 37.5, longitude: 127.0, viaWord: "스타벅스" },
+      { kind: "place", id: "kakao:2", name: "스타벅스 리저브 청담", category: "음식점 > 카페", address: "서울 강남구 청담동 3", latitude: 37.5, longitude: 127.0, viaWord: "스타벅스 리저브" },
+    ]);
+    await login();
+    cleanup();
+    renderAppRoute("/home");
+    const user = userEvent.setup();
+    const searchbox = await screen.findByRole("searchbox", { name: "지역 · 혜택 · 장소 검색" });
+    await user.click(searchbox);
+    await user.type(searchbox, "스타벅");
+
+    expect(await screen.findByText("‘스타벅스’ 외 1개 검색 결과")).toBeInTheDocument();
+    expect(screen.getByText("스타벅스 강남점")).toBeInTheDocument();
+  });
+
   it("searches places from the home search bar, opens a place card by its Kakao id and hands the place to a trip by id and typed words only", async () => {
     const odongdo: PlaceSearchItem = {
       kind: "place",

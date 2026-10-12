@@ -342,14 +342,6 @@ test("empty trip detail opens the place sheet at common widths and explains an e
       body: "[]",
     });
   });
-  // 검색 칸에 칠 때 나가는 완성 검색어 요청도 빈 목록으로 막는다 - 아래 확인은 완성 검색어에 기대지 않고, 떠 있는 목록이 아래 칸을 가리지도 않게
-  await page.route(`**/api/trips/${tripId}/place-suggest**`, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: "[]",
-    });
-  });
 
   for (const width of [390, 1024]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 768 });

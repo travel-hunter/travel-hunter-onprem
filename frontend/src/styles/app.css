@@ -3267,60 +3267,6 @@
   background: var(--gray-50);
 }
 
-/* 장소 검색 칸 + 완성 검색어 목록: 목록은 칸 바로 아래에 떠서 결과 칸 위로 잠깐 겹친다(닫히면 그대로 보인다) */
-.place-search-box {
-  position: relative;
-}
-
-.place-suggestions {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  z-index: 3;
-  max-height: 250px; /* 6줄(40px) + 위아래 안쪽 여백 4px + 테두리 1px - border-box 라 이보다 작으면 6번째 줄이 잘린다 */
-  margin: 4px 0 0;
-  padding: 4px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  list-style: none;
-  border: 1px solid var(--gray-200);
-  border-radius: var(--radius-sm);
-  background: #fff;
-  box-shadow: var(--shadow-md);
-}
-
-.place-suggestion {
-  display: block;
-  width: 100%;
-  min-height: 40px;
-  padding: 0 10px;
-  overflow: hidden;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--ink);
-  font-size: 14px;
-  line-height: 40px;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.place-suggestion:hover,
-.place-suggestion:focus-visible {
-  background: var(--primary-50);
-  outline: none;
-}
-
-.place-suggestion:focus-visible {
-  box-shadow: inset 0 0 0 2px rgba(var(--primary-rgb), 0.4);
-}
-
-.place-suggestion strong {
-  color: var(--primary-600);
-  font-weight: 800;
-}
-
 .place-search-results {
   display: grid;
   gap: 8px;
@@ -3402,6 +3348,52 @@
 
 .place-search-results.is-stale {
   opacity: 0.55;
+}
+
+.place-search-via,
+.place-search-group,
+.place-search-end {
+  margin: 0;
+  color: var(--gray-600);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.place-search-via {
+  overflow-wrap: anywhere;
+}
+
+.place-search-via.is-stale {
+  opacity: 0.55;
+}
+
+.place-search-group {
+  padding: 6px 2px 4px;
+  border-top: 1px solid var(--gray-200);
+}
+
+.place-search-group.is-top {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.place-search-more {
+  min-height: 40px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.place-search-more[aria-disabled="true"] {
+  color: var(--gray-500);
+}
+
+.place-search-end {
+  padding: 6px 2px;
+  text-align: center;
 }
 
 .place-search-result:disabled {

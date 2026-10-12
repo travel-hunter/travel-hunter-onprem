@@ -187,6 +187,10 @@ class PlaceSearchCandidate(BaseModel):
     externalPlaceId: str | None = None
     # 결정 23: 서버가 같은 요청 안에서 맞춰 본 결과(POST /api/places/match 와 같은 모양). 늘 내보내고, 좌표가 없거나 실패하면 null
     publicMatch: PlaceMatchResponse | None = None
+    # 일정 지역 중심에서 20km 안이면 true, 밖이면 false, 일정에 지역 중심이 없으면 null - 화면이 '다른 지역' 구분 줄을 긋는다
+    nearby: bool | None = None
+    # 친 말로 카카오가 0곳이라 우리 공공데이터 완성어로 대신 찾은 줄이면 그 말(카카오 값 아님), 아니면 null
+    viaWord: str | None = None
 
 
 class InviteState(BaseModel):

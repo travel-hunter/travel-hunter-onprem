@@ -143,26 +143,24 @@ describe("backendApi trip mutation methods", () => {
     );
   });
 
-  it("asks the trip place-suggest endpoint for completed search words and returns the strings", async () => {
-    const controller = new AbortController();
-    const fetchSpy = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(["메타세쿼이아길", "담양 메타세쿼이아길"]), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+  it("sends the page of trip place search only when it is given", async () => {
+    const fetchSpy = vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
     );
     vi.stubGlobal("fetch", fetchSpy);
 
-    await expect(
-      backendApi.suggestTripPlaceNames("479", "메타세쿼", { signal: controller.signal }),
-    ).resolves.toEqual(["메타세쿼이아길", "담양 메타세쿼이아길"]);
+    await backendApi.searchTripPlaces("7", { query: "카페", page: 2 });
+    await backendApi.searchTripPlaces("7", { query: "카페" });
 
-    expect(fetchSpy).toHaveBeenCalledWith(
-      `${apiConfig.baseUrl}/api/trips/479/place-suggest?query=%EB%A9%94%ED%83%80%EC%84%B8%EC%BF%BC`,
-      expect.objectContaining({
-        credentials: "include",
-        signal: controller.signal,
-      }),
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      `${apiConfig.baseUrl}/api/trips/7/place-search?query=%EC%B9%B4%ED%8E%98&page=2`,
+      expect.anything(),
+    );
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      2,
+      `${apiConfig.baseUrl}/api/trips/7/place-search?query=%EC%B9%B4%ED%8E%98`,
+      expect.anything(),
     );
   });
 

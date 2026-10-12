@@ -1060,7 +1060,7 @@ def test_db_trip_place_search_route_returns_candidates(monkeypatch) -> None:
     monkeypatch.setattr(
         trip_routes.trip_service,
         "search_places_for_trip",
-        lambda db, current_user, *, trip_handle, query: [
+        lambda db, current_user, *, trip_handle, query, page=1: [
             {
                 "id": "kakao:kakao-1",
                 "label": "📍",
@@ -1098,6 +1098,52 @@ def test_db_trip_place_search_route_returns_candidates(monkeypatch) -> None:
     assert response.json()[0]["publicMatch"]["places"][0]["sourceId"] == "126"
 
 
+def test_db_trip_place_search_route_accepts_page_three(monkeypatch) -> None:
+    install_db_route_dependencies(monkeypatch, object(), make_user())
+    seen: dict[str, object] = {}
+
+    def fake(db, user, *, trip_handle, query, page):
+        seen.update(page=page)
+        return []
+
+    monkeypatch.setattr(trip_routes.trip_service, "search_places_for_trip", fake)
+    try:
+        response = client.get("/api/trips/7/place-search", params={"query": "카페", "page": "3"})
+    finally:
+        clear_overrides()
+    assert response.status_code == 200 and response.json() == []
+    assert seen == {"page": 3}   # 경계 - le=2 로 잘못 줄이면 여기서 잡힌다
+
+
+@pytest.mark.parametrize("page", ["0", "4", "x"])
+def test_db_trip_place_search_route_rejects_a_page_outside_one_to_three(monkeypatch, page) -> None:
+    install_db_route_dependencies(monkeypatch, object(), make_user())
+    monkeypatch.setattr(trip_routes.trip_service, "search_places_for_trip", lambda *args, **kwargs: pytest.fail("must not reach the service"))
+    try:
+        response = client.get("/api/trips/7/place-search", params={"query": "카페", "page": page})
+    finally:
+        clear_overrides()
+    assert response.status_code == 422
+
+
+def test_db_trip_place_search_route_passes_the_page_and_returns_the_row_marks(monkeypatch) -> None:
+    install_db_route_dependencies(monkeypatch, object(), make_user())
+    seen: dict[str, object] = {}
+
+    def fake(db, user, *, trip_handle, query, page):
+        seen.update(page=page)
+        return [{"title": "카페 하나", "meta": "카페", "nearby": False, "viaWord": None}]
+
+    monkeypatch.setattr(trip_routes.trip_service, "search_places_for_trip", fake)
+    try:
+        response = client.get("/api/trips/7/place-search", params={"query": "카페", "page": "2"})
+    finally:
+        clear_overrides()
+    assert response.status_code == 200
+    assert seen == {"page": 2}
+    assert response.json()[0]["nearby"] is False and response.json()[0]["viaWord"] is None
+
+
 def test_db_trip_place_search_route_answers_503_when_kakao_is_misconfigured(monkeypatch) -> None:
     fake_db = object()
     user = make_user()
@@ -1117,86 +1163,6 @@ def test_db_trip_place_search_route_answers_503_when_kakao_is_misconfigured(monk
     assert response.status_code == 503
     assert response.json() == {"detail": "Place search is unavailable"}
     assert "KAKAO" not in response.text   # 키 이름 · 설정 값은 응답에 없다
-
-
-def test_db_trip_place_suggest_route_returns_a_list_of_strings(monkeypatch) -> None:
-    fake_db = object()
-    user = make_user()
-    install_db_route_dependencies(monkeypatch, fake_db, user)
-    monkeypatch.setattr(
-        trip_routes.trip_service,
-        "suggest_places_for_trip",
-        lambda db, current_user, *, trip_handle, query: ["메타세쿼이아길", "메타세쿼이아랜드"]
-        if db is fake_db and current_user is user and trip_handle == "7" and query == "메타세쿼"
-        else [],
-    )
-
-    try:
-        response = client.get("/api/trips/7/place-suggest", params={"query": "메타세쿼"})
-    finally:
-        clear_overrides()
-
-    assert response.status_code == 200
-    assert response.json() == ["메타세쿼이아길", "메타세쿼이아랜드"]
-
-
-def test_db_trip_place_suggest_route_requires_bearer_user(monkeypatch) -> None:
-    install_db_route_dependencies(monkeypatch, object())
-
-    try:
-        response = client.get("/api/trips/7/place-suggest", params={"query": "메타세쿼"})
-    finally:
-        clear_overrides()
-
-    assert response.status_code == 401
-    assert response.json() == {"detail": "Not authenticated"}
-
-
-@pytest.mark.parametrize("params", [{}, {"query": ""}, {"query": "가" * 81}])
-def test_db_trip_place_suggest_route_rejects_a_missing_empty_or_too_long_query(monkeypatch, params) -> None:
-    install_db_route_dependencies(monkeypatch, object(), make_user())
-
-    def reject_call(*_args, **_kwargs):
-        pytest.fail("an invalid query must not reach the service")
-
-    monkeypatch.setattr(trip_routes.trip_service, "suggest_places_for_trip", reject_call)
-
-    try:
-        response = client.get("/api/trips/7/place-suggest", params=params)
-    finally:
-        clear_overrides()
-
-    assert response.status_code == 422
-
-
-def test_db_trip_place_suggest_route_accepts_an_80_character_query(monkeypatch) -> None:
-    install_db_route_dependencies(monkeypatch, object(), make_user())
-    monkeypatch.setattr(trip_routes.trip_service, "suggest_places_for_trip", lambda db, current_user, *, trip_handle, query: [query[:3]])
-
-    try:
-        response = client.get("/api/trips/7/place-suggest", params={"query": "가" * 80})
-    finally:
-        clear_overrides()
-
-    assert response.status_code == 200
-    assert response.json() == ["가가가"]
-
-
-def test_db_trip_place_suggest_route_maps_a_service_404(monkeypatch) -> None:
-    install_db_route_dependencies(monkeypatch, object(), make_user())
-
-    def not_found(*_args, **_kwargs):
-        raise trip_service.TripServiceError(404, "Trip not found")
-
-    monkeypatch.setattr(trip_routes.trip_service, "suggest_places_for_trip", not_found)
-
-    try:
-        response = client.get("/api/trips/7/place-suggest", params={"query": "메타세쿼"})
-    finally:
-        clear_overrides()
-
-    assert response.status_code == 404
-    assert response.json() == {"detail": "Trip not found"}
 
 
 def test_db_trip_invite_email_route_returns_delivery_status(monkeypatch) -> None:

@@ -19,6 +19,8 @@ class PlaceSearchItem(BaseModel):
     city: str | None = None
     # 이 근처(GET /places/nearby)일 때만 - 기준 좌표에서의 거리(m). 검색 결과는 null
     distanceMeters: int | None = None
+    # 친 말로 카카오가 0곳이라 우리 공공데이터 완성어로 대신 찾은 줄이면 그 말(카카오 값 아님), 아니면 null
+    viaWord: str | None = None
 
 
 PublicPlaceCategory = Literal["sight", "culture", "leisure", "stay", "shopping", "food", "cafe"]

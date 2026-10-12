@@ -31,7 +31,7 @@ def search_places(
     """홈 · 정책 탭 통합 검색의 장소 찾기(카카오 로컬). 두 글자 미만이거나 카카오가 꺼져 있으면 빈 목록."""
 
     _signed_in(current_user, db)
-    return [PlaceSearchItem(**item) for item in place_search.search_places(query)]
+    return [PlaceSearchItem(**item) for item in place_search.search_places(query, db=db)]
 
 
 @router.get("/nearby", response_model=list[PlaceSearchItem])

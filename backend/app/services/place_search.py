@@ -12,12 +12,14 @@ import re
 
 from app.data.travel_areas import normalize_municipality_name
 from app.services.kakao_local import KakaoLocalConfigurationError, KakaoLocalSearchProvider, build_kakao_local_client
+from app.services.place_suggest import suggest_place_names
 from app.services.travelmonth_normalizer import REGION_ALIASES
 
 logger = logging.getLogger(__name__)
 
 MIN_QUERY_LENGTH = 2
 KEYWORD_SIZE = 15
+FALLBACK_WORDS = 3   # 친 말로 0곳일 때 대신 찾는 완성어 수(말마다 카카오 1번)
 AREA_SIZE = 30
 AREA_SUFFIX = re.compile(r"(동|읍|면|리|[0-9]가)$")
 # 2026 행정 통합 주소: 카카오가 광주 · 전남 주소를 이 첫 낱말로 준다
@@ -90,7 +92,35 @@ def _area_item(area) -> dict[str, object]:
     }
 
 
-def search_places(query: str, provider: KakaoLocalSearchProvider | None = None) -> list[dict[str, object]]:
+def _search_by_suggestions(db, client: KakaoLocalSearchProvider, query: str) -> list[dict[str, object]]:
+    """덜 친 말('스타벅')은 카카오 키워드 검색이 못 찾는다(10/12 실측 0곳) - 우리 공공데이터 완성어(전국, 3자 이상이면 가게 이름도)
+    상위 3개로 대신 찾아 15곳까지 모은다. 줄마다 viaWord 로 찾은 말을 단다. 완성어 읽기 뒤 세션을 바로 놓는다(카카오를 기다리는 동안 쥐지 않게).
+    완성어 읽기가 실패하면 경고 1줄과 빈 목록 - 덤 기능이 검색을 500 으로 만들지 않는다."""
+
+    try:
+        words = suggest_place_names(db, query=query, scope=None)[:FALLBACK_WORDS]
+    except Exception as error:   # noqa: BLE001
+        logger.warning("place_search_suggest_failed error=%s", type(error).__name__)
+        words = []
+    finally:
+        db.close()
+    items: list[dict[str, object]] = []
+    seen: set[object] = set()
+    for word in words:
+        try:
+            found = client.search_keyword(query=word, size=KEYWORD_SIZE)
+        except Exception as error:   # noqa: BLE001 - 말 하나가 실패해도 다음 말로
+            logger.warning("place_search_suggestion_failed error=%s", type(error).__name__)
+            continue
+        for place in found:
+            item = _place_item(place)
+            if item["id"] not in seen:
+                seen.add(item["id"])
+                items.append({**item, "viaWord": word})
+    return items[:KEYWORD_SIZE]
+
+
+def search_places(query: str, provider: KakaoLocalSearchProvider | None = None, db=None) -> list[dict[str, object]]:
     q = query.strip()
     if len(q) < MIN_QUERY_LENGTH:
         return []
@@ -109,10 +139,14 @@ def search_places(query: str, provider: KakaoLocalSearchProvider | None = None) 
                     items.append(item)
         except Exception as error:   # noqa: BLE001 - 장소 검색이 안 돼도 키워드 결과는 쓴다
             logger.warning("place_search_area_failed error=%s", type(error).__name__)
+    keyword_failed = False
     try:
         items += [_place_item(place) for place in client.search_keyword(query=q, size=KEYWORD_SIZE)]
     except Exception as error:   # noqa: BLE001
         logger.warning("place_search_keyword_failed error=%s", type(error).__name__)
+        keyword_failed = True
+    if not items and not keyword_failed and db is not None:
+        items = _search_by_suggestions(db, client, q)
     return items
 
 

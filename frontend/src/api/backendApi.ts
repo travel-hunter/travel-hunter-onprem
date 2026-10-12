@@ -205,8 +205,6 @@ export const backendApi: AppDataApi = {
       `/api/trips/${tripId}/place-search${queryString(options)}`,
       { signal: control?.signal },
     ),
-  suggestTripPlaceNames: (tripId: string, query: string, control?: ApiRequestControl): Promise<string[]> =>
-    apiClient.get<string[]>(`/api/trips/${tripId}/place-suggest${queryString({ query })}`, { signal: control?.signal }),
   searchPlaces: (query: string, control?: ApiRequestControl): Promise<PlaceSearchItem[]> =>
     apiClient.get<PlaceSearchItem[]>(`/api/places/search${queryString({ query })}`, { signal: control?.signal }),
   listNearbyPlaces: (latitude: number, longitude: number, category: NearbyCategory, control?: ApiRequestControl): Promise<PlaceSearchItem[]> =>

@@ -73,11 +73,11 @@ def test_the_search_docs_say_503_for_a_misconfigured_kakao_and_an_empty_list_for
 
 def test_the_search_docs_describe_the_prematch_on_each_row() -> None:
     search = section("### GET /trips/{trip_id}/place-search", "### GET /places/search")
-    assert '"publicMatch"' in search and "6곳" in search and "always present" in search
+    assert '"publicMatch"' in search and "15곳" in search and "always present" in search
     entry = golden("GET", "/api/trips/1/place-search")
     assert entry["requiredArrayItemFields"]["publicMatch"] == "object|null"
     assert "publicMatch" not in entry["optionalArrayItemFields"]
-    assert "publicMatch" in entry["dbModeBehavior"] and "6 places" in entry["dbModeBehavior"]
+    assert "publicMatch" in entry["dbModeBehavior"] and "15 places" in entry["dbModeBehavior"]
     design = (ROOT / "docs/superpowers/specs/2026-10-03-public-place-storage-design.md").read_text(encoding="utf-8")
     assert "검색 결과 6곳을 검색 요청 안에서 한꺼번에 맞춰" in design
 
@@ -111,44 +111,38 @@ def test_the_locate_route_is_in_the_golden_the_contract_and_the_app() -> None:
     assert set(golden("POST", "/api/places/locate")["requiredFields"]) == {"fill", "nearCenter"}
 
 
-SUGGEST_HEADING = "### GET /trips/{trip_id}/place-suggest"
+def test_place_suggest_is_gone_from_the_contract_the_golden_and_the_feature_spec() -> None:
+    assert "place-suggest" not in CONTRACT
+    assert all("place-suggest" not in item["path"] for item in GOLDEN["endpoints"])
+    assert "place-suggest" not in (ROOT / "docs/implemented-feature-spec.md").read_text(encoding="utf-8")
 
 
-def test_the_suggest_route_is_in_the_golden_the_contract_and_the_app() -> None:
-    paths = app.openapi()["paths"]
-    served = {(method.upper(), served_path) for served_path, item in paths.items() for method in item}
-    assert ("GET", "/api/trips/{trip_id}/place-suggest") in served
-    assert f"{SUGGEST_HEADING}\n" in CONTRACT
-    entry = golden("GET", "/api/trips/1/place-suggest")
-    assert entry["authRequired"] is True and entry["status"] == 200
-    assert entry["query"] == {"query": "메타세쿼"} and entry["responseKind"] == "string[]"
-    # 응답은 문자열 배열이다 - 객체 필드 키(requiredArrayItemFields)를 달지 않는다
-    assert not {"requiredArrayItemFields", "optionalArrayItemFields"} & set(entry)
-    schema = paths["/api/trips/{trip_id}/place-suggest"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
-    assert schema["type"] == "array" and schema["items"] == {"type": "string"}
-
-
-def test_the_suggest_docs_state_the_access_the_input_rules_the_order_and_what_is_never_logged() -> None:
-    suggest = section(SUGGEST_HEADING, "### GET /places/search")
-    for needle in ("- 401:", "- 404:", "- 422:", "`string[]`", "최대 6", "2자 미만", "`__`", "80자", "일정 지역", "시군마다",
-                   "스타벅스 강릉", "스타벅스 동해", "이름만", "로그에 남기지 않는다", "DB 오류", "빈 배열"):
-        assert needle in suggest, needle
-    behavior = golden("GET", "/api/trips/1/place-suggest")["dbModeBehavior"]
-    for needle in ("trip members", "404", "422", "80", "fewer than 2", "at most 6", "travel area", "per city", "names only",
-                   "never logged", "database error", "empty array"):
-        assert needle in behavior, needle
-
-
-def test_the_search_docs_describe_the_area_first_search_and_its_fallback() -> None:
-    search = section("### GET /trips/{trip_id}/place-search", SUGGEST_HEADING)
-    for needle in ("지역 먼저", "반경 20km", "6곳 미만", "2차", "1차가 실패", "응답 모양은 같다", "좌표 없이", "로그에 남기지 않는다", "반경 밖 장소는 결과에 들지 않", "이웃 지역"):
+def test_the_search_docs_describe_pages_marks_and_completed_word_search() -> None:
+    search = section("### GET /trips/{trip_id}/place-search", "### GET /places/search")
+    for needle in ("마다 15곳이다", "(밖이면 422)", "45곳", "1~3쪽", "새 장소가 0개", "`nearby` 는 카카오가 준 거리", "'다른 지역' 구분 줄",
+                   "반경 밖 장소는 결과에 들지 않", "이웃 지역", "1쪽 1~2번, 2쪽 최대 5번, 3쪽 최대 6번", "반경 쪽이 실패하면 빈 배열(2 · 3쪽도)",
+                   "전국 쪽만 실패하면 모은 줄 그대로", "완성어 상위 3개", "대신 찾은 결과는 2쪽이 없다", "모두 최대 8번이다",
+                   "2자는 TourAPI 이름만, 3자 이상이면 가게 이름도", "말 하나의 카카오 실패는 건너뛴다", "검색어 · 완성어 · 좌표는 로그에 남기지 않는다"):
         assert needle in search, needle
-    assert "지역 밖 장소도 결과에서 빠지지 않는다" not in search   # 옛 설명 - 20km 안에서 6곳이 차면 반경 밖 장소는 없다
-    behavior = golden("GET", "/api/trips/1/place-search")["dbModeBehavior"]
-    for needle in ("20 km", "fewer than 6", "second", "first request fails", "response shape is the same", "without coordinates"):
+    assert "6곳" not in search
+    assert "- `page`: integer, 1-3(기본 1). 15곳씩." in search
+    assert "`page` 가 1~3 밖" in search
+    home = section("### GET /places/search", "### GET /places/nearby")
+    for needle in ("**덜 친 말**", "완성어 상위 3개", "2자는 TourAPI 이름만, 3자 이상이면 가게 이름도", "대신 찾은 줄은 `viaWord` 에 찾은 말을 싣고",
+                   "완성어 읽기가 실패하면 빈 배열", "말 하나의 카카오 실패는 건너뛰며", "DB 세션이 없으면 대신 찾지 않는다", "키워드 호출이 실패하지 않았으면"):
+        assert needle in home, needle
+    assert "| nearby | boolean \\| null |" in CONTRACT and "| viaWord | string \\| null |" in CONTRACT
+    assert "전국 관광지류" not in CONTRACT
+    entry = golden("GET", "/api/trips/1/place-search")
+    assert "page" in entry["query"]
+    assert entry["requiredArrayItemFields"]["nearby"] == "boolean|null" and entry["requiredArrayItemFields"]["viaWord"] == "string|null"
+    behavior = entry["dbModeBehavior"]
+    for needle in ("Returns 15 places per page (page 1-3;", "45 places per word", "nearby (true within 20 km", "viaWord", "top 3 completed words",
+                   "at most 8 Kakao calls", "page outside 1-3 is 422", "once without coordinates", "empty array (also on pages 2-3)",
+                   "failed nationwide call keeps the rows gathered", "completed-word results have no page 2", "never logged"):
         assert needle in behavior, needle
-
-
-def test_the_feature_spec_lists_the_suggest_endpoint() -> None:
-    spec = (ROOT / "docs/implemented-feature-spec.md").read_text(encoding="utf-8")
-    assert "`GET /api/trips/{trip_id}/place-suggest`" in spec
+    assert "6 places" not in behavior
+    home_behavior = golden("GET", "/api/places/search")["dbModeBehavior"]
+    for needle in ("viaWord", "top 3 completed words", "did not fail"):
+        assert needle in home_behavior, needle
+    assert golden("GET", "/api/places/search")["optionalArrayItemFields"]["viaWord"] == "string|null"

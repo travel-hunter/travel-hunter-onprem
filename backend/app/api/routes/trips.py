@@ -376,6 +376,7 @@ def get_trip_area_center(
 def search_trip_places(
     trip_id: str,
     query: str = Query(min_length=1, max_length=80),
+    page: int = Query(default=1, ge=1, le=3),
     db: Session | None = Depends(get_optional_db),
     current_user: User | None = Depends(get_current_user),
 ) -> list[PlaceSearchCandidate]:
@@ -385,29 +386,11 @@ def search_trip_places(
             _require_user(current_user),
             trip_handle=trip_id,
             query=query,
+            page=page,
         )
     except trip_service.TripServiceError as error:
         _raise_trip_error(error)
     return [PlaceSearchCandidate(**item) for item in candidates]
-
-
-@router.get("/{trip_id}/place-suggest", response_model=list[str])
-def suggest_trip_places(
-    trip_id: str,
-    query: str = Query(min_length=1, max_length=80),
-    db: Session | None = Depends(get_optional_db),
-    current_user: User | None = Depends(get_current_user),
-) -> list[str]:
-    try:
-        candidates = trip_service.suggest_places_for_trip(
-            _require_db(db),
-            _require_user(current_user),
-            trip_handle=trip_id,
-            query=query,
-        )
-    except trip_service.TripServiceError as error:
-        _raise_trip_error(error)
-    return candidates
 
 
 @router.get("/{trip_id}/invite", response_model=InviteState)

@@ -729,6 +729,22 @@ def test_suggest_without_an_area_is_nationwide_tourapi_only_at_tier_zero(db: Ses
     assert found(suggest_candidates(db, query="스타", scope=None)) == {("스타 공원", 0), ("블라스타 식당", 0), ("스타 시도없음", 0)}
 
 
+def test_suggest_without_an_area_adds_shops_from_three_characters(db: Session) -> None:
+    # 지역 없는 검색(홈 · 지역 없는 일정)도 덜 친 체인 이름('스타벅')을 상표로 이어 준다. 2자는 전국 상가를 훑으면 1~4초라 TourAPI 만(10/12 실측)
+    seed(
+        db,
+        sug_row("sangga", "C1", "스타벅스 강남점", category="cafe", sido="서울", city="강남"),
+        sug_row("sangga", "C2", "스타벅스 해운대점", category="cafe", sido="부산", city="해운대"),
+        sug_row("sangga", "L1", "스타벅스 볼링장", category="leisure", sido="서울", city="강남"),   # 예술·스포츠는 뺀다
+        sug_row("sangga", "N1", "스타벅노래방", category="food", sido="서울", city="강남"),   # 유흥 이름은 뺀다
+        sug_row("tourapi", "T1", "스타벅스 리저브 전망대", sido="부산", city="중구"),
+    )
+    assert found(suggest_candidates(db, query="스타벅", scope=None)) == {
+        ("스타벅스 강남점", 0), ("스타벅스 해운대점", 0), ("스타벅스 리저브 전망대", 0),
+    }
+    assert found(suggest_candidates(db, query="스타", scope=None)) == {("스타벅스 리저브 전망대", 0)}   # 2자는 TourAPI 만
+
+
 def test_suggest_treats_like_wildcards_and_backslash_as_plain_characters(db: Session) -> None:
     seed(
         db,
@@ -833,9 +849,7 @@ def test_get_trip_travel_area_id_reads_only_the_trips_area_column(db: Session) -
     assert get_trip_travel_area_id(db, 99) is None
 
 
-def test_suggest_places_for_trip_puts_the_trips_area_first_with_a_real_session(db: Session) -> None:
-    # 가짜 없이 접근 확인 → 일정 지역 id → 범위 → 후보 질의 → 순위까지 한 줄로 이어지는지(일정 7 = 여수 · 순천, 지역 밖에서 채운 줄은 뒤).
-    # 지역 밖 이름이 더 짧아서, 범위가 안 넘어가면(전국) 순서가 뒤집힌다
+def test_trip_place_search_falls_back_to_completed_words_from_the_real_public_rows(db: Session, monkeypatch) -> None:
     seed(
         db,
         place_row("tourapi", "T1", "오동공원", sido="서울", category="sight"),
@@ -843,8 +857,20 @@ def test_suggest_places_for_trip_puts_the_trips_area_first_with_a_real_session(d
     )
     db.add(Trip(id=7, owner_id=USER.id, title="여수 여행", start_date=date(2026, 10, 1), end_date=date(2026, 10, 2), travel_area_id="jeonnam-yeosu-suncheon"))
     db.commit()
+    asked: list[str] = []
 
-    assert trip_service.suggest_places_for_trip(db, USER, trip_handle="7", query="오동") == ["오동도 등대", "오동공원"]
-    with pytest.raises(trip_service.TripServiceError) as error:
-        trip_service.suggest_places_for_trip(db, User(id=2, email="o@example.com", nickname="o", onboarding_completed=True), trip_handle="7", query="오동")
-    assert error.value.status_code == 404
+    class Kakao:
+        def search_keyword(self, **kwargs):
+            asked.append(kwargs["query"])
+            if kwargs["query"] == "오동":
+                return []
+            return [KakaoLocalPlace(external_place_id="k1", name="오동도", category_name=None, category_group_code=None, category_group_name=None,
+                                    phone=None, address=None, latitude=34.74, longitude=127.76, place_url=None, distance_meters=500)]
+
+    monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: Kakao())
+    monkeypatch.setattr(trip_service.public_place_service, "match_places", lambda db, rows: [None for _ in rows])
+
+    rows = trip_service.search_places_for_trip(db, USER, trip_handle="7", query="오동")
+
+    assert asked[0] == "오동" and "오동도 등대" in asked   # 친 말 → 완성어(지역 안 '오동도 등대' 가 먼저)
+    assert rows[0]["viaWord"] == "오동도 등대"

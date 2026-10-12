@@ -405,6 +405,10 @@ export type PlaceSearchCandidate = {
   externalPlaceId?: string | null;
   /** 결정 23: 서버가 검색과 같은 요청에서 맞춰 본 결과. 좌표가 없거나 실패하면 null */
   publicMatch?: PlaceMatchResult | null;
+  /** 일정 지역 중심 20km 안이면 true, 밖이면 false, 중심이 없으면 null - '다른 지역' 구분 줄 */
+  nearby?: boolean | null;
+  /** 친 말로 0곳이라 우리 완성어로 대신 찾은 줄이면 그 말 */
+  viaWord?: string | null;
 };
 
 /** 통합 검색의 장소 한 곳(place) 또는 동 · 읍 · 면 구역(area). sido · city 는 서버가 주소로 가린 지도 도 · 시군 */
@@ -422,6 +426,8 @@ export type PlaceSearchItem = {
   city?: string | null;
   /** 이 근처(GET /places/nearby)일 때만 - 기준 좌표에서의 거리(m) */
   distanceMeters?: number | null;
+  /** 친 말로 0곳이라 우리 완성어로 대신 찾은 줄이면 그 말 */
+  viaWord?: string | null;
 };
 
 /** 장소 카드 '이 근처'의 분류: 맛집 · 카페 · 숙소 · 볼거리(카카오 분류 코드) */

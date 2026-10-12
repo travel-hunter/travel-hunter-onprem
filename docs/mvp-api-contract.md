@@ -1308,12 +1308,17 @@ Changing the travel area does not move, delete, or reorder places or days. Linke
 
 ### GET /trips/{trip_id}/place-search
 
-Authenticated trip members (owner/editor/viewer) can search Kakao-registered places in the trip detail add-place sheet. The results are display-only: the server passes them through without storing or logging them. A picked place is not saved as it is. Every row carries `publicMatch` (always present, possibly null): the server asks Kakao for 6 places (6곳) and, in the same request, matches all rows with coordinates against our public places in one batch - one read per source, the same rules and the same shape as `POST /places/match`; the Kakao values are compared in memory and discarded. `publicMatch` is null for a row without coordinates, for a row whose matching failed, and for every row when the read fails - the client then matches the picked row with `POST /places/match`. A row that is not a direct match also carries `publicMatch.fill` (see `POST /places/match`): the public-data address of the building or lot around the row's spot, or null. The client saves a `publicPlace` reference or a user-written `customPlace` (with an optional `customPlace.geoRef` taken from `publicMatch.fill`) with `POST /trips/{trip_id}/days/{day_number}/places` (only the Kakao place id is kept, as `kakaoPlaceId`). This endpoint does not mutate itinerary data. If Kakao is switched off (`KAKAO_LOCAL_ENABLED=false`) or the Kakao request fails, the response is an empty array. If Kakao is switched on but misconfigured (for example the REST key is missing), the response is 503 `Place search is unavailable` - the key and the settings are never in the response or the logs. The DB connection is released before Kakao is called.
+Authenticated trip members (owner/editor/viewer) can search Kakao-registered places in the trip detail add-place sheet. The results are display-only: the server passes them through without storing or logging them. A picked place is not saved as it is. Every row carries `publicMatch` (always present, possibly null): in the same request the server matches all rows with coordinates against our public places in one batch - one read per source, the same rules and the same shape as `POST /places/match`; the Kakao values are compared in memory and discarded. `publicMatch` is null for a row without coordinates, for a row whose matching failed, and for every row when the read fails - the client then matches the picked row with `POST /places/match`. A row that is not a direct match also carries `publicMatch.fill` (see `POST /places/match`): the public-data address of the building or lot around the row's spot, or null. The client saves a `publicPlace` reference or a user-written `customPlace` (with an optional `customPlace.geoRef` taken from `publicMatch.fill`) with `POST /trips/{trip_id}/days/{day_number}/places` (only the Kakao place id is kept, as `kakaoPlaceId`). This endpoint does not mutate itinerary data. If Kakao is switched off (`KAKAO_LOCAL_ENABLED=false`) or the Kakao request fails, the response is an empty array. If Kakao is switched on but misconfigured (for example the REST key is missing), the response is 503 `Place search is unavailable` - the key and the settings are never in the response or the logs. The DB connection is released before Kakao is called.
 
-**지역 먼저**: 일정에 지역(`travelAreaId`)이 있으면 그 지역 공공데이터 장소의 중앙값(`GET /trips/{trip_id}/area-center` 와 같은 점)을 구해 카카오에 좌표와 함께 보낸다 - 지역 안 장소가 먼저 나오도록 하는 편의 기능이다. 1차는 그 점 반경 20km(`radius=20000`)로 6곳을 묻고, 20km 안에서 6곳이 차면 반경 밖 장소는 결과에 들지 않는다(전국 검색은 모자란 줄만 채운다). 반경은 지역 경계가 아니라 중심점 둘레라 이웃 지역 장소가 섞일 수 있고, 도 전체처럼 20km 보다 넓은 지역은 반경 밖의 지역 안 장소가 2차가 채울 때만 나온다. 1차가 예외 없이 6곳 미만이면 2차로 반경 없이 같은 좌표 쪽으로 기운 전국 검색을 불러 1차에 없는 장소(카카오 장소 id 기준)만 뒤에 붙여 6곳까지 채운다. 1차가 실패하면 2차를 부르지 않고 빈 배열이다(2차만 실패하면 1차 결과 그대로). 지역이 없거나 그 지역에 공공데이터 장소가 없어 중심을 구하지 못하면 좌표 없이 지금처럼 한 번만 부른다. 응답 모양은 같다. 카카오로 가는 좌표는 우리 공공데이터로 계산한 일정 지역 중심뿐이고, 검색어 · 좌표는 로그에 남기지 않는다.
+결과는 쪽(`page`, 1~3, 기본 1)마다 15곳이다. 카카오가 한 검색어에 45곳까지만 주므로 3쪽이 끝이다(밖이면 422). 줄마다 `nearby` 와 `viaWord` 를 단다.
+
+**지역 먼저**: 일정에 지역(`travelAreaId`)이 있으면 그 지역 공공데이터 장소의 중앙값(`GET /trips/{trip_id}/area-center` 와 같은 점)을 구해 카카오에 좌표와 함께 보낸다. 목록은 [그 점 반경 20km(`radius=20000`) 1~3쪽] 뒤에 [반경 없이 같은 좌표 쪽으로 기운 전국 1~3쪽]을 이은 것이고(카카오 장소 id 로 겹침을 뺀다) `page` 는 그 목록의 15곳씩이다. 각 갈래(반경 · 전국)는 카카오 쪽이 15곳 미만이거나 그 갈래에서 새 장소가 0개(카카오가 같은 쪽을 되풀이)면 거기서 끝난다. 반경 쪽에서 15곳이 차는 쪽에는 반경 밖 장소는 결과에 들지 않는다. 반경은 지역 경계가 아니라 중심점 둘레라 이웃 지역 장소가 섞일 수 있고, 도 전체처럼 20km 보다 넓은 지역은 반경 밖의 지역 안 장소가 전국 쪽에서 나온다. `nearby` 는 카카오가 준 거리로 20km 안이면 true, 밖이면 false, 중심을 구하지 못했으면(지역 없음 · 그 지역 공공데이터 없음) null 이다 - 이때는 좌표 없이 그 쪽을 한 번 부른다. 화면은 첫 false 줄 앞에 '다른 지역' 구분 줄을 긋는다. 서버는 상태를 두지 않아 2 · 3쪽은 앞 쪽들을 다시 부른다(카카오 호출: 1쪽 1~2번, 2쪽 최대 5번, 3쪽 최대 6번). 반경 쪽이 실패하면 빈 배열(2 · 3쪽도), 전국 쪽만 실패하면 모은 줄 그대로다.
+
+**덜 친 말**: 카카오 키워드 검색은 낱말 단위라 덜 친 말(`스타벅`)로는 0곳이다. 1쪽에서 친 말로 0곳이면 우리 공공데이터(`public_places`) 이름으로 만든 완성어 상위 3개로 위 목록의 1쪽을 대신 찾아 20km 안 줄을 말 순서대로 먼저, 나머지를 뒤에 모아 15곳에서 끊는다. 완성어는 일정 지역 안 이름이 먼저고 지역 안 체인은 '상표 + 지역'이다. 지역 범위 완성어가 3개 미만이면(지역 밖은 관광지 이름만 보므로 쇼핑 · 가게 이름이 빠진다) 전국 완성어로 채워 뒤에 둔다. 지역이 없으면 전국이고, 2자는 TourAPI 이름만, 3자 이상이면 가게 이름도 보며 체인은 상표만이다. 줄마다 `viaWord` 에 찾은 말을 싣는다(대신 찾지 않은 줄은 null). 대신 찾은 결과는 2쪽이 없다. 카카오 호출은 친 말 1~2번에 대신 찾기 최대 6번, 모두 최대 8번이다. 완성어가 없거나 완성어 읽기가 실패하면 빈 배열이다. 말 하나의 카카오 실패는 건너뛴다. 카카오로 가는 말은 우리 공공데이터 이름과 사용자가 친 말뿐이고, 검색어 · 완성어 · 좌표는 로그에 남기지 않는다.
 
 **Query**
 - `query`: string, 1-80 chars. Place name or address keyword.
+- `page`: integer, 1-3(기본 1). 15곳씩.
 
 **Response 200** → `PlaceSearchCandidate[]`
 ```json
@@ -1332,6 +1337,8 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
     "placeUrl": "https://place.map.kakao.com/12345",
     "sourceProvider": "kakao",
     "externalPlaceId": "12345",
+    "nearby": true,
+    "viaWord": null,
     "publicMatch": {
       "result": "match",
       "places": [
@@ -1359,37 +1366,14 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
 **Errors**
 - 401: 인증 필요
 - 404: 일정 없음 또는 접근 권한 없음
-- 422: `query` 누락/길이 위반
+- 422: `query` 누락/길이 위반, `page` 가 1~3 밖
 - 503: 카카오 로컬을 켜 두었는데 설정이 틀림(예: REST 키 없음). `detail` 은 `Place search is unavailable` 이다. 카카오를 일부러 껐거나 카카오 요청이 실패한 경우는 오류가 아니라 빈 배열이다
-
-### GET /trips/{trip_id}/place-suggest
-
-장소 추가 시트 검색 칸의 완성 검색어. 카카오 키워드 검색은 낱말 단위라 덜 친 말(`메타세쿼`)로는 결과가 없다 - 그래서 우리 공공데이터(`public_places`) 이름에서 검색어를 품은 말을 골라 최대 6줄의 문자열 배열로 준다. 일정 멤버(owner/editor/viewer) 누구나 쓰고, 일정을 바꾸지 않는다. 카카오를 켜 두었는지와 상관없이 같게 동작한다.
-
-- 입력: `query` 는 1~80자다(비거나 81자 이상이면 422). 서버는 앞뒤 공백을 자른 말이 2자 미만이거나 글자 · 숫자가 하나도 없으면(`--`, `()`, `__`) 이름 검색 질의를 하지 않고 빈 배열을 준다. `%` · `_` · `\` 는 글자 그대로 찾는다.
-- 지역 먼저: 일정 지역(`travelAreaId` - 시도 + 고른 시군) 안의 이름이 먼저고, 지역 밖은 관광지류(`sight` · `culture` · `leisure`) 이름만 뒤를 채운다. 지역이 없으면 전국 관광지류(TourAPI) 이름만 본다(가게 이름 · 체인 줄 없음). 지역 안에서도 상가정보의 여가(`leisure`) 분류와 유흥 업소 이름은 뺀다. 일정 전체가 아니라 일정의 지역 id 만 읽는다.
-- 체인 줄: 지역 안에서 같은 상표의 가게가 여럿이면 지점마다 내지 않고 '상표 + 지역 이름' 한 줄로 접는다(`스타벅스 강릉`). 지역 이름은 시군을 고른 일정이면 그 행의 시군, 시도 전체 일정이면 시도다. 여러 시군 일정에서는 시군마다 따로 나온다(`스타벅스 강릉` / `스타벅스 동해`) - 한 줄로 합치면 그 말로 카카오를 불렀을 때 다른 시군 지점이 나오지 않기 때문이다.
-- 이름만 준다: 줄은 장소가 아니라 '찾을 말'이다. 같은 이름의 행은 한 줄로 합쳐지고 좌표 · 주소 · id 는 주지 않는다. 줄을 누르면 클라이언트가 그 말을 사용자가 친 말처럼 `GET /trips/{trip_id}/place-search` 의 `query` 로 보내고, 장소와 `publicMatch` 는 그 응답에서 온다. 카카오 값은 읽지도 저장하지도 않는다.
-- 로그: 검색어 · 완성 검색어 · 좌표는 로그에 남기지 않는다(오류 종류와 개수만).
-- DB 오류: 이름 검색 질의의 DB 오류는 오류가 아니라 빈 배열이다(경고 로그에는 오류 종류만). 그 앞의 접근 확인 · 지역 읽기가 실패하면 500 이다.
-- 줄 순서는 서버가 정한다. 클라이언트는 받은 순서 그대로 보인다.
-
-**Query**
-- `query`: string, 1-80 chars. 찾을 말(이름의 일부).
-
-**Response 200** → `string[]`
-```json
-["담양 메타세쿼이아길", "곡성 메타세쿼이아길", "김제 메타세쿼이아길"]
-```
-
-**Errors**
-- 401: 인증 필요
-- 404: 일정 없음 또는 접근 권한 없음(숫자가 아닌 일정 id 포함)
-- 422: `query` 누락/길이 위반
 
 ### GET /places/search
 
 홈 · 정책 탭 통합 검색의 장소 찾기(시안 v56). 일정과 무관하다 - 로그인한 사용자 누구나. 카카오 로컬 키워드 검색으로 장소를 찾고, 찾을 말이 동 · 읍 · 면 · 리 · `N가`로 끝나면 카카오 주소 검색도 불러 같은 이름의 구역을 전국에서 함께 준다(`kind: "area"`, 장소보다 앞). 항목마다 서버가 주소로 지도 도(`sido`, 정책 `region` 과 같은 짧은 이름)와 시군(`city`, 정책 제목 `[시군]` 과 맞추는 짧은 이름)을 붙인다 - 주소 첫 낱말이 `전남광주통합특별시`이면 둘째 낱말이 구일 때 광주, 시 · 군일 때 전남. 가리지 못하면 `null`. `category` 는 카카오 분류 전체 경로로, 일정 장소 검색(`GET /trips/{tripId}/place-search`)의 `categoryName` 과 같은 값이다 - 홈에서 일정에 담아도 같은 장소 기록이 된다. 카카오가 꺼져 있거나 실패하면 빈 배열(오류 아님).
+
+**덜 친 말**: 카카오 키워드 · 주소 검색이 모두 0곳이고 키워드 호출이 실패하지 않았으면 우리 공공데이터 이름으로 만든 완성어 상위 3개(전국 - 2자는 TourAPI 이름만, 3자 이상이면 가게 이름도, 체인은 상표만)로 키워드 검색을 대신 불러 15곳까지 모은다. 대신 찾은 줄은 `viaWord` 에 찾은 말을 싣고 그 밖의 줄은 null 이다. 완성어를 읽은 뒤 DB 세션을 바로 놓는다. 카카오가 실패했으면 대신 찾지 않는다(장애 때 기다림이 늘지 않게). 완성어 읽기가 실패하면 빈 배열이고, 말 하나의 카카오 실패는 건너뛰며, DB 세션이 없으면 대신 찾지 않는다.
 
 **Query**
 - `query`: string, 1-80 chars. 두 글자 미만이면 빈 배열.
@@ -1409,7 +1393,8 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
     "placeUrl": null,
     "sido": "전남",
     "city": "여수",
-    "distanceMeters": null
+    "distanceMeters": null,
+    "viaWord": null
   },
   {
     "kind": "place",
@@ -1423,7 +1408,8 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
     "placeUrl": "http://place.map.kakao.com/8193468",
     "sido": "전남",
     "city": "여수",
-    "distanceMeters": null
+    "distanceMeters": null,
+    "viaWord": null
   }
 ]
 ```
@@ -1858,6 +1844,9 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | placeUrl | string \| null | Kakao 장소 상세 URL |
 | sourceProvider | string \| null | `kakao` |
 | externalPlaceId | string \| null | Kakao 장소 ID |
+| publicMatch | object \| null | 같은 요청 안에서 우리 공공데이터와 맞춰 본 결과(`POST /places/match` 응답과 같은 모양, `fill` 포함). 좌표가 없거나 실패하면 null |
+| nearby | boolean \| null | 일정 지역 중심에서 20km 안이면 true, 밖이면 false, 중심이 없으면 null |
+| viaWord | string \| null | 친 말로 0곳이라 완성어로 대신 찾은 줄이면 그 말, 아니면 null |
 
 ---
 
