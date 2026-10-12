@@ -109,3 +109,46 @@ def test_the_locate_route_is_in_the_golden_the_contract_and_the_app() -> None:
     assert ("POST", "/api/places/locate") in served
     assert "### POST /places/locate" in CONTRACT
     assert set(golden("POST", "/api/places/locate")["requiredFields"]) == {"fill", "nearCenter"}
+
+
+SUGGEST_HEADING = "### GET /trips/{trip_id}/place-suggest"
+
+
+def test_the_suggest_route_is_in_the_golden_the_contract_and_the_app() -> None:
+    paths = app.openapi()["paths"]
+    served = {(method.upper(), served_path) for served_path, item in paths.items() for method in item}
+    assert ("GET", "/api/trips/{trip_id}/place-suggest") in served
+    assert f"{SUGGEST_HEADING}\n" in CONTRACT
+    entry = golden("GET", "/api/trips/1/place-suggest")
+    assert entry["authRequired"] is True and entry["status"] == 200
+    assert entry["query"] == {"query": "메타세쿼"} and entry["responseKind"] == "string[]"
+    # 응답은 문자열 배열이다 - 객체 필드 키(requiredArrayItemFields)를 달지 않는다
+    assert not {"requiredArrayItemFields", "optionalArrayItemFields"} & set(entry)
+    schema = paths["/api/trips/{trip_id}/place-suggest"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert schema["type"] == "array" and schema["items"] == {"type": "string"}
+
+
+def test_the_suggest_docs_state_the_access_the_input_rules_the_order_and_what_is_never_logged() -> None:
+    suggest = section(SUGGEST_HEADING, "### GET /places/search")
+    for needle in ("- 401:", "- 404:", "- 422:", "`string[]`", "최대 6", "2자 미만", "`__`", "80자", "일정 지역", "시군마다",
+                   "스타벅스 강릉", "스타벅스 동해", "이름만", "로그에 남기지 않는다", "DB 오류", "빈 배열"):
+        assert needle in suggest, needle
+    behavior = golden("GET", "/api/trips/1/place-suggest")["dbModeBehavior"]
+    for needle in ("trip members", "404", "422", "80", "fewer than 2", "at most 6", "travel area", "per city", "names only",
+                   "never logged", "database error", "empty array"):
+        assert needle in behavior, needle
+
+
+def test_the_search_docs_describe_the_area_first_search_and_its_fallback() -> None:
+    search = section("### GET /trips/{trip_id}/place-search", SUGGEST_HEADING)
+    for needle in ("지역 먼저", "반경 20km", "6곳 미만", "2차", "1차가 실패", "응답 모양은 같다", "좌표 없이", "로그에 남기지 않는다", "반경 밖 장소는 결과에 들지 않", "이웃 지역"):
+        assert needle in search, needle
+    assert "지역 밖 장소도 결과에서 빠지지 않는다" not in search   # 옛 설명 - 20km 안에서 6곳이 차면 반경 밖 장소는 없다
+    behavior = golden("GET", "/api/trips/1/place-search")["dbModeBehavior"]
+    for needle in ("20 km", "fewer than 6", "second", "first request fails", "response shape is the same", "without coordinates"):
+        assert needle in behavior, needle
+
+
+def test_the_feature_spec_lists_the_suggest_endpoint() -> None:
+    spec = (ROOT / "docs/implemented-feature-spec.md").read_text(encoding="utf-8")
+    assert "`GET /api/trips/{trip_id}/place-suggest`" in spec

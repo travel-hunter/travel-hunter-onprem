@@ -7,15 +7,17 @@
   주소 채움은 국토교통부 건물 · 땅 지번(PostGIS `geo` 스키마, Alembic `0049` · `0050`, db 이미지 `postgis/postgis:16-3.5-alpine`)으로 채우고, 찍은 좌표는 `POST /api/places/locate` 로
   비교만 하고 버린다. 월 적재 도구 `backend/scripts/geo_load.py`(geo-loader 이미지 단계), 운영 문서 `docs/geo-reference-monthly-load.md`.
   개발 Jenkins 는 마이그레이션 앞에서 db 를 먼저 맞춘다. 계획: `docs/superpowers/plans/2026-10-05-place-add-flow-stage3.md`, `docs/superpowers/plans/2026-10-07-place-add-address-fill.md`.
+  같은 브랜치에 장소 검색 완성 검색어(`GET /api/trips/{trip_id}/place-suggest`, 우리 공공데이터 이름 최대 6줄, Alembic `0051` `pg_trgm` GIN)와
+  카카오 검색 '지역 먼저'(일정 지역 중심 반경 20km 1차, 6곳 미만이면 반경 없이 2차로 채움)를 더했다. 계획: `docs/superpowers/plans/2026-10-12-place-search-suggestions.md`.
 - 공공데이터 장소 기반(2단계)은 PR #90 으로 develop 에 머지됐다(`4612926`).
 - 통합 검색(1단계)은 PR #89 로 develop 에 머지됐다(`bb8c841`).
 - 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
 
 ## Recent Validation
 
-- PASS: backend `python -m pytest` 1403 passed · 27 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - Windows 권한 검사, 무관). PostGIS 시험(geo 조회 · 저장 SAVEPOINT · 적재 도구)은 일회용 PostGIS 에서 통과.
-- PASS: `npm run typecheck`, `npm run test:mojibake`, `vite build`, `npm run test:e2e:containers` 13/13(고친 뒤 4173 다시 빌드), `git diff --check`, 바뀐 파일 U+FFFD 0건.
-- 부분 PASS: `npx vitest run` 727개 중 721개 - 실패 6개는 모두 `mypage.test.tsx`(쌓인 시험 일정 탓, 무관). `npm test` 래퍼는 로컬에 `CLOUDFLARE_TUNNEL_TOKEN` 이 없어 compose 보간에서 멈춘다(시험 전 단계).
+- PASS: backend `python -m pytest` 1487 passed · 27 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - Windows 권한 검사, 무관). PostGIS 시험(geo 조회 · 저장 SAVEPOINT · 적재 도구)은 일회용 PostGIS 에서 통과.
+- PASS: `npm run typecheck`, `npm run test:mojibake`, `vite build`, `npm run test:e2e:containers` 13/13(완성 검색어 고친 뒤 4173 다시 빌드, 로컬 DB `0051`), `git diff --check`, 바뀐 파일 U+FFFD 0건.
+- 부분 PASS: `npx vitest run` 755개 중 749개 - 실패 6개는 모두 `mypage.test.tsx`(쌓인 시험 일정 탓, 무관). `npm test` 래퍼는 로컬에 `CLOUDFLARE_TUNNEL_TOKEN` 이 없어 compose 보간에서 멈춘다(시험 전 단계).
 - 부분 PASS: `alembic upgrade head --sql` 처음부터는 기존 `0044` 에서 멈춘다(develop 그대로). `0049_trip_place_public_category:head --sql` 통과, 로컬 DB 실제 `upgrade head` 0050 통과(보호 표 6개 건수 전후 같음, 덤프는 저장소 밖 · 소유자 전용).
 - PASS: 로컬 전국 적재(2026-09 판) 6,601초 - 건물 14,346,608 · 땅 19,406,691(농지 · 임야 제외) · 법정동 18,846, 이름 없는 옛 법정동코드 줄 45,515 뺌(0.32%, 사용자 결정),
   geo 표 건물 5,046MB · 땅 9,622MB, DB 15GB, 적재 중 최대 DB 15,097MB · WAL 1,024MB.
@@ -24,6 +26,9 @@
 - PASS: 계획 코덱스 검토 2회 + 자체 교차 검토(55건 반영), 과제마다 구현 · 검토, 브랜치 최종 검토(Critical 0, Important 5 고침).
 - PASS: 커밋 뒤 2차 자체 검토(6관점 · 발견마다 반박 검증) - 확인된 10건 모두 Minor, 9건으로 묶어 고침(적재 도구 품질 실패 시 땅 건너뛰기, 맞춰 보는 동안 아래 저장 단추 끄기, 담은 뒤 검색 칸 초점, 404 사라진 장소 안내, 수정 창 100 · 500자, 작은 지도 재생성, 같은 이름 후보 읽기, 디스크 산정 · 백업 안내).
 - PASS: 사용자 브라우저 확인(localhost:4173, 카카오 JS 키 로컬 도메인 등록 뒤) - 위치 찍기 · 지도에서 찾기 · 작은 지도 포함 전체 정상.
+- PASS(완성 검색어): 실데이터 20개 순위가 설계표와 같다(실제 지역 카탈로그가 여러 시군인 3개만 범위 차이). API 왕복 p95 49ms(2자 54ms · 3자 이상 23ms, 목표 80 · 50ms),
+  실제 서버 p95 57ms. 지역 먼저: 스타벅스@서울 · 남산@경주 · 해수욕장@강릉 · 메타세쿼이아@담양 · 순두부@강릉 모두 6줄 중 6줄이 지역 안(개수만 셌다).
+  과제마다 구현 · 검토, 브랜치 최종 검토 3관점(Critical 0, Important 3 - 2건 고침 · 1건 판정, Minor 고침).
 ## Active Risks
 
 ### 장소 담기 3단계 + 주소 채움(`feature/place-add-flow`)
@@ -36,6 +41,12 @@
 - 넓은 땅(중심 30m 밖)은 핀 없이 주소만 담긴다(사용자 결정). `geoRef.pin` 은 화면이 정한다 - 조작해도 저장되는 좌표는 우리 geo 표 중심뿐(정책 영향 없음).
 - 지도에서 찾기 결과로 옮기면 지도 안 상태 줄에 카카오 장소 이름이 보인다(보여 주기만, 151842-3 범위로 판단 - 이름 칸 · 안내 문구에는 쓰지 않는다).
 - 월 갱신: 브이월드 전체데이터(건물 AL_D010 · 땅 AL_D002, 시도 16개)를 사람이 받아 돌린다. 구조 검사는 넘길 수 없고 행 수만 `--accept-row-count-change` 로 받는다.
+- 완성 검색어 `0051`: `pg_trgm` 확장 + `public_places.name` GIN(108만 행에 약 78MB, 로컬 7초, CONCURRENTLY). 운영 승격 게이트는 0050 과 같이 물려받는다.
+  서버 DB 사용자가 `CREATE EXTENSION pg_trgm` 을 만들 수 있는지(신뢰 확장 - DB 소유자면 된다) 배포 전에 확인한다.
+- 장소 검색은 지역이 있으면 카카오를 한 번에 최대 2번 부른다(1차 20km에서 6곳 미만일 때만 2차) - 일일 한도를 그만큼 더 쓴다.
+- '도 전체' 일정은 도 공공데이터 중앙값 둘레 20km 만 먼저 본다(실측: 스타벅스@경북 · 경기 4/6, 남이섬@강원 2/6). 예전 전국 검색보다 나빠지지는 않는다.
+  더 맞추려면 카카오 `rect`(시도 사각 범위)로 1차를 부르는 후속안 - 사용자 결정 대기.
+- 브라우저로만 볼 것(사용자 확인 목록): 한글 조합 중 줄 누르기, 휴대폰 키보드가 올라온 채 줄 탭, 6줄 목록 모양(360~1440), 목록이 결과 칸을 가리는 동선.
 
 ### 공공데이터 장소 기반(`feature/public-places`)
 

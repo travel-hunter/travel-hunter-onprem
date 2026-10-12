@@ -45,6 +45,7 @@ from app.services import address_fill
 from app.services import island_application
 from app.services import email as email_service
 from app.services import itinerary_recommendations
+from app.services import place_suggest
 from app.services import public_places as public_place_service
 from app.services import trip_public_places
 from app.services.geo_reference import GeoHit
@@ -56,7 +57,13 @@ from app.services.eligible_island_catalog import (
 from app.services import local_half_trip_display
 from app.services import stay_discount_aliases
 from app.services import digital_tourism_policy_aliases
-from app.services.kakao_local import KakaoLocalClient, KakaoLocalConfigurationError, KakaoLocalPlace, build_kakao_local_client
+from app.services.kakao_local import (
+    KakaoLocalClient,
+    KakaoLocalConfigurationError,
+    KakaoLocalPlace,
+    KakaoLocalSearchProvider,
+    build_kakao_local_client,
+)
 from app.services.policy_semantics import (
     benefit_display_amount,
     is_public_policy,
@@ -64,7 +71,7 @@ from app.services.policy_semantics import (
 )
 
 try:
-    from app.data.travel_areas import list_travel_areas
+    from app.data.travel_areas import TravelArea, list_travel_areas
     from app.services.travel_area_catalog import resolve_travel_area
 except ModuleNotFoundError:
     def resolve_travel_area(_area_id: str | None):
@@ -1759,7 +1766,6 @@ def search_places_for_trip(
     trimmed_query = query.strip()
     if not trimmed_query:
         return []
-    _release_session(db)   # 접근 확인이 끝났다 - 카카오를 기다리는 동안 DB 연결을 쥐지 않는다
     try:
         provider = build_kakao_local_client()
     except KakaoLocalConfigurationError:
@@ -1768,8 +1774,11 @@ def search_places_for_trip(
         raise TripServiceError(503, "Place search is unavailable") from None
     if provider is None:
         return []
+    # 일정 지역 중심(공공데이터 좌표)으로 지역 안 결과를 먼저 받는다 - DB 는 여기까지만 읽는다
+    center = trip_public_places.area_center(db, _trip_area(db, int(trip_handle)))
+    _release_session(db)   # 접근 확인 · 지역 중심이 끝났다 - 카카오를 기다리는 동안 DB 연결을 쥐지 않는다
     try:
-        places = provider.search_keyword(query=trimmed_query, size=PLACE_SEARCH_SIZE)
+        places = _search_near(provider, trimmed_query, center)
     except Exception as error:
         logger.warning("trip_place_search_failed trip=%s error=%s", trip_handle, type(error).__name__)
         return []
@@ -1798,6 +1807,27 @@ def search_places_for_trip(
 
 
 PLACE_SEARCH_SIZE = 6   # 담기 창이 보이는 결과 수(시안 v61) - 줄마다 맞춰 보므로 더 받지 않는다
+PLACE_SEARCH_RADIUS_METERS = 20000   # 일정 지역 중심에서 먼저 보는 반경(카카오 상한)
+
+
+def _search_near(provider: KakaoLocalSearchProvider, query: str, center: dict[str, float | None]) -> list[KakaoLocalPlace]:
+    """지역 먼저, 모자라면 전국: 일정 지역 중심 반경 20km 를 먼저, 6줄이 안 차면 같은 중심 쪽으로 기운 전국 검색으로 채운다.
+    중심이 없으면(지역 없음 · 공공데이터 행 없음) 좌표 인자 없이 한 번. 1차 예외는 밖으로 올린다(호출한 쪽이 `[]` + 경고) - 2차 예외는 1차 결과만 남기고 경고 1줄.
+    경고에는 오류 종류만 싣는다(검색어 · 좌표 금지)."""
+
+    latitude, longitude = center.get("latitude"), center.get("longitude")
+    if latitude is None or longitude is None:
+        return provider.search_keyword(query=query, size=PLACE_SEARCH_SIZE)
+    nearby = provider.search_keyword(query=query, x=longitude, y=latitude, radius=PLACE_SEARCH_RADIUS_METERS, size=PLACE_SEARCH_SIZE)
+    if len(nearby) >= PLACE_SEARCH_SIZE:
+        return nearby
+    try:
+        wider = provider.search_keyword(query=query, x=longitude, y=latitude, size=PLACE_SEARCH_SIZE)
+    except Exception as error:
+        logger.warning("trip_place_search_wider_failed error=%s", type(error).__name__)
+        return nearby
+    seen = {place.external_place_id for place in nearby}
+    return (nearby + [place for place in wider if place.external_place_id not in seen])[:PLACE_SEARCH_SIZE]
 
 
 def _prematch(db: Session, places: list[KakaoLocalPlace]) -> list[dict[str, object] | None]:
@@ -1817,6 +1847,32 @@ def _prematch(db: Session, places: list[KakaoLocalPlace]) -> list[dict[str, obje
         logger.warning("trip_place_search_prematch_failed error=%s", type(error).__name__)   # 검색어 · 장소 값은 싣지 않는다
         return [None] * len(places)
     return address_fill.with_fill(db, rows, answers)   # 방식1: match 가 아닌 줄에 건물 · 땅 지번(같은 세션, 질의 1번)
+
+
+def _trip_area(db: Session, trip_id: int) -> TravelArea | None:
+    """일정 지역 - 일정 그래프를 읽지 않고 travel_area_id 한 칸만. 접근 확인은 부르기 전에 한다. 지역이 없거나 카탈로그에 없으면 None."""
+
+    return get_travel_area(trip_repository.get_trip_travel_area_id(db, trip_id))
+
+
+def suggest_places_for_trip(
+    db: Session,
+    user: User,
+    *,
+    trip_handle: str,
+    query: str,
+) -> list[str]:
+    """장소 검색 완성 검색어(최대 6줄, 우리 공공데이터 이름). 일정 지역 안을 먼저 보인다 - 지역이 없으면 전국.
+    순위 질의에 DB 가 필요하니 카카오 경로와 달리 세션을 놓지 않는다."""
+
+    if not NUMERIC_TRIP_ID_PATTERN.fullmatch(trip_handle) or not trip_repository.has_trip_access(
+        db,
+        int(trip_handle),
+        user.id,
+    ):
+        raise TripServiceError(404, "Trip not found")
+    scope = trip_public_places.area_scope(_trip_area(db, int(trip_handle)))
+    return place_suggest.suggest_place_names(db, query=query, scope=scope)
 
 
 def _new_invite_token() -> str:

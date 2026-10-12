@@ -296,12 +296,13 @@ def test_alembic_0049_follows_0048() -> None:
     assert script.get_revision("0049_trip_place_public_category").down_revision == "0048_public_places"
 
 
-def test_alembic_0050_follows_0049_and_is_the_only_head() -> None:
+def test_alembic_0051_follows_0050_and_is_the_only_head() -> None:
     backend = Path(__file__).parents[1]
     config = Config(str(backend / "alembic.ini"))
     config.set_main_option("script_location", str(backend / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["0050_geo_reference"]
+    assert script.get_heads() == ["0051_public_place_name_trgm"]
+    assert script.get_revision("0051_public_place_name_trgm").down_revision == "0050_geo_reference"
     assert script.get_revision("0050_geo_reference").down_revision == "0049_trip_place_public_category"
 
 
@@ -356,3 +357,23 @@ def test_alembic_0049_builds_the_area_index_concurrently_outside_the_transaction
     assert "ADD COLUMN public_category VARCHAR(20)" in up and "ADD COLUMN user_label VARCHAR(100)" in up
     assert down.index("COMMIT") < down.index("DROP INDEX CONCURRENTLY IF EXISTS ix_public_places_sido_city") < down.index("BEGIN")
     assert "DROP COLUMN user_label" in down and "DROP COLUMN public_category" in down
+
+
+def test_public_places_name_trigram_index_is_registered() -> None:
+    places = Base.metadata.tables["public_places"]
+    index = next(index for index in places.indexes if index.name == "ix_public_places_name_trgm")
+    assert [column.name for column in index.columns] == ["name"]
+    assert index.dialect_options["postgresql"]["using"] == "gin"
+    assert index.dialect_options["postgresql"]["ops"] == {"name": "gin_trgm_ops"}
+
+
+def test_alembic_0051_builds_the_name_trigram_index_concurrently_outside_the_transaction() -> None:
+    up = render_migration("0051_public_place_name_trgm.py", "upgrade")
+    down = render_migration("0051_public_place_name_trgm.py", "downgrade")
+    leftover = "DROP INDEX CONCURRENTLY IF EXISTS ix_public_places_name_trgm"
+    index = "CREATE INDEX CONCURRENTLY ix_public_places_name_trgm ON public_places USING gin (name gin_trgm_ops)"
+    # 확장은 트랜잭션 안에서 먼저 - 색인만 autocommit 블록으로 나간다. 앞선 시도가 남긴 INVALID 색인은 먼저 지워 다시 돌리기가 풀린다
+    assert up.index("CREATE EXTENSION IF NOT EXISTS pg_trgm") < up.index("COMMIT") < up.index(leftover) < up.index(index) < up.index("BEGIN")
+    # 되돌리기는 색인만 지운다 - pg_trgm 확장은 다른 객체가 쓸 수 있어 남긴다
+    assert down.index("COMMIT") < down.index(leftover) < down.index("BEGIN")
+    assert "DROP EXTENSION" not in down

@@ -786,6 +786,8 @@ class PublicPlace(Base):
         Index("ix_public_places_name_key", "name_key"),
         # 추천 · 지역 중심 조회(0049) - 일정 지역(시도 + 시군)으로 고른다
         Index("ix_public_places_sido_city", "sido", "city"),
+        # 장소 검색 완성 검색어(0051) - name ILIKE '%q%'
+        Index("ix_public_places_name_trgm", "name", postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"}),
     )
 
     # tourapi = contentid, sangga = 상가업소번호

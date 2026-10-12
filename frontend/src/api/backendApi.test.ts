@@ -143,6 +143,29 @@ describe("backendApi trip mutation methods", () => {
     );
   });
 
+  it("asks the trip place-suggest endpoint for completed search words and returns the strings", async () => {
+    const controller = new AbortController();
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(["메타세쿼이아길", "담양 메타세쿼이아길"]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      backendApi.suggestTripPlaceNames("479", "메타세쿼", { signal: controller.signal }),
+    ).resolves.toEqual(["메타세쿼이아길", "담양 메타세쿼이아길"]);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${apiConfig.baseUrl}/api/trips/479/place-suggest?query=%EB%A9%94%ED%83%80%EC%84%B8%EC%BF%BC`,
+      expect.objectContaining({
+        credentials: "include",
+        signal: controller.signal,
+      }),
+    );
+  });
+
   it("patches trip settings through the contract endpoint", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(tripResponse), {

@@ -2565,6 +2565,15 @@ CREATE INDEX parcel_geom_gix ON geo.parcel USING gist (geom);
 CREATE INDEX parcel_pnu_ix ON geo.parcel USING btree (pnu);
 
 --
+-- 장소 검색 완성 검색어 (0051_public_place_name_trgm) - 사람이 쓴 요약. 108만 행에서 약 78MB.
+-- 운영 마이그레이션은 CONCURRENTLY 로 트랜잭션 밖에서 만든다(public_places 쓰기를 막지 않는다).
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE INDEX ix_public_places_name_trgm ON public.public_places USING gin (name public.gin_trgm_ops);
+
+--
 -- PostgreSQL database dump complete
 --
 

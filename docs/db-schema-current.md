@@ -226,6 +226,12 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 - `trip_places.geo_kind` varchar(10) nullable + CHECK `ck_trip_places_geo_kind`(`building`/`parcel` 또는 NULL), `trip_places.geo_pnu` varchar(19) nullable: 나만의 장소의 주소(와 좌표)를 건물 · 땅 지번에서 채웠을 때 그 출처. 일정 장소와 `geo` 표는 외래키로 묶지 않는다(판이 바뀌어도 담은 값은 유지). 다른 장소로 바꾸면 NULL 로 돌아간다.
 - downgrade 는 `geo` 스키마를 CASCADE 로 지우고 두 열을 뺀다(`postgis` 확장은 남긴다).
 
+장소 검색 완성 검색어 (2026-10-12, `0051_public_place_name_trgm`, 계획 `docs/superpowers/plans/2026-10-12-place-search-suggestions.md`):
+
+- `pg_trgm` 확장(없을 때만 만든다 - 신뢰 확장이라 DB 소유자가 만들 수 있고 AWS RDS 도 지원한다)과 색인 `ix_public_places_name_trgm`: `public_places(name)` GIN `gin_trgm_ops`. 장소 검색의 완성 검색어가 `name ILIKE '%q%'` 로 108만 행을 훑지 않고 색인을 타게 한다(어절 앞에서 시작하는 2자 검색어도 탄다). 108만 행에서 약 78MB, 만드는 데 약 7초(2026-10-12 로컬 실측).
+- `CREATE INDEX CONCURRENTLY` 라 `public_places` 쓰기(적재 · 동기화)를 막지 않는다 - 마이그레이션이 이 단계만 트랜잭션 밖에서 돌고(`0049` 와 같은 관례), 만들기 전에 앞선 시도가 남긴 INVALID 색인을 먼저 지워 다시 돌리기가 풀린다. 열 · 제약은 건드리지 않는다.
+- downgrade 는 색인만 지운다(`pg_trgm` 확장은 다른 객체가 쓸 수 있어 남긴다).
+
 수집 소스·검토 후보 테이블 (2026-09-13, `0038_policy_source_catalog`; `0039_external_source_status_text`는 `external_source_records.status_text`를 Text로 넓혔다):
 
 - `policy_collection_sources`: 코드 소유 수집 소스 카탈로그. `key` UNIQUE, `adapter_key`, `official_url`, `source_category`, `display_name`, `enabled`, `publication_mode`(`review` | `auto_after_reviewed_baseline`, CHECK), `expected_min_records`, 최근 실행 상태(`last_outcome`/`last_collected_at`/`last_successful_at`/`last_error`). 행은 마이그레이션이 아니라 저장소(`ensure_builtin_collection_sources`)가 만든다.

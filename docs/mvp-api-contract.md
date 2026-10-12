@@ -1310,6 +1310,8 @@ Changing the travel area does not move, delete, or reorder places or days. Linke
 
 Authenticated trip members (owner/editor/viewer) can search Kakao-registered places in the trip detail add-place sheet. The results are display-only: the server passes them through without storing or logging them. A picked place is not saved as it is. Every row carries `publicMatch` (always present, possibly null): the server asks Kakao for 6 places (6곳) and, in the same request, matches all rows with coordinates against our public places in one batch - one read per source, the same rules and the same shape as `POST /places/match`; the Kakao values are compared in memory and discarded. `publicMatch` is null for a row without coordinates, for a row whose matching failed, and for every row when the read fails - the client then matches the picked row with `POST /places/match`. A row that is not a direct match also carries `publicMatch.fill` (see `POST /places/match`): the public-data address of the building or lot around the row's spot, or null. The client saves a `publicPlace` reference or a user-written `customPlace` (with an optional `customPlace.geoRef` taken from `publicMatch.fill`) with `POST /trips/{trip_id}/days/{day_number}/places` (only the Kakao place id is kept, as `kakaoPlaceId`). This endpoint does not mutate itinerary data. If Kakao is switched off (`KAKAO_LOCAL_ENABLED=false`) or the Kakao request fails, the response is an empty array. If Kakao is switched on but misconfigured (for example the REST key is missing), the response is 503 `Place search is unavailable` - the key and the settings are never in the response or the logs. The DB connection is released before Kakao is called.
 
+**지역 먼저**: 일정에 지역(`travelAreaId`)이 있으면 그 지역 공공데이터 장소의 중앙값(`GET /trips/{trip_id}/area-center` 와 같은 점)을 구해 카카오에 좌표와 함께 보낸다 - 지역 안 장소가 먼저 나오도록 하는 편의 기능이다. 1차는 그 점 반경 20km(`radius=20000`)로 6곳을 묻고, 20km 안에서 6곳이 차면 반경 밖 장소는 결과에 들지 않는다(전국 검색은 모자란 줄만 채운다). 반경은 지역 경계가 아니라 중심점 둘레라 이웃 지역 장소가 섞일 수 있고, 도 전체처럼 20km 보다 넓은 지역은 반경 밖의 지역 안 장소가 2차가 채울 때만 나온다. 1차가 예외 없이 6곳 미만이면 2차로 반경 없이 같은 좌표 쪽으로 기운 전국 검색을 불러 1차에 없는 장소(카카오 장소 id 기준)만 뒤에 붙여 6곳까지 채운다. 1차가 실패하면 2차를 부르지 않고 빈 배열이다(2차만 실패하면 1차 결과 그대로). 지역이 없거나 그 지역에 공공데이터 장소가 없어 중심을 구하지 못하면 좌표 없이 지금처럼 한 번만 부른다. 응답 모양은 같다. 카카오로 가는 좌표는 우리 공공데이터로 계산한 일정 지역 중심뿐이고, 검색어 · 좌표는 로그에 남기지 않는다.
+
 **Query**
 - `query`: string, 1-80 chars. Place name or address keyword.
 
@@ -1359,6 +1361,31 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
 - 404: 일정 없음 또는 접근 권한 없음
 - 422: `query` 누락/길이 위반
 - 503: 카카오 로컬을 켜 두었는데 설정이 틀림(예: REST 키 없음). `detail` 은 `Place search is unavailable` 이다. 카카오를 일부러 껐거나 카카오 요청이 실패한 경우는 오류가 아니라 빈 배열이다
+
+### GET /trips/{trip_id}/place-suggest
+
+장소 추가 시트 검색 칸의 완성 검색어. 카카오 키워드 검색은 낱말 단위라 덜 친 말(`메타세쿼`)로는 결과가 없다 - 그래서 우리 공공데이터(`public_places`) 이름에서 검색어를 품은 말을 골라 최대 6줄의 문자열 배열로 준다. 일정 멤버(owner/editor/viewer) 누구나 쓰고, 일정을 바꾸지 않는다. 카카오를 켜 두었는지와 상관없이 같게 동작한다.
+
+- 입력: `query` 는 1~80자다(비거나 81자 이상이면 422). 서버는 앞뒤 공백을 자른 말이 2자 미만이거나 글자 · 숫자가 하나도 없으면(`--`, `()`, `__`) 이름 검색 질의를 하지 않고 빈 배열을 준다. `%` · `_` · `\` 는 글자 그대로 찾는다.
+- 지역 먼저: 일정 지역(`travelAreaId` - 시도 + 고른 시군) 안의 이름이 먼저고, 지역 밖은 관광지류(`sight` · `culture` · `leisure`) 이름만 뒤를 채운다. 지역이 없으면 전국 관광지류(TourAPI) 이름만 본다(가게 이름 · 체인 줄 없음). 지역 안에서도 상가정보의 여가(`leisure`) 분류와 유흥 업소 이름은 뺀다. 일정 전체가 아니라 일정의 지역 id 만 읽는다.
+- 체인 줄: 지역 안에서 같은 상표의 가게가 여럿이면 지점마다 내지 않고 '상표 + 지역 이름' 한 줄로 접는다(`스타벅스 강릉`). 지역 이름은 시군을 고른 일정이면 그 행의 시군, 시도 전체 일정이면 시도다. 여러 시군 일정에서는 시군마다 따로 나온다(`스타벅스 강릉` / `스타벅스 동해`) - 한 줄로 합치면 그 말로 카카오를 불렀을 때 다른 시군 지점이 나오지 않기 때문이다.
+- 이름만 준다: 줄은 장소가 아니라 '찾을 말'이다. 같은 이름의 행은 한 줄로 합쳐지고 좌표 · 주소 · id 는 주지 않는다. 줄을 누르면 클라이언트가 그 말을 사용자가 친 말처럼 `GET /trips/{trip_id}/place-search` 의 `query` 로 보내고, 장소와 `publicMatch` 는 그 응답에서 온다. 카카오 값은 읽지도 저장하지도 않는다.
+- 로그: 검색어 · 완성 검색어 · 좌표는 로그에 남기지 않는다(오류 종류와 개수만).
+- DB 오류: 이름 검색 질의의 DB 오류는 오류가 아니라 빈 배열이다(경고 로그에는 오류 종류만). 그 앞의 접근 확인 · 지역 읽기가 실패하면 500 이다.
+- 줄 순서는 서버가 정한다. 클라이언트는 받은 순서 그대로 보인다.
+
+**Query**
+- `query`: string, 1-80 chars. 찾을 말(이름의 일부).
+
+**Response 200** → `string[]`
+```json
+["담양 메타세쿼이아길", "곡성 메타세쿼이아길", "김제 메타세쿼이아길"]
+```
+
+**Errors**
+- 401: 인증 필요
+- 404: 일정 없음 또는 접근 권한 없음(숫자가 아닌 일정 id 포함)
+- 422: `query` 누락/길이 위반
 
 ### GET /places/search
 

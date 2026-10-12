@@ -61,6 +61,12 @@ def has_trip_access(db: Session, trip_id: int, user_id: int) -> bool:
     return db.scalar(statement) is not None
 
 
+def get_trip_travel_area_id(db: Session, trip_id: int) -> str | None:
+    """일정 지역 id 한 칸만 읽는다(일정 그래프 없음). 접근 확인은 부르기 전에 has_trip_access 로 한다. 지역이 없거나 일정이 없으면 None."""
+
+    return db.scalar(select(Trip.travel_area_id).where(Trip.id == trip_id))
+
+
 def get_owned_trip_by_id(db: Session, trip_id: int, user_id: int) -> Trip | None:
     statement = select(Trip).where(Trip.id == trip_id, Trip.owner_id == user_id)
     return db.scalar(statement)

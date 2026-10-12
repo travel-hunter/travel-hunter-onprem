@@ -191,3 +191,48 @@ def test_a_kakao_http_error_does_not_carry_the_url_query_or_coordinates() -> Non
     with pytest.raises(kakao_local.KakaoLocalConfigurationError) as raised:
         client.search_keyword(query="비밀")
     assert str(raised.value) == "Kakao local request failed: HTTPStatusError"
+
+
+def keyword_client(calls: list[dict]) -> KakaoLocalClient:
+    """보낸 요청 파라미터를 calls 에 쌓는 클라이언트(빈 결과)."""
+
+    def fake_get(_url: str, *, headers: dict, params: dict, timeout: float) -> httpx.Response:
+        calls.append(params)
+        return response_payload(200, {"documents": []})
+
+    return KakaoLocalClient(settings_obj=KEYED, http_get=fake_get)
+
+
+def test_search_keyword_sends_the_center_and_radius_when_given() -> None:
+    calls: list[dict] = []
+
+    keyword_client(calls).search_keyword(query="스타벅스", x=127.0, y=37.5, radius=20000, size=6)
+
+    assert (calls[0]["x"], calls[0]["y"], calls[0]["radius"], calls[0]["size"]) == (127.0, 37.5, 20000, 6)
+
+
+def test_search_keyword_sends_only_the_center_when_there_is_no_radius() -> None:
+    calls: list[dict] = []
+
+    keyword_client(calls).search_keyword(query="스타벅스", x=127.0, y=37.5, size=6)
+
+    assert (calls[0]["x"], calls[0]["y"]) == (127.0, 37.5)
+    assert "radius" not in calls[0]
+
+
+def test_search_keyword_without_a_center_sends_no_coordinate_params() -> None:
+    calls: list[dict] = []
+
+    keyword_client(calls).search_keyword(query="스타벅스")
+
+    assert not {"x", "y", "radius"} & calls[0].keys()
+
+
+@pytest.mark.parametrize("kwargs", [{"x": 127.0}, {"y": 37.5}, {"radius": 20000}, {"x": 127.0, "radius": 20000}])
+def test_search_keyword_refuses_half_a_center_or_a_radius_without_a_center(kwargs: dict) -> None:
+    calls: list[dict] = []
+
+    with pytest.raises(ValueError):
+        keyword_client(calls).search_keyword(query="스타벅스", **kwargs)
+
+    assert calls == []   # 요청은 나가지 않았다

@@ -327,6 +327,8 @@ export type AppDataApi = {
     options: TripPlaceSearchOptions,
     control?: ApiRequestControl,
   ) => Promise<PlaceSearchCandidate[]>;
+  /** 장소 검색 칸의 완성 검색어 - 우리 공공데이터 이름 최대 6줄(일정 지역 먼저). 카카오 값이 아니라 검색어일 뿐이다 */
+  suggestTripPlaceNames: (tripId: string, query: string, control?: ApiRequestControl) => Promise<string[]>;
   /** 통합 검색의 장소 찾기(카카오 로컬) - 일정과 무관 */
   searchPlaces: (query: string, control?: ApiRequestControl) => Promise<PlaceSearchItem[]>;
   /** 장소 카드 '이 근처' - 좌표 반경 2km 안의 그 분류 장소, 가까운 순 */

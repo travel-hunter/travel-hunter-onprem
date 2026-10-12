@@ -59,6 +59,9 @@ class KakaoLocalSearchProvider(Protocol):
         page: int = 1,
         size: int = KAKAO_LOCAL_DEFAULT_SIZE,
         sort: str = KAKAO_LOCAL_DEFAULT_SORT,
+        x: float | None = None,
+        y: float | None = None,
+        radius: int | None = None,
     ) -> list[KakaoLocalPlace]:
         ...
 
@@ -173,7 +176,14 @@ class KakaoLocalClient:
         page: int = 1,
         size: int = KAKAO_LOCAL_DEFAULT_SIZE,
         sort: str = KAKAO_LOCAL_DEFAULT_SORT,
+        x: float | None = None,
+        y: float | None = None,
+        radius: int | None = None,
     ) -> list[KakaoLocalPlace]:
+        """x(경도) · y(위도)를 주면 그 점 쪽 결과를 먼저 준다. radius(m, 카카오 상한 20000)는 x · y 와 함께만 - 반경 안만 온다."""
+
+        if (x is None) != (y is None) or (radius is not None and x is None):
+            raise ValueError("x and y go together, and radius needs them.")
         params = {
             "query": query.strip(),
             "page": page,
@@ -182,6 +192,11 @@ class KakaoLocalClient:
         }
         if category_group_code:
             params["category_group_code"] = category_group_code
+        if x is not None and y is not None:
+            params["x"] = x
+            params["y"] = y
+            if radius is not None:
+                params["radius"] = radius
         return self._search_places(KAKAO_LOCAL_KEYWORD_SEARCH_URL, params)
 
     def search_category(

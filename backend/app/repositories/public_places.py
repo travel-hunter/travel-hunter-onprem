@@ -1,23 +1,34 @@
 """public_places · public_place_sync_state 쓰기 · 조회(0048). 적재는 (source, source_id) 기준 upsert, 단위(TourAPI 유형 ·
-상가정보 시도)마다 끝까지 받았는지 본 뒤 통과한 단위의 오래된 행만 지우기, 출처별 시도 · 성공 기록, 맞춰 보기는 위경도 상자 조회."""
+상가정보 시도)마다 끝까지 받았는지 본 뒤 통과한 단위의 오래된 행만 지우기, 출처별 시도 · 성공 기록, 맞춰 보기는 위경도 상자 조회.
+완성 검색어는 이름에 검색어가 든 후보 묶음 조회(suggest_candidates)."""
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import and_, case, delete, func, not_, or_, select, tuple_
+from sqlalchemy import Integer, and_, case, delete, false, func, literal_column, not_, or_, select, text, tuple_, union_all
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.models import PublicPlace, PublicPlaceSyncState
 
+logger = logging.getLogger(__name__)
+
 UPDATED_COLUMNS = (
     "name", "name_key", "address", "latitude", "longitude", "category", "sido", "city", "photo_url", "photo_license", "synced_at",
 )
 _GROUP_COLUMNS = {"category": PublicPlace.category, "sido": PublicPlace.sido}
+# 관광지로 치는 분류 - 완성 검색어의 지역 밖 채우기와 순위(관광지 줄)가 같이 쓴다
+ATTRACTION_CATEGORIES = ("sight", "culture", "leisure")
+# 완성 검색어 후보 상한. 이름 길이 순으로 자르므로 넘치면 긴 이름부터 빠진다(걸리면 경고)
+SUGGEST_CANDIDATE_LIMIT = 4000
+# 상가정보 이름에 이 말이 들면 유흥업소로 보고 뺀다(음식 · 숙박 분류에 노래주점 · 단란주점이 섞여 있다)
+_NIGHTLIFE = ("노래", "단란", "유흥", "룸살롱", "가라오케", "나이트클럽")
 
 
 def upsert_public_places(db: Session, rows: Sequence[dict[str, object]]) -> int:
@@ -149,11 +160,14 @@ def get_public_place(db: Session, source: str, source_id: str) -> PublicPlace | 
     return db.get(PublicPlace, (source, source_id))
 
 
+def _area_clause(sido: str, cities: Collection[str] | None):
+    return PublicPlace.sido == sido if cities is None else and_(PublicPlace.sido == sido, PublicPlace.city.in_(sorted(cities)))
+
+
 def _in_area(statement, *, sido: str, cities: Collection[str] | None):
     """일정 지역(시도 + 시군)의 장소로 거른다. cities 가 None 이면 시도 전체 - 같은 시군 이름이 여러 시도에 있어 시도와 함께 건다(ix_public_places_sido_city)."""
 
-    statement = statement.where(PublicPlace.sido == sido)
-    return statement if cities is None else statement.where(PublicPlace.city.in_(sorted(cities)))
+    return statement.where(_area_clause(sido, cities))
 
 
 def recommended_public_places(
@@ -200,3 +214,79 @@ def area_coordinates(db: Session, *, sido: str, cities: Collection[str] | None) 
         if rows:
             return [(latitude, longitude) for latitude, longitude in rows]
     return []
+
+
+@dataclass(frozen=True)
+class SuggestCandidate:
+    """완성 검색어 후보 한 묶음 - (tier, 이름, 출처, 분류, 시도, 시군)이 같은 행 count 개. tier 0 = 일정 지역 안(지역이 없으면 전국
+    TourAPI), 1 = 지역 밖(지역이 있을 때만). 순위는 services/place_suggest 가 매긴다."""
+
+    name: str
+    source: str
+    category: str
+    sido: str | None
+    city: str | None
+    tier: int
+    count: int
+
+
+def suggest_candidates(
+    db: Session,
+    *,
+    query: str,
+    scope: tuple[str, tuple[str, ...] | None] | None,
+    limit: int = SUGGEST_CANDIDATE_LIMIT,
+) -> list[SuggestCandidate]:
+    """이름에 query(앞뒤 공백을 자른 2~80자)가 든 후보(ix_public_places_name_trgm). scope = (시도, 시군 목록 | None) 또는 지역 없음(None).
+    - 지역 안(tier 0): TourAPI 전부 + 상가정보 중 예술·스포츠가 아닌 것(유흥 이름 제외).
+    - 지역 밖(tier 1, 지역이 있을 때만): TourAPI 관광지(sight · culture · leisure)만.
+    - 지역 없음: 전국 TourAPI(tier 0).
+    - 2자 검색어는 지역 안 TourAPI 만 어절 속을 맞추고 나머지는 어절 앞만 맞춘다(스타 -> 블라스타 같은 잡음).
+    갈래마다 정렬 · 상한을 달지 않고(SQLite 가 거부한다) 합친 뒤 한 번에 묶고 tier -> 이름 길이 -> 이름 순으로 limit 개만 받는다."""
+
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    contains = PublicPlace.name.ilike(f"%{escaped}%", escape="\\")
+    # 이름 맨 앞이거나 공백 바로 뒤
+    word_start = or_(PublicPlace.name.ilike(f"{escaped}%", escape="\\"), PublicPlace.name.ilike(f"% {escaped}%", escape="\\"))
+    short = len(query) < 3
+
+    def branch(tier: int, *conditions):
+        columns = (PublicPlace.name, PublicPlace.source, PublicPlace.category, PublicPlace.sido, PublicPlace.city)
+        return select(*columns, literal_column(str(tier), Integer).label("tier")).where(contains, *conditions)
+
+    if scope is None:
+        branches = [branch(0, PublicPlace.source == "tourapi")]
+    else:
+        sido, cities = scope
+        nightlife = and_(PublicPlace.source == "sangga", or_(*(PublicPlace.name.contains(word, autoescape=True) for word in _NIGHTLIFE)))
+        inside = branch(0, or_(PublicPlace.source == "tourapi", PublicPlace.category != "leisure"), not_(nightlife))
+        outside = branch(
+            1,
+            PublicPlace.source == "tourapi",
+            PublicPlace.category.in_(ATTRACTION_CATEGORIES),
+            # sido · city 가 비어 있으면 '지역 안인지'가 NULL 이 된다 - 비어 있으면 지역 밖으로 친다
+            not_(func.coalesce(_area_clause(sido, cities), false())),
+        )
+        if short:
+            inside = inside.where(or_(PublicPlace.source == "tourapi", word_start))
+            outside = outside.where(word_start)
+        branches = [_in_area(inside, sido=sido, cities=cities), outside]
+    union = union_all(*branches).subquery()
+    group = (union.c.tier, union.c.name, union.c.source, union.c.category, union.c.sido, union.c.city)
+    statement = (
+        select(*group, func.count())
+        .group_by(*group)
+        .order_by(union.c.tier, func.length(union.c.name), union.c.name)
+        .limit(limit)
+    )
+    if db.get_bind().dialect.name == "postgresql":
+        # psycopg 는 같은 문장을 5번 넘게 보내면 서버 쪽 준비문으로 바꾸고, PostgreSQL 은 그 뒤 검색어를 모르는 일반 계획으로 갈아탄다.
+        # 일반 계획은 trigram 색인을 못 써서 2자 검색어가 15ms 에서 340ms 로 느려진다(2026-10-12 로컬 실측) - 매번 검색어를 보고 계획하게 한다
+        db.execute(text("SET LOCAL plan_cache_mode = force_custom_plan"))
+    rows = [
+        SuggestCandidate(name=name, source=source, category=category, sido=sido_, city=city, tier=tier, count=count)
+        for tier, name, source, category, sido_, city, count in db.execute(statement).all()
+    ]
+    if len(rows) == limit:
+        logger.warning("place_suggest_candidates_capped count=%s", len(rows))
+    return rows

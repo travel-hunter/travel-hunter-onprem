@@ -128,7 +128,9 @@ import {
 } from "../../components/itinerary/placeAdd/placeBasket";
 import type { CustomPlaceSubmit } from "../../components/itinerary/placeAdd/CustomPlaceForm";
 import { PlaceMatchPanel } from "../../components/itinerary/placeAdd/PlaceMatchPanel";
+import { PlaceSuggestions } from "../../components/itinerary/placeAdd/PlaceSuggestions";
 import { usePlaceMatch, type PlacePickInput } from "../../components/itinerary/placeAdd/usePlaceMatch";
+import { usePlaceSuggestions } from "../../components/itinerary/placeAdd/usePlaceSuggestions";
 import { publicMatchBadge, type PublicMatchBadge } from "../../components/itinerary/placeAdd/publicPlaceText";
 
 const defaultPlaceTime = "09:00";
@@ -1894,6 +1896,8 @@ export function ItineraryDetailPage() {
   const placeSearchAbortControllerRef = useRef<AbortController | null>(null);
   // 검색 결과를 고르면 공공데이터와 맞춰 본다 - 바로 맞으면 바구니로, 아니면 후보 확인이나 나만의 장소 칸이 열린다
   const placeMatch = usePlaceMatch({ onMatched: (item) => addToBasket(item) });
+  // 검색 칸 아래 완성 검색어(우리 공공데이터 이름) - 시트가 요청하고 비운다
+  const placeSuggestions = usePlaceSuggestions(trip?.id);
   const placeDragAutoSwitchTimerRef = useRef<number | null>(null);
   const dayTabsRef = useRef<HTMLDivElement | null>(null);
   const dayStripDragScroll = useDragScroll(dayTabsRef);
@@ -4604,6 +4608,10 @@ export function ItineraryDetailPage() {
           onDiscardDraft={discardPlaceDraft}
           onSearchInput={invalidatePlaceSearch}
           onSearchChange={updatePlaceSearchQuery}
+          onRequestSuggestions={placeSuggestions.request}
+          onClearSuggestions={placeSuggestions.clear}
+          suggestions={placeSuggestions.suggestions}
+          suggestionQuery={placeSuggestions.query}
           onSelectSearchCandidate={selectPlaceSearchCandidate}
           onRemoveBasketItem={removePlaceBasketItem}
           onRetryBasketDay={retryPlaceBasket}
@@ -5953,6 +5961,8 @@ export function PlaceEditorSheet({
   onRetryBasketDay,
   onSearchInput,
   onSearchChange,
+  onRequestSuggestions,
+  onClearSuggestions,
   legacyConfirm,
   onSelectSearchCandidate,
   onSubmit,
@@ -5964,6 +5974,8 @@ export function PlaceEditorSheet({
   searchCandidates,
   searchError,
   searchQuery,
+  suggestions = [],
+  suggestionQuery = "",
   restoredDraftMessage,
 }: {
   batchRecovery: BatchPlaceRecovery;
@@ -5992,6 +6004,10 @@ export function PlaceEditorSheet({
   onRetryBasketDay: (dayNumber: number) => void;
   onSearchInput?: () => void;
   onSearchChange: (query: string) => void;
+  /** 완성 검색어 - 검색과 같은 디바운스 끝에 요청하고, 줄을 고르거나 시트가 닫히면 비운다. 안 넘기면 목록이 없다.
+      onClearSuggestions 는 렌더마다 바뀌지 않아야 한다(바뀌면 그때마다 목록을 비운다) - 훅의 clear 는 그렇다 */
+  onRequestSuggestions?: (query: string) => void;
+  onClearSuggestions?: () => void;
   onSelectSearchCandidate: (candidate: PlaceSearchCandidate) => void;
   onSubmit: () => void;
   place?: ItineraryPlace | null;
@@ -6002,12 +6018,26 @@ export function PlaceEditorSheet({
   searchCandidates: PlaceSearchCandidate[];
   searchError: string;
   searchQuery: string;
+  suggestions?: string[];
+  /** 위 목록을 받은 질의 - 칸의 글과 같을 때만 목록을 보인다(디바운스 대기 중엔 옛 목록을 숨긴다) */
+  suggestionQuery?: string;
   restoredDraftMessage: string;
 }) {
   const dayDragScroll = useDragScroll();
   const [inputSearchQuery, setInputSearchQuery] = useState(searchQuery);
   const searchDebounceTimerRef = useRef<number | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // 완성 검색어 목록이 열려 있나 - 검색 칸 감싸개 안에 초점이 있는 동안(줄로 Tab 해도 안이다). Escape 로 닫고, 다시 치면 연다
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const typedQuery = inputSearchQuery.trim();
+  // 칸의 글이 목록을 받은 질의와 같을 때만 - 디바운스 대기 중엔 옛 목록을 숨긴다. 칸의 글이 목록의 말 그대로이면 더 보일 게 없다
+  const showSuggestions =
+    mode === "add" &&
+    !isMatching &&
+    suggestionsOpen &&
+    typedQuery.length >= 2 &&
+    typedQuery === suggestionQuery &&
+    !suggestions.includes(typedQuery);
   // 친 말이 아직 검색되지 않았거나(350ms 대기) 불러오는 중 - 앞 결과를 흐리게, 누를 수 없게 남긴다(결정 22 · 24)
   const isSearchPending = isLoadingSearch || inputSearchQuery.trim() !== searchQuery.trim();
   const hasSearched = searchQuery.trim() !== "" && !isSearchPending && !searchError;
@@ -6034,6 +6064,9 @@ export function PlaceEditorSheet({
     },
     [],
   );
+
+  // 시트가 닫히면(사라지면) 진행 중인 완성 검색어 요청을 끊고 목록을 비운다 - 훅은 페이지에 산다
+  useEffect(() => onClearSuggestions, [onClearSuggestions]);
 
   /* 결정 24: 바구니에 담기면 다음 장소를 찾게 검색 칸으로 돌아온다. 바로 담기뿐 아니라 후보를 고르거나 나만의 장소를 담아도 -
      초점을 가진 단추가 든 칸이 통째로 사라지므로 옮기지 않으면 초점이 body 로 떨어진다.
@@ -6083,13 +6116,30 @@ export function PlaceEditorSheet({
 
   const updateInputSearchQuery = (query: string) => {
     setInputSearchQuery(query);
+    setSuggestionsOpen(true);
     onSearchInput?.();
     if (searchDebounceTimerRef.current !== null)
       window.clearTimeout(searchDebounceTimerRef.current);
     searchDebounceTimerRef.current = window.setTimeout(() => {
       searchDebounceTimerRef.current = null;
       onSearchChange(query);
+      onRequestSuggestions?.(query);
     }, PLACE_SEARCH_DEBOUNCE_MS);
+  };
+
+  /* 완성 검색어 줄을 누르면 그 말을 친 것처럼 곧바로 검색한다. 대기 중이던 예전 검색은 지우고(타이머 자리도 비운다 - 안 비우면
+     검색 결과를 고른 뒤 페이지가 비운 검색 칸이 안 비워진다), 고른 말로는 완성 검색어를 다시 묻지 않는다(그래서 요청 경로를 안 탄다).
+     마우스는 초점을 검색 칸에 둔 채 누르지만, 키보드(Tab 으로 간 줄)는 줄이 사라지며 초점을 잃으므로 칸으로 되돌린다 */
+  const pickSuggestion = (text: string) => {
+    onSearchInput?.();
+    if (searchDebounceTimerRef.current !== null) {
+      window.clearTimeout(searchDebounceTimerRef.current);
+      searchDebounceTimerRef.current = null;
+    }
+    setInputSearchQuery(text);
+    onSearchChange(text);
+    onClearSuggestions?.();
+    searchInputRef.current?.focus();
   };
 
   return (
@@ -6140,16 +6190,40 @@ export function PlaceEditorSheet({
           {mode === "add" && dayPicker}
           {mode === "add" && (
             <div className="place-search-panel">
-              <label className="field">
-                장소 검색
-                <input
-                  name="place-search"
-                  placeholder="장소명이나 주소 검색"
-                  ref={searchInputRef}
-                  value={inputSearchQuery}
-                  onChange={(event) => updateInputSearchQuery(event.target.value)}
-                />
-              </label>
+              {/* 완성 검색어 목록은 label 의 형제 - label 안에 넣으면 줄 글이 검색 칸의 이름(접근 가능한 이름)에 섞인다.
+                  초점이 감싸개 안에 있으면 열려 있다(줄로 Tab 해도 안이고, 밖으로 나가면 닫힌다) */}
+              <div
+                className="place-search-box"
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSuggestionsOpen(false);
+                }}
+                onFocus={() => setSuggestionsOpen(true)}
+                onKeyDown={(event) => {
+                  // 줄로 Tab 해 간 곳에서도 닫는다 - 초점은 검색 칸으로 돌린다(돌리며 생기는 focus 가 다시 열지 않게 닫기를 뒤에)
+                  if (event.key !== "Escape") return;
+                  if (event.target !== searchInputRef.current) searchInputRef.current?.focus();
+                  setSuggestionsOpen(false);
+                }}
+              >
+                <label className="field">
+                  장소 검색
+                  <input
+                    autoComplete="off"
+                    name="place-search"
+                    placeholder="장소명이나 주소 검색"
+                    ref={searchInputRef}
+                    value={inputSearchQuery}
+                    onChange={(event) => updateInputSearchQuery(event.target.value)}
+                  />
+                </label>
+                {showSuggestions && (
+                  <PlaceSuggestions onPick={pickSuggestion} query={suggestionQuery} suggestions={suggestions} />
+                )}
+                {/* 목록이 떴다는 것을 화면 읽기 프로그램에 알린다(아래 검색 상태 줄과 같은 방식) */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <span className="sr-only" role="status">{`완성 검색어 ${suggestions.length}개`}</span>
+                )}
+              </div>
               {/* 시안 v61: 검색어가 있는 동안 결과 칸 높이를 고정하고 상태 줄도 그 안에 - 칠 때 아래 칸이 오르내리지 않는다 */}
               {inputSearchQuery.trim() && (
                 <div className="place-search-area">

@@ -144,6 +144,7 @@ def test_search_places_for_trip_maps_kakao_candidates(monkeypatch) -> None:
         lambda db, trip_id, user_id: True,
         raising=False,
     )
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_travel_area_id", lambda *a: None)   # 지역 없는 일정 - 좌표 없이 1번
     monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: FakeSearchProvider())
     monkeypatch.setattr(trip_service.public_place_service, "match_places", lambda db, rows: [{"result": "none", "places": []} for _ in rows])
 
@@ -189,6 +190,7 @@ def test_search_places_for_trip_sends_every_row_to_one_batch_match(monkeypatch) 
         return [{"result": "match", "places": []}, None]
 
     monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: True, raising=False)
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_travel_area_id", lambda *a: None)
     monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: FakeSearchProvider())
     monkeypatch.setattr(trip_service.public_place_service, "match_places", fake_match_places)
 
@@ -204,6 +206,7 @@ def test_search_places_for_trip_adds_a_fill_to_rows_without_a_match(monkeypatch)
             return [kakao_place("1", "오동도", 34.7447, 127.7678), kakao_place("2", "오동도 선착장", 34.7448, 127.7679)]
 
     monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: True, raising=False)
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_travel_area_id", lambda *a: None)
     monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: FakeSearchProvider())
     monkeypatch.setattr(trip_service.public_place_service, "match_places", lambda db, rows: [{"result": "match", "places": []}, {"result": "none", "places": []}])
     monkeypatch.setattr(trip_service.address_fill.geo_repository, "locate",
@@ -224,6 +227,7 @@ def test_search_places_for_trip_still_answers_when_the_geo_lookup_fails(monkeypa
         raise RuntimeError("no postgis")
 
     monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: True, raising=False)
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_travel_area_id", lambda *a: None)
     monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: FakeSearchProvider())
     monkeypatch.setattr(trip_service.public_place_service, "match_places", lambda db, rows: [{"result": "none", "places": []}])
     monkeypatch.setattr(trip_service.address_fill.geo_repository, "locate", broken)
@@ -245,6 +249,7 @@ def test_search_places_for_trip_still_answers_when_prematching_fails(monkeypatch
         raise RuntimeError("db down")
 
     monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: True, raising=False)
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_travel_area_id", lambda *a: None)
     monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: FakeSearchProvider())
     monkeypatch.setattr(trip_service.public_place_service, "match_places", broken_match_places)
     monkeypatch.setattr(trip_service.logger, "handlers", [caplog.handler])
@@ -297,10 +302,235 @@ def test_search_places_for_trip_releases_the_db_session_before_calling_kakao(mon
             return []
 
     monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: True, raising=False)
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_travel_area_id", lambda *a: None)
     monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: FakeSearchProvider())
 
     assert trip_service.search_places_for_trip(SpyDb(), make_user(), trip_handle="7", query="성산일출봉") == []
     assert events == ["db closed", "kakao called"]
+
+
+class NearKakao:
+    """좌표 인자를 받는 가짜 카카오. 불린 키워드 인자를 그대로 calls 에 쌓고(좌표를 안 넘겼는지까지 보인다) 정해 둔 답을 차례로 준다 - 예외면 던진다."""
+
+    def __init__(self, *answers) -> None:
+        self.answers = list(answers)
+        self.calls: list[dict[str, object]] = []
+
+    def search_keyword(self, **kwargs):
+        self.calls.append(kwargs)
+        answer = self.answers[len(self.calls) - 1]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+def install_near_search(monkeypatch, provider, *, area_id: str | None = "jeonnam-yeosu-suncheon", center=None, events: list[str] | None = None) -> list[tuple[object, object]]:
+    """지역 먼저 검색 시험 공통: 접근 확인 · 카카오 · 일정 지역 id · (center 를 주면) 지역 중심을 가짜로. 돌려주는 목록에 area_center 호출이 쌓인다. 미리 맞춤은 모두 None."""
+
+    center_calls: list[tuple[object, object]] = []
+    log = events if events is not None else []
+
+    def fake_area_center(db, area):
+        log.append("area_center")
+        center_calls.append((db, area))
+        return center
+
+    monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: True, raising=False)
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_travel_area_id", lambda db, trip_id: area_id)
+    monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: provider)
+    monkeypatch.setattr(trip_service.public_place_service, "match_places", lambda db, rows: [None for _ in rows])
+    if center is not None:
+        monkeypatch.setattr(trip_service.trip_public_places, "area_center", fake_area_center)
+    return center_calls
+
+
+NEAR_CENTER = {"latitude": 34.7123, "longitude": 127.7456}
+
+
+def near_places(*ids: str) -> list[KakaoLocalPlace]:
+    return [kakao_place(external_id, f"장소{external_id}", None, None) for external_id in ids]
+
+
+def near_ids(rows: list[dict[str, object]]) -> list[object]:
+    return [row["externalPlaceId"] for row in rows]
+
+
+def test_search_places_for_trip_asks_the_trips_area_first_and_stops_when_six_rows_come(monkeypatch) -> None:
+    provider = NearKakao(near_places("1", "2", "3", "4", "5", "6"))
+    center_calls = install_near_search(monkeypatch, provider, center=NEAR_CENTER)
+    db = object()
+
+    rows = trip_service.search_places_for_trip(db, make_user(), trip_handle="7", query="스타벅스")
+
+    assert provider.calls == [{"query": "스타벅스", "x": 127.7456, "y": 34.7123, "radius": 20000, "size": 6}]   # x 경도 · y 위도
+    assert near_ids(rows) == ["1", "2", "3", "4", "5", "6"]
+    assert [(received_db, area.id) for received_db, area in center_calls] == [(db, "jeonnam-yeosu-suncheon")]   # 일정 지역의 공공데이터 중심
+
+
+def test_search_places_for_trip_fills_up_from_the_wider_search_after_the_area_rows(monkeypatch) -> None:
+    provider = NearKakao(near_places("1", "2", "3", "4"), near_places("9", "3", "8", "1", "7", "6"))
+    install_near_search(monkeypatch, provider, center=NEAR_CENTER)
+
+    rows = trip_service.search_places_for_trip(object(), make_user(), trip_handle="7", query="스타벅스")
+
+    assert provider.calls == [
+        {"query": "스타벅스", "x": 127.7456, "y": 34.7123, "radius": 20000, "size": 6},
+        {"query": "스타벅스", "x": 127.7456, "y": 34.7123, "size": 6},   # 반경 없음 - 중심 쪽으로 기운 전국
+    ]
+    assert near_ids(rows) == ["1", "2", "3", "4", "9", "8"]   # 지역 안 줄이 먼저, 겹치는 장소(3 · 1)는 한 번만, 6줄에서 끊는다
+
+
+def test_search_places_for_trip_keeps_the_area_rows_when_the_wider_search_finds_nothing_new(monkeypatch) -> None:
+    provider = NearKakao(near_places("1", "2"), near_places("2", "1"))
+    install_near_search(monkeypatch, provider, center=NEAR_CENTER)
+
+    assert near_ids(trip_service.search_places_for_trip(object(), make_user(), trip_handle="7", query="남산")) == ["1", "2"]
+    assert len(provider.calls) == 2
+
+
+def test_search_places_for_trip_gives_up_on_the_first_call_failing_without_the_wider_one(monkeypatch, caplog) -> None:
+    provider = NearKakao(RuntimeError("GET https://dapi.kakao.com/...?query=비밀검색어&x=127.7456&y=34.7123 failed"), near_places("1"))
+    install_near_search(monkeypatch, provider, center=NEAR_CENTER)
+    monkeypatch.setattr(trip_service.logger, "handlers", [caplog.handler])
+    monkeypatch.setattr(trip_service.logger, "propagate", False)   # 이 파일만 돌리면 root 로도 퍼져 caplog 에 두 번 잡힌다
+    caplog.set_level(logging.WARNING)
+
+    assert trip_service.search_places_for_trip(object(), make_user(), trip_handle="7", query="비밀검색어") == []
+
+    assert len(provider.calls) == 1   # 1차가 실패하면 2차를 부르지 않는다
+    assert [record.getMessage() for record in caplog.records if record.levelno >= logging.WARNING] == ["trip_place_search_failed trip=7 error=RuntimeError"]
+    assert "비밀검색어" not in caplog.text and "34.7123" not in caplog.text and "127.7456" not in caplog.text and "dapi.kakao.com" not in caplog.text
+
+
+def test_search_places_for_trip_keeps_the_area_rows_when_the_wider_call_fails(monkeypatch, caplog) -> None:
+    provider = NearKakao(near_places("1", "2", "3", "4"), RuntimeError("GET https://dapi.kakao.com/...?query=비밀검색어&x=127.7456&y=34.7123 failed"))
+    install_near_search(monkeypatch, provider, center=NEAR_CENTER)
+    monkeypatch.setattr(trip_service.logger, "handlers", [caplog.handler])
+    monkeypatch.setattr(trip_service.logger, "propagate", False)   # 이 파일만 돌리면 root 로도 퍼져 caplog 에 두 번 잡힌다
+    caplog.set_level(logging.WARNING)
+
+    rows = trip_service.search_places_for_trip(object(), make_user(), trip_handle="7", query="비밀검색어")
+
+    assert near_ids(rows) == ["1", "2", "3", "4"]
+    assert len(provider.calls) == 2
+    warnings = [record.getMessage() for record in caplog.records if record.levelno >= logging.WARNING]
+    assert warnings == ["trip_place_search_wider_failed error=RuntimeError"]   # 오류 종류만
+    assert "비밀검색어" not in caplog.text and "34.7123" not in caplog.text and "127.7456" not in caplog.text and "dapi.kakao.com" not in caplog.text
+
+
+def test_search_places_for_trip_sends_no_coordinates_when_the_area_has_no_public_rows(monkeypatch, caplog) -> None:
+    provider = NearKakao(near_places("1"))
+    install_near_search(monkeypatch, provider, center={"latitude": None, "longitude": None})   # area_center 는 값이 None 인 dict 를 준다
+    monkeypatch.setattr(trip_service.logger, "handlers", [caplog.handler])
+    caplog.set_level(logging.WARNING)
+
+    assert near_ids(trip_service.search_places_for_trip(object(), make_user(), trip_handle="7", query="성산일출봉")) == ["1"]
+
+    assert provider.calls == [{"query": "성산일출봉", "size": 6}]   # 좌표 인자를 아예 넘기지 않는다
+    assert [record for record in caplog.records if record.levelno >= logging.WARNING] == []
+
+
+def test_search_places_for_trip_sends_no_coordinates_when_the_trip_has_no_area(monkeypatch) -> None:
+    provider = NearKakao(near_places("1"))
+    install_near_search(monkeypatch, provider, area_id=None)   # area_center 는 진짜 - 지역이 없으면 DB 를 읽지 않고 중심 없음
+
+    assert near_ids(trip_service.search_places_for_trip(object(), make_user(), trip_handle="7", query="성산일출봉")) == ["1"]
+
+    assert provider.calls == [{"query": "성산일출봉", "size": 6}]
+
+
+@pytest.mark.parametrize("build", ["off", "misconfigured"])
+def test_search_places_for_trip_does_not_look_up_the_area_when_kakao_is_off_or_misconfigured(monkeypatch, build) -> None:
+    def misconfigured():
+        raise KakaoLocalConfigurationError("KAKAO_LOCAL_REST_API_KEY is required when KAKAO_LOCAL_ENABLED=true.")
+
+    def reject_area_lookup(*_args, **_kwargs):
+        pytest.fail("the trip area must not be read when there is no Kakao client")
+
+    monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: True, raising=False)
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_travel_area_id", reject_area_lookup)
+    monkeypatch.setattr(trip_service.trip_public_places, "area_center", reject_area_lookup)
+    monkeypatch.setattr(trip_service, "build_kakao_local_client", (lambda: None) if build == "off" else misconfigured)
+
+    if build == "off":
+        assert trip_service.search_places_for_trip(object(), make_user(), trip_handle="7", query="성산일출봉") == []
+    else:
+        with pytest.raises(trip_service.TripServiceError) as error:
+            trip_service.search_places_for_trip(object(), make_user(), trip_handle="7", query="성산일출봉")
+        assert error.value.status_code == 503
+
+
+def test_search_places_for_trip_reads_the_area_center_once_before_the_session_is_released(monkeypatch) -> None:
+    events: list[str] = []
+
+    class SpyDb:
+        def close(self) -> None:
+            events.append("db closed")
+
+    class SpyKakao(NearKakao):
+        def search_keyword(self, **kwargs):
+            events.append("kakao called")
+            return super().search_keyword(**kwargs)
+
+    provider = SpyKakao(near_places("1"), near_places("2"))   # 1차가 모자라 2차까지 간다
+    install_near_search(monkeypatch, provider, center=NEAR_CENTER, events=events)
+
+    trip_service.search_places_for_trip(SpyDb(), make_user(), trip_handle="7", query="성산일출봉")
+
+    assert events == ["area_center", "db closed", "kakao called", "kakao called"]   # 지역 중심은 한 번, 세션을 놓기 전에
+
+
+def install_suggest_fakes(monkeypatch, *, area_id: str | None, has_access: bool = True) -> list[tuple[object, str, object]]:
+    """완성 검색어 시험 공통: 접근 확인 · 일정 지역 id · 순위 함수를 가짜로. 일정 그래프를 읽으면 실패한다. 돌려주는 목록에 순위 함수 호출이 쌓인다."""
+
+    calls: list[tuple[object, str, object]] = []
+
+    def reject_graph_load(*_args, **_kwargs):
+        pytest.fail("place suggestions must not load the complete trip graph")
+
+    def fake_suggest(db, *, query, scope):
+        calls.append((db, query, scope))
+        return ["성산일출봉", "성산포"]
+
+    monkeypatch.setattr(trip_service, "_resolve_required_trip", reject_graph_load)
+    monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: has_access)
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_travel_area_id", lambda db, trip_id: area_id)
+    monkeypatch.setattr(trip_service.place_suggest, "suggest_place_names", fake_suggest)
+    return calls
+
+
+def test_suggest_places_for_trip_ranks_inside_the_trips_area_scope_and_keeps_the_session(monkeypatch) -> None:
+    calls = install_suggest_fakes(monkeypatch, area_id="jeonnam-yeosu-suncheon")
+    events: list[str] = []
+
+    class SpyDb:
+        def close(self) -> None:
+            events.append("db closed")
+
+    db = SpyDb()
+
+    assert trip_service.suggest_places_for_trip(db, make_user(), trip_handle="7", query="성산") == ["성산일출봉", "성산포"]
+    assert calls == [(db, "성산", ("전남", ("여수", "순천")))]   # 일정 지역 = 시도 + 고른 시군
+    assert events == []   # 카카오를 기다리지 않는다 - 순위 질의에 DB 가 필요하니 세션을 놓지 않는다
+
+
+@pytest.mark.parametrize("area_id", [None, "no-such-area"])
+def test_suggest_places_for_trip_ranks_nationwide_when_the_trip_has_no_resolvable_area(monkeypatch, area_id) -> None:
+    calls = install_suggest_fakes(monkeypatch, area_id=area_id)
+
+    assert trip_service.suggest_places_for_trip(object(), make_user(), trip_handle="7", query="성산") == ["성산일출봉", "성산포"]
+    assert [scope for _db, _query, scope in calls] == [None]
+
+
+@pytest.mark.parametrize("trip_handle, has_access", [("7", False), ("abc", True), ("0", True), ("7x", True)])
+def test_suggest_places_for_trip_answers_404_without_access_or_for_a_non_numeric_id(monkeypatch, trip_handle, has_access) -> None:
+    calls = install_suggest_fakes(monkeypatch, area_id="jeonnam-yeosu-suncheon", has_access=has_access)
+
+    with pytest.raises(trip_service.TripServiceError) as error:
+        trip_service.suggest_places_for_trip(object(), make_user(), trip_handle=trip_handle, query="성산")
+
+    assert (error.value.status_code, error.value.detail) == (404, "Trip not found")
+    assert calls == []
 
 
 def make_stay_policy() -> Policy:
@@ -3799,6 +4029,7 @@ def test_search_places_for_trip_logs_only_the_error_name_when_kakao_fails(monkey
             raise RuntimeError("GET https://dapi.kakao.com/...?query=비밀검색어 failed")
 
     monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: True, raising=False)
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_travel_area_id", lambda *a: None)
     monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: FailingProvider())
     monkeypatch.setattr(trip_service.logger, "handlers", [caplog.handler])
     caplog.set_level(logging.WARNING)

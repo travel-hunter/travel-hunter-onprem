@@ -59,13 +59,15 @@ function addTrip(id: string, revision = 3): Trip {
 
 async function openAddSheet(trip: Trip) {
   vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+  // 검색 칸에 2자 이상 치면 완성 검색어 요청이 나간다 - 진짜 백엔드 · 로컬 DB 에 닿지 않게 기본은 빈 목록
+  const suggestSpy = vi.spyOn(appDataApi, "suggestTripPlaceNames").mockResolvedValue([]);
   await login();
   cleanup();
   renderAppRoute(`/trips/${trip.id}?day=1`);
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: /장소 추가/ }));
   const dialog = await screen.findByRole("dialog", { name: "장소 추가" });
-  return { user, dialog };
+  return { user, dialog, suggestSpy };
 }
 
 async function searchAndPick(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement, query: string, title: string) {
@@ -78,6 +80,25 @@ function mockSearch(...candidates: PlaceSearchCandidate[]) {
     .spyOn(appDataApi, "searchTripPlaces")
     .mockImplementation(async (_tripId, request) => candidates.filter((candidate) => request.query.includes(candidate.title.slice(0, 2))));
 }
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+/** 가짜 타이머를 act 안에서 넘긴다 - 그 사이 풀린 상태 갱신이 act 경고 없이 화면에 반영된다 */
+const advance = (ms: number) =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+
+const suggestionList = (dialog: HTMLElement) => within(dialog).queryByRole("list", { name: "완성 검색어" });
+const suggestionLines = (dialog: HTMLElement) =>
+  within(within(dialog).getByRole("list", { name: "완성 검색어" })).getAllByRole("button");
+const suggestionTexts = (dialog: HTMLElement) => suggestionLines(dialog).map((line) => line.textContent);
 
 /** 담기 요청 본문에 카카오가 준 이름 · 주소 · 분류가 한 글자도 없어야 한다 */
 function expectNoKakaoValues(body: unknown) {
@@ -803,5 +824,306 @@ describe("Travel Hunter app trip place add flow", () => {
     expect(await within(dialog).findByText("담은 장소 중 목록에서 사라진 곳이 있어요. 다시 찾아 담아 주세요.")).toBeInTheDocument();
     expect(within(dialog).queryByText(/입력값을 확인하고 다시 시도해 주세요/)).not.toBeInTheDocument();
     expect(within(dialog).getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("사라진 카페");
+  });
+});
+
+describe("Travel Hunter app trip place add sheet: completed search words", () => {
+  it("lists completed words after the debounce; a picked word fills the search box, is searched once and is never suggested again", async () => {
+    const trip = addTrip("130");
+    const searchSpy = mockSearch(kakaoCandidate("9001", "메타세쿼이아길"));
+    const { user, dialog, suggestSpy } = await openAddSheet(trip);
+    suggestSpy.mockResolvedValue(["메타세쿼이아길", "메타세쿼이아 랜드"]);
+    const input = within(dialog).getByLabelText("장소 검색");
+
+    await user.type(input, "메타세쿼");
+
+    const list = await within(dialog).findByRole("list", { name: "완성 검색어" });
+    expect(suggestSpy).toHaveBeenLastCalledWith("130", "메타세쿼", { signal: expect.any(AbortSignal) });
+    expect(input).toHaveAttribute("autocomplete", "off");
+    // 목록은 검색 칸 label 의 형제다 - label 안에 넣으면 줄 글이 검색 칸의 이름에 섞인다
+    expect(list.parentElement).toHaveClass("place-search-box");
+    expect(list.previousElementSibling).toBe(input.closest("label"));
+
+    await user.click(within(list).getByRole("button", { name: "메타세쿼이아길" }));
+
+    expect(input).toHaveValue("메타세쿼이아길");
+    expect(searchSpy).toHaveBeenLastCalledWith("130", { query: "메타세쿼이아길" }, { signal: expect.any(AbortSignal) });
+    expect(suggestionList(dialog)).not.toBeInTheDocument();
+    expect(input).toHaveFocus();
+    // 대기 시간(350ms)이 지나도 고른 말로 완성 검색어를 다시 묻지 않고, 목록도 다시 뜨지 않는다
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+    expect(suggestSpy).not.toHaveBeenCalledWith("130", "메타세쿼이아길", expect.anything());
+    expect(suggestionList(dialog)).not.toBeInTheDocument();
+  });
+
+  it("shows the later query's words when the earlier query's answer arrives last", async () => {
+    const trip = addTrip("131");
+    mockSearch();
+    const { user, dialog, suggestSpy } = await openAddSheet(trip);
+    const early = deferred<string[]>();
+    const late = deferred<string[]>();
+    suggestSpy.mockReturnValueOnce(early.promise).mockReturnValueOnce(late.promise);
+    const input = within(dialog).getByLabelText("장소 검색");
+    await user.click(input);
+
+    try {
+      vi.useFakeTimers();
+      fireEvent.change(input, { target: { value: "메타" } });
+      await advance(350);
+      fireEvent.change(input, { target: { value: "메타세쿼" } });
+      await advance(350);
+      // 두 요청이 모두 실제로 나가 있어야 늦은 응답을 겨룰 수 있다
+      expect(suggestSpy.mock.calls.map((call) => call[1])).toEqual(["메타", "메타세쿼"]);
+
+      await act(async () => late.resolve(["메타세쿼이아길"]));
+      await act(async () => early.resolve(["메타 늦게 온 말"]));
+
+      expect(suggestionTexts(dialog)).toEqual(["메타세쿼이아길"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not run a search that was waiting before the pick, and the next picked result empties the box", async () => {
+    const trip = addTrip("132");
+    const searchSpy = mockSearch(
+      kakaoCandidate("9002", "메타세쿼이아길", { publicMatch: { result: "match", places: [publicPlace("메타세쿼이아길", "T-90")] } }),
+    );
+    const { user, dialog, suggestSpy } = await openAddSheet(trip);
+    suggestSpy.mockResolvedValue(["메타세쿼이아길"]);
+    const input = within(dialog).getByLabelText("장소 검색");
+    await user.click(input);
+
+    try {
+      vi.useFakeTimers();
+      fireEvent.change(input, { target: { value: "메타세쿼" } });
+      await advance(350);
+      expect(suggestionTexts(dialog)).toEqual(["메타세쿼이아길"]);
+      // 한 글자 더 쳐서 새 검색이 대기에 들어갔다가, 350ms 안에 다시 앞 질의로 돌아온다 - 목록은 앞 질의의 것이라 다시 보인다
+      fireEvent.change(input, { target: { value: "메타세쿼이" } });
+      expect(suggestionList(dialog)).not.toBeInTheDocument();
+      await advance(100);
+      fireEvent.change(input, { target: { value: "메타세쿼" } });
+      fireEvent.click(suggestionLines(dialog)[0]);
+      const callsAtPick = searchSpy.mock.calls.length;
+
+      await advance(400);
+
+      // 대기 중이던 '메타세쿼' 검색은 지워졌다 - 마지막 검색은 고른 말이고, 그 뒤로 더 불리지 않았다
+      expect(searchSpy).toHaveBeenCalledTimes(callsAtPick);
+      expect(searchSpy).toHaveBeenLastCalledWith("132", { query: "메타세쿼이아길" }, expect.anything());
+      expect(suggestSpy.mock.calls.map((call) => call[1])).toEqual(["메타세쿼"]);
+      expect(input).toHaveValue("메타세쿼이아길");
+
+      // 타이머 자리를 비웠다면 검색 결과를 고른 뒤 페이지가 비운 검색 칸이 그대로 비워진다
+      fireEvent.click(within(dialog).getByRole("button", { name: "메타세쿼이아길 선택, 바로 담기" }));
+      await advance(0);
+      expect(within(dialog).getByRole("region", { name: "추가할 장소 목록" })).toHaveTextContent("메타세쿼이아길");
+      expect(input).toHaveValue("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the list while focus walks along its lines, closes it when focus leaves the last line, and on Escape", async () => {
+    const trip = addTrip("133");
+    mockSearch();
+    const { user, dialog, suggestSpy } = await openAddSheet(trip);
+    suggestSpy.mockResolvedValue(["메타세쿼이아길", "메타세쿼이아 랜드"]);
+    const input = within(dialog).getByLabelText("장소 검색");
+    await user.type(input, "메타세쿼");
+    await within(dialog).findByRole("list", { name: "완성 검색어" });
+
+    await user.tab();
+    expect(suggestionLines(dialog)[0]).toHaveFocus();
+    expect(suggestionList(dialog)).toBeInTheDocument();
+    await user.tab();
+    expect(suggestionLines(dialog)[1]).toHaveFocus();
+    expect(suggestionList(dialog)).toBeInTheDocument();
+    await user.tab();
+    expect(suggestionList(dialog)).not.toBeInTheDocument();
+
+    // 초점이 다시 들어오면 열리고, 검색 칸에서 Escape 를 누르면 닫힌다
+    await user.click(input);
+    expect(suggestionList(dialog)).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(suggestionList(dialog)).not.toBeInTheDocument();
+    expect(input).toHaveFocus();
+
+    // 다시 치면 새 말이 열린다
+    await user.type(input, "이");
+    expect(await within(dialog).findByRole("list", { name: "완성 검색어" })).toBeInTheDocument();
+    expect(suggestSpy).toHaveBeenLastCalledWith("133", "메타세쿼이", expect.anything());
+  });
+
+  it("announces the list, closes it on Escape from a line, and keeps it only for a blur into its own lines", async () => {
+    const trip = addTrip("141");
+    mockSearch();
+    const { user, dialog, suggestSpy } = await openAddSheet(trip);
+    suggestSpy.mockResolvedValue(["메타세쿼이아길", "메타세쿼이아 랜드"]);
+    const input = within(dialog).getByLabelText("장소 검색");
+    await user.type(input, "메타세쿼");
+    await within(dialog).findByRole("list", { name: "완성 검색어" });
+    expect(within(dialog).getByText("완성 검색어 2개")).toHaveAttribute("role", "status");
+
+    // 줄에 가 있을 때 Escape - 목록이 닫히고 초점은 검색 칸으로
+    await user.tab();
+    expect(suggestionLines(dialog)[0]).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(suggestionList(dialog)).not.toBeInTheDocument();
+    expect(input).toHaveFocus();
+    expect(within(dialog).queryByText("완성 검색어 2개")).not.toBeInTheDocument();
+
+    // 실제 브라우저는 blur 와 focus 를 따로 보낸다 - 제 줄로 가는 blur 는 목록을 남기고, 밖으로 가는 blur 는 닫는다
+    fireEvent.focus(input);
+    expect(suggestionList(dialog)).toBeInTheDocument();
+    fireEvent.blur(input, { relatedTarget: suggestionLines(dialog)[0] });
+    expect(suggestionList(dialog)).toBeInTheDocument();
+    fireEvent.blur(input, { relatedTarget: document.body });
+    expect(suggestionList(dialog)).not.toBeInTheDocument();
+  });
+
+  it("brings focus back to the search box when a line is picked with the keyboard", async () => {
+    const trip = addTrip("140");
+    const searchSpy = mockSearch();
+    const { user, dialog, suggestSpy } = await openAddSheet(trip);
+    suggestSpy.mockResolvedValue(["메타세쿼이아길", "메타세쿼이아 랜드"]);
+    const input = within(dialog).getByLabelText("장소 검색");
+    await user.type(input, "메타세쿼");
+    await within(dialog).findByRole("list", { name: "완성 검색어" });
+
+    await user.tab();
+    await user.tab();
+    await user.keyboard("{Enter}");
+
+    // 누른 줄이 목록과 함께 사라져도 초점이 body 로 떨어지지 않는다
+    expect(input).toHaveValue("메타세쿼이아 랜드");
+    expect(input).toHaveFocus();
+    expect(suggestionList(dialog)).not.toBeInTheDocument();
+    expect(searchSpy).toHaveBeenLastCalledWith("140", { query: "메타세쿼이아 랜드" }, expect.anything());
+  });
+
+  it("keeps the place search results and shows no error text when the completed words fail", async () => {
+    const trip = addTrip("134");
+    mockSearch(kakaoCandidate("9003", "메타세쿼이아길"));
+    const { user, dialog, suggestSpy } = await openAddSheet(trip);
+    suggestSpy.mockRejectedValue(new Error("offline"));
+
+    await user.type(within(dialog).getByLabelText("장소 검색"), "메타세쿼");
+
+    expect(await within(dialog).findByRole("button", { name: "메타세쿼이아길 선택" })).toBeInTheDocument();
+    await waitFor(() => expect(suggestSpy).toHaveBeenCalledTimes(1));
+    expect(suggestionList(dialog)).not.toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent("불러오지 못했어요");
+  });
+
+  it("shows no list for fewer than two characters, nor while the typed words are still waiting for their own answer", async () => {
+    const trip = addTrip("135");
+    mockSearch();
+    const { user, dialog, suggestSpy } = await openAddSheet(trip);
+    suggestSpy.mockResolvedValue(["메타세쿼이아길"]);
+    const input = within(dialog).getByLabelText("장소 검색");
+    await user.click(input);
+
+    try {
+      vi.useFakeTimers();
+      fireEvent.change(input, { target: { value: "메" } });
+      await advance(400);
+      expect(suggestSpy).not.toHaveBeenCalled();
+      expect(suggestionList(dialog)).not.toBeInTheDocument();
+
+      fireEvent.change(input, { target: { value: "메타세쿼" } });
+      expect(suggestionList(dialog)).not.toBeInTheDocument();   // 디바운스 대기 중
+      await advance(350);
+      expect(suggestionTexts(dialog)).toEqual(["메타세쿼이아길"]);
+
+      // 새 글자를 치는 순간 옛 목록은 숨는다(그 말의 답이 아니다)
+      fireEvent.change(input, { target: { value: "메타세쿼이" } });
+      expect(suggestionList(dialog)).not.toBeInTheDocument();
+      // 두 글자 아래로 줄이면 다시 묻지 않고 목록을 비운다
+      fireEvent.change(input, { target: { value: "메" } });
+      await advance(350);
+      expect(suggestSpy).toHaveBeenCalledTimes(1);
+      fireEvent.change(input, { target: { value: "메타세쿼" } });
+      expect(suggestionList(dialog)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the list for input with trailing spaces, asking with the trimmed text", async () => {
+    const trip = addTrip("136");
+    mockSearch();
+    const { user, dialog, suggestSpy } = await openAddSheet(trip);
+    suggestSpy.mockResolvedValue(["메타세쿼이아길"]);
+    const input = within(dialog).getByLabelText("장소 검색");
+    await user.click(input);
+
+    try {
+      vi.useFakeTimers();
+      fireEvent.change(input, { target: { value: "메타세쿼 " } });
+      await advance(350);
+
+      expect(suggestSpy).toHaveBeenCalledExactlyOnceWith("136", "메타세쿼", expect.anything());
+      expect(suggestionTexts(dialog)).toEqual(["메타세쿼이아길"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hides the list when the box already holds one of its words", async () => {
+    const trip = addTrip("137");
+    mockSearch();
+    const { user, dialog, suggestSpy } = await openAddSheet(trip);
+    suggestSpy.mockResolvedValue(["메타세쿼", "메타세쿼이아길"]);
+
+    await user.type(within(dialog).getByLabelText("장소 검색"), "메타세쿼");
+
+    await waitFor(() => expect(suggestSpy).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(suggestionList(dialog)).not.toBeInTheDocument();
+  });
+
+  it("hides the list while the own-place form is open, even with focus in the search box", async () => {
+    const trip = addTrip("138");
+    mockSearch();
+    const { user, dialog, suggestSpy } = await openAddSheet(trip);
+    suggestSpy.mockResolvedValue(["메타세쿼이아길"]);
+    const input = within(dialog).getByLabelText("장소 검색");
+    await user.type(input, "메타세쿼");
+    await within(dialog).findByRole("list", { name: "완성 검색어" });
+
+    await user.click(within(dialog).getByRole("button", { name: "찾는 곳이 없어요 · 직접 적기" }));
+    const form = await within(dialog).findByRole("form", { name: "나만의 장소" });
+    await user.click(input);
+
+    expect(input).toHaveFocus();
+    expect(suggestionList(dialog)).not.toBeInTheDocument();
+
+    // 칸을 닫으면 같은 초점, 같은 글인데 목록이 다시 보인다 - 숨긴 것은 칸이 열려 있어서다
+    await user.click(within(form).getByRole("button", { name: "취소" }));
+    await user.click(input);
+    expect(suggestionTexts(dialog)).toEqual(["메타세쿼이아길"]);
+  });
+
+  it("aborts the completed-words request in flight when the sheet closes", async () => {
+    const trip = addTrip("139");
+    mockSearch();
+    const { user, dialog, suggestSpy } = await openAddSheet(trip);
+    let signal: AbortSignal | undefined;
+    suggestSpy.mockImplementation((_tripId, _query, control) => {
+      signal = control?.signal;
+      return new Promise<string[]>(() => {});
+    });
+
+    await user.type(within(dialog).getByLabelText("장소 검색"), "메타세쿼");
+    await waitFor(() => expect(signal).toBeDefined());
+    expect(signal?.aborted).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "닫기" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "장소 추가" })).not.toBeInTheDocument());
+    expect(signal?.aborted).toBe(true);
   });
 });
