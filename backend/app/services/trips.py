@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 import re
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 import time as monotonic_time
 from datetime import date, datetime, timedelta, time
@@ -1888,12 +1889,18 @@ def _search_by_suggestions(
     near: list[KakaoLocalPlace] = []
     other: list[KakaoLocalPlace] = []
     via: dict[str, str] = {}
-    for word in words:
+
+    def find(word: str) -> list[KakaoLocalPlace]:
         try:
-            found = _search_near(provider, word, center)
+            return _search_near(provider, word, center)
         except Exception as error:
             logger.warning("trip_place_search_suggestion_failed error=%s", type(error).__name__)
-            continue
+            return []
+
+    # 말들을 함께 부른다 - 차례로면 카카오 대기가 말 수만큼 쌓인다(최대 6번). 줄은 말 순서 그대로 모은다
+    with ThreadPoolExecutor(max_workers=PLACE_SUGGEST_FALLBACK_WORDS) as pool:
+        found_by_word = list(pool.map(find, words))
+    for word, found in zip(words, found_by_word):
         for place in found:
             if place.external_place_id in via:
                 continue
@@ -1909,6 +1916,9 @@ def _nearby(place: KakaoLocalPlace, center: dict[str, float | None]) -> bool | N
     if center.get("latitude") is None or center.get("longitude") is None:
         return None
     return place.distance_meters is not None and place.distance_meters <= PLACE_SEARCH_RADIUS_METERS
+
+
+PREMATCH_FILL_BUDGET_MS = 800   # 지번 붙이기 한도 - 데운 DB 는 20~70ms, 차가운 DB 는 15곳 2~4초(10/12 실측)
 
 
 def _prematch(db: Session, places: list[KakaoLocalPlace]) -> list[dict[str, object] | None]:
@@ -1927,7 +1937,8 @@ def _prematch(db: Session, places: list[KakaoLocalPlace]) -> list[dict[str, obje
     except Exception as error:
         logger.warning("trip_place_search_prematch_failed error=%s", type(error).__name__)   # 검색어 · 장소 값은 싣지 않는다
         return [None] * len(places)
-    return address_fill.with_fill(db, rows, answers)   # 방식1: match 가 아닌 줄에 건물 · 땅 지번(같은 세션, 질의 1번)
+    # 방식1: match 가 아닌 줄에 건물 · 땅 지번(같은 세션, 질의 1번). 한도를 넘으면 그 줄은 None - 고른 뒤 다시 맞춰 본다
+    return address_fill.with_fill(db, rows, answers, budget_ms=PREMATCH_FILL_BUDGET_MS)
 
 
 def _trip_area(db: Session, trip_id: int) -> TravelArea | None:

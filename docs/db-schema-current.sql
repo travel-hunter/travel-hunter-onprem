@@ -2574,6 +2574,12 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX ix_public_places_name_trgm ON public.public_places USING gin (name public.gin_trgm_ops);
 
 --
+-- 장소 검색 첫 요청 데우기 (0052_pg_prewarm) - 사람이 쓴 요약. 확장만, 앱이 뜰 때 public_places 표 · 색인을 미리 읽는다.
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_prewarm;
+
+--
 -- PostgreSQL database dump complete
 --
 

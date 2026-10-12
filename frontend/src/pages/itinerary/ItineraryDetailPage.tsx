@@ -94,7 +94,7 @@ import {
   saveDraft,
 } from "../../utils/draftStorage";
 import { REGION_NAMES } from "../../components/map/regionMapEngine";
-import { hasPolicySaving, tripStatus } from "../../utils";
+import { hasPolicySaving, placeSearchDelay, tripStatus } from "../../utils";
 import { DESKTOP_MEDIA_QUERY } from "../../lib/useMediaQuery";
 import { FriendInvitePanel } from "./FriendInvitePanel";
 import { DraftRestoreNotice } from "./_shared";
@@ -6184,7 +6184,7 @@ export function PlaceEditorSheet({
     searchDebounceTimerRef.current = window.setTimeout(() => {
       searchDebounceTimerRef.current = null;
       onSearchChange(query);
-    }, PLACE_SEARCH_DEBOUNCE_MS);
+    }, placeSearchDelay(query, PLACE_SEARCH_DEBOUNCE_MS));
   };
 
   return (

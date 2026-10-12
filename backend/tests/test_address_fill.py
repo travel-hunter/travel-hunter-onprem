@@ -1,6 +1,9 @@
 import logging
 from contextlib import nullcontext
 
+from psycopg.errors import QueryCanceled
+from sqlalchemy.exc import OperationalError
+
 from app.services import address_fill
 from app.services.geo_reference import GeoHit
 from app.services.public_places import PlaceMatchInput
@@ -26,7 +29,7 @@ def answers():
 def test_only_rows_without_a_match_are_located_in_one_call_and_parcels_need_thirty_meters(monkeypatch) -> None:
     calls = []
 
-    def fake_locate(db, points):
+    def fake_locate(db, points, **_):
         calls.append(list(points))
         return [GeoHit("parcel", 11, "1213010200100010006", "여수시 수정동 1-6", 34.7447, 127.7677, 2.0),
                 GeoHit("parcel", 12, "1213010200100010007", "여수시 수정동 1-7", 34.7001, 127.7001, 31.0)]
@@ -40,7 +43,7 @@ def test_only_rows_without_a_match_are_located_in_one_call_and_parcels_need_thir
 
 
 def test_a_failed_lookup_leaves_every_fill_empty_and_logs_only_the_error_name(monkeypatch, caplog) -> None:
-    def broken(db, points):
+    def broken(db, points, **_):
         raise RuntimeError("relation geo.building does not exist")
 
     monkeypatch.setattr(address_fill.geo_repository, "locate", broken)
@@ -53,13 +56,40 @@ def test_a_failed_lookup_leaves_every_fill_empty_and_logs_only_the_error_name(mo
         assert value not in caplog.text
 
 
+def statement_timeout_error() -> OperationalError:
+    """Postgres 가 statement_timeout 으로 끊은 것과 같은 꼴(SQLSTATE 57014)."""
+
+    return OperationalError("SELECT", {}, QueryCanceled("canceling statement due to statement timeout"))
+
+
+def test_a_lookup_over_the_budget_hands_the_unmatched_rows_back_unmatched(monkeypatch) -> None:
+    # 검색 미리 맞춤: 시간 안에 못 끝내면 '위치 찍기'로 단정하지 않고 null - 화면이 고른 뒤 그 한 곳만 다시 맞춰 본다(주소 채움 포함)
+    budgets = []
+
+    def too_slow(db, points, *, timeout_ms=None):
+        budgets.append(timeout_ms)
+        raise statement_timeout_error()
+
+    monkeypatch.setattr(address_fill.geo_repository, "locate", too_slow)
+    out = address_fill.with_fill(FakeDb(), ROWS, answers(), budget_ms=800)
+    assert budgets == [800]
+    assert out == [{"result": "match", "places": [], "fill": None}, None, None, None]
+
+
+def test_other_failures_under_a_budget_still_mean_no_fill(monkeypatch) -> None:
+    # geo 표가 없는 서버 등 - 다시 물어도 같으니 지금처럼 fill 없음(위치 찍기)
+    monkeypatch.setattr(address_fill.geo_repository, "locate", lambda db, points, **_: (_ for _ in ()).throw(RuntimeError("no postgis")))
+    out = address_fill.with_fill(FakeDb(), ROWS, answers(), budget_ms=800)
+    assert [answer and answer["fill"] for answer in out] == [None, None, None, None] and out[2] is not None
+
+
 def test_a_db_without_savepoints_counts_as_a_failed_lookup(monkeypatch) -> None:
-    monkeypatch.setattr(address_fill.geo_repository, "locate", lambda db, points: [GeoHit("building", 1, "1213010200100010006", "x", 1.0, 2.0, 0.0)])
+    monkeypatch.setattr(address_fill.geo_repository, "locate", lambda db, points, **_: [GeoHit("building", 1, "1213010200100010006", "x", 1.0, 2.0, 0.0)])
     out = address_fill.with_fill(object(), ROWS, answers())   # 가짜 db object() 에는 begin_nested 가 없다
     assert [answer and answer["fill"] for answer in out] == [None, None, None, None]
 
 
 def test_all_matches_do_not_touch_the_db(monkeypatch) -> None:
-    monkeypatch.setattr(address_fill.geo_repository, "locate", lambda db, points: (_ for _ in ()).throw(AssertionError("called")))
+    monkeypatch.setattr(address_fill.geo_repository, "locate", lambda db, points, **_: (_ for _ in ()).throw(AssertionError("called")))
     out = address_fill.with_fill(FakeDb(), [ROWS[0]], [{"result": "match", "places": []}])
     assert out == [{"result": "match", "places": [], "fill": None}]

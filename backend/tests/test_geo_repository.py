@@ -12,6 +12,9 @@ class FakeResult:
     def first(self):
         return self._rows[0] if self._rows else None
 
+    def scalar_one(self):
+        return self._rows[0][0]
+
 
 class FakeSession:
     def __init__(self, rows):
@@ -38,6 +41,23 @@ def test_locate_sends_every_point_in_one_covers_query_and_keeps_the_order() -> N
     assert params == {"ys": [36.5, 36.6, 36.4], "xs": [127.3, 127.4, 127.2]}
     # 경계 위 점도 품는다(ST_Covers), 법정동이 없어도 결과를 버리지 않는다(LEFT JOIN)
     assert "st_covers" in sql.lower() and "st_contains" not in sql.lower() and "left join geo.legal_dong" in sql.lower()
+
+
+def test_locate_with_a_timeout_limits_only_the_covers_query_and_puts_the_old_value_back() -> None:
+    class TimedSession(FakeSession):
+        def execute(self, statement, params=None):
+            self.calls.append((str(statement), params))
+            return FakeResult([("30s",)] if "current_setting" in str(statement) else self.rows)
+
+    session = TimedSession([])
+    geo_repository.locate(session, [(36.5, 127.3)], timeout_ms=800)
+    steps = [("current_setting" in sql, "set_config" in sql, "st_covers" in sql.lower(), params) for sql, params in session.calls]
+    assert steps == [
+        (True, False, False, None),
+        (False, True, False, {"value": "800"}),
+        (False, False, True, {"ys": [36.5], "xs": [127.3]}),
+        (False, True, False, {"value": "30s"}),   # 같은 트랜잭션의 다음 질의에 남기지 않는다
+    ]
 
 
 def test_locate_with_no_points_does_not_touch_the_db() -> None:

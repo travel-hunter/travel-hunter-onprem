@@ -16,9 +16,9 @@
 
 ## Recent Validation
 
-- PASS: backend `python -m pytest` 1509 passed · 27 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - Windows 권한 검사, 무관). PostGIS 시험(geo 조회 · 저장 SAVEPOINT · 적재 도구)은 일회용 PostGIS 에서 통과.
-- PASS: `npm run typecheck`, `npm run test:mojibake`, `vite build`, `npm run test:e2e:containers` 13/13(한 칸 정리 뒤 4173 다시 빌드, 로컬 DB `0051`), `git diff --check`, 바뀐 파일 U+FFFD 0건.
-- 부분 PASS: `npx vitest run` 736개 중 730개 - 실패 6개는 모두 `mypage.test.tsx`(쌓인 시험 일정 탓, 무관). `npm test` 래퍼는 로컬에 `CLOUDFLARE_TUNNEL_TOKEN` 이 없어 compose 보간에서 멈춘다(시험 전 단계).
+- PASS: backend `python -m pytest` 1518 passed · 27 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - Windows 권한 검사, 무관). PostGIS 시험(geo 조회 · 저장 SAVEPOINT · 적재 도구)은 일회용 PostGIS 에서 통과.
+- PASS: `npm run typecheck`, `npm run test:mojibake`, `vite build`, `npm run test:e2e:containers` 13/13(첫 검색 데우기 뒤 4173 다시 빌드, 로컬 DB `0052` - 1건은 Windows ERR_NO_BUFFER_SPACE 로 멈춰 다시 돌려 통과), `git diff --check`, 바뀐 파일 U+FFFD 0건.
+- 부분 PASS: `npx vitest run` 737개 중 731개 - 실패 6개는 모두 `mypage.test.tsx`(쌓인 시험 일정 탓, 무관). `npm test` 래퍼는 로컬에 `CLOUDFLARE_TUNNEL_TOKEN` 이 없어 compose 보간에서 멈춘다(시험 전 단계).
 - 부분 PASS: `alembic upgrade head --sql` 처음부터는 기존 `0044` 에서 멈춘다(develop 그대로). `0049_trip_place_public_category:head --sql` 통과, 로컬 DB 실제 `upgrade head` 0050 통과(보호 표 6개 건수 전후 같음, 덤프는 저장소 밖 · 소유자 전용).
 - PASS: 로컬 전국 적재(2026-09 판) 6,601초 - 건물 14,346,608 · 땅 19,406,691(농지 · 임야 제외) · 법정동 18,846, 이름 없는 옛 법정동코드 줄 45,515 뺌(0.32%, 사용자 결정),
   geo 표 건물 5,046MB · 땅 9,622MB, DB 15GB, 적재 중 최대 DB 15,097MB · WAL 1,024MB.
@@ -31,6 +31,9 @@
 - PASS(한 칸 정리, 컨테이너 데운 상태): 스타벅@전남 전체 15곳 대신 찾기 0.64초, 메타세쿼@담양 7곳(주변 5) 0.41초, 스타벅스@서울 1 · 2 · 3쪽 15곳씩 0.52 · 0.28 · 0.31초,
   홈 스타벅 · 메타세쿼 · 순천만습 15곳씩 대신 찾기 0.16~0.19초. 막 띄운 뒤 첫 검색은 DB 캐시가 차가워 최대 5.9초. 사용자 보고('타임스퀘'가 지역 일정에서 0곳 - 지역 밖 완성어가 관광지만)를 전국 완성어로 채워 고쳤다.
   계획 교차 검토 2갈래 → 과제마다 구현 · 검토 → 브랜치 최종 검토 1회(Critical 0 · Important 0).
+- PASS(첫 검색 데우기, 사용자 보고 '스타벅 첫 검색이 안 뜬다' - 차가운 DB 6.6초): 앱이 뜰 때 `pg_prewarm`(`0052`)으로 public_places 표 · 색인을 읽고 PostGIS 를 한 번 부른다(로컬 6.6초, 뒤에서),
+  검색 지번 붙이기 0.8초 한도(넘으면 match 아닌 줄 `publicMatch` null - 고른 뒤 다시 맞춤), 대신 찾기 완성어 3개 동시 호출, 낱자로 끝난 말은 1.2초 뒤 요청.
+  DB 재시작 + 캐시 비운 최악 7.6초 → 2.4초(같은 말 다시 1.07초), 켜진 DB 의 새 지역 첫 검색 0.7~1.2초(지번 모두 붙음). 최종 검토 1회(Critical 0 · Important 0).
 ## Active Risks
 
 ### 장소 담기 3단계 + 주소 채움(`feature/place-add-flow`)
@@ -45,12 +48,15 @@
 - 월 갱신: 브이월드 전체데이터(건물 AL_D010 · 땅 AL_D002, 시도 16개)를 사람이 받아 돌린다. 구조 검사는 넘길 수 없고 행 수만 `--accept-row-count-change` 로 받는다.
 - 완성 검색어 `0051`: `pg_trgm` 확장 + `public_places.name` GIN(108만 행에 약 78MB, 로컬 7초, CONCURRENTLY). 운영 승격 게이트는 0050 과 같이 물려받는다.
   서버 DB 사용자가 `CREATE EXTENSION pg_trgm` 을 만들 수 있는지(신뢰 확장 - DB 소유자면 된다) 배포 전에 확인한다.
-- 카카오 호출이 늘었다: 일정 검색 1쪽 1~2번 · 2쪽 최대 5번 · 3쪽 최대 6번(서버가 쪽마다 앞 쪽을 다시 부른다), 덜 친 말로 0곳이면 대신 찾기까지 최대 8번(직렬),
+- 첫 검색 데우기 `0052`: `pg_prewarm` 은 신뢰 확장이 아니다(슈퍼유저 · RDS 마스터 - 0050 postgis 와 같은 조건). 데우기는 운영체제 캐시에 약 460MB 를 올린다 - 서버 메모리가 작으면 다른 캐시를 밀어낸다.
+  geo 건물 · 땅(11GB)은 데울 수 없어 차가운 지역은 지번이 한도를 넘어 표시 없이 오고, 앱이 뜬 직후 약 7초 안의 검색은 예전처럼 차갑다.
+- 카카오 호출이 늘었다: 일정 검색 1쪽 1~2번 · 2쪽 최대 5번 · 3쪽 최대 6번(서버가 쪽마다 앞 쪽을 다시 부른다), 덜 친 말로 0곳이면 대신 찾기까지 최대 8번(말 3개는 동시),
   홈은 최대 4번. 화면이 요청을 끊어도 서버는 끝까지 돈다 - 배포 뒤 카카오 일 사용량과 0곳 검색 응답 시간을 한 번 본다. 지역 일정의 3자 이상 덜 친 말은 전국 완성어 질의가 하나 더 붙는다.
 - '도 전체' 일정은 도 공공데이터 중앙값 둘레 20km 만 먼저 본다(실측: 스타벅스@경북 · 경기 4/6, 남이섬@강원 2/6). 예전 전국 검색보다 나빠지지는 않는다.
   더 맞추려면 카카오 `rect`(시도 사각 범위)로 1차를 부르는 후속안 - 사용자 결정(2026-10-12): 지금은 그대로.
 - 최종 검토 Minor(기록만): 반경 쪽 0곳 + 전국 쪽 실패도 대신 찾기가 돈다(부분 장애 때 대기 증가, 드묾), '더 보기'는 줄 수가 쪽 × 15 와 같아야 보여 카카오 순서가 쪽마다 바뀌면
   '여기까지예요' 없이 사라질 수 있다, 정책 탭 위치로 찾기 · 지도에서 찾기도 대신 찾은 줄을 안내 줄 없이 받는다(계획 0.4 에서 받아들임).
+  첫 검색 데우기 검토 Minor: 대신 찾기 스레드의 경고 줄에 request_id 가 빠진다(contextvars 미전달), 데우기 스레드는 DB 가 끊긴 채 rollback 이 또 실패하면 경고 대신 traceback 을 남긴다.
 - 브라우저로만 볼 것(사용자 확인 목록): 15줄 · '다른 지역' 줄 · '더 보기'가 220px 칸 안에서만 스크롤(360~1440), 더 보기 뒤 초점 · 오류 줄, 홈 카드 지도 크기, 덜 친 말 첫 검색 체감 대기.
 
 ### 공공데이터 장소 기반(`feature/public-places`)

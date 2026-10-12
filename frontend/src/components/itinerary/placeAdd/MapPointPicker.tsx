@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { appDataApi, useAsyncResource, type GeoRef, type ItineraryPlace, type LocateResult, type PlaceSearchItem, type TripAreaCenter } from "../../../api";
 import { loadKakaoMaps, type KakaoMapsNamespace } from "../../../lib/kakaoMap";
+import { placeSearchDelay } from "../../../utils";
 
 export type MapPoint = { latitude: number; longitude: number };
 
@@ -154,7 +155,7 @@ export function MapPointPicker({
           setSearchNote(NO_RESULT);
         },
       );
-    }, SEARCH_DEBOUNCE_MS);
+    }, placeSearchDelay(text, SEARCH_DEBOUNCE_MS));
     return () => {
       window.clearTimeout(timer);
       control.abort();

@@ -296,12 +296,13 @@ def test_alembic_0049_follows_0048() -> None:
     assert script.get_revision("0049_trip_place_public_category").down_revision == "0048_public_places"
 
 
-def test_alembic_0051_follows_0050_and_is_the_only_head() -> None:
+def test_alembic_0052_follows_0051_and_is_the_only_head() -> None:
     backend = Path(__file__).parents[1]
     config = Config(str(backend / "alembic.ini"))
     config.set_main_option("script_location", str(backend / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["0051_public_place_name_trgm"]
+    assert script.get_heads() == ["0052_pg_prewarm"]
+    assert script.get_revision("0052_pg_prewarm").down_revision == "0051_public_place_name_trgm"
     assert script.get_revision("0051_public_place_name_trgm").down_revision == "0050_geo_reference"
     assert script.get_revision("0050_geo_reference").down_revision == "0049_trip_place_public_category"
 
@@ -377,3 +378,9 @@ def test_alembic_0051_builds_the_name_trigram_index_concurrently_outside_the_tra
     # 되돌리기는 색인만 지운다 - pg_trgm 확장은 다른 객체가 쓸 수 있어 남긴다
     assert down.index("COMMIT") < down.index(leftover) < down.index("BEGIN")
     assert "DROP EXTENSION" not in down
+
+
+def test_alembic_0052_only_adds_the_prewarm_extension() -> None:
+    # 데우기 함수만 들인다 - 표 · 색인은 그대로. 되돌리면 확장도 지운다(이 확장에 기대는 객체가 없다)
+    assert "CREATE EXTENSION IF NOT EXISTS pg_prewarm" in render_migration("0052_pg_prewarm.py", "upgrade")
+    assert "DROP EXTENSION IF EXISTS pg_prewarm" in render_migration("0052_pg_prewarm.py", "downgrade")

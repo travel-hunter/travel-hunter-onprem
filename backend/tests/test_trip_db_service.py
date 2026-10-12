@@ -1,4 +1,5 @@
 import logging
+import threading
 from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -39,7 +40,7 @@ from app.schemas.trip import (
 from app.services.geo_reference import GeoHit
 from app.services.kakao_local import KakaoLocalConfigurationError, KakaoLocalPlace
 from app.services import itinerary_recommendations, trips as trip_service
-from tests.test_address_fill import FakeDb as SavepointDb
+from tests.test_address_fill import FakeDb as SavepointDb, statement_timeout_error
 
 
 def make_user(user_id: int = 1, nickname: str = "Test User") -> UserModel:
@@ -211,7 +212,7 @@ def test_search_places_for_trip_adds_a_fill_to_rows_without_a_match(monkeypatch)
     monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: FakeSearchProvider())
     monkeypatch.setattr(trip_service.public_place_service, "match_places", lambda db, rows: [{"result": "match", "places": []}, {"result": "none", "places": []}])
     monkeypatch.setattr(trip_service.address_fill.geo_repository, "locate",
-                        lambda db, points: [GeoHit("building", 31, "1213010200100010006", "여수시 수정동 1-6", 34.7447, 127.7677, 3.0)])
+                        lambda db, points, **_: [GeoHit("building", 31, "1213010200100010006", "여수시 수정동 1-6", 34.7447, 127.7677, 3.0)])
 
     rows = trip_service.search_places_for_trip(SavepointDb(), make_user(), trip_handle="7", query="오동도")
 
@@ -224,7 +225,7 @@ def test_search_places_for_trip_still_answers_when_the_geo_lookup_fails(monkeypa
         def search_keyword(self, *, query: str, size: int = 10):
             return [kakao_place("2", "오동도 선착장", 34.7448, 127.7679)]
 
-    def broken(db, points):
+    def broken(db, points, **_):
         raise RuntimeError("no postgis")
 
     monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: True, raising=False)
@@ -236,6 +237,30 @@ def test_search_places_for_trip_still_answers_when_the_geo_lookup_fails(monkeypa
     rows = trip_service.search_places_for_trip(SavepointDb(), make_user(), trip_handle="7", query="오동도")
 
     assert rows[0]["publicMatch"] == {"result": "none", "places": [], "fill": None}
+
+
+def test_search_places_for_trip_gives_the_geo_lookup_a_time_budget(monkeypatch) -> None:
+    # 차가운 DB 에서 15곳 지번이 2~4초 걸렸다(10/12) - 검색은 0.8초까지만 기다리고, 넘으면 맞추지 않은 줄을 null 로(고를 때 다시 맞춰 본다)
+    budgets: list[object] = []
+
+    class FakeSearchProvider:
+        def search_keyword(self, *, query: str, size: int = 10):
+            return [kakao_place("1", "오동도", 34.7447, 127.7678), kakao_place("2", "오동도 선착장", 34.7448, 127.7679)]
+
+    def too_slow(db, points, *, timeout_ms=None):
+        budgets.append(timeout_ms)
+        raise statement_timeout_error()
+
+    monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: True, raising=False)
+    monkeypatch.setattr(trip_service.trip_repository, "get_trip_travel_area_id", lambda *a: None)
+    monkeypatch.setattr(trip_service, "build_kakao_local_client", lambda: FakeSearchProvider())
+    monkeypatch.setattr(trip_service.public_place_service, "match_places", lambda db, rows: [{"result": "match", "places": []}, {"result": "none", "places": []}])
+    monkeypatch.setattr(trip_service.address_fill.geo_repository, "locate", too_slow)
+
+    rows = trip_service.search_places_for_trip(SavepointDb(), make_user(), trip_handle="7", query="오동도")
+
+    assert budgets == [800]
+    assert [row["publicMatch"] for row in rows] == [{"result": "match", "places": [], "fill": None}, None]
 
 
 def test_search_places_for_trip_still_answers_when_prematching_fails(monkeypatch, caplog) -> None:
@@ -640,6 +665,26 @@ def test_search_places_for_trip_searches_the_top_three_completed_words_when_the_
     assert [row["viaWord"] for row in rows] == ["스타벅스 리저브", "스타벅스커피", "스타벅스 전남", "스타벅스 전남"]
     assert [row["nearby"] for row in rows] == [True, True, False, False]
     assert {query for query, _ in provider.calls} == {"스타벅", "스타벅스 전남", "스타벅스 리저브", "스타벅스커피"}   # 넷째 말은 안 부른다
+
+
+def test_search_places_for_trip_searches_the_completed_words_at_the_same_time(monkeypatch) -> None:
+    # 차가운 첫 검색 대기 줄이기: 세 말을 함께 부른다 - 차례로 부르면 첫 말이 나머지 둘을 기다리다 끝나 아무것도 못 찾는다
+    together = threading.Barrier(3, timeout=2)
+
+    class TogetherKakao(WordKakao):
+        def search_keyword(self, **kwargs):
+            if kwargs["query"] != "스타벅" and "radius" in kwargs:
+                together.wait()
+            return super().search_keyword(**kwargs)
+
+    provider = TogetherKakao({"스타벅스 전남": near_places("a1"), "스타벅스 리저브": near_places("b1"), "스타벅스커피": near_places("c1")})
+    install_near_search(monkeypatch, provider, center=NEAR_CENTER)
+    install_suggestions(monkeypatch, ["스타벅스 전남", "스타벅스 리저브", "스타벅스커피"])
+
+    rows = trip_service.search_places_for_trip(object(), make_user(), trip_handle="7", query="스타벅")
+
+    assert near_ids(rows) == ["a1", "b1", "c1"]   # 함께 불러도 줄은 말 순서 그대로
+    assert [row["viaWord"] for row in rows] == ["스타벅스 전남", "스타벅스 리저브", "스타벅스커피"]
 
 
 def test_search_places_for_trip_does_not_search_completed_words_when_the_typed_word_finds_places(monkeypatch) -> None:

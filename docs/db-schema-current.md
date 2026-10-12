@@ -232,6 +232,12 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 - `CREATE INDEX CONCURRENTLY` 라 `public_places` 쓰기(적재 · 동기화)를 막지 않는다 - 마이그레이션이 이 단계만 트랜잭션 밖에서 돌고(`0049` 와 같은 관례), 만들기 전에 앞선 시도가 남긴 INVALID 색인을 먼저 지워 다시 돌리기가 풀린다. 열 · 제약은 건드리지 않는다.
 - downgrade 는 색인만 지운다(`pg_trgm` 확장은 다른 객체가 쓸 수 있어 남긴다).
 
+장소 검색 첫 요청 데우기 (2026-10-12, `0052_pg_prewarm`):
+
+- `pg_prewarm` 확장만 만든다(없을 때만). 표 · 색인은 그대로. 신뢰 확장이 아니라 슈퍼유저(로컬 · 개발 Postgres 컨테이너의 `POSTGRES_USER`)나 AWS RDS 마스터 사용자가 만든다.
+- 앱이 뜰 때(`app/services/search_warmup.py`) 뒤에서 `public_places` 와 그 색인 4개(약 460MB)를 'read' 방식으로 읽어 운영체제 캐시를 채우고(`shared_buffers` 는 차지하지 않는다) PostGIS 를 한 번 부른다. 차가운 첫 장소 검색 7.6초 → 데운 뒤 0.45초(2026-10-12 로컬 실측).
+- downgrade 는 확장을 지운다(기대는 객체가 없다).
+
 수집 소스·검토 후보 테이블 (2026-09-13, `0038_policy_source_catalog`; `0039_external_source_status_text`는 `external_source_records.status_text`를 Text로 넓혔다):
 
 - `policy_collection_sources`: 코드 소유 수집 소스 카탈로그. `key` UNIQUE, `adapter_key`, `official_url`, `source_category`, `display_name`, `enabled`, `publication_mode`(`review` | `auto_after_reviewed_baseline`, CHECK), `expected_min_records`, 최근 실행 상태(`last_outcome`/`last_collected_at`/`last_successful_at`/`last_error`). 행은 마이그레이션이 아니라 저장소(`ensure_builtin_collection_sources`)가 만든다.

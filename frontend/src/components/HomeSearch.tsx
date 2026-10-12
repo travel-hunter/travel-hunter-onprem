@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { appDataApi, type NearbyCategory, type PlaceSearchItem, type Policy } from "../api";
 import { useAsyncResource } from "../api/useAsyncResource";
-import { tripStatus } from "../utils";
+import { placeSearchDelay, tripStatus } from "../utils";
 import { writeAddPlaceParam } from "../utils/placeHandoff";
 import { kakaoPlaceIdOf } from "./itinerary/placeAdd/usePlaceMatch";
 import { cityOf, NATIONWIDE_REGION } from "../utils/policyPrograms";
@@ -103,7 +103,7 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
           if (!control.signal.aborted) setPlaces([]);
         },
       );
-    }, PLACE_DEBOUNCE_MS);
+    }, placeSearchDelay(placeQuery, PLACE_DEBOUNCE_MS));
     return () => {
       window.clearTimeout(timer);
       control.abort();

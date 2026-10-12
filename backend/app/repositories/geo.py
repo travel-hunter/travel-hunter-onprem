@@ -28,18 +28,28 @@ ORDER BY hit.i
 """)
 
 
+SET_TIMEOUT_SQL = text("SELECT set_config('statement_timeout', :value, true)")   # true: 이 트랜잭션 안에서만
+
+
 def _table(kind: GeoKind) -> str:
     if kind not in TABLES:
         raise ValueError(f"unknown geo kind: {kind}")
     return f"geo.{kind}"
 
 
-def locate(db: Session, points: Sequence[tuple[float, float]]) -> list[GeoHit | None]:
-    """(위도, 경도) 마다 품은 건물 · 땅. 없으면 None. 순서는 points 그대로."""
+def locate(db: Session, points: Sequence[tuple[float, float]], *, timeout_ms: int | None = None) -> list[GeoHit | None]:
+    """(위도, 경도) 마다 품은 건물 · 땅. 없으면 None. 순서는 points 그대로.
+    timeout_ms 를 주면 이 질의만 그 시간으로 끊는다(넘으면 Postgres 가 57014 로 끊는다 - 부르는 쪽이 SAVEPOINT 로 감싼다). 끝나면 앞 값을 되돌린다."""
 
     if not points:
         return []
+    previous = None
+    if timeout_ms is not None:
+        previous = db.execute(text("SELECT current_setting('statement_timeout')")).scalar_one()
+        db.execute(SET_TIMEOUT_SQL, {"value": str(timeout_ms)})
     rows = db.execute(LOCATE_SQL, {"ys": [lat for lat, _ in points], "xs": [lng for _, lng in points]}).all()
+    if previous is not None:
+        db.execute(SET_TIMEOUT_SQL, {"value": previous})
     hits: list[GeoHit | None] = [None] * len(points)
     for index, kind, feature_id, pnu, la, lo, distance, dong_name in rows:
         hits[index - 1] = GeoHit(kind, int(feature_id), pnu, jibun_address(dong_name or "", pnu), float(la), float(lo), float(distance))

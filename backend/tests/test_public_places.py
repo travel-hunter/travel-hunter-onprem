@@ -606,7 +606,7 @@ def test_match_route_needs_login_and_answers_in_camel_case(db: Session) -> None:
 def test_match_route_adds_the_address_fill_when_nothing_matches(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     # 홈에서 넘어온 장소도 검색 결과와 같은 갈래 - match 가 아니면 건물 · 땅 지번이 fill 로 실린다(조회는 SAVEPOINT 안에서 돈다)
     monkeypatch.setattr(address_fill.geo_repository, "locate",
-                        lambda session, points: [GeoHit("building", 31, "1213010200100010006", "여수시 수정동 1-6", 34.7447, 127.7677, 3.0)])
+                        lambda session, points, **_: [GeoHit("building", 31, "1213010200100010006", "여수시 수정동 1-6", 34.7447, 127.7677, 3.0)])
     app.dependency_overrides[get_optional_db] = lambda: db
     app.dependency_overrides[get_current_user] = lambda: USER
     try:

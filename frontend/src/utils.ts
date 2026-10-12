@@ -130,3 +130,10 @@ export function formatDottedPolicyDeadline(deadline: string | null | undefined) 
 export function money(value: number) {
   return new Intl.NumberFormat("ko-KR").format(value);
 }
+
+/* 한글을 치는 중 낱자로 끝나면('스타ㅂ') 그 말로는 못 찾고 덜 친 말 대신 찾기(카카오 최대 8번)만 돈다 - 장소 검색을 더 늦게 보낸다.
+   거기서 멈춰 있으면 그래도 보낸다 */
+const BARE_JAMO_TAIL = /[ㄱ-ㆎ]$/;   // 한글 호환 자모(ㄱ ~ ㆎ)
+export function placeSearchDelay(query: string, base: number): number {
+  return BARE_JAMO_TAIL.test(query.trim()) ? 1200 : base;
+}
