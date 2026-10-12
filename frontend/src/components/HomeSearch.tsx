@@ -18,7 +18,8 @@ import "../styles/policy-map.css";
 
 /* 홈 통합 검색(시안 v56 · v57). 검색창은 모양 그대로 입력이 되고 그 아래 자리가 결과로 바뀐다 - 다른 화면으로 가지 않는다.
    주소에는 찾을 말(q)과 연 장소의 카카오 장소 ID(pl)만 둔다 - 장소 값은 placeMemory 에서 꺼내고, 없으면 같은 말로 다시 찾는다(카카오 운영정책).
-   층: 검색(q) → 장소 카드(pl) → 이 근처로 이어 본 장소 카드(lv 2, 3 …, 앞 장소의 ID는 from). 치는 동안은 같은 층이라 기록이 쌓이지 않는다. */
+   층: 검색(q) → 장소 카드(pl) → 이 근처로 이어 본 장소 카드(lv 2, 3 …, 앞 장소의 ID는 from). 치는 동안은 같은 층이라 기록이 쌓이지 않는다.
+   친 말은 멈췄을 때(장소 검색과 같은 지연) · 칸을 떠날 때만 주소에 쓴다 - 글자(낱자)마다 주소창이 바뀌지 않게(10/12 사용자 확인). */
 const EXAMPLES = ["반값여행", "숙박세일", "여수", "오동도", "강릉 카페"];   // 혜택 이름도 - 무엇을 칠지 모를 때(10/3 사용자 조사)
 const MIN_PLACE_QUERY = 2;
 const PLACE_DEBOUNCE_MS = 300;
@@ -70,8 +71,17 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
   const typeText = (value: string) => {
     setText(value);
     writtenRef.current = value;
-    go(withParams({ q: value, pl: null, lv: null, from: null }));
+    // 장소 카드에서 치면 카드를 닫고 결과로 - 층이 바뀌니 바로 쓴다. 결과 층 안에서는 아래 commitText 가 쓴다
+    if (!open || placeId) go(withParams({ q: value, pl: null, lv: null, from: null }));
   };
+  const commitText = () => {
+    if (open && !placeId && text !== q) go(withParams({ q: text }));
+  };
+  useEffect(() => {
+    if (!open || placeId || text === q) return;
+    const timer = window.setTimeout(commitText, placeSearchDelay(text.trim(), PLACE_DEBOUNCE_MS));
+    return () => window.clearTimeout(timer);
+  }, [text, searchParams]);
   const close = () => back(withParams({ q: null, pl: null, lv: null, from: null }));
   /* 이 근처로 이어 본 장소면 앞 장소로(쌓아 둔 기록 한 칸), 아니면 검색 결과로 */
   const level = placeLevelOf(searchParams);
@@ -165,6 +175,8 @@ export function HomeSearch({ policies, avatarLabel }: { policies: Policy[] | nul
               if (!open) go(withParams({ q: "" }));
             }}
             onChange={(event) => typeText(event.target.value)}
+            // 줄을 누르면 먼저 칸을 떠난다 - 그 전에 친 말을 써 둬야 뒤로 왔을 때 같은 말이 보인다
+            onBlur={commitText}
             onKeyDown={(event) => {
               // 검색 키(Enter) = 다 쳤다. 결과는 치는 대로 이미 보이니 초점만 빼 휴대폰 키보드를 내린다 - 결과를 가리지 않게.
               // 한글 조합을 끝내는 Enter 는 뺀다

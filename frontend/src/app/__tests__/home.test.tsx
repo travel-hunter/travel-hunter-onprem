@@ -913,6 +913,9 @@ describe("Travel Hunter app — home", () => {
       // 지역 · 혜택 줄과 장소 목록이 함께 - 장소는 지역 이름이 아니어도 늘 찾는다
       await user.click(searchbox);
       await user.type(searchbox, "오동도");
+      // 치는 동안은 주소에 쓰지 않는다 - 글자(낱자)마다 주소창이 바뀌지 않게. 멈추면 친 말 그대로 쓴다
+      expect(new URLSearchParams(routeLocation().search).get("q")).toBe("");
+      await waitFor(() => expect(new URLSearchParams(routeLocation().search).get("q")).toBe("오동도"));
       const row = await screen.findByRole("button", { name: /오동도.*섬/ });
       expect(row).toHaveTextContent("혜택 1");
       expect(searchPlacesSpy).toHaveBeenLastCalledWith("오동도", expect.anything());
