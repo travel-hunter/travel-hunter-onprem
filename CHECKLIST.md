@@ -10,6 +10,7 @@
   같은 브랜치에 장소 검색 한 칸 정리를 더했다: 일정 검색 15곳씩(`page` 1~3, '더 보기' 45곳) · 일정 지역 20km 먼저 → 전국('다른 지역' 구분 줄, 줄마다 `nearby`),
   덜 친 말('스타벅')은 우리 공공데이터 완성어 상위 3개로 대신 찾기(`viaWord`, Alembic `0051` `pg_trgm` GIN), 홈 검색도 대신 찾기 · 장소 카드 지도 260/360px.
   검색창 밑 완성 검색어 서브창과 `place-suggest` API 는 걷었다(사용자 결정). 계획: `docs/superpowers/plans/2026-10-12-place-search-area-first-list.md`(앞 계획 `2026-10-12-place-search-suggestions.md` 의 순위 규칙을 쓴다).
+- 로그 하루 단위 보관은 PR #91 로 develop 에 머지됐다(`4495d79`). 개발서버의 옛 달 파일 변환이 남았다(단계마다 승인).
 - 공공데이터 장소 기반(2단계)은 PR #90 으로 develop 에 머지됐다(`4612926`).
 - 통합 검색(1단계)은 PR #89 로 develop 에 머지됐다(`bb8c841`).
 - 보류: `feature/error-alerts`(에러 알림, 로그 작업 뒤로).
@@ -91,6 +92,9 @@
 - profile 로 꺼진 서비스는 `--remove-orphans` 로 안 지워진다. 끌 때는 `--profile logarchive rm -sf logarchive`.
 - 5분 주기다. 볼륨 보관 한도(스트림당 200MB)를 넘길 만큼 멈춰 있으면 그 사이는 잃는다. `docker logs` 로 회차 기록을 본다.
 - AWS 로 옮기면 빼 오는 곳이 CloudWatch 로 바뀐다(ASG·private subnet). 보관 형식은 그대로 둔다.
+- (날짜별 보관) 머지 뒤 개발서버에서 일회성 변환을 단계마다 승인받아 돌린다: 옛 달 파일 크기만 먼저 확인(한 달 1GiB 넘으면 convert · verify 가 멈춤) → convert → verify → trace 중복 수 비교.
+  변환이 중간에 멈추면 다시 돌릴 때까지 그 달 줄이 trace 에 두 번 보일 수 있다.
+- (날짜별 보관) 원본 `.legacy-monthly/` 를 지우지 않기로 했다. 가장 오래된 옛 달(2026-09)이 보존 밖으로 나가는 2027-09 전에 정해야 한다 - 그 뒤로는 `remove` 가 거부되어 손으로 지워야 하고, 원본에는 사용자 ID · IP 앞자리가 12개월을 넘겨 남는다.
 
 ### 통합 검색(PR #89, 머지됨)
 

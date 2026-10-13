@@ -9,7 +9,7 @@
 2. `branch-strategy.md`
    - `travel-hunter-onprem` GitHub 소스 오브 트루스와 Semi-Trunk 브랜치 운용 기준.
 3. `log-archive-runbook.md`
-   - 개발서버 로그 장기 보관(`logarchive` 컨테이너 → D: 드라이브): 켜는 방법, 조회, 확인, 멈추기, 주의.
+   - 개발서버 로그 장기 보관(`logarchive` 컨테이너 → D: 드라이브): 켜는 방법, 날짜별 배치·옛 달별 파일 변환, 조회, 확인, 멈추기, 주의.
 
 ## 현재 기준
 
