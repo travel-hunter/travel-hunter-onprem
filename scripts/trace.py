@@ -22,7 +22,7 @@
 --since 는 레코드의 ts 로 직접 거른다(기본 48h). 오래된 이력을 보려면 --since 30d 처럼 늘린다.
 한 번에 읽는 양은 --max-mb 로 제한한다(기본 64MB, 초과 시 최근 쪽만 읽고 알림).
 실시간(--tail)만 컨테이너 로그를 쓴다. --source 로 바꿀 수 있다.
---dir 은 scripts/pull_logs.py 가 빼 둔 장기 보관본(달별, 지난달은 .gz)을 읽는다 - 볼륨에서 회전돼 지워진 기록도 본다.
+--dir 은 scripts/pull_logs.py 가 빼 둔 장기 보관본(YYYY-MM/ 날짜별, 지난 날은 .gz. 변환 전 달별 파일도)을 읽는다 - 볼륨에서 회전돼 지워진 기록도 본다.
 읽기에 실패하면 빈 결과가 아니라 stderr 에 원인을 내고 종료 코드 3 으로 끝난다.
 
 엣지 줄과 앱 줄은 같은 ID 로 묶인다 - Caddy 가 만든 uuid 를 백엔드가 request_id 로 채택하기 때문이다.
@@ -56,6 +56,14 @@ LOG_DIR = "/var/log/travelhunter"
 APP_STEM = "backend"
 EDGE_STEM = "caddy-access"
 DEFAULT_MAX_MB = 64
+# 장기 보관본 이름 - pull_logs.py(쓰기)·convert_log_archive.py(변환)·--dir(읽기)이 함께 쓴다.
+#   맨 위       <stem>-YYYY-MM[.pNN-해시].log[.gz]      옛 달별 파일(변환 전)
+#   YYYY-MM/    <stem>-YYYY-MM-DD[.pNN-해시].log[.gz]   날짜별 파일
+ARCHIVE_NAME = re.compile(
+    rf"^(?P<stem>{re.escape(EDGE_STEM)}|{re.escape(APP_STEM)})-(?P<period>\d{{4}}-\d{{2}}(?:-\d{{2}})?)"
+    r"(?:\.p(?P<part>\d+)-(?P<hash>[0-9a-f]{12}))?\.log(?P<gz>\.gz)?$"
+)
+MONTH_DIR = re.compile(r"\d{4}-\d{2}")
 
 
 # 색은 터미널일 때만. 파이프·--out 이면 끈다(NO_COLOR 도 존중).
@@ -222,25 +230,44 @@ def read_volume_file(stem: str, env: dict[str, str], containers: list[str], max_
     raise LogReadError("볼륨 로그를 읽지 못했다 (컨테이너 접근 실패):\n  " + "\n  ".join(problems or ["대상 컨테이너 없음"]))
 
 
+def archive_files(directory: str) -> list[tuple[str, re.Match]]:
+    """보관 폴더의 (상대 경로, 이름 일치). 맨 위는 옛 달별 이름만, YYYY-MM/ 안은 그 달의 날짜별 이름만 받는다."""
+    found = []
+    for name in os.listdir(directory):
+        path = os.path.join(directory, name)
+        if MONTH_DIR.fullmatch(name) and os.path.isdir(path):
+            for inner in os.listdir(path):
+                match = ARCHIVE_NAME.fullmatch(inner)
+                if match and len(match["period"]) == 10 and match["period"][:7] == name:
+                    found.append((f"{name}/{inner}", match))
+        elif (match := ARCHIVE_NAME.fullmatch(name)) and len(match["period"]) == 7:
+            found.append((name, match))
+    return found
+
+
+def archive_order(match: re.Match) -> tuple:
+    """읽는 순서: 기간("2026-10" 이 "2026-10-01" 보다 앞) → 조각(번호순) → 번호 없는 .gz → 평문 .log."""
+    return match["period"], 2 if not match["gz"] else (0 if match["part"] else 1), int(match["part"] or 0)
+
+
 def read_local_file(stem: str, directory: str, max_bytes: int, cutoff: datetime | None = None):
     """scripts/pull_logs.py 가 빼 둔 보관본을 시간순으로 읽는다. 서버 접속이 필요 없다.
 
-    이름: <stem>-YYYY-MM.pNN-<해시>.log.gz(지난달 조각, 번호순) → <stem>-YYYY-MM.log(이번 달·늦게 온 줄).
-    --since 이전 달은 열지 않고, 최근 파일부터 거꾸로 --max-mb 만큼만 읽는다. 깨진 압축본은 알리고 건너뛴다.
+    이름은 archive_files() - 옛 달별 파일(변환 전)과 YYYY-MM/ 날짜별 파일을 함께 읽는다.
+    --since 이전 기간(달 파일은 달, 날짜 파일은 날로 비교)은 열지 않고, 최근 파일부터 거꾸로 --max-mb 만큼만 읽는다.
+    깨진 압축본은 알리고 건너뛴다. 화면 순서는 render() 가 줄 시각으로 다시 정렬한다.
     """
     if not os.path.isdir(directory):
         raise LogReadError(f"보관 폴더가 없다: {directory}")
-    pattern = re.compile(rf"^{re.escape(stem)}-(\d{{4}}-\d{{2}})(?:\.p(\d+)-[0-9a-f]{{12}})?\.log(\.gz)?$")
-    first_month = cutoff.astimezone(KST).strftime("%Y-%m") if cutoff else ""
+    first_day = cutoff.astimezone(KST).strftime("%Y-%m-%d") if cutoff else ""
     files = sorted(
-        # 한 달 안에서는 조각(번호순) → 번호 없는 압축본 → 평문 .log 순서
-        (match.group(1), 2 if not match.group(3) else (0 if match.group(2) else 1), int(match.group(2) or 0), name)
-        for name in os.listdir(directory)
-        if (match := pattern.match(name)) and match.group(1) >= first_month
+        (archive_order(match), name)
+        for name, match in archive_files(directory)
+        if match["stem"] == stem and match["period"] >= first_day[:len(match["period"])]
     )
     chunks: list[bytes] = []
     total = 0
-    for *_key, name in reversed(files):
+    for _key, name in reversed(files):
         if total >= max_bytes:
             break
         path = os.path.join(directory, name)

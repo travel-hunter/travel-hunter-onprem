@@ -8,8 +8,9 @@
 다른 PC 에서 SSH 로 받아 올 수도 있다:
   python scripts/pull_logs.py --dev --dest D:/travel-hunter-logs
 
-결과: <dest>/<label>/caddy-access-2026-09.log, backend-2026-09.log
-      지난달은 조각으로 압축: backend-2026-08.p01-<해시>.log.gz (늦게 온 줄은 p02 …)
+결과: <dest>/<label>/2026-10/caddy-access-2026-10-08.log, backend-2026-10-08.log  (오늘, 계속 이어 붙인다)
+      지난 날은 조각으로 압축: 2026-10/backend-2026-10-07.p01-<해시>.log.gz (늦게 온 줄은 p02 …)
+      옛 달별 파일(backend-2026-09.p01-<해시>.log.gz 등)은 건드리지 않는다 - scripts/convert_log_archive.py 가 한 번 옮긴다.
 조회: scripts/trace --dir <dest>/<label> <문의코드>
 
 - 파일 이름이 아니라 inode 로 추적한다. backend 회전은 .1 → .2 로 이름을 밀지만 inode 는 그대로다.
@@ -17,8 +18,8 @@
 - 받은 위치와 보관 파일의 확정 크기는 <dest>/<label>/.state.json 에 둔다. 확정 크기보다 긴 보관 파일은
   저장 전에 멈춘 흔적이라 시작할 때 잘라 되돌린다 - 다시 받아도 중복이 없다.
 - 쓰는 중인 반쪽 줄은 받지 않는다(마지막 줄바꿈까지만).
-- 줄의 시각(KST)으로 달을 나눈다. 지난달은 내용 해시 이름의 조각으로 압축한다(같은 내용이면 같은 이름이라
-  압축 중에 멈췄다 다시 해도 중복이 없다). --keep-months 보다 오래된 달은 지운다.
+- 줄의 시각(KST)으로 날을 나눈다. 지난 날은 자정 뒤 한 시간(SEAL_AFTER)이 지나면 내용 해시 이름의 조각으로 압축한다
+  (같은 내용이면 같은 이름이라 압축 중에 멈췄다 다시 해도 중복이 없다). --keep-months 보다 오래된 달 폴더는 비운다.
 - 서버에서 부르는 명령은 stat · tail · head 뿐이다. 파일 이름은 trace 와 같은 정규식을 통과한 것만 쓴다.
 - 보관 형식이 계약이다(한 줄 한 JSON, 시간순). AWS(CloudWatch)로 옮기면 원격 읽기(remote_files · fetch)만 바꾼다.
 """
@@ -38,7 +39,8 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
-from datetime import datetime
+from contextlib import suppress
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
@@ -59,10 +61,8 @@ DEFAULT_MAX_MB = 64
 DEFAULT_KEEP_MONTHS = 12
 LOCK_STALE_SECONDS = 3600
 MOVED = 4  # 가져오는 사이 회전돼 이름이 다른 파일을 가리킨다
-ARCHIVE_FILE = re.compile(
-    rf"^(?P<stem>{'|'.join(map(re.escape, STEMS))})-(?P<month>\d{{4}}-\d{{2}})"
-    r"(?:\.p(?P<part>\d+)-(?P<hash>[0-9a-f]{12}))?\.log(?P<gz>\.gz)?$"
-)
+# 어제 파일은 자정 뒤 이만큼 열어 둔다. 자정 직후 회차가 받는 어제 줄까지 한 조각에 들어가 매일 p02 가 생기지 않는다.
+SEAL_AFTER = timedelta(hours=1)
 FILES_KEY = "_files"  # 보관 파일의 확정 크기
 
 
@@ -159,79 +159,89 @@ def local_fetch(directory: str, name: str, inode: str, offset: int, length: int)
         return b"".join(chunks)
 
 
-def line_month(line: bytes, fallback: str) -> str:
-    """줄의 시각(KST)으로 달을 정한다. 못 읽으면 받은 달."""
+def line_day(line: bytes, fallback: str) -> str:
+    """줄의 시각(KST)으로 날(YYYY-MM-DD)을 정한다. 못 읽으면 fallback."""
     record = trace.parse(line.decode("utf-8", "replace"))
     when = trace.record_time(record) if record else None
     if when is None:
         return fallback
     if when.tzinfo is None:
         when = when.replace(tzinfo=trace.KST)
-    return when.astimezone(trace.KST).strftime("%Y-%m")
+    return when.astimezone(trace.KST).strftime("%Y-%m-%d")
 
 
-def append_by_month(folder: Path, stem: str, data: bytes, current: str, committed: dict[str, int]) -> None:
-    """온전한 줄들을 달별 .log 에 이어 붙이고, 붙인 뒤의 크기를 committed 에 적는다(저장은 호출자가)."""
+def day_files(folder: Path) -> list[tuple[str, re.Match]]:
+    """YYYY-MM/ 안의 날짜별 보관 파일만 (상대 경로, 이름 일치). 맨 위의 옛 달별 파일은 보지 않는다 - 변환 스크립트의 몫이다."""
+    return [(key, match) for key, match in trace.archive_files(str(folder)) if "/" in key]
+
+
+def append_by_day(folder: Path, stem: str, data: bytes, today: str, committed: dict[str, int]) -> None:
+    """온전한 줄들을 YYYY-MM/<stem>-YYYY-MM-DD.log 에 이어 붙이고, 붙인 뒤의 크기를 committed 에 적는다(저장은 호출자가)."""
     groups: dict[str, list[bytes]] = {}
     for line in re.findall(rb"[^\n]*\n", data):  # 줄바꿈으로만 나눈다 - data 는 온전한 줄만 담겨 온다
-        groups.setdefault(line_month(line, current), []).append(line)
-    for month, lines in groups.items():
-        path = folder / f"{stem}-{month}.log"
+        groups.setdefault(line_day(line, today), []).append(line)
+    for day, lines in groups.items():
+        key = f"{day[:7]}/{stem}-{day}.log"
+        path = folder / key
+        path.parent.mkdir(exist_ok=True)
         with open(path, "ab") as handle:
             handle.write(b"".join(lines))
-        committed[path.name] = path.stat().st_size
+        committed[key] = path.stat().st_size
 
 
 def roll_back_uncommitted(folder: Path, committed: dict[str, int]) -> None:
     """저장 전에 멈춘 실행이 붙인 꼬리를 잘라 되돌린다. 기록에 없는 보관 .log 는 통째로 미확정이다."""
-    for path in folder.iterdir():
-        match = ARCHIVE_FILE.match(path.name)
-        if not match or match["gz"]:
+    for key, match in day_files(folder):
+        if match["gz"]:
             continue
-        size = committed.get(path.name, 0)
+        path = folder / key
+        size = committed.get(key, 0)
         if path.stat().st_size > size:
             with open(path, "r+b") as handle:
                 handle.truncate(size)
         if size == 0:
             path.unlink()
-            committed.pop(path.name, None)
+            committed.pop(key, None)
 
 
-def archive(folder: Path, current: str, keep_months: int, committed: dict[str, int], save) -> None:
-    """지난달 .log 는 조각 .gz 로, 보존 기간이 지난 달은 삭제."""
-    year, month = map(int, current.split("-"))
+def archive(folder: Path, sealed: str, keep_months: int, committed: dict[str, int], save) -> None:
+    """닫힌 날(sealed 이전)의 .log 는 조각 .gz 로, 보존 기간이 지난 달 폴더는 비운다."""
+    year, month = map(int, sealed[:7].split("-"))
     total = year * 12 + month - 1 - keep_months  # 이 달과 그 이전은 지운다
     newest_dropped = f"{total // 12:04d}-{total % 12 + 1:02d}"
-    names = sorted(p.name for p in folder.iterdir())
-    for name in names:
-        match = ARCHIVE_FILE.match(name)
-        if not match:
-            continue  # pull.log · .state.json · 다른 파일은 건드리지 않는다
-        path = folder / name
-        if match["month"] <= newest_dropped:
+    files = sorted(day_files(folder), key=lambda item: item[0])
+    keys = [key for key, _ in files]
+    for key, match in files:
+        path = folder / key
+        month_dir = key.split("/")[0]
+        if month_dir <= newest_dropped:
             path.unlink()
-            committed.pop(name, None)
-            save()
-        elif match["month"] < current and not match["gz"]:
-            # 한 달치를 메모리에 올리지 않는다 - 컨테이너 메모리 상한 안에서 돈다(조각씩 해시·압축).
+            if committed.pop(key, None) is not None:  # .gz 는 확정 크기 기록이 없다 - 바뀐 게 있을 때만 저장
+                save()
+        elif match["period"] < sealed and not match["gz"]:
+            # 하루치도 메모리에 올리지 않는다 - 컨테이너 메모리 상한 안에서 돈다(조각씩 해시·압축).
             hasher = hashlib.sha256()
             with open(path, "rb") as source:
                 for block in iter(lambda: source.read(1024 * 1024), b""):
                     hasher.update(block)
             digest = hasher.hexdigest()[:12]
-            prefix = f"{match['stem']}-{match['month']}.p"
-            existing = [n for n in names if n.startswith(prefix)]
-            if not any(n.endswith(f"-{digest}.log.gz") for n in existing):
-                number = 1 + max((int(ARCHIVE_FILE.match(n)["part"]) for n in existing), default=0)
+            prefix = f"{month_dir}/{match['stem']}-{match['period']}.p"
+            existing = [k for k in keys if k.startswith(prefix)]
+            if not any(k.endswith(f"-{digest}.log.gz") for k in existing):
+                number = 1 + max((int(trace.ARCHIVE_NAME.fullmatch(k.split("/")[1])["part"]) for k in existing), default=0)
                 target = folder / f"{prefix}{number:02d}-{digest}.log.gz"
                 temp = target.with_name(target.name + ".tmp")
                 with open(path, "rb") as source, gzip.open(temp, "wb") as packed:
                     shutil.copyfileobj(source, packed, 1024 * 1024)
                 temp.replace(target)
-                names.append(target.name)
+                keys.append(f"{prefix}{number:02d}-{digest}.log.gz")
             path.unlink()  # 여기서 멈춰도 다음 실행이 같은 해시를 찾고 지우기만 한다
-            committed.pop(name, None)
+            committed.pop(key, None)
             save()
+    for month_dir in {key.split("/")[0] for key in keys}:
+        if month_dir <= newest_dropped:
+            with suppress(OSError):  # 보관 형식이 아닌 파일이 남았으면 폴더째 둔다
+                (folder / month_dir).rmdir()
 
 
 class Source(NamedTuple):
@@ -314,7 +324,9 @@ def pull(server: str, dest: Path, max_bytes: int, containers: list[str], *, labe
         sources = [docker_source(container, env) for container in containers]
     folder = dest / (label or server)
     folder.mkdir(parents=True, exist_ok=True)
-    current = (now or datetime.now(trace.KST)).astimezone(trace.KST).strftime("%Y-%m")
+    moment = (now or datetime.now(trace.KST)).astimezone(trace.KST)
+    today = moment.strftime("%Y-%m-%d")
+    sealed = (moment - SEAL_AFTER).strftime("%Y-%m-%d")  # 이 날 이전은 닫혔다 - 압축한다
     state_path = folder / ".state.json"
 
     with Lock(folder / ".lock"):
@@ -322,8 +334,7 @@ def pull(server: str, dest: Path, max_bytes: int, containers: list[str], *, labe
         state: dict = json.loads(state_path.read_text("utf-8")) if state_path.exists() else {}
         if FILES_KEY not in state:
             # 상태가 없다(첫 실행이거나 지워졌다). 이미 있는 보관 파일은 확정으로 본다 - 되돌리며 지우지 않는다.
-            state[FILES_KEY] = {p.name: p.stat().st_size for p in folder.iterdir()
-                                if (m := ARCHIVE_FILE.match(p.name)) and not m["gz"]}
+            state[FILES_KEY] = {key: (folder / key).stat().st_size for key, m in day_files(folder) if not m["gz"]}
         committed: dict[str, int] = state[FILES_KEY]
 
         def save() -> None:
@@ -332,7 +343,7 @@ def pull(server: str, dest: Path, max_bytes: int, containers: list[str], *, labe
             temp.replace(state_path)
 
         roll_back_uncommitted(folder, committed)
-        archive(folder, current, keep_months, committed, save)  # 멈췄던 압축을 새 줄이 섞이기 전에 마무리
+        archive(folder, sealed, keep_months, committed, save)  # 멈췄던 압축을 새 줄이 섞이기 전에 마무리
         problems = []
         for source in sources:
             try:
@@ -341,7 +352,7 @@ def pull(server: str, dest: Path, max_bytes: int, containers: list[str], *, labe
                 for stem in STEMS:
                     got, budget = pull_stream(
                         stem, source, state.setdefault(stem, {}),
-                        lambda data, stem=stem: append_by_month(folder, stem, data, current, committed),
+                        lambda data, stem=stem: append_by_day(folder, stem, data, today, committed),
                         budget, save)
                     result[stem] = got
                 save()
@@ -350,7 +361,7 @@ def pull(server: str, dest: Path, max_bytes: int, containers: list[str], *, labe
                 problems.append(str(error))  # 이 컨테이너가 죽어 있으면 다른 컨테이너로 (둘 다 볼륨을 붙인다)
         else:
             raise PullError("볼륨을 읽지 못했다:\n  " + "\n  ".join(problems))
-        archive(folder, current, keep_months, committed, save)
+        archive(folder, sealed, keep_months, committed, save)
         return result
 
 

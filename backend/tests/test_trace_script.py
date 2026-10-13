@@ -522,3 +522,67 @@ def test_a_broken_archive_file_is_skipped_with_a_notice(tmp_path, capsys):
 def test_a_missing_archive_folder_is_an_error_not_empty(tmp_path):
     with pytest.raises(trace.LogReadError):
         list(trace.read_local_file("backend", str(tmp_path / "typo"), 1024))
+
+
+# ----------------------------------------------------------------- 날짜별 보관본(YYYY-MM/) - 2026-10-08 계획
+def _bytes(ts: str, **extra) -> bytes:
+    return (app_line(ts, **extra) + "\n").encode()
+
+
+def test_archive_reads_old_monthly_files_and_day_folders_together(tmp_path):
+    """변환 전: 옛 달별 파일과 YYYY-MM/ 날짜별 파일이 함께 있다. 달 파일이 그 달의 날짜별 파일보다 먼저다."""
+    import gzip
+
+    (tmp_path / "backend-2026-09.p01-000000000000.log.gz").write_bytes(gzip.compress(_bytes("2026-09-20T10:00:00+09:00")))
+    (tmp_path / "backend-2026-10.log").write_bytes(_bytes("2026-10-08T09:00:00+09:00"))  # 배포 전에 받은 오늘 줄
+    (tmp_path / "2026-10").mkdir()
+    (tmp_path / "2026-10" / "backend-2026-10-08.log").write_bytes(_bytes("2026-10-08T10:00:00+09:00"))  # 배포 뒤
+    records = list(trace.read_local_file("backend", str(tmp_path), 1024 * 1024))
+    assert [r["ts"][:16] for r in records] == ["2026-09-20T10:00", "2026-10-08T09:00", "2026-10-08T10:00"]
+
+
+def test_day_chunks_are_read_in_number_order_before_the_plain_file(tmp_path):
+    import gzip
+
+    day = tmp_path / "2026-10"
+    day.mkdir()
+    (day / "backend-2026-10-07.p02-000000000000.log.gz").write_bytes(gzip.compress(_bytes("2026-10-07T23:59:00+09:00")))
+    (day / "backend-2026-10-07.p00-ffffffffffff.log.gz").write_bytes(gzip.compress(_bytes("2026-10-07T09:00:00+09:00")))
+    (day / "backend-2026-10-07.p01-aaaaaaaaaaaa.log.gz").write_bytes(gzip.compress(_bytes("2026-10-07T12:00:00+09:00")))
+    (day / "backend-2026-10-08.log").write_bytes(_bytes("2026-10-08T00:10:00+09:00"))
+    records = list(trace.read_local_file("backend", str(tmp_path), 1024 * 1024))
+    assert [r["ts"][:13] for r in records] == ["2026-10-07T09", "2026-10-07T12", "2026-10-07T23", "2026-10-08T00"]
+
+
+def test_archive_since_skips_older_days_but_keeps_the_overlapping_month_file(tmp_path, capsys):
+    (tmp_path / "backend-2026-09.log.gz").write_bytes(b"not gzip")  # 이전 달 - 열지 않는다
+    (tmp_path / "backend-2026-10.log").write_bytes(_bytes("2026-10-08T09:00:00+09:00"))  # 걸친 달 - 연다
+    (tmp_path / "2026-10").mkdir()
+    (tmp_path / "2026-10" / "backend-2026-10-04.p01-000000000000.log.gz").write_bytes(b"not gzip")  # 이전 날
+    (tmp_path / "2026-10" / "backend-2026-10-05.log").write_bytes(_bytes("2026-10-05T09:00:00+09:00"))
+    cutoff = datetime(2026, 10, 5, tzinfo=KST)
+    assert len(list(trace.read_local_file("backend", str(tmp_path), 1024 * 1024, cutoff))) == 2
+    assert "읽지 못해" not in capsys.readouterr().err, "--since 이전 날·달은 열지도 않는다"
+
+
+def test_archive_ignores_misplaced_and_moved_aside_files(tmp_path):
+    (tmp_path / "2026-10").mkdir()
+    (tmp_path / "2026-10" / "backend-2026-09-30.log").write_bytes(_bytes("2026-09-30T10:00:00+09:00"))  # 폴더와 달이 다르다
+    (tmp_path / "backend-2026-10-01.log").write_bytes(_bytes("2026-10-01T10:00:00+09:00"))  # 날짜별 이름이 맨 위에
+    (tmp_path / ".legacy-monthly").mkdir()
+    (tmp_path / ".legacy-monthly" / "backend-2026-09.log").write_bytes(_bytes("2026-09-01T10:00:00+09:00"))  # 변환 뒤 옮긴 원본
+    (tmp_path / "2026-10" / "backend-2026-10-03.log").write_bytes(_bytes("2026-10-03T10:00:00+09:00"))
+    assert [r["ts"][:10] for r in trace.read_local_file("backend", str(tmp_path), 1024 * 1024)] == ["2026-10-03"]
+
+
+def test_dir_mode_finds_an_inquiry_code_in_either_layout(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("--dir 은 서버에 접속하지 않는다"))
+    (tmp_path / "backend-2026-10.log").write_bytes(_bytes("2026-10-08T09:00:00+09:00", request_id="old-code", path="/before"))
+    (tmp_path / "2026-10").mkdir()
+    (tmp_path / "2026-10" / "backend-2026-10-08.log").write_bytes(
+        _bytes("2026-10-08T10:00:00+09:00", request_id="new-code", path="/after"))
+    for code, path in (("old-code", "/before"), ("new-code", "/after")):
+        monkeypatch.setattr("sys.argv", ["trace", "--dir", str(tmp_path), code, "--since", "", "--color", "never"])
+        assert trace.main() == 0
+        out = capsys.readouterr().out
+        assert path in out and ("/after" if code == "old-code" else "/before") not in out
