@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_current_user
@@ -170,7 +172,7 @@ def test_places_route_needs_login_and_returns_camel_case_items(monkeypatch) -> N
     assert found.json() == [{
         "kind": "place", "id": "kakao:1", "name": "오동도", "category": "여행 > 관광,명소 > 섬", "categoryCode": "AT4",
         "address": "전남광주통합특별시 여수시 수정동 1", "latitude": 34.74, "longitude": 127.76,
-        "placeUrl": "http://place.map.kakao.com/1", "sido": "전남", "city": "여수", "distanceMeters": None,
+        "placeUrl": "http://place.map.kakao.com/1", "sido": "전남", "city": "여수", "distanceMeters": None, "viaWord": None,
     }]
     assert too_long.status_code == 422
 
@@ -268,6 +270,7 @@ def test_place_routes_release_the_db_session_before_calling_kakao(monkeypatch) -
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_optional_db] = session
     monkeypatch.setattr(place_search, "build_kakao_local_client", lambda: Kakao())
+    monkeypatch.setattr(place_search, "suggest_place_names", lambda *args, **kwargs: [])
     try:
         client = TestClient(app)
         assert client.get("/api/places/search", params={"query": "오동도"}).status_code == 200
@@ -275,4 +278,153 @@ def test_place_routes_release_the_db_session_before_calling_kakao(monkeypatch) -
     finally:
         app.dependency_overrides.pop(get_current_user, None)
         app.dependency_overrides.pop(get_optional_db, None)
-    assert events == ["db closed", "kakao", "db closed", "kakao"]
+    # 검색: 로그인 확인 뒤 닫음 -> 친 말 카카오 -> 대신 찾기 완성어 읽고 닫음, 근처: 닫음 -> 카카오
+    assert events == ["db closed", "kakao", "db closed", "db closed", "kakao"]
+
+
+def test_failed_kakao_calls_log_only_the_error_name(monkeypatch, caplog) -> None:
+    class Leaky:
+        def search_address(self, *, query, size):
+            raise RuntimeError(f"GET https://dapi.kakao.com/v2/local/search/address.json?query={query}")
+
+        def search_keyword(self, *, query, size):
+            raise RuntimeError(f"GET https://dapi.kakao.com/v2/local/search/keyword.json?query={query}")
+
+        def search_category(self, **kwargs):
+            raise RuntimeError(f"GET https://dapi.kakao.com/v2/local/search/category.json?x={kwargs['x']}&y={kwargs['y']}")
+
+    monkeypatch.setattr(place_search.logger, "handlers", [caplog.handler])
+    caplog.set_level(logging.WARNING)
+    assert place_search.search_places("비밀동", Leaky()) == []
+    assert place_search.nearby_places(latitude=34.7447, longitude=127.7678, category="FD6", provider=Leaky()) == []
+    for name in ("place_search_area_failed", "place_search_keyword_failed", "place_search_nearby_failed"):
+        assert name in caplog.text
+    for leaked in ("비밀동", "dapi.kakao.com", "34.7447", "127.7678", "Traceback"):
+        assert leaked not in caplog.text
+
+
+def test_an_unknown_region_is_logged_without_the_kakao_address(caplog) -> None:
+    # 카카오 주소의 첫 낱말도 카카오 값이다(Global Constraints) - 운영 JSON 로거가 `token=` 값을 가려 주지만 그 우연에 기대지 않는다
+    caplog.set_level(logging.INFO)
+    place_search.search_places("어딘가", FakeKakao(places=[place("어딘가", "대구경북통합특별시 안동시 1")]))
+    assert "place_search_unknown_region" in caplog.text   # 지역을 못 읽었다는 사실은 남기고
+    assert "대구경북통합특별시" not in caplog.text and "안동시" not in caplog.text   # 카카오 주소 낱말은 남기지 않는다
+
+
+class WordKakao:
+    def __init__(self, answers: dict[str, object]) -> None:
+        self.answers, self.calls = answers, []
+
+    def search_keyword(self, **kwargs):
+        self.calls.append(kwargs["query"])
+        answer = self.answers.get(kwargs["query"], [])
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def search_address(self, **kwargs):
+        return []
+
+
+class ClosingDb:
+    def __init__(self) -> None:
+        self.closed = 0
+
+    def close(self) -> None:
+        self.closed += 1
+
+
+def test_home_search_falls_back_to_completed_words_when_kakao_finds_nothing(monkeypatch) -> None:
+    provider = WordKakao({
+        "스타벅스": [place("스타벅스 강남점", "서울 강남구 역삼동 1", pid="k1"), place("스타벅스 역삼점", "서울 강남구 역삼동 2", pid="k2")],
+        "스타벅스 리저브": [place("스타벅스 역삼점", "서울 강남구 역삼동 2", pid="k2"), place("스타벅스 리저브 청담", "서울 강남구 청담동 3", pid="k3")],
+    })
+    db = ClosingDb()
+
+    def words(db, *, query, scope):
+        assert scope is None   # 홈은 지역이 없다
+        return ["스타벅스", "스타벅스 리저브", "셋째", "넷째"]
+
+    monkeypatch.setattr(place_search, "suggest_place_names", words)
+
+    items = place_search.search_places("스타벅", provider=provider, db=db)
+
+    assert [item["id"] for item in items] == ["kakao:k1", "kakao:k2", "kakao:k3"]
+    assert [item["viaWord"] for item in items] == ["스타벅스", "스타벅스", "스타벅스 리저브"]
+    assert provider.calls == ["스타벅", "스타벅스", "스타벅스 리저브", "셋째"]   # 넷째 말은 안 부른다
+    assert db.closed == 1   # 완성어를 읽고 바로 놓는다
+
+
+def test_home_search_keeps_kakao_rows_without_a_via_word_when_the_typed_word_finds_places(monkeypatch) -> None:
+    provider = WordKakao({"남산": [place("남산타워", "서울 용산구 용산동2가 1", pid="k1")]})
+    monkeypatch.setattr(place_search, "suggest_place_names", lambda *args, **kwargs: pytest.fail("must not ask completed words"))
+
+    items = place_search.search_places("남산", provider=provider, db=ClosingDb())
+
+    assert [item["id"] for item in items] == ["kakao:k1"] and "viaWord" not in items[0]
+
+
+def test_home_search_without_a_db_session_answers_empty_instead_of_falling_back(monkeypatch) -> None:
+    monkeypatch.setattr(place_search, "suggest_place_names", lambda *args, **kwargs: pytest.fail("no db, no completed words"))
+    assert place_search.search_places("스타벅", provider=WordKakao({}), db=None) == []
+
+
+def test_home_search_does_not_fall_back_when_the_kakao_keyword_call_failed(monkeypatch) -> None:
+    # 카카오 장애일 때 대신 찾기까지 부르면 시간 초과(5초)가 세 번 더 붙는다
+    provider = WordKakao({"스타벅": RuntimeError("timeout")})
+    monkeypatch.setattr(place_search, "suggest_place_names", lambda *args, **kwargs: pytest.fail("kakao is down - no fallback"))
+
+    assert place_search.search_places("스타벅", provider=provider, db=ClosingDb()) == []
+    assert provider.calls == ["스타벅"]
+
+
+def test_home_search_skips_a_completed_word_whose_kakao_call_fails(monkeypatch, caplog) -> None:
+    provider = WordKakao({
+        "스타벅스": RuntimeError("GET https://dapi.kakao.com/...?query=스타벅스 failed"),
+        "스타벅스 리저브": [place("스타벅스 리저브 청담", "서울 강남구 청담동 3", pid="k3")],
+    })
+    monkeypatch.setattr(place_search, "suggest_place_names", lambda db, *, query, scope: ["스타벅스", "스타벅스 리저브"])
+    caplog.set_level(logging.WARNING)
+
+    items = place_search.search_places("스타벅", provider=provider, db=ClosingDb())
+
+    assert [item["id"] for item in items] == ["kakao:k3"]
+    assert "place_search_suggestion_failed error=RuntimeError" in caplog.text and "dapi.kakao.com" not in caplog.text
+
+
+def test_home_search_falls_back_when_only_the_address_call_failed_and_keyword_found_nothing(monkeypatch) -> None:
+    class AddressDownKakao(WordKakao):
+        def search_address(self, **kwargs):
+            raise RuntimeError("address down")
+
+    provider = AddressDownKakao({"중앙동 카페": [place("중앙동 카페 본점", "서울 중구 중앙동 1", pid="k1")]})
+    monkeypatch.setattr(place_search, "suggest_place_names", lambda db, *, query, scope: ["중앙동 카페"])
+
+    items = place_search.search_places("중앙동", provider=provider, db=ClosingDb())
+
+    assert [(item["id"], item["viaWord"]) for item in items] == [("kakao:k1", "중앙동 카페")]
+
+
+def test_home_search_answers_empty_and_closes_the_db_when_reading_completed_words_fails(monkeypatch, caplog) -> None:
+    def broken(db, *, query, scope):
+        raise AttributeError("boom 스타벅")
+
+    monkeypatch.setattr(place_search, "suggest_place_names", broken)
+    caplog.set_level(logging.WARNING)
+    db = ClosingDb()
+
+    assert place_search.search_places("스타벅", provider=WordKakao({}), db=db) == []
+    assert db.closed == 1
+    assert caplog.text.count("place_search_suggest_failed error=AttributeError") == 1 and "스타벅" not in caplog.text
+
+
+def test_home_search_fallback_stops_at_fifteen_rows(monkeypatch) -> None:
+    answers = {
+        word: [place(f"{word} {n}", f"서울 강남구 역삼동 {n}", pid=f"{word}{n}") for n in range(15)]
+        for word in ("가게", "나게", "다게")
+    }
+    monkeypatch.setattr(place_search, "suggest_place_names", lambda db, *, query, scope: ["가게", "나게", "다게"])
+
+    items = place_search.search_places("가나다", provider=WordKakao(answers), db=ClosingDb())
+
+    assert len(items) == 15 and {item["viaWord"] for item in items} == {"가게"}

@@ -1087,103 +1087,110 @@ Changing the travel area does not move, delete, or reorder places or days. Linke
 
 ### POST /trips/{trip_id}/days/{day_number}/places
 
-Kakao place candidate metadata can be preserved when adding a recommended place.
+일정 특정 day에 장소 추가. owner/editor만 가능. 카카오 운영정책(설계 `docs/superpowers/specs/2026-10-03-public-place-storage-design.md`)에 따라 일정에는 **공공데이터 장소의 값**(`public_places` - TourAPI, 소상공인 상가정보) 또는 **사용자가 직접 쓴 값**만 저장한다. 카카오 로컬 값(장소명 · 주소 · 좌표 · 전화번호 · 분류)은 받지도 저장하지도 않는다 - 예전 필드(`label` · `meta` · `address` · `latitude` · `longitude` · `category` · `categoryCode` · `placeUrl` · `sourceProvider` · `externalPlaceId`)를 보내면 422다. `publicPlace` · `customPlace` 안에도 아래에 적은 필드 밖의 값(`name` · `address` · 좌표 등)을 보내면 422다 - 카카오 값이 그 안에 숨어 들어와 조용히 버려지는 일이 없게 한다. 카카오에서 고른 장소는 장소 ID(`kakaoPlaceId`)만 받아 '카카오맵에서 보기' 링크로 남긴다. 고른 카카오 장소를 공공데이터와 맞춰 보는 것은 `POST /places/match` 다. 나만의 장소의 주소와 위치는 **지도에서 찍은 좌표가 아니라 건물 · 땅 지번 참조**(`customPlace.geoRef`)로만 채운다 - 아래 `customPlace` 와 `POST /places/locate` 참고.
 
-Optional request fields:
-- `address`: string | null
-- `latitude`: number | null
-- `longitude`: number | null
-- `category`: string | null
-- `categoryCode`: string | null
-- `placeUrl`: string | null
-- `sourceProvider`: string | null
-- `externalPlaceId`: string | null
-
-일정 특정 day에 장소 추가. owner/editor만 가능.
-
-**Request**
+**Request** (공공데이터 장소)
 ```json
 {
   "expectedRevision": 1,
   "time": "10:30",
-  "label": "함덕해수욕장",
-  "meta": "제주시 조천읍"
+  "publicPlace": { "source": "tourapi", "sourceId": "126508" },
+  "kakaoPlaceId": "12345"
+}
+```
+
+**Request** (나만의 장소)
+```json
+{
+  "expectedRevision": 1,
+  "time": "10:30",
+  "customPlace": { "name": "우리 아지트", "geoRef": { "kind": "building", "id": 4821937, "pin": true } },
+  "kakaoPlaceId": "12345"
 }
 ```
 
 - `expectedRevision`: 필수, 현재 `Trip.revision` 값. 불일치 시 409.
-- `label`: 필수, 1~200자
-- `time`: optional, `HH:MM` 형식 또는 빈 문자열
-- `meta`: optional
+- `time`: optional, `HH:MM` 형식 또는 빈 문자열. 형식이 틀리면 422.
+- `publicPlace` · `customPlace`: 둘 중 정확히 하나(아니면 422).
+  - `publicPlace{source, sourceId}`: `source` 는 `tourapi` | `sangga`, `sourceId` 는 1~40자. 서버가 `public_places` 에서 찾아 그 이름 · 주소 · 좌표 · 분류 · 사진 · 사진 저작권 유형을 복사한다(`placeOrigin="public"`). 클라이언트가 보낸 값은 쓰지 않는다. 없는 장소면 404 `Public place not found` - 아무것도 쓰지 않고 `revision` 도 그대로다.
+  - `customPlace{name, geoRef?}`: `name` 은 앞뒤 공백을 뺀 1~100자(빈 이름은 422)이고 사용자가 쓴 글이다(검색어로 미리 채운 것 포함 - 카카오 장소 이름이 아니다). `placeOrigin="custom"`, 분류는 비운다. **위도 · 경도 · 주소는 받지 않음(422)** - 지도에서 찍은 좌표는 저장 · 활용할 수 없다(카카오 운영정책, 데브톡 151842). 찍은 자리는 화면이 `POST /places/locate` 로 그 자리를 품은 건물 · 땅의 지번을 찾아 `geoRef` 로 바꿔 보낸다.
+  - `customPlace.geoRef{kind, id, pin}`: 선택(모르는 필드는 422). `kind` 는 `building` | `parcel`, `id` 는 `locate`/`fill` 이 준 이 판의 행 번호(1 이상 2^63-1 이하 - 넘으면 DB 오류가 아니라 422), `pin` 은 핀(공공데이터 중심 좌표)까지 담을지다. 서버가 `geo` 표에서 **주소(법정동 + 지번)를 다시 읽어** 채우고, `pin=true` 이면 그 건물 · 땅의 공공데이터 중심(`latitude` · `longitude`)도 채운다. `pin=false`(중심이 30m 밖인 넓은 땅)는 주소만 담고 좌표는 `null` 이다. 어느 쪽이든 저장되는 좌표는 우리 표의 중심뿐이고, 찍은 좌표는 받지도 저장하지도 않는다. 담긴 행은 `ItineraryPlace.geoKind` 와 `geo_pnu` 로 출처를 남긴다. 월 갱신으로 판이 바뀌면 옛 `id` 는 사라지고 404 다.
+- `kakaoPlaceId`: optional, 숫자 1~20자리. 있으면 `sourceProvider="kakao"`, `externalPlaceId`, `placeUrl`(`https://place.map.kakao.com/{id}`, 서버가 만든다)을 남긴다. 없으면 셋 다 `null`. 클라이언트가 보낸 `placeUrl` 은 받지 않는다.
 
 **Response 200** → `Trip` (전체 일정 반환)
 
 **Errors**
 - 403: viewer는 추가 불가
-- 404: 일정 없음 또는 day 없음
+- 404: 일정 없음, day 없음, `Public place not found`, 또는 `Address reference not found`(`customPlace.geoRef` 의 id 가 이 판에 없음 - 아무것도 쓰지 않고 `revision` 도 그대로다)
 - 409: 다른 사용자가 먼저 장소를 변경해 revision 불일치
+- 422: 예전 카카오 필드, `publicPlace`/`customPlace` 안의 모르는 필드(`customPlace.latitude` · `longitude` · `address` 포함), `publicPlace`/`customPlace` 가 둘 다 있거나 둘 다 없음, 이름 · `geoRef` · 시간 형식 오류
+- 503: `Address lookup is unavailable`(`geo` 표를 읽지 못함 - 값은 싣지 않고, `revision` 그대로)
 
 ---
 
 ### POST /trips/{trip_id}/days/{day_number}/places/batch
 
-Adds multiple selected place-search candidates to one trip day with a single optimistic revision check and one revision increment. Owner/editor only. The frontend add-place sheet is search-only: users select one or more search results into a basket, then save the basket through this endpoint.
+한 day 에 장소 여러 곳을 한 번에 담는다. 낙관적 리비전 검사 1회, 증가 1회. owner/editor만 가능. 각 항목은 단일 추가와 같은 모양(`time` · `publicPlace` | `customPlace` · `kakaoPlaceId`)이고 같은 규칙으로 저장한다. 프론트의 장소 추가 시트는 장소를 바구니에 담았다가 이 경로로 한 번에 저장한다.
 
 **Request**
 ```json
 {
   "expectedRevision": 1,
   "places": [
-    {
-      "label": "Basket cafe",
-      "time": "",
-      "meta": "1 Basket road",
-      "address": "1 Basket road",
-      "latitude": 33.45,
-      "longitude": 126.57,
-      "category": "Cafe",
-      "categoryCode": "CE7",
-      "placeUrl": "https://place.map.kakao.com/123",
-      "sourceProvider": "kakao",
-      "externalPlaceId": "123"
-    }
+    { "publicPlace": { "source": "tourapi", "sourceId": "126508" }, "kakaoPlaceId": "12345" },
+    { "customPlace": { "name": "우리 아지트", "geoRef": { "kind": "parcel", "id": 90412, "pin": false } }, "time": "15:00" },
+    { "publicPlace": { "source": "sangga", "sourceId": "MA0101202210A0094848" } }
   ]
 }
 ```
 
-- `expectedRevision`: required, current `Trip.revision` value.
-- `places`: required, 1~50 items. Each item uses the same camelCase place metadata fields as single-place add; `label` is required.
+- `expectedRevision`: 필수, 현재 `Trip.revision` 값.
+- `places`: 필수, 1~50개. 각 항목은 위 네 필드만 받는다(예전 카카오 필드와 `publicPlace`/`customPlace` 안의 모르는 필드는 422).
+- 공공데이터 참조와 `customPlace.geoRef` 를 모두 `revision` 을 올리기 전에 찾는다. 하나라도 없으면 404(`Public place not found` 또는 `Address reference not found`)이고 아무것도 쓰지 않는다. `geo` 표를 읽지 못하면 503 `Address lookup is unavailable` 이고 마찬가지다.
 
 **Response 200** → `Trip`
 
 **Errors**
 - 403: viewer cannot add
-- 404: trip not found or day not found
+- 404: trip not found, `Trip day not found`, `Public place not found`, 또는 `Address reference not found`
 - 409: stale revision
+- 422: 단일 추가와 같음, `places` 가 비었거나 50개 초과
+- 503: `Address lookup is unavailable`
+
 ---
 
 ### PATCH /trips/{trip_id}/places/{place_id}
 
-장소 정보 수정. owner/editor만 가능. 모든 필드 optional.
+장소 정보 수정. owner/editor만 가능. 모든 필드 optional - 바뀐 필드만 보낸다. 예전 카카오 필드(`meta` 등)는 받지 않는다(422).
 
 **Request**
 ```json
 {
   "expectedRevision": 1,
   "time": "11:00",
-  "label": "함덕해수욕장",
-  "meta": "제주시 조천읍"
+  "label": "우리 단골집",
+  "memo": "일몰 때 가기"
 }
 ```
 
 - `expectedRevision`: 필수, 현재 `Trip.revision` 값. 불일치 시 409.
+- `time`: `HH:MM` 또는 빈 문자열(시간을 지움). 모든 행에 적용한다.
+- `label`: 사용자가 쓴 이름, 앞뒤 공백을 뺀 1~100자. 담기는 자리는 행 종류에 따라 다르다.
+  - **공공데이터 장소 행**(`placeOrigin="public"`): 사용자 이름을 따로 담는다(`trip_places.user_label`). 공공데이터 이름 · 주소 · 좌표 · 분류 · 사진 · 출처는 그대로 두고, 응답의 `label` 이 이 이름이 된다 - 공공데이터 이름과 사용자 이름이 한 열에 섞이지 않는다.
+  - **나만의 장소 행**(`placeOrigin="custom"`): 장소 이름 자체가 바뀐다.
+  - **예전 카카오 행**(`needsConfirmation=true`): `label` 만 보내도 나만의 장소(`placeOrigin="custom"`)로 바꾼다 - 이름은 `label`, 주소 · 좌표 · 분류 · 메모는 지운다. `time` 만 바꾸는 요청은 변환하지 않는다.
+- `memo`: 사용자 메모, 0~500자(빈 문자열 · `null` 은 지움). 응답의 `ItineraryPlace.memo` 로 그대로 돌아온다. 예전 카카오 행이 아니면 `label` · 장소 바꾸기로 지우지 않는다.
+- `publicPlace` | `customPlace`: 그 장소로 바꾼다(함께 보내면 422, 그 안의 모르는 필드도 422 - 예: `publicPlace.latitude`). 공공데이터 장소는 `POST` 와 같이 서버 표에서 값을 복사하고(없으면 404 `Public place not found`, `revision` 그대로), 나만의 장소는 사용자가 쓴 이름과 (`customPlace.geoRef` 가 있으면) 지번에서 채운 주소 · 위치를 쓴다(`POST` 의 `customPlace` 와 같은 규칙 - 위도 · 경도 · 주소는 받지 않음(422), 없는 참조는 404 `Address reference not found`, `geo` 표를 못 읽으면 503 `Address lookup is unavailable`, 둘 다 `revision` 그대로). 이름 · 주소 · 좌표 · 분류 · 사진 · 출처 · 지번 출처(`geo_kind` · `geo_pnu`) 열을 새 값으로 채우고 사용자 이름(`user_label`)은 비운다. 같은 요청에 `label` 이 함께 오면 바뀐 행에 적용한다(공공데이터 장소로 바꾸면서 보낸 `label` 은 그 장소의 사용자 이름이 된다). 예전 카카오 행이면 카카오 '분류 · 주소' 문구인 메모도 지운다.
+- 카카오 장소 ID · `placeUrl` · `sourceProvider` 는 어느 경우에도 남긴다.
 
 **Response 200** → `Trip`
 
 **Errors**
 - 403: viewer는 수정 불가
-- 404: 장소 없음
+- 404: 장소 없음, `Public place not found`, 또는 `Address reference not found`
 - 409: 다른 사용자가 먼저 장소를 변경해 revision 불일치
+- 422: 예전 필드, `publicPlace`/`customPlace` 안의 모르는 필드, `label`/`memo` 길이 위반, `publicPlace` 와 `customPlace` 동시 전송
+- 503: `Address lookup is unavailable`
 
 ---
 
@@ -1251,12 +1258,67 @@ Adds multiple selected place-search candidates to one trip day with a single opt
 
 ---
 
+### GET /trips/{trip_id}/places/{place_id}/public-candidates
+
+예전 카카오 행(`needsConfirmation=true`)과 겹치는 공공데이터 후보. owner/editor만 가능. 서버가 행에 저장돼 있는 이름 · 좌표 · 카카오 분류로 `POST /places/match` 와 같은 맞춰 보기를 서버 메모리에서 돌려 후보(바로 맞는 곳 포함, 가까운 순 최대 3곳)를 낸다. 저장된 값은 비교에만 쓰고 응답 · 로그 · DB 에 남기지 않는다(응답에는 공공데이터 값만 있다). 예전 행이 아니거나 좌표가 없으면 빈 목록이다. 읽기만 하며 `revision` 을 올리지 않는다. 후보를 고르면 `PATCH /trips/{trip_id}/places/{place_id}` 에 `publicPlace` 로 보낸다.
+
+**Response 200** → `LegacyPlaceCandidatesResponse`
+```json
+{
+  "places": [
+    {
+      "source": "tourapi",
+      "sourceId": "126508",
+      "name": "오동도",
+      "address": "전남광주통합특별시 여수시 오동도로 222",
+      "latitude": 34.7443,
+      "longitude": 127.7663,
+      "category": "sight",
+      "sido": "전남",
+      "city": "여수",
+      "photoUrl": "https://tong.visitkorea.or.kr/cms/resource/23/3074123_image2_1.jpg",
+      "photoLicense": "Type3",
+      "distanceMeters": 55
+    }
+  ]
+}
+```
+- `places` 항목은 `POST /places/match` 의 `PublicPlaceItem` 과 같다.
+
+**Errors**
+- 403: viewer
+- 404: 일정 없음 · 접근 권한 없음 · 장소 없음
+
+---
+
+### GET /trips/{trip_id}/area-center
+
+일정 지역(`travelAreaId`)의 공공데이터 장소 위경도 중앙값. owner/editor/viewer 모두 볼 수 있다. 장소 직접 적기의 '지도에서 위치 찍기'가 이 점에서 지도를 연다(카카오 좌표로 열지 않는다). 지역은 `whole:`(시도 전체) · 옛 `*-all` · 세종은 시도 단위로, 그 밖은 시도 + 포함 시군으로 가린다(같은 시군 이름이 여러 시도에 있어 시도와 함께). TourAPI 장소가 있으면 그 좌표의 중앙값이고, 없으면 상가정보 좌표의 중앙값이다. 지역을 가리지 못하거나 공공데이터 장소가 없으면 둘 다 `null` 이다(오류 아님).
+
+**Response 200** → `TripAreaCenter`
+```json
+{ "latitude": 34.7459, "longitude": 127.7371 }
+```
+- `latitude`, `longitude`: number | null (둘 다 있거나 둘 다 null)
+
+**Errors**
+- 404: 일정 없음 또는 접근 권한 없음
+
+---
+
 ### GET /trips/{trip_id}/place-search
 
-Authenticated trip members (owner/editor/viewer) can search Kakao-registered places for selection in the trip detail add-place sheet. Saving a selected place still uses `POST /trips/{trip_id}/days/{day_number}/places` with `expectedRevision`; this endpoint does not mutate itinerary data.
+Authenticated trip members (owner/editor/viewer) can search Kakao-registered places in the trip detail add-place sheet. The results are display-only: the server passes them through without storing or logging them. A picked place is not saved as it is. Every row carries `publicMatch` (always present, possibly null): in the same request the server matches all rows with coordinates against our public places in one batch - one read per source, the same rules and the same shape as `POST /places/match`; the Kakao values are compared in memory and discarded. `publicMatch` is null for a row without coordinates, for a row whose matching failed, for every row when the read fails, and for every row that is not a direct match when the address lookup below runs past 0.8 s (a cold database - the lookup is cancelled, not waited for) - the client then matches the picked row with `POST /places/match`. A row that is not a direct match also carries `publicMatch.fill` (see `POST /places/match`): the public-data address of the building or lot around the row's spot, or null. The client saves a `publicPlace` reference or a user-written `customPlace` (with an optional `customPlace.geoRef` taken from `publicMatch.fill`) with `POST /trips/{trip_id}/days/{day_number}/places` (only the Kakao place id is kept, as `kakaoPlaceId`). This endpoint does not mutate itinerary data. If Kakao is switched off (`KAKAO_LOCAL_ENABLED=false`) or the Kakao request fails, the response is an empty array. If Kakao is switched on but misconfigured (for example the REST key is missing), the response is 503 `Place search is unavailable` - the key and the settings are never in the response or the logs. The DB connection is released before Kakao is called.
+
+결과는 쪽(`page`, 1~3, 기본 1)마다 15곳이다. 카카오가 한 검색어에 45곳까지만 주므로 3쪽이 끝이다(밖이면 422). 줄마다 `nearby` 와 `viaWord` 를 단다.
+
+**지역 먼저**: 일정에 지역(`travelAreaId`)이 있으면 그 지역 공공데이터 장소의 중앙값(`GET /trips/{trip_id}/area-center` 와 같은 점)을 구해 카카오에 좌표와 함께 보낸다. 목록은 [그 점 반경 20km(`radius=20000`) 1~3쪽] 뒤에 [반경 없이 같은 좌표 쪽으로 기운 전국 1~3쪽]을 이은 것이고(카카오 장소 id 로 겹침을 뺀다) `page` 는 그 목록의 15곳씩이다. 각 갈래(반경 · 전국)는 카카오 쪽이 15곳 미만이거나 그 갈래에서 새 장소가 0개(카카오가 같은 쪽을 되풀이)면 거기서 끝난다. 반경 쪽에서 15곳이 차는 쪽에는 반경 밖 장소는 결과에 들지 않는다. 반경은 지역 경계가 아니라 중심점 둘레라 이웃 지역 장소가 섞일 수 있고, 도 전체처럼 20km 보다 넓은 지역은 반경 밖의 지역 안 장소가 전국 쪽에서 나온다. `nearby` 는 카카오가 준 거리로 20km 안이면 true, 밖이면 false, 중심을 구하지 못했으면(지역 없음 · 그 지역 공공데이터 없음) null 이다 - 이때는 좌표 없이 그 쪽을 한 번 부른다. 화면은 첫 false 줄 앞에 '다른 지역' 구분 줄을 긋는다. 서버는 상태를 두지 않아 2 · 3쪽은 앞 쪽들을 다시 부른다(카카오 호출: 1쪽 1~2번, 2쪽 최대 5번, 3쪽 최대 6번). 반경 쪽이 실패하면 빈 배열(2 · 3쪽도), 전국 쪽만 실패하면 모은 줄 그대로다.
+
+**덜 친 말**: 카카오 키워드 검색은 낱말 단위라 덜 친 말(`스타벅`)로는 0곳이다. 1쪽에서 친 말로 0곳이면 우리 공공데이터(`public_places`) 이름으로 만든 완성어 상위 3개로 위 목록의 1쪽을 대신 찾아 20km 안 줄을 말 순서대로 먼저, 나머지를 뒤에 모아 15곳에서 끊는다. 완성어는 일정 지역 안 이름이 먼저고 지역 안 체인은 '상표 + 지역'이다. 지역 범위 완성어가 3개 미만이면(지역 밖은 관광지 이름만 보므로 쇼핑 · 가게 이름이 빠진다) 전국 완성어로 채워 뒤에 둔다. 지역이 없으면 전국이고, 2자는 TourAPI 이름만, 3자 이상이면 가게 이름도 보며 체인은 상표만이다. 줄마다 `viaWord` 에 찾은 말을 싣는다(대신 찾지 않은 줄은 null). 대신 찾은 결과는 2쪽이 없다. 카카오 호출은 친 말 1~2번에 대신 찾기 최대 6번, 모두 최대 8번이다. 완성어가 없거나 완성어 읽기가 실패하면 빈 배열이다. 말 하나의 카카오 실패는 건너뛴다. 카카오로 가는 말은 우리 공공데이터 이름과 사용자가 친 말뿐이고, 검색어 · 완성어 · 좌표는 로그에 남기지 않는다.
 
 **Query**
 - `query`: string, 1-80 chars. Place name or address keyword.
+- `page`: integer, 1-3(기본 1). 15곳씩.
 
 **Response 200** → `PlaceSearchCandidate[]`
 ```json
@@ -1274,7 +1336,29 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
     "longitude": 126.9425,
     "placeUrl": "https://place.map.kakao.com/12345",
     "sourceProvider": "kakao",
-    "externalPlaceId": "12345"
+    "externalPlaceId": "12345",
+    "nearby": true,
+    "viaWord": null,
+    "publicMatch": {
+      "result": "match",
+      "places": [
+        {
+          "source": "tourapi",
+          "sourceId": "126437",
+          "name": "성산일출봉",
+          "address": "제주특별자치도 서귀포시 성산읍 일출로 284-12",
+          "latitude": 33.4583,
+          "longitude": 126.9425,
+          "category": "sight",
+          "sido": "제주",
+          "city": "서귀포",
+          "photoUrl": null,
+          "photoLicense": null,
+          "distanceMeters": 22
+        }
+      ],
+      "fill": null
+    }
   }
 ]
 ```
@@ -1282,11 +1366,14 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
 **Errors**
 - 401: 인증 필요
 - 404: 일정 없음 또는 접근 권한 없음
-- 422: `query` 누락/길이 위반
+- 422: `query` 누락/길이 위반, `page` 가 1~3 밖
+- 503: 카카오 로컬을 켜 두었는데 설정이 틀림(예: REST 키 없음). `detail` 은 `Place search is unavailable` 이다. 카카오를 일부러 껐거나 카카오 요청이 실패한 경우는 오류가 아니라 빈 배열이다
 
 ### GET /places/search
 
 홈 · 정책 탭 통합 검색의 장소 찾기(시안 v56). 일정과 무관하다 - 로그인한 사용자 누구나. 카카오 로컬 키워드 검색으로 장소를 찾고, 찾을 말이 동 · 읍 · 면 · 리 · `N가`로 끝나면 카카오 주소 검색도 불러 같은 이름의 구역을 전국에서 함께 준다(`kind: "area"`, 장소보다 앞). 항목마다 서버가 주소로 지도 도(`sido`, 정책 `region` 과 같은 짧은 이름)와 시군(`city`, 정책 제목 `[시군]` 과 맞추는 짧은 이름)을 붙인다 - 주소 첫 낱말이 `전남광주통합특별시`이면 둘째 낱말이 구일 때 광주, 시 · 군일 때 전남. 가리지 못하면 `null`. `category` 는 카카오 분류 전체 경로로, 일정 장소 검색(`GET /trips/{tripId}/place-search`)의 `categoryName` 과 같은 값이다 - 홈에서 일정에 담아도 같은 장소 기록이 된다. 카카오가 꺼져 있거나 실패하면 빈 배열(오류 아님).
+
+**덜 친 말**: 카카오 키워드 · 주소 검색이 모두 0곳이고 키워드 호출이 실패하지 않았으면 우리 공공데이터 이름으로 만든 완성어 상위 3개(전국 - 2자는 TourAPI 이름만, 3자 이상이면 가게 이름도, 체인은 상표만)로 키워드 검색을 대신 불러 15곳까지 모은다. 대신 찾은 줄은 `viaWord` 에 찾은 말을 싣고 그 밖의 줄은 null 이다. 완성어를 읽은 뒤 DB 세션을 바로 놓는다. 카카오가 실패했으면 대신 찾지 않는다(장애 때 기다림이 늘지 않게). 완성어 읽기가 실패하면 빈 배열이고, 말 하나의 카카오 실패는 건너뛰며, DB 세션이 없으면 대신 찾지 않는다.
 
 **Query**
 - `query`: string, 1-80 chars. 두 글자 미만이면 빈 배열.
@@ -1306,7 +1393,8 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
     "placeUrl": null,
     "sido": "전남",
     "city": "여수",
-    "distanceMeters": null
+    "distanceMeters": null,
+    "viaWord": null
   },
   {
     "kind": "place",
@@ -1320,7 +1408,8 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
     "placeUrl": "http://place.map.kakao.com/8193468",
     "sido": "전남",
     "city": "여수",
-    "distanceMeters": null
+    "distanceMeters": null,
+    "viaWord": null
   }
 ]
 ```
@@ -1364,11 +1453,15 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
 
 ### POST /places/match
 
-카카오 운영정책 2단계(설계 `docs/superpowers/specs/2026-10-03-public-place-storage-design.md`). 사용자가 고른 카카오 장소의 이름 · 좌표 · 분류를 우리 장소 기반(`public_places` - TourAPI 6개 유형, 소상공인 상가정보 음식 · 숙박 · 예술·스포츠)과 맞춰 본다. 서버는 받은 값을 비교에만 쓰고 저장하거나 로그에 남기지 않는다(`debug_capture` 도 장소 경로를 늘 뺀다). 반경은 카카오 분류가 관광명소 · 문화시설(`AT4` · `CT1`)이면 TourAPI 1km, 그 밖과 상가정보는 200m. 이름은 소문자로 바꾸고 띄어쓰기 · 기호를 빼고 견준다. 화면은 3단계 담는 흐름에서 쓴다. 로그인 필요.
+카카오 운영정책 2단계(설계 `docs/superpowers/specs/2026-10-03-public-place-storage-design.md`). 사용자가 고른 카카오 장소의 이름 · 좌표 · 분류를 우리 장소 기반(`public_places` - TourAPI 6개 유형, 소상공인 상가정보 음식 · 숙박 · 예술·스포츠)과 맞춰 본다. 서버는 받은 값을 비교에만 쓰고 저장하거나 로그에 남기지 않는다(`debug_capture` 도 장소 경로를 늘 뺀다). 반경은 카카오 분류가 관광명소 · 문화시설(`AT4` · `CT1`)이면 TourAPI 1km, 그 밖과 상가정보는 200m(조회도 그렇게 나눈다 - 1km 상자는 TourAPI 만, 상가정보는 200m 상자만 읽는다). 이름은 소문자로 바꾸고 띄어쓰기 · 기호를 빼고 견준다. 화면은 3단계 담는 흐름에서 쓴다. 로그인 필요.
 
 - `match`: 이름이 같은 공공데이터 장소가 반경 안에 하나뿐이고, 고른 카카오 분류와 맞는다(관광명소 → `sight` · `culture` · `leisure` · `shopping`, 문화시설 → `culture` · `sight` · `leisure`, 음식점 · 카페 → `food` · `cafe`, 숙박 → `stay`). `places` 에 한 곳.
 - `candidates`: 이름이 같은 곳이 둘 이상이거나(TourAPI 와 상가정보에 함께 있어도 둘로 센다), 하나뿐인데 분류가 맞지 않거나 카카오 분류가 없거나 위 다섯 코드가 아니거나, 한쪽 이름이 다른 쪽에 들어 있다(두 이름 모두 두 글자 이상). 가까운 순 최대 3곳.
 - `none`: 맞는 곳이 없다 - 나만의 장소로 담는다. `places` 는 빈 배열.
+
+**`publicMatch.fill`**(방식1 '주소 채움', 이 응답과 `GET /trips/{trip_id}/place-search` 줄의 `publicMatch` 에 같은 모양으로 온다): `AddressFill | null`. 결과가 `match` 가 아니고(`candidates` · `none`) 그 자리를 품은 **건물**이 있거나, 건물이 없고 **땅 중심이 고른 자리에서 30m 안**일 때만 채운다. 그 밖(`match`, 지번 없음, 30m 밖의 땅, 조회 실패)은 `null` 이다 - 맞춰 보기는 조회가 실패해도 그대로 답하고(`fill` 만 `null`) 로그에는 예외 이름만 남는다. 단 장소 검색 줄은 조회가 0.8초를 넘기면(차가운 DB) 끊고 그 match 아닌 줄의 `publicMatch` 를 통째로 `null` 로 준다 - 고른 뒤 `POST /places/match` 가 한도 없이 다시 채운다. 모든 값은 국토교통부 공공데이터(GIS건물통합정보 · 연속지적도)이며 카카오 값이 아니다.
+- `AddressFill`: `kind`(`building` | `parcel`) · `id` · `pnu`(고유번호 19자리) · `address`(법정동 + 지번) · `latitude` · `longitude`(공공데이터 중심) · `distanceMeters`(고른 자리에서 그 중심까지, 정수 m). `id` 는 이 판의 행 번호라 월 갱신 뒤에는 바뀐다 - 담을 때는 `customPlace.geoRef{kind, id, pin: true}` 로만 보내고 주소 · 좌표는 서버가 다시 읽는다.
+- 받은 카카오 좌표는 건물 · 땅을 찾는 질의에만 쓰고 저장 · 로그하지 않는다(데브톡 151505 · 151842).
 
 **Request**
 ```json
@@ -1391,52 +1484,86 @@ Authenticated trip members (owner/editor/viewer) can search Kakao-registered pla
       "category": "sight",
       "sido": "전남",
       "city": "여수",
-      "photoUrl": "http://tong.visitkorea.or.kr/cms/resource/23/3074123_image2_1.jpg",
+      "photoUrl": "https://tong.visitkorea.or.kr/cms/resource/23/3074123_image2_1.jpg",
       "photoLicense": "Type3",
       "distanceMeters": 0
     }
   ]
 }
 ```
-- `category`: `sight` · `culture` · `leisure` · `stay` · `shopping` · `food` · `cafe`. `photoUrl` · `photoLicense`(공공누리 `Type1` · `Type3`)는 TourAPI 만.
+- `category`: `sight` · `culture` · `leisure` · `stay` · `shopping` · `food` · `cafe`. `photoUrl` · `photoLicense`(공공누리 `Type1` · `Type3`)는 TourAPI 만이고, `photoUrl` 은 https 주소로 내보낸다.
 
 **Errors**
 - 401: 인증 필요
 - 422: 필드 누락 · 범위 위반
 
+### POST /places/locate
+
+전체 경로 `POST /api/places/locate`. 위치 찍기(방식1) - 사용자가 지도에서 십자선으로 고른 자리를 **품은 건물 · 땅의 지번**으로 바꾼다. 로그인 필요. 받은 좌표는 `geo` 표를 찾는 질의에만 쓰고 저장 · 로그하지 않는다(찍은 좌표는 저장 · 활용할 수 없다 - 데브톡 151842, 지번 참조로만 담는다 - 151916-4). `debug_capture` 도 장소 경로는 늘 뺀다. 건물이 품고 있으면 건물, 아니면 땅(농지 · 임야는 적재하지 않으므로 지번이 없을 수 있다).
+
+**Request** (모르는 필드는 422)
+```json
+{ "latitude": 34.7443, "longitude": 127.7663 }
+```
+- `latitude` 33-39, `longitude` 124-132 (범위 밖은 422).
+
+**Response 200** → `LocateResult`
+```json
+{
+  "fill": {
+    "kind": "building",
+    "id": 4821937,
+    "pnu": "4613010100100010001",
+    "address": "전남광주통합특별시 여수시 수정동 1-1",
+    "latitude": 34.7441,
+    "longitude": 127.7660,
+    "distanceMeters": 6
+  },
+  "nearCenter": true
+}
+```
+- `fill`: `AddressFill | null` - 찍은 자리를 품은 건물 · 땅(**30m 와 상관없이**). 없으면 `null`(지번이 없다 - 화면은 이름만 담게 한다). `geo` 표를 읽지 못해도 오류가 아니라 `null`(`nearCenter=false`)이고 로그에는 예외 이름만 남는다.
+- `nearCenter`: 건물이거나 땅 중심이 찍은 자리에서 30m(`PARCEL_GATE_M`) 안이면 `true` - 화면이 핀(중심 좌표)까지 담는다(`geoRef.pin=true`). `false` 이면 넓은 땅이라 주소만 담는다(`pin=false`).
+
+**Errors**
+- 401: 인증 필요
+- 422: 필드 누락 · 범위 위반 · 모르는 필드
+
 ### GET /trips/{trip_id}/recommendations
 
-Returns additional AI place candidates for the trip. The backend treats `(sourceProvider, externalPlaceId)` as the durable external identity, then applies a conservative same-provider `externalPlaceId` and normalized-title duplicate exclusion for existing MVP data. Kakao-backed candidates include official Kakao Local API map metadata when available; ratings/reviews are not exposed because the official API response does not provide those fields. When official Kakao data can supply enough non-duplicate places, the response targets at least 10 candidates with a useful mix of attractions, food, and stays; sparse categories are backfilled from other official candidates instead of creating synthetic places. The endpoint returns dynamic `sourceType="freshCandidate"` items first and reads `recommendations.result` only when no fresh candidate is available. New trip creation does not seed saved summaries. `sourceType="savedSummary"` is reserved for existing persisted rows or a future explicit recommendation-persistence contract. The current live row is a development-seed specimen, not proven production legacy history. No runtime writer, TTL, or purge is added until that product contract exists.
+추천 장소 후보. 카카오 로컬을 부르지 않고 일정 지역(`travelAreaId`)의 공공데이터 장소(`public_places`)에서 고른다. 지역은 `GET /trips/{trip_id}/area-center` 와 같은 규칙으로 가린다. 순서는 TourAPI 사진 있는 곳 → TourAPI 사진 없는 곳 → 상가정보이고, 같은 묶음 안은 일정마다 고정된 섞음(`md5(출처 ID + 일정 ID)`)이라 같은 일정은 늘 같은 순서로, 다른 일정은 다르게 보인다. 관광(`sight` · `culture` · `leisure` · `shopping`) 3곳 · 음식(`food` · `cafe`) 3곳 · 숙박(`stay`) 2곳을 먼저 채우고 남는 자리는 세 묶음이 번갈아 채워 최대 18곳이다(모자라면 있는 만큼만 - 가짜로 채우지 않는다). 이미 일정에 담은 장소 - (`publicSource`, `publicSourceId`)가 같거나 정규화한 이름이 같은 곳 - 와 상가정보 예술·스포츠(동네 헬스장 · 당구장 같은 시설)는 뺀다. `suggestedDay` 는 일정의 날을 번갈아 준다. 고를 공공데이터 장소가 없으면(표가 비었거나, 지역을 가리지 못하거나, 모두 이미 담았다) `recommendations.result` 의 저장 요약(`sourceType="savedSummary"`)을 읽는다. 새 일정 생성은 저장 요약을 만들지 않는다.
 
 Additional `Recommendation` fields:
-- `id`: string | null
-- `categoryGroup`: `stay` | `food` | `attraction` | `other` | null
-- `categoryCode`: string | null
-- `categoryName`: string | null
-- `phone`: string | null
-- `address`: string | null
-- `latitude`: number | null
-- `longitude`: number | null
-- `placeUrl`: string | null
+- `id`: string | null (공공데이터 추천은 `public:{source}:{sourceId}`)
+- `categoryGroup`: `attraction`(`sight` · `culture` · `leisure` · `shopping`) | `food` | `cafe` | `stay` | `other` | null
+- `categoryCode` · `categoryName` · `phone` · `placeUrl` · `sourceProvider` · `externalPlaceId`: 공공데이터 추천은 모두 `null` (카카오 값이 없다)
+- `address` · `latitude` · `longitude`: 공공데이터 값
 - `suggestedDay`: number | null
-- `aiReview`: string | null
-- `sourceProvider`: string | null
-- `externalPlaceId`: string | null
-- `sourceType`: `freshCandidate` | `savedSummary` | null
-
-AI 추천 장소 목록 조회.
+- `aiReview`: string | null (공공데이터 추천은 `null`)
+- `sourceType`: `freshCandidate` | `savedSummary` | `public_place` | null - `public_place` 가 공공데이터 추천이다. `freshCandidate`(카카오 추천)는 이 경로가 더는 만들지 않는다.
+- `publicSource`: `tourapi` | `sangga` | null, `publicSourceId`: string | null, `publicCategory`: `sight` · `culture` · `leisure` · `stay` · `shopping` · `food` · `cafe` | null - 담을 때 `publicPlace: { source: publicSource, sourceId: publicSourceId }` 로 보낸다.
+- `photoUrl`: string | null (https 주소), `photoLicense`: `Type1` | `Type3` | null (TourAPI 사진만, 공공누리 출처 표시용)
 
 **Response 200** → `Recommendation[]`
 ```json
 [
   {
-    "label": "🏖️",
-    "title": "함덕해수욕장",
-    "meta": "제주시 조천읍",
-    "reason": "제주 북동부 대표 해수욕장으로 물이 맑습니다.",
-    "categoryName": "관광명소 > 해수욕장",
-    "phone": "064-000-0000",
-    "sourceType": "freshCandidate"
+    "id": "public:tourapi:126508",
+    "label": "오동도",
+    "title": "오동도",
+    "meta": "관광지 · 전남광주통합특별시 여수시 오동도로 222",
+    "reason": "여수 일정에 추가로 검토할 만한 공공데이터 장소입니다.",
+    "categoryGroup": "attraction",
+    "address": "전남광주통합특별시 여수시 오동도로 222",
+    "latitude": 34.7443,
+    "longitude": 127.7663,
+    "suggestedDay": 1,
+    "sourceType": "public_place",
+    "publicSource": "tourapi",
+    "publicSourceId": "126508",
+    "publicCategory": "sight",
+    "photoUrl": "https://tong.visitkorea.or.kr/cms/resource/23/3074123_image2_1.jpg",
+    "photoLicense": "Type3"
   }
 ]
 ```
@@ -1674,7 +1801,7 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 |------|------|------|
 | id | string \| null | 장소 ID |
 | time | string | 시간 (`HH:MM` 또는 `""`) |
-| label | string | 장소명 |
+| label | string | 화면에 보이는 장소 이름. 사용자가 붙인 이름(공공데이터 장소를 `PATCH` 의 `label` 로 고친 이름)이 있으면 그것, 없으면 저장된 이름(공공데이터 장소는 공공데이터 이름, 나만의 장소는 사용자가 쓴 이름) |
 | meta | string | 부가 정보 |
 | address | string \| null | 장소 주소 |
 | latitude | number \| null | 위도 |
@@ -1684,6 +1811,17 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | placeUrl | string \| null | 장소 상세 URL |
 | sourceProvider | string \| null | 외부 장소 제공자 식별자 |
 | externalPlaceId | string \| null | 외부 장소 ID |
+| memo | string \| null | 사용자가 쓴 메모(`trip_places.memo` 그대로). `meta` 는 메모가 있으면 메모, 없으면 주소다. 새로 담은 행은 `null` 이고 `PATCH` 의 `memo` 로 채운다. 예전 카카오 행에는 카카오 '분류 · 주소' 문구가 들어 있을 수 있다 |
+| placeOrigin | `"public"` \| `"custom"` \| `"needs_review"` \| null | 저장한 값의 출처. `public` = 공공데이터 장소 값, `custom` = 나만의 장소(사용자가 쓴 이름 + 선택한 건물 · 땅 지번의 주소 · 중심), `needs_review` = 변환 뒤 확인 필요(4단계). `null` = 예전 행 |
+| publicSource | `"tourapi"` \| `"sangga"` \| null | `placeOrigin="public"` 일 때 공공데이터 출처 |
+| publicSourceId | string \| null | 그 출처의 장소 ID(TourAPI contentid · 상가업소번호) |
+| publicCategory | `sight` \| `culture` \| `leisure` \| `stay` \| `shopping` \| `food` \| `cafe` \| null | 공공데이터 장소 분류. 일정 화면이 시간대와 분류 표시에 쓴다 |
+| photoUrl | string \| null | 공공데이터 사진 주소(https). TourAPI 장소만 |
+| photoLicense | string \| null | 사진 저작권 유형(`Type1` · `Type3`, 공공누리). 출처 표시에 쓴다 |
+| geoKind | `"building"` \| `"parcel"` \| null | 주소 채움(방식1)으로 담긴 나만의 장소의 지번 종류. 그 행의 `address`(와 `pin` 이면 좌표)가 국토교통부 공공데이터 건물 · 땅 지번에서 왔다는 뜻이고 화면이 출처(`국토교통부 공공데이터`)를 보인다. 그 밖의 행은 `null` |
+| needsConfirmation | boolean | 예전 카카오 행(`placeOrigin` 이 `null` 이고 `sourceProvider` 가 `kakao` · `kakao_local`)이면 `true` - 이름 · 주소 · 좌표가 카카오 값이라 이름을 다시 적게 한다 |
+
+3단계부터 새로 담는 행에는 카카오 값이 없다. `label` · `address` · `latitude` · `longitude` 는 공공데이터 값 또는 사용자가 쓴 값이고(나만의 장소는 지번을 채웠을 때만 `address` 가 있고 - `geoKind` 가 같이 온다 - 넓은 땅(`pin=false`)이면 좌표는 `null`, 채우지 않았으면 `address` · 좌표 모두 `null`), `category` · `categoryCode` 는 `null` 이다. `sourceProvider` 는 카카오 장소를 골랐을 때만 `kakao` 이고 `externalPlaceId` · `placeUrl` 은 '카카오맵에서 보기' 링크용이다.
 
 `externalPlaceId` is scoped by `sourceProvider`; the durable external identity is the pair `(sourceProvider, externalPlaceId)`.
 
@@ -1706,6 +1844,9 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | placeUrl | string \| null | Kakao 장소 상세 URL |
 | sourceProvider | string \| null | `kakao` |
 | externalPlaceId | string \| null | Kakao 장소 ID |
+| publicMatch | object \| null | 같은 요청 안에서 우리 공공데이터와 맞춰 본 결과(`POST /places/match` 응답과 같은 모양, `fill` 포함). 좌표가 없거나 실패하면 null. match 아닌 줄은 지번 조회가 0.8초를 넘겨도 null(고른 뒤 다시 맞춘다) |
+| nearby | boolean \| null | 일정 지역 중심에서 20km 안이면 true, 밖이면 false, 중심이 없으면 null |
+| viaWord | string \| null | 친 말로 0곳이라 완성어로 대신 찾은 줄이면 그 말, 아니면 null |
 
 ---
 

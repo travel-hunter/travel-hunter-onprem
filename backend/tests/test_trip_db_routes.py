@@ -13,6 +13,7 @@ from app.main import app
 from app.models import Policy, Trip, TripDay, TripMember, TripPlace, TripPolicy
 from app.models import User as UserModel
 from app.services import trips as trip_service
+from app.services.kakao_local import KakaoLocalConfigurationError
 
 
 client = TestClient(app)
@@ -766,7 +767,7 @@ def test_db_trip_place_crud_routes_return_updated_trip(monkeypatch) -> None:
     try:
         add_response = client.post(
             "/api/trips/7/days/1/places",
-            json={"time": "10:00", "label": "Cafe", "meta": "Dessert", "expectedRevision": 1},
+            json={"time": "10:00", "customPlace": {"name": "Cafe"}, "expectedRevision": 1},
         )
         update_response = client.patch(
             "/api/trips/7/places/1",
@@ -786,7 +787,7 @@ def test_db_trip_place_crud_routes_return_updated_trip(monkeypatch) -> None:
     assert delete_response.status_code == 200
     assert add_response.json()["id"] == "7"
     assert calls[0][0] == "add"
-    assert calls[0][1].label == "Cafe"
+    assert calls[0][1].customPlace.name == "Cafe"
     assert calls[1][0] == "update"
     assert calls[1][1].label == "Updated cafe"
     assert calls[2][0] == "move"
@@ -806,7 +807,7 @@ def test_db_trip_place_batch_route_returns_updated_trip(monkeypatch) -> None:
         assert trip_id == "7"
         assert day_number == 1
         assert payload.expectedRevision == 1
-        assert [place.label for place in payload.places] == ["Cafe stop", "Beach stop"]
+        assert [place.customPlace.name for place in payload.places] == ["Cafe stop", "Beach stop"]
         return trip_payload(trip_id)
 
     monkeypatch.setattr(trip_routes.trip_service, "add_places_to_trip_day", add_places)
@@ -817,8 +818,8 @@ def test_db_trip_place_batch_route_returns_updated_trip(monkeypatch) -> None:
             json={
                 "expectedRevision": 1,
                 "places": [
-                    {"label": "Cafe stop", "time": "", "sourceProvider": "kakao"},
-                    {"label": "Beach stop"},
+                    {"customPlace": {"name": "Cafe stop"}, "time": "", "kakaoPlaceId": "123"},
+                    {"customPlace": {"name": "Beach stop"}},
                 ],
             },
         )
@@ -858,7 +859,7 @@ def test_db_trip_place_batch_route_maps_missing_day_error(monkeypatch) -> None:
     try:
         response = client.post(
             "/api/trips/7/days/99/places/batch",
-            json={"expectedRevision": 1, "places": [{"label": "Cafe stop"}]},
+            json={"expectedRevision": 1, "places": [{"customPlace": {"name": "Cafe stop"}}]},
         )
     finally:
         clear_overrides()
@@ -921,7 +922,7 @@ def test_db_trip_place_routes_map_service_errors(monkeypatch) -> None:
     monkeypatch.setattr(trip_routes.trip_service, "delete_trip_place", reject)
 
     try:
-        add_response = client.post("/api/trips/7/days/99/places", json={"label": "Missing", "expectedRevision": 1})
+        add_response = client.post("/api/trips/7/days/99/places", json={"customPlace": {"name": "Missing"}, "expectedRevision": 1})
         update_response = client.patch("/api/trips/7/places/999", json={"label": "Missing", "expectedRevision": 1})
         move_response = client.patch("/api/trips/7/places/999/move", json={"dayNumber": 1, "position": 1, "expectedRevision": 1})
         delete_response = client.delete("/api/trips/7/places/999?expectedRevision=1")
@@ -982,7 +983,7 @@ def test_db_trip_place_routes_map_viewer_permission_error(monkeypatch) -> None:
     monkeypatch.setattr(trip_routes.trip_service, "move_trip_place", reject)
 
     try:
-        response = client.post("/api/trips/7/days/1/places", json={"label": "Read only", "expectedRevision": 1})
+        response = client.post("/api/trips/7/days/1/places", json={"customPlace": {"name": "Read only"}, "expectedRevision": 1})
         move_response = client.patch("/api/trips/7/places/1/move", json={"dayNumber": 1, "position": 1, "expectedRevision": 1})
     finally:
         clear_overrides()
@@ -1059,7 +1060,7 @@ def test_db_trip_place_search_route_returns_candidates(monkeypatch) -> None:
     monkeypatch.setattr(
         trip_routes.trip_service,
         "search_places_for_trip",
-        lambda db, current_user, *, trip_handle, query: [
+        lambda db, current_user, *, trip_handle, query, page=1: [
             {
                 "id": "kakao:kakao-1",
                 "label": "📍",
@@ -1074,6 +1075,10 @@ def test_db_trip_place_search_route_returns_candidates(monkeypatch) -> None:
                 "placeUrl": "https://place.map.kakao.com/kakao-1",
                 "sourceProvider": "kakao",
                 "externalPlaceId": "kakao-1",
+                "publicMatch": {"result": "candidates", "places": [{
+                    "source": "tourapi", "sourceId": "126", "name": "성산일출봉", "address": "제주특별자치도 서귀포시 성산읍 일출로 284-12",
+                    "latitude": 33.458, "longitude": 126.942, "category": "sight", "sido": "제주", "city": "서귀포",
+                    "photoUrl": None, "photoLicense": None, "distanceMeters": 40}]},
             }
         ]
         if db is fake_db and current_user is user and trip_handle == "7" and query == "성산일출봉"
@@ -1089,6 +1094,75 @@ def test_db_trip_place_search_route_returns_candidates(monkeypatch) -> None:
     assert response.json()[0]["title"] == "성산일출봉"
     assert response.json()[0]["sourceProvider"] == "kakao"
     assert response.json()[0]["externalPlaceId"] == "kakao-1"
+    assert response.json()[0]["publicMatch"]["result"] == "candidates"
+    assert response.json()[0]["publicMatch"]["places"][0]["sourceId"] == "126"
+
+
+def test_db_trip_place_search_route_accepts_page_three(monkeypatch) -> None:
+    install_db_route_dependencies(monkeypatch, object(), make_user())
+    seen: dict[str, object] = {}
+
+    def fake(db, user, *, trip_handle, query, page):
+        seen.update(page=page)
+        return []
+
+    monkeypatch.setattr(trip_routes.trip_service, "search_places_for_trip", fake)
+    try:
+        response = client.get("/api/trips/7/place-search", params={"query": "카페", "page": "3"})
+    finally:
+        clear_overrides()
+    assert response.status_code == 200 and response.json() == []
+    assert seen == {"page": 3}   # 경계 - le=2 로 잘못 줄이면 여기서 잡힌다
+
+
+@pytest.mark.parametrize("page", ["0", "4", "x"])
+def test_db_trip_place_search_route_rejects_a_page_outside_one_to_three(monkeypatch, page) -> None:
+    install_db_route_dependencies(monkeypatch, object(), make_user())
+    monkeypatch.setattr(trip_routes.trip_service, "search_places_for_trip", lambda *args, **kwargs: pytest.fail("must not reach the service"))
+    try:
+        response = client.get("/api/trips/7/place-search", params={"query": "카페", "page": page})
+    finally:
+        clear_overrides()
+    assert response.status_code == 422
+
+
+def test_db_trip_place_search_route_passes_the_page_and_returns_the_row_marks(monkeypatch) -> None:
+    install_db_route_dependencies(monkeypatch, object(), make_user())
+    seen: dict[str, object] = {}
+
+    def fake(db, user, *, trip_handle, query, page):
+        seen.update(page=page)
+        return [{"title": "카페 하나", "meta": "카페", "nearby": False, "viaWord": None}]
+
+    monkeypatch.setattr(trip_routes.trip_service, "search_places_for_trip", fake)
+    try:
+        response = client.get("/api/trips/7/place-search", params={"query": "카페", "page": "2"})
+    finally:
+        clear_overrides()
+    assert response.status_code == 200
+    assert seen == {"page": 2}
+    assert response.json()[0]["nearby"] is False and response.json()[0]["viaWord"] is None
+
+
+def test_db_trip_place_search_route_answers_503_when_kakao_is_misconfigured(monkeypatch) -> None:
+    fake_db = object()
+    user = make_user()
+    install_db_route_dependencies(monkeypatch, fake_db, user)
+    monkeypatch.setattr(trip_service.trip_repository, "has_trip_access", lambda db, trip_id, user_id: True, raising=False)
+
+    def misconfigured():
+        raise KakaoLocalConfigurationError("KAKAO_LOCAL_REST_API_KEY is required when KAKAO_LOCAL_ENABLED=true.")
+
+    monkeypatch.setattr(trip_service, "build_kakao_local_client", misconfigured)
+
+    try:
+        response = client.get("/api/trips/7/place-search?query=성산일출봉")
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Place search is unavailable"}
+    assert "KAKAO" not in response.text   # 키 이름 · 설정 값은 응답에 없다
 
 
 def test_db_trip_invite_email_route_returns_delivery_status(monkeypatch) -> None:

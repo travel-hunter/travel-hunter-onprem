@@ -655,7 +655,7 @@
         "expectedSaving": "string",
         "linkedPolicies": "array of { slug, title, amount, region, status, deadline:string|null, officialUrl:string|null, applyUrl:string|null, application:object|null }",
         "recommendedPolicies": "array of { slug, title, amount, region }",
-        "days": "object (id:string, time:string, label:string, meta:string, address:string|null, latitude:number|null, longitude:number|null, category:string|null, categoryCode:string|null, placeUrl:string|null, sourceProvider:string|null, externalPlaceId:string|null)",
+        "days": "object ({dayNumber}: array of { id:string, time:string, label:string, meta:string, memo:string|null, address:string|null, latitude:number|null, longitude:number|null, category:string|null, categoryCode:string|null, placeUrl:string|null, sourceProvider:string|null, externalPlaceId:string|null, placeOrigin:string enum(public|custom|needs_review)|null, publicSource:string enum(tourapi|sangga)|null, publicSourceId:string|null, publicCategory:string enum(sight|culture|leisure|stay|shopping|food|cafe)|null, photoUrl:string|null, photoLicense:string|null, geoKind:string enum(building|parcel)|null, needsConfirmation:boolean })",
         "currentUserRole": "string enum(owner|editor|viewer)",
         "revision": "number",
         "startDate": "YYYY-MM-DD string",
@@ -699,7 +699,7 @@
         "expectedSaving": "string",
         "linkedPolicies": "array of { slug, title, amount, region, status, deadline:string|null, officialUrl:string|null, applyUrl:string|null, application:object|null }",
         "recommendedPolicies": "array of { slug, title, amount, region, status }",
-        "days": "object (id:string, time:string, label:string, meta:string, address:string|null, latitude:number|null, longitude:number|null, category:string|null, categoryCode:string|null, placeUrl:string|null, sourceProvider:string|null, externalPlaceId:string|null)",
+        "days": "object ({dayNumber}: array of { id:string, time:string, label:string, meta:string, memo:string|null, address:string|null, latitude:number|null, longitude:number|null, category:string|null, categoryCode:string|null, placeUrl:string|null, sourceProvider:string|null, externalPlaceId:string|null, placeOrigin:string enum(public|custom|needs_review)|null, publicSource:string enum(tourapi|sangga)|null, publicSourceId:string|null, publicCategory:string enum(sight|culture|leisure|stay|shopping|food|cafe)|null, photoUrl:string|null, photoLicense:string|null, geoKind:string enum(building|parcel)|null, needsConfirmation:boolean })",
         "currentUserRole": "string enum(owner|editor|viewer)",
         "revision": "number",
         "travelAreaId": "string|null",
@@ -729,7 +729,7 @@
         "expectedSaving": "string",
         "linkedPolicies": "array of { slug, title, amount, region, status, deadline:string|null, officialUrl:string|null, applyUrl:string|null, application:object|null }",
         "recommendedPolicies": "array of { slug, title, amount, region, status }",
-        "days": "object (id:string, time:string, label:string, meta:string, address:string|null, latitude:number|null, longitude:number|null, category:string|null, categoryCode:string|null, placeUrl:string|null, sourceProvider:string|null, externalPlaceId:string|null)",
+        "days": "object ({dayNumber}: array of { id:string, time:string, label:string, meta:string, memo:string|null, address:string|null, latitude:number|null, longitude:number|null, category:string|null, categoryCode:string|null, placeUrl:string|null, sourceProvider:string|null, externalPlaceId:string|null, placeOrigin:string enum(public|custom|needs_review)|null, publicSource:string enum(tourapi|sangga)|null, publicSourceId:string|null, publicCategory:string enum(sight|culture|leisure|stay|shopping|food|cafe)|null, photoUrl:string|null, photoLicense:string|null, geoKind:string enum(building|parcel)|null, needsConfirmation:boolean })",
         "currentUserRole": "string enum(owner|editor|viewer)",
         "revision": "number",
         "startDate": "YYYY-MM-DD string",
@@ -826,8 +826,23 @@
       "request": {
         "expectedRevision": 1,
         "time": "10:30",
-        "label": "함덕해수욕장",
-        "meta": "제주시 조천읍"
+        "publicPlace": {
+          "source": "tourapi",
+          "sourceId": "126508"
+        },
+        "kakaoPlaceId": "12345"
+      },
+      "customPlaceRequestExample": {
+        "expectedRevision": 1,
+        "time": "10:30",
+        "customPlace": {
+          "name": "우리 아지트",
+          "geoRef": {
+            "kind": "building",
+            "id": 4821937,
+            "pin": true
+          }
+        }
       },
       "requiredFields": {
         "id": "string",
@@ -838,7 +853,7 @@
         "region": "string"
       },
       "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale.",
-      "dbModeBehavior": "Requires owner/editor access, atomically compares and increments trips.revision, inserts trip_places, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
+      "dbModeBehavior": "Requires owner/editor access. The body takes exactly one of publicPlace {source: tourapi|sangga, sourceId} or customPlace {name 1-100 chars after trimming, optional geoRef {kind: building|parcel, id: 1..2^63-1, pin: boolean}}, plus optional time (HH:MM or empty) and optional kakaoPlaceId (1-20 digits); any other field (label, meta, address, latitude, longitude, category, categoryCode, placeUrl, sourceProvider, externalPlaceId) returns 422, and so does an unknown field inside publicPlace or customPlace (for example publicPlace.name or customPlace.address). The server never stores Kakao names, addresses, coordinates or categories: a publicPlace row copies name, address, coordinates, category and photo from public_places (placeOrigin=public; 404 Public place not found, without touching the revision, when it does not exist), a customPlace row keeps the user-written name (placeOrigin=custom); latitude, longitude and address are never accepted from the client (422, the user's map-picked coordinates cannot be stored), and when geoRef is given the server re-reads the address from the geo tables by kind and id (building or parcel jibun from the Ministry of Land public data) and, only when pin is true, the public-data centre point, recording geo_kind and geo_pnu (ItineraryPlace.geoKind); an id that is not in the current geo load returns 404 Address reference not found and a geo read failure returns 503 Address lookup is unavailable, both before the revision is touched. kakaoPlaceId becomes sourceProvider=kakao, externalPlaceId and a server-built placeUrl https://place.map.kakao.com/{id}. Atomically compares and increments trips.revision, inserts trip_places, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
     },
     {
       "method": "POST",
@@ -848,17 +863,22 @@
         "expectedRevision": 1,
         "places": [
           {
-            "label": "Basket cafe",
-            "time": "",
-            "meta": "1 Basket road",
-            "address": "1 Basket road",
-            "latitude": 33.45,
-            "longitude": 126.57,
-            "category": "Cafe",
-            "categoryCode": "CE7",
-            "placeUrl": "https://place.map.kakao.com/123",
-            "sourceProvider": "kakao",
-            "externalPlaceId": "123"
+            "publicPlace": {
+              "source": "tourapi",
+              "sourceId": "126508"
+            },
+            "kakaoPlaceId": "123"
+          },
+          {
+            "customPlace": {
+              "name": "우리 아지트",
+              "geoRef": {
+                "kind": "parcel",
+                "id": 90412,
+                "pin": false
+              }
+            },
+            "time": "15:00"
           }
         ]
       },
@@ -871,7 +891,7 @@
         "region": "string"
       },
       "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale.",
-      "dbModeBehavior": "Requires owner/editor access, atomically compares and increments trips.revision once, appends 1-50 selected search-place candidates to the requested trip day, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
+      "dbModeBehavior": "Requires owner/editor access. Each of the 1-50 items has the same shape and rules as the single add (exactly one of publicPlace or customPlace, optional time and kakaoPlaceId; old Kakao fields and unknown fields inside publicPlace or customPlace return 422). Every public place reference and customPlace.geoRef is looked up before the revision is touched; if any is missing the response is 404 Public place not found or Address reference not found (503 Address lookup is unavailable when the geo tables cannot be read) and nothing is written. Then atomically compares and increments trips.revision once, appends the places to the requested trip day in order, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
     },
     {
       "method": "PATCH",
@@ -880,9 +900,13 @@
       "request": {
         "expectedRevision": 1,
         "time": "11:00",
-        "label": "함덕해수욕장",
-        "meta": "제주시 조천읍"
+        "label": "우리 단골집",
+        "memo": "일몰 때 가기"
       },
+      "replaceRequestExamples": [
+        {"expectedRevision": 1, "publicPlace": {"source": "tourapi", "sourceId": "126508"}},
+        {"expectedRevision": 1, "customPlace": {"name": "우리 아지트", "geoRef": {"kind": "building", "id": 4821937, "pin": true}}}
+      ],
       "requiredFields": {
         "id": "string",
         "title": "string",
@@ -892,7 +916,7 @@
         "region": "string"
       },
       "conflictBehavior": "409 Trip has changed. Refresh before saving. when expectedRevision is stale.",
-      "dbModeBehavior": "Requires owner/editor access, atomically compares and increments trips.revision, updates editable trip_places fields, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
+      "dbModeBehavior": "Requires owner/editor access; send only the changed fields (old fields such as meta return 422, and so do unknown fields inside publicPlace or customPlace, for example publicPlace.latitude). time applies to every row. label is the user-written name (1-100 chars): on a public-place row (placeOrigin=public) it is stored apart as user_label and the public name, address, coordinates, category, photo and source stay as they are, so the response label shows the user name; on a custom row (placeOrigin=custom) the place name itself changes; a legacy Kakao row (needsConfirmation=true) becomes a custom place when only label is sent (name=label, address, coordinates, category and memo cleared) and a time-only change on a legacy row converts nothing. memo is the user note (0-500 chars, empty or null clears it; it comes back as ItineraryPlace.memo). publicPlace or customPlace (not both, else 422) replaces the place with public_places values (404 Public place not found without touching the revision) or the user-written name with an optional customPlace.geoRef (same rules as the add: no latitude, longitude or address, 404 Address reference not found, 503 Address lookup is unavailable), clears user_label, and a label sent in the same request is then applied to the new row; a legacy Kakao row also loses its Kakao style memo. The Kakao place id, placeUrl and sourceProvider are always kept. Atomically compares and increments trips.revision, and returns the updated Trip. Viewer access returns 403 Trip edit permission required."
     },
     {
       "method": "PATCH",
@@ -953,16 +977,42 @@
     },
     {
       "method": "GET",
+      "path": "/api/trips/1/places/2/public-candidates",
+      "status": 200,
+      "authRequired": true,
+      "requiredFields": {
+        "places": "array of { source:string enum(tourapi|sangga), sourceId:string, name:string, address:string|null, latitude:number, longitude:number, category:string enum(sight|culture|leisure|stay|shopping|food|cafe), sido:string|null, city:string|null, photoUrl:string|null, photoLicense:string|null, distanceMeters:number }"
+      },
+      "dbModeBehavior": "Requires owner/editor access (viewer 403, non-member or unknown trip or place 404). For a legacy Kakao row (placeOrigin null and sourceProvider kakao or kakao_local, so needsConfirmation=true) with stored coordinates, the server runs the same in-memory match as POST /api/places/match with the stored name, coordinates and Kakao category code and returns up to 3 candidates nearest first, a direct match included. The stored values are used only for the comparison and are never logged, stored or returned. Any other row, or a row without coordinates, returns places=[]. Read-only: the trip revision does not change. A candidate is chosen with PATCH /api/trips/{tripId}/places/{placeId} publicPlace."
+    },
+    {
+      "method": "GET",
+      "path": "/api/trips/1/area-center",
+      "status": 200,
+      "authRequired": true,
+      "requiredFields": {
+        "latitude": "number|null",
+        "longitude": "number|null"
+      },
+      "dbModeBehavior": "Requires trip access (owner/editor/viewer; non-member or unknown trip 404). Returns the median latitude and longitude of the public places (public_places) in the trip travel area; the map-point picker opens there instead of on a Kakao coordinate. Area: whole:{sido}, legacy *-all areas and 세종 use the whole sido; other areas use the sido plus its included cities (the same city name exists in several sidos, so both are matched). TourAPI places are used when the area has any, otherwise store data. Both values are null when the travel area cannot be resolved or has no public places (not an error)."
+    },
+    {
+      "method": "GET",
       "path": "/api/trips/1/place-search",
       "status": 200,
       "authRequired": true,
       "query": {
-        "query": "성산일출봉"
+        "query": "성산일출봉",
+        "page": 1
       },
       "requiredArrayItemFields": {
         "label": "string",
         "title": "string",
-        "meta": "string"
+        "meta": "string",
+        "publicMatch": "object|null",
+        "publicMatch.fill": "object|null",
+        "nearby": "boolean|null",
+        "viaWord": "string|null"
       },
       "optionalArrayItemFields": {
         "id": "string|null",
@@ -976,7 +1026,7 @@
         "sourceProvider": "string|null",
         "externalPlaceId": "string|null"
       },
-      "dbModeBehavior": "Authenticated trip members can search Kakao Local places for selection. The endpoint returns candidate metadata only and does not mutate itinerary data; saving still uses POST /api/trips/{tripId}/days/{dayNumber}/places with expectedRevision."
+      "dbModeBehavior": "Authenticated trip members can search Kakao Local places in the add-place sheet. The results are display-only and are never stored or logged; the endpoint does not mutate itinerary data. Every row carries publicMatch (always present, possibly null) - all rows with coordinates are matched against public places in one batch in the same request (one read per source, same rules and shape as POST /api/places/match); null for a row without coordinates or whose matching failed, and for every row when the read fails, in which case the client matches the picked row itself. publicMatch.fill is the public-data address (AddressFill) of the building or lot around the row when the result is not a direct match, else null. A picked place is saved as a publicPlace reference or a user-written customPlace (with an optional customPlace.geoRef) with POST /api/trips/{tripId}/days/{dayNumber}/places (only kakaoPlaceId is kept). If Kakao is switched off or the Kakao request fails, the response is an empty array. If Kakao is switched on but misconfigured (for example the REST key is missing), the response is 503 Place search is unavailable, with no key or setting in the response or the logs. Returns 15 places per page (page 1-3; Kakao gives at most 45 places per word): the 20 km area pages first, then the nationwide pages, de-duplicated by Kakao place id. Each row has nearby (true within 20 km of the trip area center, false outside, null without a center) and viaWord. When the typed word finds nothing on page 1, the top 3 completed words from our public place names (trip area first, filled from the whole country when the area gives fewer than 3) are searched instead (at most 8 Kakao calls) and those rows carry viaWord. A page outside 1-3 is 422; without a center Kakao is called once without coordinates; a failed area-stream call is an empty array (also on pages 2-3) while a failed nationwide call keeps the rows gathered; completed-word results have no page 2; the only coordinates sent to Kakao are the trip area center computed from our public data, and search words, completed words and coordinates are never logged. The DB session is released before Kakao is called."
     },
     {
       "method": "GET",
@@ -1000,9 +1050,10 @@
         "placeUrl": "string|null",
         "sido": "string|null",
         "city": "string|null",
-        "distanceMeters": "integer|null"
+        "distanceMeters": "integer|null",
+        "viaWord": "string|null"
       },
-      "dbModeBehavior": "Authenticated users search Kakao Local places for the unified search (home place list, policy tab 'find by location'). Not tied to a trip and mutates nothing. Keyword search, plus Kakao address search when the query ends in a dong/eup/myeon/ri/N-ga so every same-named area comes back (kind=area, listed first). Each item carries the map region (sido) and city resolved from the Kakao address server-side; 전남광주통합특별시 maps to 광주 for 구 and 전남 for 시/군. Queries shorter than 2 chars, Kakao disabled, or Kakao failures return []."
+      "dbModeBehavior": "Authenticated users search Kakao Local places for the unified search (home place list, policy tab 'find by location'). Not tied to a trip and mutates nothing. Keyword search, plus Kakao address search when the query ends in a dong/eup/myeon/ri/N-ga so every same-named area comes back (kind=area, listed first). Each item carries the map region (sido) and city resolved from the Kakao address server-side; 전남광주통합특별시 maps to 광주 for 구 and 전남 for 시/군. Queries shorter than 2 chars, Kakao disabled, or Kakao failures return []. When Kakao finds nothing and the keyword call did not fail, the top 3 completed words (nationwide; shop names from 3 characters) are searched instead and those rows carry viaWord."
     },
     {
       "method": "GET",
@@ -1045,9 +1096,25 @@
       },
       "requiredFields": {
         "result": "string enum(match|candidates|none)",
-        "places": "array"
+        "places": "array",
+        "fill": "object|null"
       },
-      "dbModeBehavior": "Authenticated users match a Kakao place they picked (name, coordinates, optional Kakao category code; no Kakao place id) against our own public place base (public_places: TourAPI six content types and SBIZ store data food/stay/arts-sports). The server compares in memory and never stores or logs the received values (debug capture always excludes place paths). Radius: TourAPI 1 km when the Kakao category is AT4/CT1, otherwise 200 m; store data always 200 m. Names compare lowercased without spaces or symbols. result=match only when exactly one same-named place is within the radius and its category fits the Kakao category (AT4: sight/culture/leisure/shopping, CT1: culture/sight/leisure, FD6/CE7: food/cafe, AD5: stay); candidates when two or more same-named places (a TourAPI row and a store row count as two), a single same-named place whose category does not fit or when the Kakao category is missing or not one of those five codes, or a partial name overlap (both names 2+ chars), nearest first, at most 3; none otherwise with an empty places array. Each place has source (tourapi|sangga), sourceId, name, address|null, latitude, longitude, category (sight|culture|leisure|stay|shopping|food|cafe), sido|null, city|null, photoUrl|null, photoLicense|null (TourAPI only), distanceMeters. latitude 33-39, longitude 124-132, name 1-100 chars or 422; 401 without login."
+      "dbModeBehavior": "Authenticated users match a Kakao place they picked (name, coordinates, optional Kakao category code; no Kakao place id) against our own public place base (public_places: TourAPI six content types and SBIZ store data food/stay/arts-sports). The server compares in memory and never stores or logs the received values (debug capture always excludes place paths). Radius: TourAPI 1 km when the Kakao category is AT4/CT1, otherwise 200 m; store data always 200 m (the lookup is split the same way: a 1 km box for TourAPI rows and a 200 m box for store rows). Names compare lowercased without spaces or symbols. result=match only when exactly one same-named place is within the radius and its category fits the Kakao category (AT4: sight/culture/leisure/shopping, CT1: culture/sight/leisure, FD6/CE7: food/cafe, AD5: stay); candidates when two or more same-named places (a TourAPI row and a store row count as two), a single same-named place whose category does not fit or when the Kakao category is missing or not one of those five codes, or a partial name overlap (both names 2+ chars), nearest first, at most 3; none otherwise with an empty places array. Each place has source (tourapi|sangga), sourceId, name, address|null, latitude, longitude, category (sight|culture|leisure|stay|shopping|food|cafe), sido|null, city|null, photoUrl|null (https), photoLicense|null (TourAPI only), distanceMeters. latitude 33-39, longitude 124-132, name 1-100 chars or 422; 401 without login. fill (AddressFill|null: kind building|parcel, id, pnu, address, latitude, longitude, distanceMeters) is set only when result is not match and the spot is inside a building, or inside no building and within 30 m (PARCEL_GATE_M) of a parcel centre; it carries Ministry of Land public-data values (never Kakao values), its id is a row number of the current geo load, and a failed geo lookup leaves fill null without failing the match; the received coordinates are used only for the lookup and never stored or logged."
+    },
+    {
+      "method": "POST",
+      "path": "/api/places/locate",
+      "status": 200,
+      "authRequired": true,
+      "request": {
+        "latitude": 34.7443,
+        "longitude": 127.7663
+      },
+      "requiredFields": {
+        "fill": "object|null",
+        "nearCenter": "boolean"
+      },
+      "dbModeBehavior": "Authenticated users turn a spot picked on the map into the jibun of the building or parcel that contains it (Ministry of Land public data in the geo tables). latitude 33-39 and longitude 124-132, unknown fields 422, 401 without login. The received coordinates are used only for the spatial lookup and are never stored or logged (Kakao DevTalk 151842, 151916-4; debug capture always excludes place paths). fill is AddressFill {kind: building|parcel, id, pnu, address, latitude, longitude, distanceMeters} of the containing building, else of the containing parcel (farmland and forest parcels are not loaded), regardless of distance, or null when there is none or the geo tables cannot be read (not an error). nearCenter is true when fill is a building or a parcel whose centre is within 30 m (PARCEL_GATE_M) of the spot: the client then saves the pin (customPlace.geoRef.pin=true); otherwise it saves the address only (pin=false). The client never sends the picked coordinates anywhere else; it saves only customPlace.geoRef {kind, id, pin}."
     },
     {
       "method": "GET",
@@ -1073,9 +1140,15 @@
         "externalPlaceId": "string|null",
         "categoryName": "string|null",
         "phone": "string|null",
-        "sourceType": "string enum(freshCandidate|savedSummary)|null"
+        "sourceType": "string enum(freshCandidate|savedSummary|public_place)|null",
+        "publicSource": "string enum(tourapi|sangga)|null",
+        "publicSourceId": "string|null",
+        "publicCategory": "string enum(sight|culture|leisure|stay|shopping|food|cafe)|null",
+        "photoUrl": "string|null",
+        "photoLicense": "string|null"
       },
-      "dbModeBehavior": "Returns additional place candidates for the trip, excluding places already in the itinerary. Kakao-backed candidates include official Local API map metadata such as categoryName, phone, address, coordinates, and placeUrl when available, and use sourceType=freshCandidate. New trip creation does not seed saved summaries; the current savedSummary row is a development-seed specimen rather than proven production legacy history, and future persistence requires an explicit product contract."
+      "categoryGroupValues": "attraction (sight/culture/leisure/shopping) | food | cafe | stay | other",
+      "dbModeBehavior": "Returns up to 18 place candidates from our public places (public_places) in the trip travel area instead of Kakao Local: TourAPI places with a photo first, then TourAPI without a photo, then store data, shuffled stably per trip (md5 of source id and trip id); 3 attraction, 3 food/cafe and 2 stay first, the rest filled by taking turns, fewer when there are not enough. Places already in the itinerary (same publicSource and publicSourceId, or the same normalized name) and store arts-and-sports places are excluded. Items use sourceType=public_place with id public:{source}:{sourceId}, label=title=name, meta=category label and address, the public address and coordinates, publicSource, publicSourceId, publicCategory, photoUrl (https) and photoLicense; Kakao fields (categoryCode, categoryName, phone, placeUrl, sourceProvider, externalPlaceId) are null. The area is whole:{sido}, legacy *-all and 세종 by sido, otherwise the sido plus its included cities. When there is nothing to pick (empty table, unresolved area, everything already added) the stored recommendations.result rows are returned as sourceType=savedSummary. New trip creation does not seed saved summaries."
     },
     {
       "method": "GET",

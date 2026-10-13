@@ -15,6 +15,7 @@ from app.services.external_collection_scheduler import (
     start_external_collection_scheduler,
     stop_external_collection_scheduler,
 )
+from app.services.kakao_local import close_shared_http
 from app.services.notification_scheduler import (
     start_notification_scheduler,
     stop_notification_scheduler,
@@ -23,6 +24,7 @@ from app.services.public_places_scheduler import (
     start_public_places_sync_scheduler,
     stop_public_places_sync_scheduler,
 )
+from app.services.search_warmup import start_place_search_warmup
 
 settings.validate_runtime()
 configure_logging(
@@ -38,12 +40,14 @@ async def lifespan(_app: FastAPI):
     notification_scheduler_task = start_notification_scheduler()
     external_collection_scheduler_task = start_external_collection_scheduler()
     public_places_sync_task = start_public_places_sync_scheduler()
+    start_place_search_warmup()   # 첫 장소 검색 데우기 - 뒤에서 한 번, 기다리지 않는다
     try:
         yield
     finally:
         await stop_public_places_sync_scheduler(public_places_sync_task)
         await stop_external_collection_scheduler(external_collection_scheduler_task)
         await stop_notification_scheduler(notification_scheduler_task)
+        close_shared_http()
 
 app = FastAPI(
     title="Travel Hunter API",

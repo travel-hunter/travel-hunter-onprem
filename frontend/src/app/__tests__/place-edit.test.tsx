@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   appDataApi,
+  type ItineraryPlace,
   type PlaceSearchCandidate,
   type Recommendation,
   type Trip,
@@ -122,16 +123,12 @@ describe("Travel Hunter app — place editing", () => {
       await user.click(screen.getByRole("button", { name: "저장하기" }));
 
       await waitFor(() =>
-        expect(updatePlaceSpy).toHaveBeenCalledWith(
-          "55",
-          "1",
-          expect.objectContaining({
-            time: "10:20",
-            label: "Updated peak",
-            meta: "New memo",
-            expectedRevision: 1,
-          }),
-        ),
+        expect(updatePlaceSpy).toHaveBeenCalledWith("55", "1", {
+          time: "10:20",
+          label: "Updated peak",
+          memo: "New memo",
+          expectedRevision: 1,
+        }),
       );
       await waitFor(() => expect(document.body).toHaveTextContent("Updated peak"));
     } finally {
@@ -198,7 +195,7 @@ describe("Travel Hunter app — place editing", () => {
         expect(updatePlaceSpy).toHaveBeenCalledWith(
           "56",
           "1",
-          expect.objectContaining({ label: "My unsaved edit", expectedRevision: 1 }),
+          { label: "My unsaved edit", expectedRevision: 1 },
         ),
       );
       await waitFor(() => expect(getTripSpy).toHaveBeenLastCalledWith("56"));
@@ -292,6 +289,9 @@ describe("Travel Hunter app — place editing", () => {
           ),
         ).toContain("Draft peak"),
       );
+      expect(
+        JSON.parse(window.localStorage.getItem("travel-hunter:draft:trip-place:55:edit:1")!).value,
+      ).toEqual({ placeId: "1", time: "11:20", label: "Draft peak", memo: "Draft memo" });
 
       cleanup();
       renderAppRoute("/trips/55");
@@ -635,7 +635,7 @@ describe("Travel Hunter app — place editing", () => {
       await user.click(within(sheet).getByRole("button", { name: "저장하기" }));
 
       await waitFor(() =>
-        expect(updateSpy).toHaveBeenCalledWith("58", "1", expect.objectContaining({ label: "Renamed peak", expectedRevision: 6 })),
+        expect(updateSpy).toHaveBeenCalledWith("58", "1", { label: "Renamed peak", expectedRevision: 6 }),
       );
       await waitFor(() => expect(document.body).toHaveTextContent("Renamed peak"));
       // PATCH 가 끝난 뒤에 센다. 먼저 세면 저장 뒤 move 가 되살아나도 못 잡는다.
@@ -675,6 +675,291 @@ describe("Travel Hunter app — place editing", () => {
     } finally {
       getTripSpy.mockRestore();
       moveSpy.mockRestore();
+    }
+  });
+
+  it("keeps untouched name and memo out of the draft and sends only the changed time", async () => {
+    const address = "전남광주통합특별시 여수시 오동도로 222";
+    const publicRow: ItineraryPlace = {
+      id: "1",
+      time: "09:00",
+      label: "오동도",
+      meta: address,
+      address,
+      latitude: 34.7443,
+      longitude: 127.7663,
+      placeOrigin: "public",
+      publicSource: "tourapi",
+      publicSourceId: "126508",
+      publicCategory: "sight",
+    };
+    const trip: Trip = { ...getPreviewTrip(), id: "81", revision: 3, currentUserRole: "owner", days: { 1: [publicRow] } };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const updateSpy = vi
+      .spyOn(appDataApi, "updateTripPlace")
+      .mockResolvedValue({ ...trip, revision: 4, days: { 1: [{ ...publicRow, time: "10:00" }] } });
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/81");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "오동도 상세 열기" }));
+
+      // 서버가 meta 를 주소로 채운 행 - 메모 칸은 비어 있다
+      expect(document.querySelector('input[name="place-label"]')).toHaveValue("오동도");
+      expect(document.querySelector('textarea[name="place-meta"]')).toHaveValue("");
+
+      await user.click(screen.getByRole("button", { name: "방문 시간 1시간 증가" }));
+      const stored = JSON.parse(window.localStorage.getItem("travel-hunter:draft:trip-place:81:edit:1")!);
+      expect(stored.value).toEqual({ placeId: "1", time: "10:00" });
+
+      await user.click(screen.getByRole("button", { name: "저장하기" }));
+      await waitFor(() => expect(updateSpy).toHaveBeenCalledWith("81", "1", { time: "10:00", expectedRevision: 3 }));
+    } finally {
+      getTripSpy.mockRestore();
+      updateSpy.mockRestore();
+    }
+  });
+
+  it("closes the edit sheet without a request when nothing changed", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "82",
+      revision: 3,
+      currentUserRole: "owner",
+      days: { 1: [{ id: "1", time: "09:00", label: "Sunrise peak", meta: "Nature" }] },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const updateSpy = vi.spyOn(appDataApi, "updateTripPlace");
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/82");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Sunrise peak 상세 열기" }));
+      await user.click(screen.getByRole("button", { name: "저장하기" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "장소 수정" })).not.toBeInTheDocument());
+      expect(updateSpy).not.toHaveBeenCalled();
+    } finally {
+      getTripSpy.mockRestore();
+      updateSpy.mockRestore();
+    }
+  });
+
+  it("drops drafts that an older version wrote when the app starts", async () => {
+    await login();
+    cleanup();
+    const stale = "travel-hunter:draft:trip-place:55:edit:1";
+    window.localStorage.setItem(
+      stale,
+      JSON.stringify({ version: 1, savedAt: Date.now(), value: { placeId: "1", time: "09:00", label: "카카오 예전 이름", meta: "음식점 · 부산 중구 카카오로 1" } }),
+    );
+
+    renderAppRoute("/login");
+
+    await waitFor(() => expect(window.localStorage.getItem(stale)).toBeNull());
+  });
+
+  it("renames a public place by sending only the label, without any notice that the place changes kind", async () => {
+    const address = "전남광주통합특별시 여수시 오동도로 222";
+    const publicRow: ItineraryPlace = {
+      id: "1",
+      time: "09:00",
+      label: "오동도",
+      meta: address,
+      address,
+      latitude: 34.7443,
+      longitude: 127.7663,
+      placeOrigin: "public",
+      publicSource: "tourapi",
+      publicSourceId: "126508",
+      publicCategory: "sight",
+    };
+    const trip: Trip = { ...getPreviewTrip(), id: "83", revision: 3, currentUserRole: "owner", days: { 1: [publicRow] } };
+    // 서버는 사용자 이름을 따로 담고 화면에는 고친 이름을 내려 준다 - 공공데이터 값은 그대로다
+    const renamed: ItineraryPlace = { ...publicRow, label: "내가 부르는 이름" };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const updateSpy = vi
+      .spyOn(appDataApi, "updateTripPlace")
+      .mockResolvedValue({ ...trip, revision: 4, days: { 1: [renamed] } });
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/83");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "오동도 상세 열기" }));
+      const sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+
+      // 이름 칸은 보이는 이름으로 시작한다
+      const nameField = sheet.querySelector('input[name="place-label"]') as HTMLInputElement;
+      expect(nameField).toHaveValue("오동도");
+      await user.clear(nameField);
+      await user.type(nameField, "내가 부르는 이름");
+      // 고쳐도 나만의 장소로 바뀐다는 안내는 없다
+      expect(sheet).not.toHaveTextContent(/나만의 장소|바뀌|변환/);
+      // 초안에는 고친 이름만 남는다
+      expect(JSON.parse(window.localStorage.getItem("travel-hunter:draft:trip-place:83:edit:1")!).value).toEqual({
+        placeId: "1",
+        time: "09:00",
+        label: "내가 부르는 이름",
+      });
+
+      await user.click(within(sheet).getByRole("button", { name: "저장하기" }));
+
+      // 이름 하나만 보낸다 - 다른 장소로 바꾸는 publicPlace · customPlace 는 없다
+      await waitFor(() => expect(updateSpy).toHaveBeenCalledWith("83", "1", { label: "내가 부르는 이름", expectedRevision: 3 }));
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "장소 수정" })).not.toBeInTheDocument());
+      // 일정에는 고친 이름이 보이고, 다시 열면 이름 칸이 그 이름으로 시작한다
+      await user.click(await screen.findByRole("button", { name: "내가 부르는 이름 상세 열기" }));
+      expect(document.querySelector('input[name="place-label"]')).toHaveValue("내가 부르는 이름");
+    } finally {
+      getTripSpy.mockRestore();
+      updateSpy.mockRestore();
+    }
+  });
+
+  it("shows the address and its public source line on a custom place that was filled from a jibun", async () => {
+    const address = "전남광주통합특별시 여수시 수정동 1-6";
+    const filledRow: ItineraryPlace = {
+      id: "1",
+      time: "09:00",
+      label: "우리 쉼터",
+      meta: address,
+      address,
+      latitude: 34.744764,
+      longitude: 127.767783,
+      placeOrigin: "custom",
+      geoKind: "parcel",
+    };
+    const trip: Trip = { ...getPreviewTrip(), id: "84", revision: 3, currentUserRole: "owner", days: { 1: [filledRow] } };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/84");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "우리 쉼터 상세 열기" }));
+      const sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+
+      const fields = sheet.querySelector(".place-detail-fields") as HTMLElement;
+      expect(fields).toHaveTextContent(address);
+      expect(fields).toHaveTextContent("주소: 국토교통부 공공데이터(땅 지번)");
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
+  it("asks for a refresh instead of the generic message when saving an edit is refused with 422", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "84",
+      revision: 3,
+      currentUserRole: "owner",
+      days: { 1: [{ id: "1", time: "09:00", label: "Sunrise peak", meta: "Nature" }] },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const updateSpy = vi
+      .spyOn(appDataApi, "updateTripPlace")
+      .mockRejectedValue(
+        new ApiError("Unprocessable Entity", {
+          status: 422,
+          statusText: "Unprocessable Entity",
+          // 옛 화면이 보낸 모양 - 서버가 모르는 필드(예전 메모 칸 meta)를 거절했다
+          detail: [{ type: "extra_forbidden", loc: ["body", "meta"], msg: "Extra inputs are not permitted" }],
+        }),
+      );
+    const reload = vi.fn();
+    vi.stubGlobal("location", { ...window.location, reload });
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/84");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Sunrise peak 상세 열기" }));
+      const sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+      const nameField = sheet.querySelector('input[name="place-label"]') as HTMLInputElement;
+      await user.clear(nameField);
+      await user.type(nameField, "Renamed peak");
+
+      await user.click(within(sheet).getByRole("button", { name: "저장하기" }));
+
+      await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+      expect(await within(sheet).findByText("화면이 오래됐을 수 있어요. 새로 고침한 뒤 다시 시도해 주세요.")).toBeInTheDocument();
+      expect(within(sheet).queryByText(/입력값을 확인하고 다시 시도해 주세요/)).not.toBeInTheDocument();
+      // 쓰던 내용은 그대로 남는다
+      expect(nameField).toHaveValue("Renamed peak");
+      expect(reload).not.toHaveBeenCalled();
+      await user.click(within(sheet).getByRole("button", { name: "새로 고침" }));
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      getTripSpy.mockRestore();
+      updateSpy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("limits the name and memo fields to what the server accepts (100 · 500)", async () => {
+    const trip: Trip = {
+      ...getPreviewTrip(),
+      id: "85",
+      revision: 3,
+      currentUserRole: "owner",
+      days: { 1: [{ id: "1", time: "09:00", label: "Sunrise peak", meta: "Nature" }] },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/85");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Sunrise peak 상세 열기" }));
+      const sheet = await screen.findByRole("dialog", { name: "장소 수정" });
+
+      // 서버(UpdateTripPlaceRequest)는 label 1~100자 · memo 0~500자 - 넘게 적으면 일반 오류 문구만 보인다
+      expect(sheet.querySelector('input[name="place-label"]')).toHaveAttribute("maxlength", "100");
+      expect(sheet.querySelector('textarea[name="place-meta"]')).toHaveAttribute("maxlength", "500");
+    } finally {
+      getTripSpy.mockRestore();
+    }
+  });
+
+  it("says the picked place has left our list when replacing an old row is refused with 404 Public place not found", async () => {
+    const legacyRow: ItineraryPlace = {
+      id: "9",
+      time: "09:00",
+      label: "카카오 예전 식당",
+      meta: "음식점",
+      sourceProvider: "kakao",
+      externalPlaceId: "777",
+      needsConfirmation: true,
+    };
+    const trip: Trip = { ...getPreviewTrip(), id: "86", revision: 3, currentUserRole: "owner", days: { 1: [legacyRow] } };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(trip);
+    const listSpy = vi.spyOn(appDataApi, "listLegacyPlaceCandidates").mockResolvedValue([
+      { source: "tourapi", sourceId: "126508", name: "자갈치시장", address: "부산 중구 자갈치해안로 52", latitude: 35.0966, longitude: 129.0306, category: "shopping", distanceMeters: 40 },
+    ]);
+    const updateSpy = vi
+      .spyOn(appDataApi, "updateTripPlace")
+      .mockRejectedValue(new ApiError("Public place not found", { status: 404, statusText: "Not Found", detail: "Public place not found" }));
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips/86");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "카카오 예전 식당 상세 열기" }));
+      const sheet = await screen.findByRole("dialog", { name: "장소 확인" });
+
+      await user.click(await within(sheet).findByRole("button", { name: "자갈치시장 선택" }));
+
+      await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+      // 후보를 받은 뒤 동기화가 그 장소를 지웠다 - 다른 후보를 고르거나 이름을 적으면 풀린다
+      expect(await within(sheet).findByText("고른 장소가 목록에서 사라졌어요. 다른 곳을 고르거나 이름을 직접 적어 주세요.")).toBeInTheDocument();
+      expect(within(sheet).queryByText(/입력값을 확인하고 다시 시도해 주세요/)).not.toBeInTheDocument();
+    } finally {
+      getTripSpy.mockRestore();
+      listSpy.mockRestore();
+      updateSpy.mockRestore();
     }
   });
 });

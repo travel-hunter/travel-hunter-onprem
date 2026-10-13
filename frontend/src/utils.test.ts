@@ -5,6 +5,7 @@ import {
   daysUntilPolicyDeadline,
   dday,
   formatPolicyDeadlineTag,
+  placeSearchDelay,
   tripStatus,
 } from "./utils";
 
@@ -63,5 +64,15 @@ describe("trip status chip", () => {
     expect(tripStatus("2026-08-28", "2026-08-30", KST_MORNING)).toEqual({ tone: "urgent", label: "D-7" });
     expect(tripStatus("2026-09-04", "2026-09-05", KST_MORNING)).toEqual({ tone: "soon", label: "D-14" });
     expect(tripStatus("", "2026-09-05", KST_MORNING)).toBeNull();
+  });
+});
+
+describe("placeSearchDelay", () => {
+  it("waits longer while the last Korean letter is still a bare jamo", () => {
+    // '스타ㅂ' · '스타버' 사이 - 낱자로 끝난 말은 못 찾아 대신 찾기(카카오 최대 8번)만 돈다
+    expect(placeSearchDelay("스타ㅂ", 350)).toBe(1200);
+    expect(placeSearchDelay("ㅅ ", 300)).toBe(1200);
+    expect(placeSearchDelay("스타버", 350)).toBe(350);
+    expect(placeSearchDelay("starbucks", 300)).toBe(300);
   });
 });

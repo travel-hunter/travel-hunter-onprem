@@ -1,5 +1,7 @@
 import httpx
+import pytest
 
+from app.services import kakao_local
 from app.services.kakao_local import (
     KAKAO_LOCAL_DEFAULT_SIZE,
     KakaoLocalClient,
@@ -136,3 +138,101 @@ def test_search_keyword_skips_invalid_documents_and_returns_others() -> None:
     assert len(places) == 1
     assert places[0].name == "해녀의 집"
     assert places[0].external_place_id == "2"
+
+
+KEYED = type("Settings", (), {"kakao_local_enabled": True, "kakao_local_rest_api_key": "test", "kakao_local_timeout_seconds": 5})()
+
+
+def test_the_default_client_reuses_one_http_connection_pool(monkeypatch) -> None:
+    # 실측(10/7): 새 연결 28ms → 재사용 7ms. 검색마다 TLS 를 다시 맺지 않는다
+    assert kakao_local.KakaoLocalClient(settings_obj=KEYED)._http_get is kakao_local.shared_http_get
+
+    class StubClient:
+        instances: list = []
+
+        def __init__(self) -> None:
+            self.gets: list = []
+            self.closed = False
+            StubClient.instances.append(self)
+
+        def get(self, url, **kwargs):
+            self.gets.append(url)
+            return url
+
+        def close(self) -> None:
+            self.closed = True
+
+    kakao_local.close_shared_http()   # 깨끗한 상태에서 시작한다
+    monkeypatch.setattr(kakao_local.httpx, "Client", StubClient)
+    try:
+        kakao_local.shared_http_get("https://a")
+        kakao_local.shared_http_get("https://b")
+        assert len(StubClient.instances) == 1                      # 두 번 불러도 연결 풀은 하나
+        first = StubClient.instances[0]
+        assert first.gets == ["https://a", "https://b"]            # 둘 다 그 풀로 갔다
+
+        kakao_local.close_shared_http()
+        assert first.closed and kakao_local._shared_client is None  # 닫으면 풀을 놓는다
+        kakao_local.close_shared_http()                             # 두 번 닫아도 괜찮다
+
+        kakao_local.shared_http_get("https://c")
+        assert len(StubClient.instances) == 2 and StubClient.instances[1] is not first   # 닫은 뒤에는 새 풀
+    finally:
+        kakao_local.close_shared_http()
+
+
+def test_a_kakao_http_error_does_not_carry_the_url_query_or_coordinates() -> None:
+    request = httpx.Request("GET", "https://dapi.kakao.com/v2/local/search/keyword.json?query=%EB%B9%84%EB%B0%80&x=127.7&y=34.7")
+
+    def failing_get(url, **kwargs):
+        raise httpx.HTTPStatusError("400 Bad Request for url " + str(request.url), request=request, response=httpx.Response(400, request=request))
+
+    client = kakao_local.KakaoLocalClient(settings_obj=KEYED, http_get=failing_get)
+    with pytest.raises(kakao_local.KakaoLocalConfigurationError) as raised:
+        client.search_keyword(query="비밀")
+    assert str(raised.value) == "Kakao local request failed: HTTPStatusError"
+
+
+def keyword_client(calls: list[dict]) -> KakaoLocalClient:
+    """보낸 요청 파라미터를 calls 에 쌓는 클라이언트(빈 결과)."""
+
+    def fake_get(_url: str, *, headers: dict, params: dict, timeout: float) -> httpx.Response:
+        calls.append(params)
+        return response_payload(200, {"documents": []})
+
+    return KakaoLocalClient(settings_obj=KEYED, http_get=fake_get)
+
+
+def test_search_keyword_sends_the_center_and_radius_when_given() -> None:
+    calls: list[dict] = []
+
+    keyword_client(calls).search_keyword(query="스타벅스", x=127.0, y=37.5, radius=20000, size=6)
+
+    assert (calls[0]["x"], calls[0]["y"], calls[0]["radius"], calls[0]["size"]) == (127.0, 37.5, 20000, 6)
+
+
+def test_search_keyword_sends_only_the_center_when_there_is_no_radius() -> None:
+    calls: list[dict] = []
+
+    keyword_client(calls).search_keyword(query="스타벅스", x=127.0, y=37.5, size=6)
+
+    assert (calls[0]["x"], calls[0]["y"]) == (127.0, 37.5)
+    assert "radius" not in calls[0]
+
+
+def test_search_keyword_without_a_center_sends_no_coordinate_params() -> None:
+    calls: list[dict] = []
+
+    keyword_client(calls).search_keyword(query="스타벅스")
+
+    assert not {"x", "y", "radius"} & calls[0].keys()
+
+
+@pytest.mark.parametrize("kwargs", [{"x": 127.0}, {"y": 37.5}, {"radius": 20000}, {"x": 127.0, "radius": 20000}])
+def test_search_keyword_refuses_half_a_center_or_a_radius_without_a_center(kwargs: dict) -> None:
+    calls: list[dict] = []
+
+    with pytest.raises(ValueError):
+        keyword_client(calls).search_keyword(query="스타벅스", **kwargs)
+
+    assert calls == []   # 요청은 나가지 않았다

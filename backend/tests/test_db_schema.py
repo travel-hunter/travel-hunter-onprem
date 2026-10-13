@@ -1,7 +1,14 @@
 import ast
+import importlib.util
+import io
 from pathlib import Path
 
 import sqlalchemy as sa
+from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from alembic.script import ScriptDirectory
+
 import app.models  # noqa: F401
 from app.db.base import Base
 
@@ -267,3 +274,113 @@ def test_trip_place_public_origin_columns_are_registered() -> None:
         assert column in trip_places.c
         assert trip_places.c[column].nullable is True
     assert "ck_trip_places_place_origin" in _check_names(trip_places)
+
+
+def test_trip_place_columns_and_area_index_are_registered() -> None:
+    trip_places = Base.metadata.tables["trip_places"]
+    assert trip_places.c["public_category"].nullable is True
+    assert trip_places.c["public_category"].type.length == 20
+    assert "ck_trip_places_public_category" in _check_names(trip_places)
+    assert trip_places.c["user_label"].nullable is True
+    assert trip_places.c["user_label"].type.length == 100
+    places = Base.metadata.tables["public_places"]
+    index_columns = {index.name: [column.name for column in index.columns] for index in places.indexes}
+    assert index_columns["ix_public_places_sido_city"] == ["sido", "city"]
+
+
+def test_alembic_0049_follows_0048() -> None:
+    backend = Path(__file__).parents[1]
+    config = Config(str(backend / "alembic.ini"))
+    config.set_main_option("script_location", str(backend / "alembic"))
+    script = ScriptDirectory.from_config(config)
+    assert script.get_revision("0049_trip_place_public_category").down_revision == "0048_public_places"
+
+
+def test_alembic_0052_follows_0051_and_is_the_only_head() -> None:
+    backend = Path(__file__).parents[1]
+    config = Config(str(backend / "alembic.ini"))
+    config.set_main_option("script_location", str(backend / "alembic"))
+    script = ScriptDirectory.from_config(config)
+    assert script.get_heads() == ["0052_pg_prewarm"]
+    assert script.get_revision("0052_pg_prewarm").down_revision == "0051_public_place_name_trgm"
+    assert script.get_revision("0051_public_place_name_trgm").down_revision == "0050_geo_reference"
+    assert script.get_revision("0050_geo_reference").down_revision == "0049_trip_place_public_category"
+
+
+def render_migration(filename: str, direction: str) -> str:
+    """마이그레이션의 upgrade · downgrade 가 내는 Postgres SQL - 오프라인이라 DB 에 닿지 않는다."""
+
+    path = Path(__file__).parents[1] / "alembic" / "versions" / filename
+    spec = importlib.util.spec_from_file_location(f"migration_{path.stem}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    buffer = io.StringIO()
+    context = MigrationContext.configure(dialect_name="postgresql", opts={"as_sql": True, "output_buffer": buffer})
+    with Operations.context(context):
+        getattr(module, direction)()
+    return buffer.getvalue()
+
+
+def render_0049(direction: str) -> str:
+    return render_migration("0049_trip_place_public_category.py", direction)
+
+
+def test_alembic_0050_creates_postgis_geo_tables_with_stable_ids_and_trip_place_geo_columns() -> None:
+    up = render_migration("0050_geo_reference.py", "upgrade")
+    down = render_migration("0050_geo_reference.py", "downgrade")
+    # 확장은 없을 때만 만든다 - RDS 처럼 미리 설치된 곳에서는 권한 없이 지나간다
+    assert "pg_extension WHERE extname = 'postgis'" in up and "CREATE EXTENSION postgis" in up
+    assert up.index("CREATE EXTENSION postgis") < up.index("CREATE SCHEMA IF NOT EXISTS geo") < up.index("CREATE SEQUENCE geo.feature_id_seq")
+    for table in ("geo.building", "geo.parcel", "geo.legal_dong", "geo.load_run"):
+        assert f"CREATE TABLE {table}" in up
+    # 판이 바뀌어도 id 를 다시 쓰지 않는다 - 옛 화면의 geoRef 가 다른 건물을 가리키지 않게(코덱스 HIGH)
+    assert up.count("DEFAULT nextval('geo.feature_id_seq')") == 2 and "feature_key varchar(40) NOT NULL" in up
+    assert "geometry(Geometry, 5186)" in up and "USING gist (geom)" in up and "jimok varchar(4)" in up
+    assert "ADD COLUMN geo_kind VARCHAR(10)" in up and "ADD COLUMN geo_pnu VARCHAR(19)" in up and "ck_trip_places_geo_kind" in up
+    # 되돌리기는 geo 스키마와 열만 지운다 - postgis 확장은 남긴다
+    assert "DROP SCHEMA IF EXISTS geo CASCADE" in down and "DROP EXTENSION" not in down
+    assert "DROP COLUMN geo_pnu" in down and "DROP COLUMN geo_kind" in down
+
+
+def test_trip_place_geo_columns_are_registered() -> None:
+    places = Base.metadata.tables["trip_places"]
+    assert places.c.geo_kind.type.length == 10 and places.c.geo_kind.nullable
+    assert places.c.geo_pnu.type.length == 19 and places.c.geo_pnu.nullable
+    assert "ck_trip_places_geo_kind" in {constraint.name for constraint in places.constraints if constraint.name}
+
+
+def test_alembic_0049_builds_the_area_index_concurrently_outside_the_transaction() -> None:
+    up, down = render_0049("upgrade"), render_0049("downgrade")
+    leftover = "DROP INDEX CONCURRENTLY IF EXISTS ix_public_places_sido_city"
+    index = "CREATE INDEX CONCURRENTLY ix_public_places_sido_city ON public_places (sido, city)"
+    # 트랜잭션 밖에서 만든다 - public_places 쓰기를 막지 않는다. 앞선 시도가 남긴 INVALID 색인은 먼저 지워 다시 돌리기가 풀린다
+    assert up.index("COMMIT") < up.index(leftover) < up.index(index) < up.index("BEGIN")
+    assert "ADD COLUMN public_category VARCHAR(20)" in up and "ADD COLUMN user_label VARCHAR(100)" in up
+    assert down.index("COMMIT") < down.index("DROP INDEX CONCURRENTLY IF EXISTS ix_public_places_sido_city") < down.index("BEGIN")
+    assert "DROP COLUMN user_label" in down and "DROP COLUMN public_category" in down
+
+
+def test_public_places_name_trigram_index_is_registered() -> None:
+    places = Base.metadata.tables["public_places"]
+    index = next(index for index in places.indexes if index.name == "ix_public_places_name_trgm")
+    assert [column.name for column in index.columns] == ["name"]
+    assert index.dialect_options["postgresql"]["using"] == "gin"
+    assert index.dialect_options["postgresql"]["ops"] == {"name": "gin_trgm_ops"}
+
+
+def test_alembic_0051_builds_the_name_trigram_index_concurrently_outside_the_transaction() -> None:
+    up = render_migration("0051_public_place_name_trgm.py", "upgrade")
+    down = render_migration("0051_public_place_name_trgm.py", "downgrade")
+    leftover = "DROP INDEX CONCURRENTLY IF EXISTS ix_public_places_name_trgm"
+    index = "CREATE INDEX CONCURRENTLY ix_public_places_name_trgm ON public_places USING gin (name gin_trgm_ops)"
+    # 확장은 트랜잭션 안에서 먼저 - 색인만 autocommit 블록으로 나간다. 앞선 시도가 남긴 INVALID 색인은 먼저 지워 다시 돌리기가 풀린다
+    assert up.index("CREATE EXTENSION IF NOT EXISTS pg_trgm") < up.index("COMMIT") < up.index(leftover) < up.index(index) < up.index("BEGIN")
+    # 되돌리기는 색인만 지운다 - pg_trgm 확장은 다른 객체가 쓸 수 있어 남긴다
+    assert down.index("COMMIT") < down.index(leftover) < down.index("BEGIN")
+    assert "DROP EXTENSION" not in down
+
+
+def test_alembic_0052_only_adds_the_prewarm_extension() -> None:
+    # 데우기 함수만 들인다 - 표 · 색인은 그대로. 되돌리면 확장도 지운다(이 확장에 기대는 객체가 없다)
+    assert "CREATE EXTENSION IF NOT EXISTS pg_prewarm" in render_migration("0052_pg_prewarm.py", "upgrade")
+    assert "DROP EXTENSION IF EXISTS pg_prewarm" in render_migration("0052_pg_prewarm.py", "downgrade")

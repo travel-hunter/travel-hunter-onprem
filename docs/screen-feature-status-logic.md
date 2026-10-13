@@ -139,9 +139,9 @@ Kakao Map 연동 코드는 구현되어 있고 Docker 빌드 시점의 키 주�
 | --- | --- | --- |
 | 1. 화면 진입 | `/ai-results?tripId={tripId}` 또는 상세 `추천 일정만들기` | 프론트는 trip id를 확정한 뒤 추천 후보와 현재 일정을 함께 조회한다. |
 | 2. 백엔드 후보 조회 | `GET /api/trips/{tripId}/recommendations` | 현재 사용자가 접근 가능한 일정인지 확인한다. |
-| 3-A. Kakao 추가 후보 생성 | `_additional_recommendation_items()` | Kakao Local provider가 있으면 현재 일정의 지역, style, travel area를 기준으로 후보를 수집한다. |
-| 3-B. 기존 장소 중복 제외 | `_existing_place_keys()`, `_is_duplicate_candidate()` | 이미 일정에 들어간 장소는 provider id, external id, 정규화 제목 기준으로 제외한다. |
-| 3-C. 카테고리 균형 선택 | `additional_place_candidates()` | 명소, 맛집, 숙소 등 카테고리 목표치를 우선 채우고 남는 후보를 순서대로 보완한다. 기본 후보 limit은 18개다. |
+| 3-A. 공공데이터 추천 후보 | `trip_public_places.recommend_public_places()` | 일정 지역(시도 · 시군)의 `public_places`(TourAPI · 상가정보)에서 후보를 고른다. 사진 있는 TourAPI 장소가 먼저이고, 일정마다 고정된 섞음을 쓴다. 카카오 검색은 쓰지 않는다(카카오 운영정책 3단계). |
+| 3-B. 기존 장소 중복 제외 | `trip_public_places.existing_place_keys()` | 이미 일정에 들어간 장소는 공공데이터 출처 · 출처 ID 와 비교용 이름으로 제외한다(DB 질의에서 거른다). |
+| 3-C. 카테고리 균형 선택 | `RECOMMENDATION_GROUPS`(`trip_public_places.py`) | 관광 3 · 음식 3 · 숙박 2 를 먼저 채우고 남는 자리를 분류별 나머지로 번갈아 채운다. 최대 18개다. |
 | 3-D. 추천 Day 부여 | `suggestedDay` | 후보 순서대로 현재 일정의 Day 번호에 round-robin 방식으로 제안 Day를 부여한다. |
 | 4. fallback 추천 반환 | catalog 또는 legacy/명시 저장된 `trip_recommendations` | 새 일정 생성은 summary를 seed하지 않는다. `sourceType="savedSummary"`는 legacy row 또는 향후 별도 저장 계약의 결과로만 해석한다. |
 | 5. 프론트 표시 | `AiResultsPage`/상세 미리보기 | 후보를 `숙소`, `맛집`, `명소`, `기타` 그룹으로 나누고 지도/후보 목록/추천 기준 sheet를 보여준다. |
@@ -192,7 +192,7 @@ Kakao Local provider가 없거나 외부 후보가 충분하지 않으면 내장
 - `frontend/src/pages/itinerary/ItineraryCreatePage.tsx`: 일정 생성 입력값과 `appDataApi.createTrip()` 호출, 생성 후 `/trips/{tripId}` 이동
 - `frontend/src/pages/itinerary/AiResultsPage.tsx`: 추천 후보 조회, 카테고리 그룹 표시, 지도 marker, Day 선택 후 장소 추가 UI
 - `frontend/src/api/backendApi.ts`: `createTrip`, `listRecommendations`, `addTripPlace`, `getTrip` API 연결
-- `backend/app/services/trips.py`: `create_trip()`, `_build_external_place_provider()`, `_additional_recommendation_items()`, `list_recommendations()` 구현
+- `backend/app/services/trips.py`: `create_trip()`, `list_recommendations()` 구현(추천 후보는 `backend/app/services/trip_public_places.py` 의 `recommend_public_places()`)
 - `backend/app/services/itinerary_recommendations.py`: Kakao 후보 수집/필터/점수/배치, catalog fallback, 추가 후보 balancing 구현
 - `backend/app/data/itinerary_catalog.py`: fallback 장소 catalog
 - `backend/app/services/kakao_local.py`: Kakao Local keyword search client
@@ -217,3 +217,57 @@ Kakao Local provider가 없거나 외부 후보가 충분하지 않으면 내장
 - `stay_discount` source가 공식 `https://ktostay.visitkorea.or.kr/` 숙박세일 페스타 숙박 할인권과 비수도권 인구감소지역 85개 지자체를 파싱해 `external_source_records.raw_payload.eligibleAreas`에 저장하고 active/fresh canonical 레코드를 `policies`로 승격한다. 정책 목록/검색/지역 추천에서는 canonical을 숨기고 `stay-discount-{sidoSlug}-{citySlug}` alias 85건으로 표시하며, 제목은 `[고성] ...`처럼 시/군 접두어를 붙이고 목록 메타 지역은 `강원` 같은 광역자치단체로 맞춘다. 상세 지원 내용은 원문 반복 대신 결제 금액별 할인 조건과 발급·입실 기간을 항목화한다. 상세/저장/일정 연결은 canonical 정책으로 중복을 방지한다. `local_half_trip`은 준비중 지역도 정책 목록에 표시하고 제목은 `[합천] 대한민국 반값여행 지원`처럼 지자체명을 대괄호 접두어로 맞춘다.
 - 대한민국 반값여행 parser는 `신청접수`, `6월 중 예정`, `6.16 10시부터`, `마감` 같은 6-7월 상태 문구를 구분하고 여행기간을 raw payload에 보존한다. 디지털관광주민증은 VisitKorea 공식 참여지역 allowlist 52개를 materialize해 `digital_tourism_resident_card` source로 수집하고, 지역별 canonical `dgtour-{지역}` slug로 공개하며, 각 지역 `getRegnMbrbList.json` 전체 페이지의 제휴처 혜택을 `raw_payload.partnerBenefits`에 보존한 뒤 상세 `supportContent`에 요약/대표 혜택으로 노출한다. 강진/남해/영암/횡성처럼 allowlist 밖 지역은 public 목록/상세/추천/저장/일정 연결 후보에서 제외한다.
 - 일정 상세 추천 정책은 지역, 일정 날짜 겹침, 카테고리, 여행 스타일 텍스트만으로 점수화하며 LLM/AI 판단은 사용하지 않는다.
+
+## 2026-10-08 - 일정 장소 담기: 주소 채움(방식1)
+
+맞춰 본 결과가 '바로 담기'가 아닌 자리를 **카카오 값 없이** 채우는 로직이다. 서버 규칙은 `docs/mvp-api-contract.md`(`publicMatch.fill` · `POST /places/locate` · `customPlace.geoRef`)와 `docs/geo-reference-monthly-load.md`, 설계는 `docs/superpowers/specs/2026-10-03-public-place-storage-design.md` 5절에 있다. 화면 시안은 v59 · v64.
+
+### 3-A. 검색 결과 줄 배지
+
+검색 응답의 줄마다 서버가 미리 맞춘 `publicMatch` 로 배지를 정한다(`publicMatchBadge`). 맞춰 보지 못한 줄(`publicMatch` 가 `null`)은 배지가 없다.
+
+| 배지 | 조건 | 누르면 |
+|---|---|---|
+| 바로 담기 | `result=match` | 공공데이터 장소를 바구니에 담는다 |
+| 비슷한 곳 N | `result=candidates`(N = 후보 수, 최대 3) | '이 장소가 맞나요?' 후보 확인 |
+| 주소 채움 | 그 밖이고 `publicMatch.fill` 이 있다 | 주소 · 위치가 채워진 나만의 장소 칸 - 이름만 확인하고 담는다 |
+| 위치 찍기 | 그 밖이고 `fill` 이 `null` | 지도에서 찾거나 옮겨 찍는 나만의 장소 칸 |
+
+`fill` 은 건물이 그 자리를 품거나, 건물이 없고 땅 중심이 30m 안일 때만 온다. 지번 조회가 실패해도 맞춰 보기는 그대로 답하므로 배지는 '위치 찍기'로 떨어질 뿐 검색은 보인다.
+
+### 3-B. 나만의 장소 칸의 이유
+
+칸을 연 이유(`CustomPlaceReason`)마다 안내 한 줄이 다르다.
+
+| 이유 | 언제 | 칸 |
+|---|---|---|
+| `building` · `parcel` | `fill` 이 있다 | 주소 · 위치가 채워져 있고(출처 '건물 지번' · '땅 지번' + 국토교통부 공공데이터) 담기 단추에 초점이 간다 |
+| `pin` | `fill` 이 없다 | 지도가 카카오 결과 자리에서 열려(보여 주기만) 십자선을 맞춰 '이 위치로'를 누른다 |
+| `direct` | 검색 결과 아래 '직접 적기' | 이름 칸, 지도에서 찾아 위치 찍기(선택) |
+| `none` | 예전 카카오 행을 고칠 때의 '확인 필요' 화면(`LegacyPlaceConfirm`) | 이름을 다시 적어 나만의 장소로 바꾼다 |
+| `noCoords` | 고른 장소에 좌표가 없어 맞춰 보지 못함 | 이름을 직접 적어 담는다 |
+| `failed` | 맞춰 보기 요청이 실패 | 이름을 직접 적어 담는다(지도를 결과 자리에서 열지 않는다) |
+
+- 이름 칸은 사용자가 친 검색어로 미리 채운다('내가 친 검색어로 채웠어요 · 고칠 수 있어요'). 카카오 이름은 칸 · 힌트 · placeholder 어디에도 없다.
+- '이 위치로'는 십자선 밑의 좌표로 `POST /places/locate` 를 물어 지번만 받는다. 찍은 좌표는 칸의 상태에도 저장되지 않는다.
+  - 지번이 있고 `nearCenter=true`(건물이거나 땅 중심 30m 안): 주소 + 핀(`geoRef.pin=true`). 칸에는 '주소 · 위치'.
+  - 지번이 있고 `nearCenter=false`(넓은 땅): 주소만(`pin=false`). '이 땅은 넓어서 핀 없이 주소만 담겨요'.
+  - 지번이 없다: 위치 없이 이름만. '이 자리는 지번이 없어 위치 없이 이름만 담겨요'.
+  - 지번 조회 자체가 실패(`locate` 요청 오류): '지번을 확인하지 못했어요. 다시 찍거나 취소하고 이름만 담아 주세요.'
+- 위치를 찍는 동안에는 칸의 취소 · 담기를 숨긴다(지도에 보이던 자리가 저장됐다고 믿은 채 위치 없이 담기지 않게).
+
+### 3-C. 저장 실패 문구
+
+`customPlace.geoRef` 를 보낸 저장은 서버가 `geo` 표에서 다시 읽는다. 실패는 `revision` 을 올리기 전에 일어나 일정이 그대로다.
+
+| 서버 응답 | 바구니(묶음 추가) | 장소 하나 저장 · 수정 |
+|---|---|---|
+| 404 `Address reference not found`(월 갱신으로 판이 바뀌어 id 가 사라짐) | 지번이 붙은 칸을 모두 이름만 남기고(주소 · 참조 · 좌표 비움) '주소 정보가 바뀌어 위치를 뺐어요. 위치가 필요하면 다시 찾아 담아 주세요.' | '주소 정보가 바뀌었어요. 지도에서 위치를 다시 찾아 담아 주세요.' |
+| 503 `Address lookup is unavailable`(`geo` 표를 읽지 못함) | '지금 주소를 확인할 수 없어요. 잠시 뒤 다시 저장해 주세요.' - 바구니는 그대로 둔다 | 같은 문구 |
+
+바구니와 장소 하나의 404 문구가 다른 까닭: 바구니는 한 번에 여러 칸을 저장하므로 화면이 칸을 이름만으로 고쳐 두고 그 사실을 알려야 한다. 장소 하나는 칸이 하나뿐이라 다시 찾아 담으라고만 안내한다.
+
+### 남은 작업/리스크
+
+- 지번 `id` 는 판마다 바뀐다. 월 갱신과 겹치는 순간에 담으면 404 가 나고, 위 문구로 안내한다(데이터 손실 없음).
+- `geo` 표가 비어 있으면(첫 적재 전) 모든 줄이 '위치 찍기'가 되고 `locate` 는 늘 `fill=null` 이다. 적재 전에는 주소 채움이 동작하지 않는다.

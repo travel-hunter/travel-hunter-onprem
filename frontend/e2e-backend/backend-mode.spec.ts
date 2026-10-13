@@ -299,8 +299,7 @@ test("confirmed trip detail keeps owner editing controls available", async ({ pa
     data: {
       expectedRevision: 1,
       time: "10:00",
-      label: "광안리 테스트 장소",
-      meta: "E2E 편집 컨트롤 확인",
+      customPlace: { name: "광안리 테스트 장소" },
     },
   });
   expect(addPlaceResponse.ok()).toBeTruthy();
@@ -359,6 +358,10 @@ test("empty trip detail opens the place sheet at common widths and explains an e
     await expect(responsiveSheet).toBeVisible();
     await expect(responsiveSheet.getByLabel("장소 지도 미리보기")).toBeVisible();
     await expectNoDocumentOverflow(page);
+    // 직접 적기 칸(나만의 장소)도 같은 폭에서 가로로 넘치지 않는다 - 시안 v59 로 모양이 바뀐 뒤에도 같은 확인을 한다
+    await responsiveSheet.getByRole("button", { name: "찾는 곳이 없어요 · 직접 적기" }).click();
+    await expect(responsiveSheet.getByRole("form", { name: "나만의 장소" })).toBeVisible();
+    await expectNoDocumentOverflow(page);
     await responsiveSheet.getByRole("button", { name: "닫기" }).click();
     await expect(responsiveSheet).toHaveCount(0);
   }
@@ -371,8 +374,15 @@ test("empty trip detail opens the place sheet at common widths and explains an e
   await sheet.locator('input[name="place-search"]').fill("후보없는수동장소");
   await expect(sheet.getByText("검색 결과가 없어요")).toBeVisible();
   await expectNoDocumentOverflow(page);
-  // 장소 추가는 검색 후보를 담아 저장하는 방식이다. 이름만 적어 넣는 칸은 편집 모드에만 있다(2026-08-25 fcf797f).
+  // 장소 추가는 검색 후보를 공공데이터와 맞춰 담고, 찾는 곳이 없으면 직접 적는다(3단계).
+  // 수정 창의 이름 칸(place-label)은 추가 창에 없고, 직접 적는 칸은 입구를 눌러야 열리며 검색 칸에 친 글(후보없는수동장소)이 이름으로 미리 찬다 - 카카오 이름은 아니다.
   await expect(sheet.locator('input[name="place-label"]')).toHaveCount(0);
+  await expect(sheet.locator('input[name="custom-place-name"]')).toHaveCount(0);
+  await sheet.getByRole("button", { name: "찾는 곳이 없어요 · 직접 적기" }).click();
+  const customName = sheet.locator('input[name="custom-place-name"]');
+  await expect(customName).toBeVisible();
+  await expect(customName).toHaveValue("후보없는수동장소");
+  await expectNoDocumentOverflow(page);
 });
 
 test("core app screens do not horizontally overflow at common responsive widths", async ({ page }) => {

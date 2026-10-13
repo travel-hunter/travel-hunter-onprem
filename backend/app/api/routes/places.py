@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user
 from app.db.session import get_optional_db
 from app.models import User
-from app.schemas.places import PlaceMatchRequest, PlaceMatchResponse, PlaceSearchItem
-from app.services import place_search, public_places
+from app.schemas.places import LocateRequest, LocateResponse, PlaceMatchRequest, PlaceMatchResponse, PlaceSearchItem
+from app.services import address_fill, place_search, public_places
 
 router = APIRouter(prefix="/places", tags=["places"])
 
@@ -31,7 +31,7 @@ def search_places(
     """홈 · 정책 탭 통합 검색의 장소 찾기(카카오 로컬). 두 글자 미만이거나 카카오가 꺼져 있으면 빈 목록."""
 
     _signed_in(current_user, db)
-    return [PlaceSearchItem(**item) for item in place_search.search_places(query)]
+    return [PlaceSearchItem(**item) for item in place_search.search_places(query, db=db)]
 
 
 @router.get("/nearby", response_model=list[PlaceSearchItem])
@@ -59,12 +59,22 @@ def match_place(
 
     if current_user is None or db is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    return PlaceMatchResponse(
-        **public_places.match_place_response(
-            db,
-            name=request.name,
-            latitude=request.latitude,
-            longitude=request.longitude,
-            category_code=request.categoryCode,
-        )
+    answer = public_places.match_place_response(
+        db, name=request.name, latitude=request.latitude, longitude=request.longitude, category_code=request.categoryCode,
     )
+    row = public_places.PlaceMatchInput(request.name, request.latitude, request.longitude, request.categoryCode)
+    (answer,) = address_fill.with_fill(db, [row], [answer])   # 홈에서 넘어온 장소도 검색 결과와 같은 갈래
+    return PlaceMatchResponse(**answer)
+
+
+@router.post("/locate", response_model=LocateResponse)
+def locate_place(
+    request: LocateRequest,
+    current_user: User | None = Depends(get_current_user),
+    db: Session | None = Depends(get_optional_db),
+) -> LocateResponse:
+    """위치 찍기(방식1) - 찍은 자리를 품은 건물 · 땅의 지번. 받은 좌표는 질의에만 쓴다(debug_capture 도 place 경로는 늘 뺀다)."""
+
+    if current_user is None or db is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return LocateResponse(**address_fill.locate(db, request.latitude, request.longitude))

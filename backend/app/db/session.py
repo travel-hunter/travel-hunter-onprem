@@ -23,7 +23,8 @@ def get_engine() -> Engine:
 
 @lru_cache
 def get_session_factory() -> sessionmaker[Session]:
-    return sessionmaker(bind=get_engine(), autoflush=False, expire_on_commit=False)
+    # close_resets_only: 닫은 세션을 다시 써도 된다(_release_session 뒤 미리 맞춤 · 주소 채움) - 기본값에 기대지 않고 명시한다
+    return sessionmaker(bind=get_engine(), autoflush=False, expire_on_commit=False, close_resets_only=True)
 
 
 def get_db() -> Generator[Session, None, None]:

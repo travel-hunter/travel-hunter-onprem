@@ -1,59 +1,35 @@
-import type { PlaceSearchItem, TripPlaceRequest } from "../api";
-import { isRegionName } from "../components/map/policyBrowse";
+import type { PlaceSearchItem } from "../api";
+import { kakaoPlaceIdOf, type PlacePickInput } from "../components/itinerary/placeAdd/usePlaceMatch";
 
-/* 홈 장소 카드(?pl=)와 '일정에 담기'(?addPlace=)가 주소로 넘기는 장소 한 곳(시안 v57). 주소는 누구나 고칠 수 있어
-   모양을 검사하고 길이를 자른다. 카카오맵 링크는 카카오 장소 주소만 받는다 - 카드가 그대로 링크로 그린다. */
-const MAX_PARAM_LENGTH = 2000;
-const KAKAO_PLACE_URL = /^https?:\/\/place\.map\.kakao\.com\/\d+$/;
+/* 홈 장소 카드의 '일정에 담기'가 일정 화면으로 넘기는 것(카카오 운영정책 3단계, 설계 docs/superpowers/specs/2026-10-03-public-place-storage-design.md 4절).
+   주소에는 카카오 장소 ID(addPlace=kakao:{id})와 사용자가 친 말(q)만 싣는다 - 이름 · 주소 · 좌표는 싣지 않는다.
+   받는 쪽이 화면 메모리(없으면 같은 말 재검색, components/map/placeMemory.ts)에서 장소를 꺼내 맞춰 보기를 시작한다. */
+const MAX_QUERY_LENGTH = 100;
 
-const text = (value: unknown, max: number) => (typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null);
-const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
-const knownRegion = (value: string | null) => (value && isRegionName(value) ? value : null);
+export type AddPlaceHandoff = { kakaoPlaceId: string; query: string };
 
-export function readPlaceParam(raw: string | null): PlaceSearchItem | null {
-  if (!raw || raw.length > MAX_PARAM_LENGTH) return null;
-  try {
-    const value = JSON.parse(raw) as Record<string, unknown>;
-    const id = text(value.id, 80);
-    const name = text(value.name, 120);
-    if (value?.kind !== "place" || !id || !name) return null;
-    const placeUrl = text(value.placeUrl, 200);
-    return {
-      kind: "place",
-      id,
-      name,
-      category: text(value.category, 120),
-      categoryCode: text(value.categoryCode, 10),
-      address: text(value.address, 200),
-      latitude: num(value.latitude),
-      longitude: num(value.longitude),
-      placeUrl: placeUrl && KAKAO_PLACE_URL.test(placeUrl) ? placeUrl : null,
-      sido: knownRegion(text(value.sido, 10)),
-      city: text(value.city, 20),
-    };
-  } catch {
-    return null;
-  }
+export function readAddPlaceParam(search: string | URLSearchParams): AddPlaceHandoff | null {
+  const params = typeof search === "string" ? new URLSearchParams(search) : search;
+  const kakaoPlaceId = kakaoPlaceIdOf({ id: params.get("addPlace") });
+  if (!kakaoPlaceId) return null;
+  return { kakaoPlaceId, query: (params.get("q") ?? "").trim().slice(0, MAX_QUERY_LENGTH) };
 }
 
-export function writePlaceParam(item: PlaceSearchItem): string {
-  const { id, name, category, categoryCode, address, latitude, longitude, placeUrl, sido, city } = item;
-  return JSON.stringify({ kind: "place", id, name, category, categoryCode, address, latitude, longitude, placeUrl, sido, city });
+/** 주어진 params 에 addPlace · q 만 쓰고 그대로 돌려준다(다른 키는 건드리지 않는다) */
+export function writeAddPlaceParam(params: URLSearchParams, { kakaoPlaceId, query }: AddPlaceHandoff): URLSearchParams {
+  params.set("addPlace", `kakao:${kakaoPlaceId}`);
+  const typed = query.trim().slice(0, MAX_QUERY_LENGTH);
+  if (typed) params.set("q", typed);
+  else params.delete("q");
+  return params;
 }
 
-/** 일정 장소로 - 일정 안 장소 검색(GET /trips/{id}/place-search)이 같은 카카오 장소를 담을 때와 같은 값이 되게 */
-export function tripPlaceFromSearchItem(item: PlaceSearchItem): TripPlaceRequest {
-  return {
-    time: "",
-    label: item.name,
-    meta: [item.category, item.address].filter(Boolean).join(" · ") || "장소 정보 확인",
-    address: item.address ?? null,
-    latitude: item.latitude ?? null,
-    longitude: item.longitude ?? null,
-    category: item.category ?? null,
-    categoryCode: item.categoryCode ?? null,
-    placeUrl: item.placeUrl ?? null,
-    sourceProvider: "kakao",
-    externalPlaceId: item.id.startsWith("kakao:") ? item.id.slice("kakao:".length) : item.id,
-  };
+/** 메모리에서 꺼낸 카카오 장소를 맞춰 보기 입구(openAddPlace · usePlaceMatch.pick)가 읽는 다섯 값으로. 화면 메모리 안에서만 쓰고 저장하지 않는다 */
+export function pickInputFromItem(item: PlaceSearchItem): PlacePickInput {
+  return { id: item.id, title: item.name, latitude: item.latitude, longitude: item.longitude, categoryCode: item.categoryCode };
+}
+
+/** 장소를 다시 못 찾았을 때(새로 고침 · 오래된 링크) - 좌표 없는 입력으로 보내면 pick 이 바로 나만의 장소 칸으로 간다. 카카오 ID 는 남아 링크가 산다 */
+export function pickInputFromKakaoId(kakaoPlaceId: string): PlacePickInput {
+  return { id: `kakao:${kakaoPlaceId}`, title: "" };
 }

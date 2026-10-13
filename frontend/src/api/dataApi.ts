@@ -29,17 +29,23 @@ import {
   PlaceSearchCandidate,
   PlaceSearchItem,
   NearbyCategory,
+  CustomPlaceInput,
   PlaceMatchRequest,
   PlaceMatchResult,
+  LocateResult,
   Policy,
   Profile,
   ProfileSkipResponse,
+  PublicPlaceItem,
+  PublicPlaceRef,
   ProfileOptions,
   Recommendation,
   RegionRecommendation,
   TravelAreaCatalog,
   TravelAreaRecommendationResponse,
   Trip,
+  TripAreaCenter,
+  TripPlaceAddItem,
   User,
 } from "./types";
 
@@ -192,33 +198,23 @@ export type TravelAreaRecommendationOptions = {
 
 export type TripPlaceSearchOptions = {
   query: string;
+  /** 1~3. 서버가 쪽마다 15곳 - '더 보기'가 다음 쪽 */
+  page?: number;
 };
 
 export type ApiRequestControl = {
   signal?: AbortSignal;
 };
 
-export type TripPlaceRequest = {
-  time?: string;
-  label: string;
-  meta?: string;
-  address?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  category?: string | null;
-  categoryCode?: string | null;
-  placeUrl?: string | null;
-  sourceProvider?: string | null;
-  externalPlaceId?: string | null;
-};
-
-export type TripPlaceMutationRequest = TripPlaceRequest & {
+/** 장소 추가(단일) - 공공데이터 참조나 나만의 장소 값, 카카오 장소 ID 뿐이다. 카카오가 준 이름 · 주소 · 좌표는 담지 않는다 */
+export type TripPlaceMutationRequest = TripPlaceAddItem & {
   expectedRevision: number;
 };
 
+/** 장소 추가(묶음, 1~50건) */
 export type TripPlacesBatchRequest = {
   expectedRevision: number;
-  places: TripPlaceRequest[];
+  places: TripPlaceAddItem[];
 };
 
 export type TripPlacesDeleteRequest = {
@@ -226,8 +222,14 @@ export type TripPlacesDeleteRequest = {
   placeIds: string[];
 };
 
-export type TripPlaceUpdateRequest = Partial<TripPlaceRequest> & {
+/** 장소 수정 - 바뀐 필드만 보낸다. label 은 사용자가 쓴 이름, memo 는 사용자 메모. publicPlace 와 customPlace 는 함께 보내지 않는다 */
+export type TripPlaceUpdateRequest = {
   expectedRevision: number;
+  time?: string | null;
+  label?: string;
+  memo?: string;
+  publicPlace?: PublicPlaceRef;
+  customPlace?: CustomPlaceInput;
 };
 
 export type TripPlaceMoveRequest = {
@@ -332,6 +334,11 @@ export type AppDataApi = {
   /** 장소 카드 '이 근처' - 좌표 반경 2km 안의 그 분류 장소, 가까운 순 */
   listNearbyPlaces: (latitude: number, longitude: number, category: NearbyCategory, control?: ApiRequestControl) => Promise<PlaceSearchItem[]>;
   matchPlace: (request: PlaceMatchRequest) => Promise<PlaceMatchResult>;
+  locatePlace: (latitude: number, longitude: number) => Promise<LocateResult>;
+  /** 일정 지역 공공데이터 장소의 중앙 - 지도에서 위치 찍기가 여는 자리. 가릴 수 없으면 둘 다 null */
+  getTripAreaCenter: (tripId: string) => Promise<TripAreaCenter>;
+  /** 예전 카카오 행과 겹치는 공공데이터 후보 0~3곳(편집 권한) */
+  listLegacyPlaceCandidates: (tripId: string, placeId: string) => Promise<PublicPlaceItem[]>;
   getInviteState: (tripId: string) => Promise<InviteState>;
   confirmInviteSent: (tripId: string) => Promise<InviteState>;
   sendInviteEmail: (tripId: string, request: SendInviteEmailRequest) => Promise<InviteEmailResult>;

@@ -101,10 +101,10 @@ docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml run --rm backe
 `alembic upgrade head --sql`에는 이 변화가 전혀 나타나지 않는다. 마이그레이션이 아니기 때문이다.
 기존 데이터가 있는 환경에서는 아래를 밟는다.
 
-- [ ] **백업.** 뜨는 것으로 끝내지 않고 판독까지 확인한다.
+- [ ] **백업.** 뜨는 것으로 끝내지 않고 판독까지 확인한다. 건물 · 땅 지번 데이터(`geo.building` · `geo.parcel`, 약 14.7GB)는 원본 파일에서 다시 넣으므로 데이터만 빼고 정의는 남긴다(`docs/geo-reference-monthly-load.md` 7절).
 
   ```bash
-  docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml exec -T db     sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > <경로>/before-seed.dump
+  docker compose --env-file deploy/.env.prod -f compose.tunnel.yaml exec -T db     sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --exclude-table-data=geo.building --exclude-table-data=geo.parcel' > <경로>/before-seed.dump
   pg_restore -l <경로>/before-seed.dump | head     # TOC를 못 읽으면 덤프가 깨진 것이다. 중단한다
   sha256sum <경로>/before-seed.dump                # 기록해 둔다
   ```

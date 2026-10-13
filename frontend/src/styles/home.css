@@ -783,10 +783,10 @@
 .home-place-cat { margin: 0; font-size: 12.5px; color: var(--gray-600); }
 .home-place-card h3 { margin: 0; font-size: 22px; font-weight: 800; }
 .home-place-addr { margin: 0; font-size: 14px; color: var(--gray-700); overflow-wrap: anywhere; }
-.home-place-map .kakao-map-view { min-height: 168px; border: 1px solid var(--gray-200); border-radius: 16px; }
-.home-place-map .kakao-map-canvas { min-height: 168px; }
+.home-place-map .kakao-map-view { min-height: 260px; border: 1px solid var(--gray-200); border-radius: 16px; }
+.home-place-map .kakao-map-canvas { min-height: 260px; }
 .home-place-map-fallback {
-  min-height: 168px;
+  min-height: 260px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -796,7 +796,28 @@
   font-size: 13px;
   text-align: center;
 }
+/* 넓은 화면은 카드 지도를 더 크게 - 위 260px 규칙보다 뒤에 둬야 이긴다 */
+@media (min-width: 768px) {
+  .home-place-map .kakao-map-view,
+  .home-place-map .kakao-map-canvas,
+  .home-place-map-fallback { min-height: 360px; }
+}
 .home-place-acts { display: grid; gap: 8px; }
+.home-place-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--primary-600);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
 .home-place-near {
   display: flex;
   align-items: center;
@@ -814,6 +835,36 @@
 .home-place-note { margin: 0; font-size: 13px; color: var(--gray-600); }
 .home-place-kakao { justify-self: start; font-size: 13px; color: var(--gray-700); }
 .home-nearby-tip { margin: 0; font-size: 13px; color: var(--gray-600); }
+/* 시안 v59: 일정에 담기 - 일정 고르기 상자 */
+.home-trip-pick { display: grid; gap: 8px; margin-top: 4px; padding: 12px; border: 1px solid var(--gray-200); border-radius: 16px; background: var(--gray-50); }
+.home-trip-pick h4 { margin: 0; font-size: 15px; }
+.home-trip-pick-row {
+  display: grid;
+  gap: 2px;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  background: var(--color-bg-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.home-trip-pick-row b { font-size: 15px; }
+.home-trip-pick-row span { font-size: 13px; color: var(--gray-600); }
+.home-trip-pick-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background: var(--color-bg-card);
+  color: inherit;
+  font-size: 15px;
+  text-decoration: none;
+}
 .home-search-results button:focus-visible,
 .home-search-results a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 @media (min-width: 1024px) {
@@ -841,6 +892,9 @@
 .home-nearby-stay { margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--primary-50); color: var(--primary-700); font-size: 13px; }
 .home-nearby-row .tx { flex: 1; }
 .home-nearby-row .go { flex: none; color: var(--gray-600); }
+
+/* 덜 친 말을 우리 완성어로 대신 찾은 장소 목록 안내 */
+.home-places-via { margin: 0 4px 6px; color: var(--gray-600); font-size: 12.5px; font-weight: 700; overflow-wrap: anywhere; }
 
 /* 혜택 이름을 친 말이면 상호명 장소는 접어 둔다 - 펼치기(10/3 사용자 조사) */
 .home-places-more {

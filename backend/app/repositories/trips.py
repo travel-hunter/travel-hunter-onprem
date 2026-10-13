@@ -61,6 +61,12 @@ def has_trip_access(db: Session, trip_id: int, user_id: int) -> bool:
     return db.scalar(statement) is not None
 
 
+def get_trip_travel_area_id(db: Session, trip_id: int) -> str | None:
+    """일정 지역 id 한 칸만 읽는다(일정 그래프 없음). 접근 확인은 부르기 전에 has_trip_access 로 한다. 지역이 없거나 일정이 없으면 None."""
+
+    return db.scalar(select(Trip.travel_area_id).where(Trip.id == trip_id))
+
+
 def get_owned_trip_by_id(db: Session, trip_id: int, user_id: int) -> Trip | None:
     statement = select(Trip).where(Trip.id == trip_id, Trip.owner_id == user_id)
     return db.scalar(statement)
@@ -118,6 +124,15 @@ def add_trip_place(
     category_group_code: str | None = None,
     category_group_name: str | None = None,
     place_url: str | None = None,
+    place_origin: str | None = None,
+    public_source: str | None = None,
+    public_source_id: str | None = None,
+    public_category: str | None = None,
+    photo_url: str | None = None,
+    photo_license: str | None = None,
+    user_label: str | None = None,
+    geo_kind: str | None = None,
+    geo_pnu: str | None = None,
 ) -> TripPlace:
     place = TripPlace(
         trip_day_id=trip_day_id,
@@ -133,6 +148,15 @@ def add_trip_place(
         category_group_code=category_group_code,
         category_group_name=category_group_name,
         place_url=place_url,
+        place_origin=place_origin,
+        public_source=public_source,
+        public_source_id=public_source_id,
+        public_category=public_category,
+        photo_url=photo_url,
+        photo_license=photo_license,
+        user_label=user_label,
+        geo_kind=geo_kind,
+        geo_pnu=geo_pnu,
     )
     db.add(place)
     db.flush()

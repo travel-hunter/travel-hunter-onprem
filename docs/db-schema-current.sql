@@ -1049,7 +1049,13 @@ CREATE TABLE public.trip_places (
     public_source_id character varying(40),
     photo_url character varying(500),
     photo_license character varying(20),
-    CONSTRAINT ck_trip_places_place_origin CHECK (((place_origin IS NULL) OR ((place_origin)::text = ANY ((ARRAY['public'::character varying, 'custom'::character varying, 'needs_review'::character varying])::text[]))))
+    public_category character varying(20),
+    user_label character varying(100),
+    geo_kind character varying(10),
+    geo_pnu character varying(19),
+    CONSTRAINT ck_trip_places_geo_kind CHECK (((geo_kind IS NULL) OR ((geo_kind)::text = ANY ((ARRAY['building'::character varying, 'parcel'::character varying])::text[])))),
+    CONSTRAINT ck_trip_places_place_origin CHECK (((place_origin IS NULL) OR ((place_origin)::text = ANY ((ARRAY['public'::character varying, 'custom'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_trip_places_public_category CHECK (((public_category IS NULL) OR ((public_category)::text = ANY ((ARRAY['sight'::character varying, 'culture'::character varying, 'leisure'::character varying, 'stay'::character varying, 'shopping'::character varying, 'food'::character varying, 'cafe'::character varying])::text[]))))
 );
 
 
@@ -2188,6 +2194,13 @@ CREATE INDEX ix_public_places_name_key ON public.public_places USING btree (name
 
 
 --
+-- Name: ix_public_places_sido_city; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_public_places_sido_city ON public.public_places USING btree (sido, city);
+
+
+--
 -- Name: ix_trip_places_external_place_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2493,6 +2506,78 @@ ALTER TABLE ONLY public.user_saved_policies
 ALTER TABLE ONLY public.user_saved_policies
     ADD CONSTRAINT user_saved_policies_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
+
+--
+-- geo 스키마 (0050_geo_reference) - 사람이 쓴 요약. 빈 표만 만들고 데이터는 적재 도구가 넣는다.
+-- 앞서 postgis 확장이 필요하다(CREATE EXTENSION IF NOT EXISTS postgis).
+-- 백업은 pg_dump --exclude-table-data='geo.building' --exclude-table-data='geo.parcel' 로 큰 데이터만 뺀다(정의 · 시퀀스 값은 남는다).
+--
+
+CREATE SCHEMA geo;
+
+CREATE SEQUENCE geo.feature_id_seq;
+
+CREATE TABLE geo.building (
+    id bigint DEFAULT nextval('geo.feature_id_seq'::regclass) NOT NULL,
+    feature_key character varying(40) NOT NULL,
+    pnu character varying(19) NOT NULL,
+    la double precision NOT NULL,
+    lo double precision NOT NULL,
+    rx double precision NOT NULL,
+    ry double precision NOT NULL,
+    geom public.geometry(Geometry,5186) NOT NULL
+);
+
+CREATE TABLE geo.parcel (
+    id bigint DEFAULT nextval('geo.feature_id_seq'::regclass) NOT NULL,
+    feature_key character varying(40) NOT NULL,
+    pnu character varying(19) NOT NULL,
+    la double precision NOT NULL,
+    lo double precision NOT NULL,
+    rx double precision NOT NULL,
+    ry double precision NOT NULL,
+    geom public.geometry(Geometry,5186) NOT NULL,
+    jimok character varying(4)
+);
+
+CREATE TABLE geo.legal_dong (
+    code character varying(10) NOT NULL,
+    name character varying(100) NOT NULL
+);
+
+CREATE TABLE geo.load_run (
+    id bigserial NOT NULL,
+    finished_at timestamp with time zone DEFAULT now() NOT NULL,
+    building_rows bigint NOT NULL,
+    parcel_rows bigint NOT NULL,
+    building_base_date character varying(8),
+    parcel_base_date character varying(8)
+);
+
+ALTER TABLE ONLY geo.building ADD CONSTRAINT building_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY geo.parcel ADD CONSTRAINT parcel_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY geo.legal_dong ADD CONSTRAINT legal_dong_pkey PRIMARY KEY (code);
+ALTER TABLE ONLY geo.load_run ADD CONSTRAINT load_run_pkey PRIMARY KEY (id);
+
+CREATE INDEX building_geom_gix ON geo.building USING gist (geom);
+CREATE INDEX building_pnu_ix ON geo.building USING btree (pnu);
+CREATE INDEX parcel_geom_gix ON geo.parcel USING gist (geom);
+CREATE INDEX parcel_pnu_ix ON geo.parcel USING btree (pnu);
+
+--
+-- 장소 검색 완성 검색어 (0051_public_place_name_trgm) - 사람이 쓴 요약. 108만 행에서 약 78MB.
+-- 운영 마이그레이션은 CONCURRENTLY 로 트랜잭션 밖에서 만든다(public_places 쓰기를 막지 않는다).
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE INDEX ix_public_places_name_trgm ON public.public_places USING gin (name public.gin_trgm_ops);
+
+--
+-- 장소 검색 첫 요청 데우기 (0052_pg_prewarm) - 사람이 쓴 요약. 확장만, 앱이 뜰 때 public_places 표 · 색인을 미리 읽는다.
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_prewarm;
 
 --
 -- PostgreSQL database dump complete

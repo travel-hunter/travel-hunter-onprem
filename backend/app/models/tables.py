@@ -725,6 +725,15 @@ class TripPlace(Base):
             "place_origin IS NULL OR place_origin IN ('public', 'custom', 'needs_review')",
             name="ck_trip_places_place_origin",
         ),
+        CheckConstraint(
+            "public_category IS NULL OR public_category IN "
+            "('sight', 'culture', 'leisure', 'stay', 'shopping', 'food', 'cafe')",
+            name="ck_trip_places_public_category",
+        ),
+        CheckConstraint(
+            "geo_kind IS NULL OR geo_kind IN ('building', 'parcel')",
+            name="ck_trip_places_geo_kind",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -747,6 +756,14 @@ class TripPlace(Base):
     public_source_id: Mapped[str | None] = mapped_column(String(40))
     photo_url: Mapped[str | None] = mapped_column(String(500))
     photo_license: Mapped[str | None] = mapped_column(String(20))
+    # 공공데이터 장소의 분류(0049) - public_places.category 를 담을 때 복사한다. 나만의 장소 · 예전 행은 비어 있다
+    public_category: Mapped[str | None] = mapped_column(String(20))
+    # 사용자가 붙인 이름(0049) - 공공데이터 장소(place_origin='public')의 이름을 고치면 place_name(공공데이터 이름)은 두고 여기에 담는다.
+    # 화면 이름은 user_label 이 있으면 그것, 없으면 place_name. 나만의 장소는 이름 자체가 place_name 이라 비어 있다
+    user_label: Mapped[str | None] = mapped_column(String(100))
+    # 나만의 장소의 주소 · 좌표를 건물 · 땅 지번(국토교통부 공공데이터, geo 스키마)에서 채웠을 때 그 출처(0050). 나머지 행은 비어 있다
+    geo_kind: Mapped[str | None] = mapped_column(String(10))
+    geo_pnu: Mapped[str | None] = mapped_column(String(19))
     visit_time: Mapped[time | None] = mapped_column(Time)
     order_num: Mapped[int | None] = mapped_column(Integer)
     memo: Mapped[str | None] = mapped_column(Text)
@@ -767,6 +784,10 @@ class PublicPlace(Base):
         ),
         Index("ix_public_places_lat_lng", "latitude", "longitude"),
         Index("ix_public_places_name_key", "name_key"),
+        # 추천 · 지역 중심 조회(0049) - 일정 지역(시도 + 시군)으로 고른다
+        Index("ix_public_places_sido_city", "sido", "city"),
+        # 장소 검색 완성 검색어(0051) - name ILIKE '%q%'
+        Index("ix_public_places_name_trgm", "name", postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"}),
     )
 
     # tourapi = contentid, sangga = 상가업소번호
