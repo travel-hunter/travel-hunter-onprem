@@ -271,8 +271,8 @@ describe("Travel Hunter app — home", () => {
         `url(${HERO_PHOTOS["region:전남"].src})`,
         `url(${HERO_PHOTOS["theme:move"].src})`,
       ]);
-      // 출처는 배너 아래 '사진 출처' 하나로 모은다(시안 v53)
-      expect(screen.getByRole("button", { name: "사진 출처" })).toBeInTheDocument();
+      // 배너 사진 출처는 내 정보 메뉴 '사진 출처' 창에만 둔다 - 배너 아래 작은 글자 단추는 휴대폰에서 옆 단추와 붙어 잘못 눌렸다
+      expect(screen.queryByRole("button", { name: "사진 출처" })).toBeNull();
       // 가운데는 첫 장, 둘째 장은 오른쪽에 비친다(누르면 가운데로)
       expect(slides[0]).toHaveAttribute("data-pos", "0");
       expect(slides[1]).toHaveAttribute("data-pos", "1");

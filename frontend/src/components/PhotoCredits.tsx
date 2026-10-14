@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { HERO_PHOTOS, LOGIN_PHOTOS, type HeroPhoto } from "./heroPhotos";
 import "../styles/photo-credits.css";
 
-/* 앱 전체 '사진 출처'(시안 v54). 홈 배너 아래 '사진 출처'와 내 정보 메뉴 '사진 출처'가 같은 창을 연다.
+/* 앱 전체 '사진 출처'(시안 v54). 내 정보 메뉴 '사진 출처'가 연다(홈 배너 아래 단추는 10/14 뺐다).
    open 을 단추의 onClick 에 걸고 dialog 를 그 화면 어디든 그리면 된다 - 닫으면 초점이 연 단추로 돌아간다. */
 export function usePhotoCredits() {
   const [opener, setOpener] = useState<HTMLElement | null>(null);
