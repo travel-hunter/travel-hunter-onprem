@@ -61,6 +61,11 @@ KNOWN_DETAIL_URLS = {
     "모두를 지키는 안전운전": _TMAP_TRIP_MONTH,
     "연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인": "https://carmore.kr/home/page-event-detail.html?a=529",
 }
+# 페이지 링크가 있어도 이쪽이 먼저인 카드 - 페이지가 FAQ · 이벤트 메인에 걸어 둔 것을 혜택 화면으로(2026-10-14 사용자 확인).
+PREFERRED_DETAIL_URLS = {
+    "내일로패스 할인": "https://www.korail.com/tour/freeTravel/railro/passIntro",
+    "자유로운 기차여행": "https://www.korail.com/tour/touristIntor/tourEvent/monthTourSale",
+}
 
 
 def traffic_canonical_key(title: str) -> str:
@@ -186,7 +191,12 @@ def parse_traffic_benefits(
         usage_period = str(raw_record.get("usage_period", ""))
         period_text = issue_period or usage_period or str(raw_record.get("period", ""))
         contact_text = str(raw_record.get("contact", "")) or None
-        detail_url = str(raw_record.get("detail_url", "")) or KNOWN_DETAIL_URLS.get(core_traffic_title(title))
+        core_title = core_traffic_title(title)
+        detail_url = (
+            PREFERRED_DETAIL_URLS.get(core_title)
+            or str(raw_record.get("detail_url", ""))
+            or KNOWN_DETAIL_URLS.get(core_title)
+        )
         raw_text = str(raw_record.get("raw", ""))
         if not title or not benefit_text:
             continue

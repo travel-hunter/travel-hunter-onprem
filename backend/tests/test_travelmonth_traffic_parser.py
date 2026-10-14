@@ -307,3 +307,17 @@ def test_tmap_cards_no_longer_say_the_link_opens_later() -> None:
 
     notes = " ".join(item.get("value", "") or item.get("description", "") for item in TRAFFIC_DETAIL_BY_TITLE["모두를 지키는 안전운전"]["notes"])
     assert "오픈 예정" not in notes
+
+
+# --- 페이지 링크보다 먼저: 페이지가 FAQ · 메인으로 걸어 둔 카드(2026-10-14 사용자 확인) -------------
+
+
+@pytest.mark.parametrize(
+    ("title", "url"),
+    [
+        ("내일로패스 할인", "https://www.korail.com/tour/freeTravel/railro/passIntro"),
+        ("대한민국 구석구석 자유로운 기차여행", "https://www.korail.com/tour/touristIntor/tourEvent/monthTourSale"),
+    ],
+)
+def test_preferred_links_win_over_the_page_link(title: str, url: str) -> None:
+    assert _live_rows()[title].detail_url == url
