@@ -184,6 +184,11 @@ describe("HomeHeroBanner", () => {
     expect(within(login).getAllByRole("link", { name: "CC0" })[0]).toHaveAttribute("href", LOGIN_PHOTOS[0].licenseUrl);
     expect(within(login).getAllByRole("link", { name: "원본 보기(위키미디어 공용)" })[0]).toHaveAttribute("href", LOGIN_PHOTOS[0].page);
     expect(login).toHaveTextContent("Bandoche · 퍼블릭 도메인");   // 라이선스 본문이 없으면 글자만
+    // 관광공사 사진은 사진 위에 '사진: 한국관광공사' 만 - 공공누리 유형은 이 창에 모은다
+    const kto = within(dialog).getByRole("region", { name: "한국관광공사 사진" });
+    expect(kto).toHaveTextContent("공공누리 제1유형");
+    expect(kto).toHaveTextContent("제3유형(변경금지)");
+    expect(within(kto).getByRole("link", { name: "공공누리 이용조건" })).toHaveAttribute("href", "https://www.kogl.or.kr/info/license.do");
     expect(screen.getByRole("button", { name: "닫기" })).toHaveFocus();
 
     fireEvent.keyDown(document, { key: "Escape" });

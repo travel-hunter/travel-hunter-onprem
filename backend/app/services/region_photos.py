@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 from app.data.travel_areas import normalize_municipality_name
 from app.repositories.photo_review import list_published
-from app.services.photo_criteria import attribution_for
+from app.services.photo_criteria import KTO_PHOTO_ATTRIBUTION
 from app.services.photo_storage import media_url
 
 SIDO_LEVEL_CITY = ""
@@ -94,7 +94,7 @@ def build_region_photo_index(db: Session | None) -> RegionPhotoIndex:
             image_url=media_url(candidate.stored_path),
             thumbnail_url=None,   # 관광공사 축소판은 120x80 이라 쓰지 않는다 - 화면은 원본을 줄여 쓴다
             alt=candidate.title or f"{target.sido} 대표 관광지",
-            attribution=attribution_for(candidate.copyright_type),
+            attribution=KTO_PHOTO_ATTRIBUTION,
         )
         if target.target_type == "policy" and target.policy_id is not None:
             by_policy_id[target.policy_id] = photo

@@ -58,7 +58,8 @@ describe("PlaceMatchChoices", () => {
 
     const first = within(group).getByRole("button", { name: "오동도 선택" });
     expect(first.querySelector("img")).toHaveAttribute("src", withPhoto.photoUrl);
-    expect(first).toHaveTextContent("사진: 한국관광공사 · 변경 금지");
+    expect(first).toHaveTextContent("사진: 한국관광공사");
+    expect(first).not.toHaveTextContent("변경 금지");
     const second = within(group).getByRole("button", { name: "오동도 공원 선택" });
     expect(second.querySelector("img")).toBeNull();
     expect(second).not.toHaveTextContent("사진:");

@@ -41,11 +41,9 @@ FACILITY_PATTERNS = tuple(
 SIZE_PROBE_BYTES = 131_071
 
 
-def attribution_for(copyright_type: str | None) -> str:
-    """출처 문구는 한 가지 표기로 - 저작권 유형까지 적는다(공공누리 출처표시 조건)."""
-
-    label = COPYRIGHT_LABELS.get(copyright_type or "")
-    return f"사진: 한국관광공사 · {label}" if label else "사진: 한국관광공사"
+# 사진 위 출처는 기관만 - 공공누리 유형(제1 · 제3유형 변경금지)은 앱 '사진 출처' 창에 모은다(2026-10-14 사용자 결정).
+# 출처 표시가 이용 조건이고, 유형 문구를 사진마다 붙일 의무는 없다.
+KTO_PHOTO_ATTRIBUTION = "사진: 한국관광공사"
 
 
 def metadata_rejections(*, title: str, image_url: str | None, copyright_type: str | None) -> list[str]:

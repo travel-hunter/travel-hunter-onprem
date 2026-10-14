@@ -607,7 +607,7 @@ function PlaceCard({ card }: { card: PlaceCardData }) {
   );
 }
 
-/* 공공누리 1유형 출처 표시 - 사진을 쓴 카드가 있으면 줄 아래 한 번 */
+/* 한국관광공사 사진 출처 표시 - 사진을 쓴 카드가 있으면 줄 아래 한 번(공공누리 유형은 앱 '사진 출처' 창) */
 function PhotoCredit({ cards }: { cards: PlaceCardData[] }) {
   const credits = Array.from(new Set(cards.flatMap((card) => (card.photo ? [card.photo.attribution] : []))));
   return credits.length > 0 ? <p className="home-photo-credit">{credits.join(" · ")}</p> : null;

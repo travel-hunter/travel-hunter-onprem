@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PublicPlaceCategory } from "../../../api";
-import { PUBLIC_CATEGORY_LABEL, distanceText, photoCredit, publicMatchBadge, publicTimeSlotGroup } from "./publicPlaceText";
+import { PUBLIC_CATEGORY_LABEL, distanceText, publicMatchBadge, publicTimeSlotGroup } from "./publicPlaceText";
 
 describe("공공데이터 장소 문구", () => {
   it("names all seven categories", () => {
@@ -13,13 +13,6 @@ describe("공공데이터 장소 문구", () => {
       food: "음식점",
       cafe: "카페",
     });
-  });
-
-  it("credits the Korea Tourism Organization and adds the no-change notice for Type3 only", () => {
-    expect(photoCredit("Type1")).toBe("사진: 한국관광공사");
-    expect(photoCredit(null)).toBe("사진: 한국관광공사");
-    expect(photoCredit(undefined)).toBe("사진: 한국관광공사");
-    expect(photoCredit("Type3")).toBe("사진: 한국관광공사 · 변경 금지");
   });
 
   it("groups the categories into the four time-slot groups", () => {

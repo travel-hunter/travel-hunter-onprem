@@ -265,7 +265,7 @@ def test_approve_publishes_the_photo_and_records_the_decision(db: Session) -> No
     resolved = build_region_photo_index(db).resolve("전남", "영광")
     assert resolved is not None and resolved.image_url == served(chosen)
     assert (chosen.byte_size, chosen.content_type) == (1234, "image/jpeg")
-    assert resolved.attribution == "사진: 한국관광공사 · 공공누리 제1유형"
+    assert resolved.attribution == "사진: 한국관광공사"
     log = db.scalars(select(AdminAuditLog)).one()
     assert (log.action, log.target_id) == ("photo_review.approve", "region:전남|영광")
 

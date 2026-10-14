@@ -5564,7 +5564,7 @@ function SortablePlaceItem({
             </div>
             <h4>{place.label}</h4>
             <div className="meta">{place.meta}</div>
-            <PlacePhoto alt={`${place.label} 사진`} compact license={place.photoLicense} url={place.photoUrl} />
+            <PlacePhoto alt={`${place.label} 사진`} compact url={place.photoUrl} />
           </button>
         ) : (
           <div className="place-copy">
@@ -5960,7 +5960,7 @@ function PlaceSheetDetail({ place }: { place: ItineraryPlace }) {
   return (
     <div className="place-sheet-detail">
       {place.placeOrigin === "public" && (
-        <PlacePhoto alt={`${place.label} 사진`} license={place.photoLicense} url={place.photoUrl} />
+        <PlacePhoto alt={`${place.label} 사진`} url={place.photoUrl} />
       )}
       <div className="place-detail-summary" aria-label="장소 요약">
         <span>{categoryText}</span>

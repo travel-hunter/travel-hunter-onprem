@@ -39,7 +39,7 @@ export function PlaceMatchChoices({
               onClick={() => onChoose(place)}
               type="button"
             >
-              <PlacePhoto alt="" compact license={place.photoLicense} url={place.photoUrl} />
+              <PlacePhoto alt="" compact url={place.photoUrl} />
               <span className="place-match-body" id={`${bodyId}-${index}`}>
                 <strong>{place.name}</strong>
                 <em>{PUBLIC_CATEGORY_LABEL[place.category]}</em>
