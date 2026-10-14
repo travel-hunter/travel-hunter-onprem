@@ -1,5 +1,5 @@
 import { Check, ExternalLink } from "lucide-react";
-import { Fragment, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
 import type { Policy } from "../api";
 import { getPolicyPhoto, getPolicyVisual } from "../data/displayConfig";
 import {
@@ -67,18 +67,21 @@ function List({ items, className }: { items: string[]; className?: string }) {
   );
 }
 
-/* 머리 사진: 정책 사진 → 없거나 깨지면 그 시도 사진 → 전국 공통은 혜택 형태 그림 칸 */
+/* 머리 사진: 정책 사진 → 없거나 깨지면 그 시도 사진 → 전국 공통은 혜택 형태 그림 칸.
+   시도 사진은 정책 사진이 깨졌을 때만 깐다 - 늘 깔면 정책 사진이 오기 전에 시도 사진이 먼저 보였다가 바뀐다. */
 export function PolicyDetailHero({ policy, kind, children }: { policy: Policy; kind: BenefitType; children: ReactNode }) {
-  const photo = getPolicyPhoto(policy);
-  const regionPhoto = REGION_PHOTOS[policy.region];
+  const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
+  const policyPhoto = getPolicyPhoto(policy);
+  const photo = policyPhoto && policyPhoto.imageUrl !== brokenUrl ? policyPhoto : null;
+  const regionPhoto = photo ? undefined : REGION_PHOTOS[policy.region];
   const visual = getPolicyVisual(policy);
   const style: CSSProperties = regionPhoto
     ? { backgroundImage: `url(${regionPhoto})` }
     : { background: `linear-gradient(145deg, ${visual.from}, ${visual.to})` };
   return (
     <div className="hero policy-detail-hero" style={style}>
-      {!regionPhoto && <BenefitTile kind={kind} />}
-      {photo && <PolicyHeroPhoto photo={photo} />}
+      {!regionPhoto && !photo && <BenefitTile kind={kind} />}
+      {photo && <PolicyHeroPhoto key={photo.imageUrl} photo={photo} onError={() => setBrokenUrl(photo.imageUrl)} />}
       {children}
     </div>
   );

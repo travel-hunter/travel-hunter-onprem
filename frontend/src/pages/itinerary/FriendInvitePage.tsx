@@ -21,7 +21,9 @@ export function FriendInvitePage() {
         }
       />
       <div className="content stack padded">
+        {/* 일정이 바뀌면 새로 그린다 - 앞 일정에서 만든 링크가 남지 않게 */}
         <FriendInvitePanel
+          key={requestedTripId ?? ""}
           requestedTripId={requestedTripId}
           onResolvedTripId={setActiveTripId}
         />
