@@ -913,13 +913,15 @@ function PolicyPanelDetail({
   const canSave = canUsePolicyActions(policy);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const { isPolicyAdded } = useSession();
+  const { isPolicyAdded, refreshAddedPolicies } = useSession();
   const tripSheet = usePolicyTripSheet(policy, setNotice);
   /* 다른 정책을 열면 맨 위부터, 초점은 ‹ 로(연 줄은 아래 목록과 함께 inert 가 된다) */
   useEffect(() => {
     bodyRef.current?.scrollTo?.(0, 0);
     bodyRef.current?.querySelector<HTMLElement>(".overlay-nav .icon-btn")?.focus({ preventScroll: true });
     setNotice(null);
+    refreshAddedPolicies();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [policy.slug]);
   useEffect(() => {
     if (!notice) return;
@@ -1087,8 +1089,13 @@ function PolicyDiscoveryBlocks({ policies, onSelectCategory }: { policies: Polic
 export function PolicyDetailPage() {
   const { policyId } = useParams();
   const navigate = useNavigate();
-  const { isPolicyAdded, savedSlugs, addSavedSlug, removeSavedSlug } = useSession();
+  const { isPolicyAdded, refreshAddedPolicies, savedSlugs, addSavedSlug, removeSavedSlug } = useSession();
   const { data: policyData, error, isLoading } = useAsyncResource(() => appDataApi.getPolicy(policyId), [policyId]);
+  // "일정에 담김" 은 열 때마다 서버 기준으로 맞춘다 - 이 탭에서 담은 기억만 믿으면 새로 고침 · 일정 삭제 뒤 틀린다
+  useEffect(() => {
+    refreshAddedPolicies();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [policyId]);
   const policy = policyData as Policy;
   const [notice, setNotice] = useState<string | null>(null);
   const { sheetStatus, trips, selectedTrip, sheetError, addToTrip, attachPolicyToTrip, closeTripSheet, viewSelectedTrip } =

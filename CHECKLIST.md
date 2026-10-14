@@ -2,14 +2,11 @@
 
 ## Current Status
 
-- Merge-ready: 장소 담기 3단계 + 주소 채움(`feature/place-add-flow`, 카카오 운영정책 3단계 · 방식1). 일정에는 공공데이터 장소나 사용자가 쓴 이름만 담는다
-  (`customPlace` 는 `{name, geoRef}` 만 - 위도 · 경도 · 주소는 422, 데브톡 151842). 검색 결과 줄 배지: 바로 담기 · 비슷한 곳 · 주소 채움 · 위치 찍기.
-  주소 채움은 국토교통부 건물 · 땅 지번(PostGIS `geo` 스키마, Alembic `0049` · `0050`, db 이미지 `postgis/postgis:16-3.5-alpine`)으로 채우고, 찍은 좌표는 `POST /api/places/locate` 로
-  비교만 하고 버린다. 월 적재 도구 `backend/scripts/geo_load.py`(geo-loader 이미지 단계), 운영 문서 `docs/geo-reference-monthly-load.md`.
-  개발 Jenkins 는 마이그레이션 앞에서 db 를 먼저 맞춘다. 계획: `docs/superpowers/plans/2026-10-05-place-add-flow-stage3.md`, `docs/superpowers/plans/2026-10-07-place-add-address-fill.md`.
-  같은 브랜치에 장소 검색 한 칸 정리를 더했다: 일정 검색 15곳씩(`page` 1~3, '더 보기' 45곳) · 일정 지역 20km 먼저 → 전국('다른 지역' 구분 줄, 줄마다 `nearby`),
-  덜 친 말('스타벅')은 우리 공공데이터 완성어 상위 3개로 대신 찾기(`viaWord`, Alembic `0051` `pg_trgm` GIN), 홈 검색도 대신 찾기 · 장소 카드 지도 260/360px.
-  검색창 밑 완성 검색어 서브창과 `place-suggest` API 는 걷었다(사용자 결정). 계획: `docs/superpowers/plans/2026-10-12-place-search-area-first-list.md`(앞 계획 `2026-10-12-place-search-suggestions.md` 의 순위 규칙을 쓴다).
+- Merge-ready: 일정 · 정책 표시를 일정마다 · 서버 기준으로(`fix/per-trip-state`). 앱 전체에 하나뿐인 세션 표시를 일정마다 · 정책마다 쓰던 세 곳을 고쳤다:
+  일정 목록 '정책 연결됨'(카드의 `linkedPolicies` 로), 친구 초대 '준비 완료' · 앞 일정 링크(일정이 바뀌면 초대 칸을 새로 그린다), 정책 상세 '일정에 담김'
+  (열 때마다 `/api/me/applied-policies` 로 맞추고, 서버가 아직 안 보여 준 이 탭의 담기는 남긴다). 쓰지 않던 세션 `likedPolicy` 도 지웠다.
+  지역 정책 머리 사진이 시도 사진 → 검수 사진으로 바뀌어 보이던 것도 고쳤다(시도 사진은 정책 사진이 없거나 깨졌을 때만, 지연 로딩 뺌).
+- 장소 담기 3단계 + 주소 채움은 PR #92 로 develop 에 머지됐다(`f902e24`). 개발서버 반영(디스크 → 배포 → 지번 적재, 단계마다 승인)이 남았다.
 - 로그 하루 단위 보관은 PR #91 로 develop 에 머지됐다(`4495d79`). 개발서버의 옛 달 파일 변환이 남았다(단계마다 승인).
 - 공공데이터 장소 기반(2단계)은 PR #90 으로 develop 에 머지됐다(`4612926`).
 - 통합 검색(1단계)은 PR #89 로 develop 에 머지됐다(`bb8c841`).
@@ -17,29 +14,24 @@
 
 ## Recent Validation
 
-- PASS: backend `python -m pytest` 1518 passed · 27 skipped(`test_stay_discount_semantics_snapshot.py` 는 뺐다 - Windows 권한 검사, 무관). PostGIS 시험(geo 조회 · 저장 SAVEPOINT · 적재 도구)은 일회용 PostGIS 에서 통과.
-- PASS: `npm run typecheck`, `npm run test:mojibake`, `vite build`, `npm run test:e2e:containers` 13/13(첫 검색 데우기 뒤 4173 다시 빌드, 로컬 DB `0052` - 1건은 Windows ERR_NO_BUFFER_SPACE 로 멈춰 다시 돌려 통과), `git diff --check`, 바뀐 파일 U+FFFD 0건.
-- 부분 PASS: `npx vitest run` 737개 중 731개 - 실패 6개는 모두 `mypage.test.tsx`(쌓인 시험 일정 탓, 무관). `npm test` 래퍼는 로컬에 `CLOUDFLARE_TUNNEL_TOKEN` 이 없어 compose 보간에서 멈춘다(시험 전 단계).
-- 부분 PASS: `alembic upgrade head --sql` 처음부터는 기존 `0044` 에서 멈춘다(develop 그대로). `0049_trip_place_public_category:head --sql` 통과, 로컬 DB 실제 `upgrade head` 0050 통과(보호 표 6개 건수 전후 같음, 덤프는 저장소 밖 · 소유자 전용).
-- PASS: 로컬 전국 적재(2026-09 판) 6,601초 - 건물 14,346,608 · 땅 19,406,691(농지 · 임야 제외) · 법정동 18,846, 이름 없는 옛 법정동코드 줄 45,515 뺌(0.32%, 사용자 결정),
-  geo 표 건물 5,046MB · 땅 9,622MB, DB 15GB, 적재 중 최대 DB 15,097MB · WAL 1,024MB.
-- PASS: 실제 API 248줄(검색어 42개) 자동 처리 87.5%(기준 80% 초과), 채운 지번 정확도 법정동 · 본번 일치 96.5% · 동부터 다름 0, 검색 p95 113ms(적재 전보다 늘지 않음),
-  동시 10 p95 495ms, db 재시작 뒤 첫 검색 191ms. `/locate` 왕복 p95 33ms 는 이 PC Docker 기본 왕복(16ms)과 로그인 확인이 대부분이고 geo 조회는 0.35ms(두 GiST 색인 사용).
-- PASS: 계획 코덱스 검토 2회 + 자체 교차 검토(55건 반영), 과제마다 구현 · 검토, 브랜치 최종 검토(Critical 0, Important 5 고침).
-- PASS: 커밋 뒤 2차 자체 검토(6관점 · 발견마다 반박 검증) - 확인된 10건 모두 Minor, 9건으로 묶어 고침(적재 도구 품질 실패 시 땅 건너뛰기, 맞춰 보는 동안 아래 저장 단추 끄기, 담은 뒤 검색 칸 초점, 404 사라진 장소 안내, 수정 창 100 · 500자, 작은 지도 재생성, 같은 이름 후보 읽기, 디스크 산정 · 백업 안내).
-- PASS: 사용자 브라우저 확인(localhost:4173, 카카오 JS 키 로컬 도메인 등록 뒤) - 위치 찍기 · 지도에서 찾기 · 작은 지도 포함 전체 정상.
-- PASS(완성어 순위): 실데이터 20개 순위가 설계표와 같다. 지역 먼저 실측: 스타벅스@서울 · 남산@경주 · 해수욕장@강릉 · 메타세쿼이아@담양 · 순두부@강릉 모두 지역 안(개수만 셌다).
-- PASS(한 칸 정리, 컨테이너 데운 상태): 스타벅@전남 전체 15곳 대신 찾기 0.64초, 메타세쿼@담양 7곳(주변 5) 0.41초, 스타벅스@서울 1 · 2 · 3쪽 15곳씩 0.52 · 0.28 · 0.31초,
-  홈 스타벅 · 메타세쿼 · 순천만습 15곳씩 대신 찾기 0.16~0.19초. 막 띄운 뒤 첫 검색은 DB 캐시가 차가워 최대 5.9초. 사용자 보고('타임스퀘'가 지역 일정에서 0곳 - 지역 밖 완성어가 관광지만)를 전국 완성어로 채워 고쳤다.
-  계획 교차 검토 2갈래 → 과제마다 구현 · 검토 → 브랜치 최종 검토 1회(Critical 0 · Important 0).
-- PASS(첫 검색 데우기, 사용자 보고 '스타벅 첫 검색이 안 뜬다' - 차가운 DB 6.6초): 앱이 뜰 때 `pg_prewarm`(`0052`)으로 public_places 표 · 색인을 읽고 PostGIS 를 한 번 부른다(로컬 6.6초, 뒤에서),
-  검색 지번 붙이기 0.8초 한도(넘으면 match 아닌 줄 `publicMatch` null - 고른 뒤 다시 맞춤), 대신 찾기 완성어 3개 동시 호출, 낱자로 끝난 말은 1.2초 뒤 요청.
-  DB 재시작 + 캐시 비운 최악 7.6초 → 2.4초(같은 말 다시 1.07초), 켜진 DB 의 새 지역 첫 검색 0.7~1.2초(지번 모두 붙음). 최종 검토 1회(Critical 0 · Important 0).
-- PASS(홈 검색 주소창): 치는 동안 낱자마다 `?q=` 가 바뀌던 것을 멈췄을 때 · 칸을 떠날 때만 쓰게 했다(예시 단추는 바로). `home.test.tsx` 22개, 브랜치 전체 최종 검토(Opus) · 마지막 수정분 확인 검토 Critical 0 · Important 0 - Minor 2건(이 수정이 만든 것)은 고쳤다.
-- PASS: 사용자 브라우저 확인(10/12, localhost:4173) - 첫 검색 · 담기 흐름 정상. 4173 은 주소창 수정 전 빌드다(주소창 동작은 시험으로만 확인).
+- PASS: 버그마다 실패하는 시험을 먼저 두고(RED) 고쳤다(GREEN) - `trips-list.test.tsx` 정책 연결 표시, `invite-oauth.test.tsx` 다른 일정으로 넘어간 초대 칸,
+  `policy-detail.test.tsx` 머리 사진(시도 사진 먼저 안 깔기 · 깨지면 시도 사진) · 서버 기준 '일정에 담김' · 숙박 할인 지역 정책 담은 뒤 서버 응답.
+- 부분 PASS: `npx vitest run` 742개 중 736개 - 실패 6개는 모두 `mypage.test.tsx`(쌓인 시험 일정 탓, develop 과 같음).
+- PASS: `npm run typecheck`, `npm run test:mojibake`, `npm run build`, `git diff --check`, 바뀐 파일 U+FFFD 0건. backend 변경 없음.
+- PASS: 최종 검토(Opus) - Important 1건(숙박 할인 지역 정책이 다시 열면 '담기' 로 돌아감)과 Minor 3건(지도에서 정책 바꿀 때 앞 사진 · 쓰지 않던 `likedPolicy` ·
+  로그아웃 뒤 늦은 응답)을 고쳤다. 남은 Minor 는 Active Risks 에 적었다.
+
 ## Active Risks
 
-### 장소 담기 3단계 + 주소 채움(`feature/place-add-flow`)
+### 일정 · 정책 표시 기준(`fix/per-trip-state`)
+
+- 검수 사진이 있는 정책은 사진을 받는 동안 시도 사진 대신 단색 바탕이 보인다(사진이 깨지면 시도 사진 · 그림 칸으로 돌아간다).
+- 숙박 할인 지역 정책은 서버가 대표 정책으로 담아 담은 목록에 지역 slug 가 오지 않는다. 이 탭에서 담은 것은 남기지만 같은 탭에서 그 일정을 지우면 새로 고칠 때까지 '일정에 담김' 이 남고,
+  새로 고친 뒤에는 담긴 지역 정책도 '내 일정에 담기' 로 보인다(예전과 같음).
+- `/api/me/applied-policies` 는 사진 색인 · 섬 요약까지 만들어 정책을 열 때마다 부르기엔 무겁다(slug 만 필요). 느리면 slug 전용 응답을 따로 둔다.
+- jsdom 은 이미지를 실제로 받지 않아 깜빡임 자체는 시험이 못 본다. 4173 다시 빌드 뒤 브라우저로 지역 정책 머리 사진 · 일정 목록 '정책 연결됨' · 다른 일정 초대 칸을 본다.
+
+### 장소 담기 3단계 + 주소 채움(PR #92, 머지됨)
 
 - **운영(main) 승격 전 게이트:** 운영 Jenkins(`ci/prod-jenkins`)는 마이그레이션을 db 이미지 교체 앞에서 돌린다 - 그대로 승격하면 `CREATE EXTENSION postgis` 에서 배포가 멈춘다(되돌려져 앱은 그대로).
   계획 과제 15 Step 6(운영 덤프 · 보호 브랜치 변경은 사용자가 결정)을 먼저 끝낸다. develop 머지는 괜찮다.

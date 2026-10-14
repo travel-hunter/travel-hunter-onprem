@@ -1,5 +1,6 @@
 import {
   cleanup,
+  fireEvent,
   screen,
   waitFor,
   within,
@@ -1482,6 +1483,96 @@ describe("Travel Hunter app — policy detail", () => {
       expect(document.querySelector(".policy-detail-eyebrow")).toHaveTextContent("전국 공통");
     } finally {
       getPolicySpy.mockRestore();
+    }
+  });
+
+  it("shows the reviewed photo without flashing the region photo first, and falls back to it when the photo breaks", async () => {
+    const reviewedPolicy: Policy = {
+      ...examplePolicyDetail,
+      id: "busan-reviewed",
+      slug: "busan-reviewed",
+      title: "[부산영도] 디지털관광주민증 혜택",
+      region: "부산",
+      photo: { imageUrl: "/api/media/policy/reviewed.jpg", alt: "영도 바다", attribution: "한국관광공사" },
+    };
+    const getPolicySpy = vi.spyOn(appDataApi, "getPolicy").mockResolvedValue(reviewedPolicy);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies/busan-reviewed");
+      await screen.findByRole("heading", { level: 1, name: "디지털관광주민증 혜택" });
+      const hero = document.querySelector(".policy-detail-hero") as HTMLElement;
+      const photo = hero.querySelector(".policy-hero-photo") as HTMLImageElement;
+      expect(photo).toBeTruthy();
+      expect(photo.getAttribute("loading")).not.toBe("lazy");
+      expect(hero.style.backgroundImage).not.toMatch(/busan/);
+      expect(hero.querySelector(".benefit-tile")).toBeNull();
+
+      fireEvent.error(photo);
+      await waitFor(() => expect(hero.style.backgroundImage).toMatch(/busan/));
+      expect(hero.querySelector(".policy-hero-photo")).toBeNull();
+    } finally {
+      getPolicySpy.mockRestore();
+    }
+  });
+
+  it("marks a policy as in a trip from the server, not from what this tab added before", async () => {
+    const linkedPolicy: Policy = { ...examplePolicyDetail, id: "in-trip", slug: "in-trip" };
+    const getPolicySpy = vi.spyOn(appDataApi, "getPolicy").mockResolvedValue(linkedPolicy);
+    const appliedSpy = vi.spyOn(appDataApi, "listAppliedPolicies").mockResolvedValue([linkedPolicy]);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/policies/in-trip");
+      expect(await screen.findByRole("button", { name: "일정에 담김" })).toBeInTheDocument();
+
+      // 그 일정을 지웠다면 다시 열 때 서버 기준으로 돌아온다
+      appliedSpy.mockResolvedValue([]);
+      cleanup();
+      renderAppRoute("/policies/in-trip");
+      expect(await screen.findByRole("button", { name: "내 일정에 담기" })).toBeInTheDocument();
+    } finally {
+      getPolicySpy.mockRestore();
+      appliedSpy.mockRestore();
+    }
+  });
+
+  it("keeps a just-added area policy marked when the server answers with its representative policy", async () => {
+    // 숙박 할인 지역 정책은 서버가 대표 정책으로 담는다 - 담은 정책 목록에 이 지역 slug 는 오지 않는다
+    const areaPolicy: Policy = { ...examplePolicyDetail, id: "stay-discount-gangwon-gangneung", slug: "stay-discount-gangwon-gangneung", deadline: "2099-12-31" };
+    const trip: Trip = { ...getUpcomingPreviewTrip(), id: "404", title: "강릉 여행", linkedPolicies: [] };
+    let answerApplied: (policies: Policy[]) => void = () => {};
+    const getPolicySpy = vi.spyOn(appDataApi, "getPolicy").mockResolvedValue(areaPolicy);
+    const appliedSpy = vi
+      .spyOn(appDataApi, "listAppliedPolicies")
+      .mockImplementation(() => new Promise((resolve) => { answerApplied = resolve; }));
+    const listTripsSpy = vi.spyOn(appDataApi, "listTrips").mockResolvedValue([trip]);
+    const addPolicyToTripSpy = vi
+      .spyOn(appDataApi, "addPolicyToTrip")
+      .mockResolvedValue({ tripId: "404", policyId: areaPolicy.slug, added: true });
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute(`/policies/${areaPolicy.slug}`);
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "내 일정에 담기" }));
+      const sheet = await screen.findByRole("dialog", { name: "일정 선택" });
+      await user.click(within(sheet).getByRole("button", { name: /강릉 여행/ }));
+      await waitFor(() => expect(addPolicyToTripSpy).toHaveBeenCalledWith("404", areaPolicy.slug));
+      expect(await screen.findByRole("button", { name: "일정에 담김" })).toBeInTheDocument();
+
+      answerApplied([{ ...examplePolicyDetail, id: "stay-discount", slug: "stay-discount" }]);
+      await waitFor(() => expect(appliedSpy).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(screen.getByRole("button", { name: "일정에 담김" })).toBeInTheDocument();
+    } finally {
+      getPolicySpy.mockRestore();
+      appliedSpy.mockRestore();
+      listTripsSpy.mockRestore();
+      addPolicyToTripSpy.mockRestore();
     }
   });
 

@@ -28,12 +28,10 @@ function participantPreview(names: string[]) {
 
 export function ItineraryCard({
   trip,
-  addedPolicy = false,
   isDeleting = false,
   onDelete,
 }: {
   trip: Trip;
-  addedPolicy?: boolean;
   isDeleting?: boolean;
   onDelete?: (trip: Trip) => void;
 }) {
@@ -131,7 +129,7 @@ export function ItineraryCard({
             </div>
             <div className="itinerary-participant-copy">
               <span>
-                {participantCount}명 참여 중{addedPolicy ? " · 정책 연결됨" : ""}
+                {participantCount}명 참여 중{trip.linkedPolicies.length > 0 ? " · 정책 연결됨" : ""}
               </span>
               <small>{participantPreview(participantNames)}</small>
             </div>

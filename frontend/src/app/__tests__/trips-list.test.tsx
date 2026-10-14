@@ -489,4 +489,28 @@ describe("Travel Hunter app — trips list", () => {
       listTripsSpy.mockRestore();
     }
   });
+
+  it("shows the policy-linked badge only on trips that have linked policies", async () => {
+    const linked: Trip = {
+      ...getPreviewTrip(),
+      id: "81",
+      title: "충북 전체 4일 여행",
+      linkedPolicies: [{ slug: examplePolicySlug, title: examplePolicyTitle, amount: "", region: "충북" }],
+    };
+    const unlinked: Trip = { ...getPreviewTrip(), id: "82", title: "서울 전체 3일 여행", linkedPolicies: [] };
+    const listTripsSpy = vi.spyOn(appDataApi, "listTrips").mockResolvedValue([linked, unlinked]);
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute("/trips");
+
+      const linkedCard = (await screen.findByText("충북 전체 4일 여행")).closest(".itinerary-card") as HTMLElement;
+      const unlinkedCard = screen.getByText("서울 전체 3일 여행").closest(".itinerary-card") as HTMLElement;
+      expect(linkedCard).toHaveTextContent("정책 연결됨");
+      expect(unlinkedCard).not.toHaveTextContent("정책 연결됨");
+    } finally {
+      listTripsSpy.mockRestore();
+    }
+  });
 });

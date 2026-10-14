@@ -2,12 +2,10 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { appDataApi, type Trip } from "../../api";
 import { useAsyncResource } from "../../api/useAsyncResource";
-import { useSession } from "../../app/session";
 import { ItineraryCard } from "../../components/cards";
 import { ConfirmDialog, EmptyState, ErrorState, LinkButton, LoadingState } from "../../components/ui";
 
 export function ItineraryListPage() {
-  const { addedPolicy } = useSession();
   const { data: loadedTrips, error, isLoading } = useAsyncResource(() => appDataApi.listTrips(), []);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [deletingTripId, setDeletingTripId] = useState<string | null>(null);
@@ -66,7 +64,6 @@ export function ItineraryListPage() {
           <ItineraryCard
             key={trip.id}
             trip={trip}
-            addedPolicy={addedPolicy}
             isDeleting={deletingTripId === trip.id}
             onDelete={requestDeleteTrip}
           />
