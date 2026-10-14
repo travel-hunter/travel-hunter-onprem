@@ -18,7 +18,7 @@ import {
   testEmail,
   testPassword,
 } from "../../test/fixtures";
-import { login, renderAppRoute } from "../../test/renderAppRoute";
+import { goBack, login, renderAppRoute } from "../../test/renderAppRoute";
 
 
 const acceptedAgreements = {
@@ -167,6 +167,39 @@ describe("Travel Hunter app — profile, invites, OAuth & sharing", () => {
       await waitFor(() =>
         expect(confirmInviteSpy).toHaveBeenCalledWith("55"),
       );
+    } finally {
+      getTripSpy.mockRestore();
+      getInviteSpy.mockRestore();
+      confirmInviteSpy.mockRestore();
+    }
+  });
+
+  it("does not carry a prepared invite link over to another trip", async () => {
+    const trips: Record<string, Trip> = {
+      "55": { ...getPreviewTrip(), id: "55", title: "첫 일정" },
+      "56": { ...getPreviewTrip(), id: "56", title: "둘째 일정" },
+    };
+    const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockImplementation((id) => Promise.resolve(trips[String(id)]));
+    const getInviteSpy = vi.spyOn(appDataApi, "getInviteState").mockImplementation((id) =>
+      Promise.resolve(makeInviteState({ tripId: String(id), inviteUrl: `http://127.0.0.1:5173/invites/trip-${id}/accept` })),
+    );
+    const confirmInviteSpy = vi.spyOn(appDataApi, "confirmInviteSent").mockImplementation((id) =>
+      Promise.resolve(makeInviteState({ tripId: String(id), inviteUrl: `http://127.0.0.1:5173/invites/trip-${id}-sent/accept`, invited: true })),
+    );
+
+    try {
+      await login();
+      cleanup();
+      renderAppRoute(["/friend-invite?tripId=56", "/friend-invite?tripId=55"]);
+      const user = userEvent.setup();
+      await screen.findByText("http://127.0.0.1:5173/invites/trip-55/accept");
+      await user.click(screen.getByRole("button", { name: "편집 링크 만들기" }));
+      expect(await screen.findByRole("button", { name: "함께 편집 링크 준비 완료" })).toBeInTheDocument();
+
+      goBack();
+      expect(await screen.findByText("http://127.0.0.1:5173/invites/trip-56/accept")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "편집 링크 만들기" })).toBeInTheDocument();
+      expect(screen.queryByText(/trip-55/)).not.toBeInTheDocument();
     } finally {
       getTripSpy.mockRestore();
       getInviteSpy.mockRestore();

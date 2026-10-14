@@ -21,10 +21,7 @@ type SessionContextValue = {
   currentUser: User | null;
   isSessionBootstrapping: boolean;
   profile: Profile;
-  addedPolicy: boolean;
   addedPolicySlugs: Set<string>;
-  likedPolicy: boolean;
-  invited: boolean;
   login: (request?: LoginRequest) => Promise<void>;
   signup: (request?: SignupRequest) => Promise<SignupVerificationResponse>;
   verifySignup: (token: string) => Promise<SignupVerifyResponse>;
@@ -39,8 +36,8 @@ type SessionContextValue = {
   addPolicy: (slug?: string) => void;
   removeAddedPolicy: (slug: string) => void;
   isPolicyAdded: (slug: string) => boolean;
-  togglePolicyLike: () => void;
-  sendInvite: () => void;
+  /** 서버에서 내 일정에 담긴 정책을 다시 읽는다. 다른 일정 · 다른 기기에서 빼거나 일정을 지운 것을 따라간다 */
+  refreshAddedPolicies: () => void;
   savedSlugs: Set<string>;
   addSavedSlug: (slug: string) => void;
   removeSavedSlug: (slug: string) => void;
@@ -112,13 +109,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   });
   const [isSessionBootstrapping, setIsSessionBootstrapping] = useState(true);
   const [profile, setProfile] = useState<Profile>(emptyProfile);
-  const [addedPolicy, setAddedPolicy] = useState(false);
   const [addedPolicySlugs, setAddedPolicySlugs] = useState<Set<string>>(new Set());
-  const [likedPolicy, setLikedPolicy] = useState(false);
-  const [invited, setInvited] = useState(false);
   const [savedSlugs, setSavedSlugs] = useState<Set<string>>(new Set());
   const savedSlugAdditionsRef = useRef<Set<string>>(new Set());
   const savedSlugRemovalsRef = useRef<Set<string>>(new Set());
+  /* 이 탭에서 담았지만 서버 목록에서 아직 못 본 정책. 숙박 할인 지역 정책은 서버가 대표 정책으로 담아 끝내 안 보인다.
+     서버 목록에 한 번 보이면 그때부터는 서버가 기준이다(일정을 지우면 빠진다). */
+  const unconfirmedAddedRef = useRef<Set<string>>(new Set());
 
   function refreshSavedSlugsFromRemote(isCancelled?: () => boolean) {
     appDataApi
@@ -202,10 +199,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       currentUser,
       isSessionBootstrapping,
       profile,
-      addedPolicy,
       addedPolicySlugs,
-      likedPolicy,
-      invited,
       login: async (request) => {
         const auth = await appDataApi.login(request);
         persistAuth(auth);
@@ -264,7 +258,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           savedSlugAdditionsRef.current.clear();
           savedSlugRemovalsRef.current.clear();
           setSavedSlugs(new Set());
-          setAddedPolicy(false);
+          unconfirmedAddedRef.current.clear();
           setAddedPolicySlugs(new Set());
         }
       },
@@ -297,21 +291,34 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
       },
       addPolicy: (slug?: string) => {
-        setAddedPolicy(true);
         if (slug) {
+          unconfirmedAddedRef.current.add(slug);
           setAddedPolicySlugs((prev) => new Set(prev).add(slug));
         }
       },
-      removeAddedPolicy: (slug: string) =>
+      removeAddedPolicy: (slug: string) => {
+        unconfirmedAddedRef.current.delete(slug);
         setAddedPolicySlugs((prev) => {
           const next = new Set(prev);
           next.delete(slug);
-          setAddedPolicy(next.size > 0);
           return next;
-        }),
+        });
+      },
       isPolicyAdded: (slug: string) => addedPolicySlugs.has(slug),
-      togglePolicyLike: () => setLikedPolicy((current) => !current),
-      sendInvite: () => setInvited(true),
+      refreshAddedPolicies: () => {
+        appDataApi
+          .listAppliedPolicies()
+          .then((policies) => {
+            if (!readStoredAuth()) return; // 그사이 로그아웃했다
+            const next = new Set(policies.map((policy) => policy.slug));
+            unconfirmedAddedRef.current.forEach((slug) => {
+              if (next.has(slug)) unconfirmedAddedRef.current.delete(slug);
+              else next.add(slug);
+            });
+            setAddedPolicySlugs(next);
+          })
+          .catch(() => {});
+      },
       savedSlugs,
       addSavedSlug: (slug: string) => {
         savedSlugRemovalsRef.current.delete(slug);
@@ -328,7 +335,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         });
       },
     }),
-    [addedPolicy, addedPolicySlugs, currentUser, invited, isSessionBootstrapping, likedPolicy, profile, savedSlugs],
+    [addedPolicySlugs, currentUser, isSessionBootstrapping, profile, savedSlugs],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

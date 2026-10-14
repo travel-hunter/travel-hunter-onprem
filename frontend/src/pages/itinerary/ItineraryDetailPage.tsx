@@ -4735,7 +4735,7 @@ export function ItineraryDetailPage() {
                 닫기
               </button>
             </div>
-            <FriendInvitePanel autoPrepareLink requestedTripId={trip.id} />
+            <FriendInvitePanel autoPrepareLink key={trip.id} requestedTripId={trip.id} />
           </section>
         </div>
       )}

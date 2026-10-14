@@ -2,7 +2,6 @@ import { Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { appDataApi, type InviteState } from "../../api";
 import { useAsyncResource } from "../../api/useAsyncResource";
-import { useSession } from "../../app/session";
 import {
   Button,
   ErrorState,
@@ -30,7 +29,6 @@ export function FriendInvitePanel({
   onResolvedTripId,
   autoPrepareLink = false,
 }: FriendInvitePanelProps) {
-  const { invited, sendInvite } = useSession();
   const [activeTripId, setActiveTripId] = useState(requestedTripId ?? "");
   const {
     data: trip,
@@ -91,7 +89,6 @@ export function FriendInvitePanel({
     try {
       const nextInviteState = await appDataApi.confirmInviteSent(tripId);
       setSentInviteState(nextInviteState);
-      sendInvite();
       if (!options?.silent) setNotice("함께 편집 링크가 준비됐어요.");
     } catch {
       setNotice("초대 링크를 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
@@ -208,7 +205,7 @@ export function FriendInvitePanel({
                     onClick={() => prepareInviteLink()}
                     type="button"
                   >
-                    {invited || effectiveInviteState?.invited
+                    {effectiveInviteState?.invited
                       ? "함께 편집 링크 준비 완료"
                       : "편집 링크 만들기"}
                   </button>
