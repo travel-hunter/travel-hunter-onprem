@@ -282,7 +282,6 @@ TRAFFIC_DETAIL_BY_TITLE: dict[str, StructuredDetail] = {
         "notes": _items(
             "비고",
             "인구감소지역 자동차 여행 할인과 같은 티맵 혜택을 소개하는 카드입니다.",
-            "티맵 바로가기는 2026년 10월 1일 오픈 예정입니다.",
         )
         + _TMAP_DRIVE_NOTES,
     },

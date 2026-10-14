@@ -243,8 +243,21 @@ function ApplicationGuideSection({ guide }: { guide: ApplicationGuide }) {
 
 type PolicyApplicationCta =
   | { kind: "apply"; label: string; url: string }
-  | { kind: "official"; label: string; url: string }
+  | { kind: "official"; label: string; url: string; note?: string }
   | { kind: "unavailable"; label: string; disabledNotice: string };
+
+/* 앱에서만 열리는 혜택(웹 화면 없음). 링크를 누르면 앱이나, 앱이 없으면 설치 화면이 뜬다 - 내용은 이 상세 화면에 있다 */
+const APP_ONLY_LINKS: Record<string, { label: string; note: string }> = {
+  "tmap.life": { label: "티맵 앱에서 참여하기", note: "티맵 앱 전용 혜택이에요. 앱이 없으면 설치 화면으로 이동해요." },
+};
+
+function appOnlyLink(url: string) {
+  try {
+    return APP_ONLY_LINKS[new URL(url).hostname] ?? null;
+  } catch {
+    return null;
+  }
+}
 
 function getCurrentGuideApplicationCta(guide: Policy["applicationGuide"]): PolicyApplicationCta | null {
   const round = guide?.rounds.find((candidate) => candidate.status === "current" && candidate.key === guide.currentRoundKey)
@@ -258,7 +271,10 @@ function getPolicyApplicationCta(policy: Policy): PolicyApplicationCta {
   const guideCta = getCurrentGuideApplicationCta(policy.applicationGuide);
   if (guideCta) return guideCta;
   if (policy.applyUrl) return { kind: "apply", label: "신청하러 가기", url: policy.applyUrl };
-  if (policy.officialUrl) return { kind: "official", label: "혜택 안내 보기", url: policy.officialUrl };
+  if (policy.officialUrl) {
+    const appOnly = appOnlyLink(policy.officialUrl);
+    return { kind: "official", label: appOnly?.label ?? "혜택 안내 보기", url: policy.officialUrl, note: appOnly?.note };
+  }
   return {
     kind: "unavailable",
     label: "신청 링크 준비 중",
@@ -986,8 +1002,19 @@ function PolicyPanelDetail({
       </div>
       <div className="thmap-pdetail-bar">
         {notice && <Toast>{notice}</Toast>}
+        {cta.kind === "official" && cta.note && (
+          <p className="helper-text" id="policy-panel-application-note">
+            {cta.note}
+          </p>
+        )}
         {cta.kind !== "unavailable" && (
-          <a className="policy-detail-secondary" href={cta.url} rel="noopener noreferrer" target="_blank">
+          <a
+            aria-describedby={cta.kind === "official" && cta.note ? "policy-panel-application-note" : undefined}
+            className="policy-detail-secondary"
+            href={cta.url}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
             {cta.label}
             <ExternalLink aria-hidden="true" size={16} />
           </a>
@@ -1249,8 +1276,19 @@ export function PolicyDetailPage() {
           {applicationCta.disabledNotice}
         </p>
       )}
+      {applicationCta.kind === "official" && applicationCta.note && (
+        <p className="helper-text" id={policyApplicationHelpId}>
+          {applicationCta.note}
+        </p>
+      )}
       {applicationCta.kind !== "unavailable" ? (
-        <a className="policy-detail-secondary" href={applicationCta.url} rel="noopener noreferrer" target="_blank">
+        <a
+          aria-describedby={applicationCta.kind === "official" && applicationCta.note ? policyApplicationHelpId : undefined}
+          className="policy-detail-secondary"
+          href={applicationCta.url}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
           {applicationCta.label}
           <ExternalLink aria-hidden="true" size={16} />
         </a>

@@ -284,3 +284,26 @@ def test_a_link_on_the_page_wins_over_the_known_link() -> None:
         html, collected_page_url=SOURCE_URL, fetched_at=datetime(2026, 9, 22, tzinfo=UTC), today=date(2026, 9, 22)
     )
     assert rows[0].detail_url == "https://www.korail.com/new-theme"
+
+
+# --- 포인트 금액: '1.5만' 을 '5만' 으로 읽지 않는다 -------------------------------------------------
+
+
+def test_decimal_points_are_not_read_as_their_last_digit() -> None:
+    # 실페이지: 스탬프 1.5만 포인트 · 계정당 최대 3만 - 예전에는 '1.5만' 의 '5만' 을 잡아 최대 5만으로 보였다
+    rows = _live_rows()
+    assert rows["인구감소지역 자동차 여행 할인"].benefit_value_text == "최대 3만 포인트"
+    assert rows["인구감소지역 자동차 여행 할인"].extracted_amount_krw == 30000
+
+
+def test_a_decimal_maximum_keeps_its_decimal() -> None:
+    row = _one("세 번째 스탬프 적립 시 1.5만 포인트 지급")
+    assert row.benefit_value_text == "최대 1.5만 포인트"
+    assert row.extracted_amount_krw == 15000
+
+
+def test_tmap_cards_no_longer_say_the_link_opens_later() -> None:
+    from app.services.travelmonth_traffic_detail import TRAFFIC_DETAIL_BY_TITLE
+
+    notes = " ".join(item.get("value", "") or item.get("description", "") for item in TRAFFIC_DETAIL_BY_TITLE["모두를 지키는 안전운전"]["notes"])
+    assert "오픈 예정" not in notes

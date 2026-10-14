@@ -474,13 +474,15 @@ def _parse_period_with_year(period_text: str, year: int) -> tuple[date | None, d
 
 def _traffic_benefit_value(benefit_text: str):
     text = normalize_text(benefit_text)
+    # "1.5만" 은 통째로 읽는다 - 앞 숫자 없이 "5만" 만 잡으면 최대값이 부풀었다(10/14 자동차 여행 할인이 5만으로 보임)
     point_matches = [
-        int(value) * 10000 for value in re.findall(r"(\d+)\s*만\s*포인트", text)
+        round(float(value) * 10000)
+        for value in re.findall(r"(?<![\d.])(\d+(?:\.\d+)?)\s*만\s*포인트", text)
     ]
     if point_matches:
         amount = max(point_matches)
         return BenefitValue(
-            value_text=f"최대 {amount // 10000}만 포인트",
+            value_text=f"최대 {amount / 10000:g}만 포인트",
             amount_krw=amount,
             discount_percent=None,
             value_type="amount",
