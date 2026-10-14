@@ -250,15 +250,17 @@ def test_air_card_does_not_infer_four_person_cap_without_page_evidence() -> None
 # --- 바로가기: 홍보 페이지가 아니라 혜택을 실제로 받는 곳으로 -----------------------------------------
 
 KORAIL_MONTH = "https://www.korail.com/tour/touristIntor/tourEvent/monthMain"
+KORAIL_FREE_TOUR = "https://www.korail.com/tour/touristIntor/tourEvent/monthTour"
+KORAIL_THEME_TRAIN = "https://www.korail.com/tour/touristIntor/tourEvent/monthTourSale"
 TMAP_TRIP_MONTH = "https://tmap.life/64246a7d"
 
 
 @pytest.mark.parametrize(
     ("title", "url"),
     [
-        ("인구감소지역 자유여행상품 할인", KORAIL_MONTH),
-        ("인구감소지역 자유여행상품 추가 혜택", KORAIL_MONTH),
-        ("테마열차 할인", KORAIL_MONTH),
+        ("인구감소지역 자유여행상품 할인", KORAIL_FREE_TOUR),
+        ("인구감소지역 자유여행상품 추가 혜택", KORAIL_FREE_TOUR),
+        ("테마열차 할인", KORAIL_THEME_TRAIN),
         ("’네이버 항공권‘에서 국내선 이용 시 네이버 페이 N포인트 지급 (최대 4만 포인트)", "https://travel.naver.co.kr/koreatravel"),
         ("인구감소지역 자동차 여행 할인", TMAP_TRIP_MONTH),
         ("지구를 지키는 친환경여행 모두를 지키는 안전운전", TMAP_TRIP_MONTH),
@@ -316,8 +318,15 @@ def test_tmap_cards_no_longer_say_the_link_opens_later() -> None:
     ("title", "url"),
     [
         ("내일로패스 할인", "https://www.korail.com/tour/freeTravel/railro/passIntro"),
-        ("대한민국 구석구석 자유로운 기차여행", "https://www.korail.com/tour/touristIntor/tourEvent/monthTourSale"),
     ],
 )
 def test_preferred_links_win_over_the_page_link(title: str, url: str) -> None:
     assert _live_rows()[title].detail_url == url
+
+
+def test_korail_cards_each_go_to_their_own_tab() -> None:
+    # 코레일 여행가는 달은 탭마다 주소가 다르다(메인 · 자유 여행 상품 · 테마 열차 할인 · 내일로 패스) - 카드가 서로 겹치지 않는다
+    rows = _live_rows()
+    assert rows["대한민국 구석구석 자유로운 기차여행"].detail_url == KORAIL_MONTH  # 캠페인 전체 카드 - 페이지 링크 그대로
+    korail = ["대한민국 구석구석 자유로운 기차여행", "인구감소지역 자유여행상품 할인", "테마열차 할인", "내일로패스 할인"]
+    assert len({rows[title].detail_url for title in korail}) == 4
