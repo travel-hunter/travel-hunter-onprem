@@ -245,3 +245,42 @@ def test_air_card_does_not_infer_four_person_cap_without_page_evidence() -> None
     )
 
     assert rows[0].raw_payload["cardCopy"]["summary"] == "국내선 최대 4만 포인트"
+
+
+# --- 바로가기: 홍보 페이지가 아니라 혜택을 실제로 받는 곳으로 -----------------------------------------
+
+KORAIL_MONTH = "https://www.korail.com/tour/touristIntor/tourEvent/monthMain"
+TMAP_TRIP_MONTH = "https://tmap.life/64246a7d"
+
+
+@pytest.mark.parametrize(
+    ("title", "url"),
+    [
+        ("인구감소지역 자유여행상품 할인", KORAIL_MONTH),
+        ("인구감소지역 자유여행상품 추가 혜택", KORAIL_MONTH),
+        ("테마열차 할인", KORAIL_MONTH),
+        ("’네이버 항공권‘에서 국내선 이용 시 네이버 페이 N포인트 지급 (최대 4만 포인트)", "https://travel.naver.co.kr/koreatravel"),
+        ("인구감소지역 자동차 여행 할인", TMAP_TRIP_MONTH),
+        ("지구를 지키는 친환경여행 모두를 지키는 안전운전", TMAP_TRIP_MONTH),
+        ("연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인", "https://carmore.kr/home/page-event-detail.html?a=529"),
+    ],
+)
+def test_cards_without_a_link_on_the_page_go_to_the_benefit_site(title: str, url: str) -> None:
+    # 여행가는 달 페이지에 바로가기가 없는 카드 - 수집 출처(홍보 페이지)로 떨어지지 않고 혜택을 받는 곳으로 간다(2026-10-14 손으로 확인)
+    row = _live_rows()[title]
+    assert row.detail_url == url
+
+
+def test_every_live_card_has_its_own_link() -> None:
+    assert all(row.detail_url and row.detail_url != SOURCE_URL for row in _live_rows().values())
+
+
+def test_a_link_on_the_page_wins_over_the_known_link() -> None:
+    html = (
+        "<html><body><article><div><h4>테마열차 할인</h4><p>5개 정기노선 운임료 50% 할인</p>"
+        '<a href="https://www.korail.com/new-theme">할인혜택 보러가기</a></div></article></body></html>'
+    )
+    rows = parse_traffic_benefits(
+        html, collected_page_url=SOURCE_URL, fetched_at=datetime(2026, 9, 22, tzinfo=UTC), today=date(2026, 9, 22)
+    )
+    assert rows[0].detail_url == "https://www.korail.com/new-theme"

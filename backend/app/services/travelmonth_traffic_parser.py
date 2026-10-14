@@ -46,6 +46,23 @@ def core_traffic_title(title: str) -> str:
     return normalize_text(text.translate({ord(c): None for c in _QUOTE_CHARS}))
 
 
+_KORAIL_TRIP_MONTH = "https://www.korail.com/tour/touristIntor/tourEvent/monthMain"
+_TMAP_TRIP_MONTH = "https://tmap.life/64246a7d"
+# 여행가는 달 페이지에 바로가기가 없는 카드의 실제 혜택 주소(핵심 명칭 → 주소, 2026-10-14 손으로 확인).
+# 없으면 공식 URL 이 수집 출처(홍보 페이지)로 떨어진다. 페이지에 링크가 생기면 그쪽이 먼저다.
+# 코레일 3건은 코레일 여행가는 달 메인(페이지가 다른 코레일 카드에 연결한 곳) - 스크립트로 그려져 내용은 브라우저로 확인한다.
+# 렌터카는 해수부 '바다가는 달' 이벤트 페이지가 연결한 카모아 신청 페이지다.
+KNOWN_DETAIL_URLS = {
+    "인구감소지역 자유여행상품 할인": _KORAIL_TRIP_MONTH,
+    "인구감소지역 자유여행상품 추가 혜택": _KORAIL_TRIP_MONTH,
+    "테마열차 할인": _KORAIL_TRIP_MONTH,
+    "네이버 페이 N포인트 지급 (최대 4만 포인트)": "https://travel.naver.co.kr/koreatravel",
+    "인구감소지역 자동차 여행 할인": _TMAP_TRIP_MONTH,
+    "모두를 지키는 안전운전": _TMAP_TRIP_MONTH,
+    "연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인": "https://carmore.kr/home/page-event-detail.html?a=529",
+}
+
+
 def traffic_canonical_key(title: str) -> str:
     """정책의 정체는 제목이다. 혜택 원문·기간은 다듬어지거나 갱신되므로 key 에 넣지 않는다 -
     넣으면(예전 방식) 재수집마다 다른 정책으로 인식돼 카드가 복제되고 사용자 링크가 옛 행에 남는다."""
@@ -83,7 +100,7 @@ class _TrafficBenefitHtmlParser(HTMLParser):
             self._in_anchor = True
             href = normalize_text(attr_map.get("href") or "")
             # "#" 은 아직 열리지 않은 바로가기다(onclick 으로 안내만 띄운다). 링크가 없는 것으로 본다 -
-            # 그래야 공식 URL 이 수집 출처 페이지로 떨어진다.
+            # 그래야 공식 URL 이 KNOWN_DETAIL_URLS(없으면 수집 출처 페이지)로 간다.
             if href and href != "#" and not self._current.get("detail_url"):
                 self._current["detail_url"] = href
 
@@ -160,6 +177,8 @@ def parse_traffic_benefits(
         normalize_text(f"{raw.get('title', '')} {raw.get('benefit', '')}")
         for raw in parser.records
     )
+    # 중복 제거는 페이지에 실제로 있는 링크로만 한다. KNOWN_DETAIL_URLS 는 그 뒤에 채운다 - 먼저 채우면
+    # 같은 주소를 쓰는 카드(코레일 3건 · TMAP 2건)가 하나로 합쳐져 사라진다.
     for raw_record in _deduplicate_records(parser.records):
         title = str(raw_record.get("title", ""))
         benefit_text = str(raw_record.get("benefit", ""))
@@ -167,7 +186,7 @@ def parse_traffic_benefits(
         usage_period = str(raw_record.get("usage_period", ""))
         period_text = issue_period or usage_period or str(raw_record.get("period", ""))
         contact_text = str(raw_record.get("contact", "")) or None
-        detail_url = str(raw_record.get("detail_url", "")) or None
+        detail_url = str(raw_record.get("detail_url", "")) or KNOWN_DETAIL_URLS.get(core_traffic_title(title))
         raw_text = str(raw_record.get("raw", ""))
         if not title or not benefit_text:
             continue
