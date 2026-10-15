@@ -142,13 +142,9 @@ NATIONAL_CARD_EXPECTATIONS = [
     ("인구감소지역 자유여행상품 할인", "방문 인증 운임 쿠폰·온누리 2만원", "인구감소지역 자유여행상품 * 구매자 대상 철도 할인쿠폰 제공"),
     ("테마열차 할인", "테마열차 운임 50% 할인", "5개 정기노선 * 운임료 50% 할인"),
     ("내일로패스 할인", "내일로패스 2만원 할인", "내일로패스 KTX 및 일반열차 * 탑승권 2만원 정액 할인"),
-    ("대한민국 구석구석 자유로운 기차여행", "철도 할인쿠폰·테마열차·내일로 혜택", "철도 할인쿠폰 제공 구매 승차권 운임의 100%"),
     ("’네이버 항공권‘에서 국내선 이용 시 네이버 페이 N포인트 지급 (최대 4만 포인트)", "대상 국내선 왕복 최대 4만 포인트", "(내륙노선) 항공권 구매 · 이용 시 인당 1만 포인트"),
-    ("비행기타고 떠나는 방방곡곡 국내 여행", "대상 국내선 왕복 최대 4만 포인트", "네이버 항공권에서 국내선 이용 시 최대 4만 포인트 지급"),
     ("인구감소지역 자동차 여행 할인", "티맵 방문 스탬프 누적 최대 3만 포인트", "인구감소지역(89개) 소재 관광지를 목적지로 출발지 기준 30km 이상 주행한 경우"),
-    ("지구를 지키는 친환경여행 모두를 지키는 안전운전", "최대 3만 포인트", "인구감소지역 방문 주행 시 최대 3만 포인트 지급"),
     ("연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인", "저공해 렌터카 최대 2만원 할인쿠폰", "연안지역 기초 지자체 상품 구매자 대상 저공해 렌터카 * 할인쿠폰 제공"),
-    ("바다가는 달", "카모아 렌터카 최대 2만원 쿠폰", "카모아 렌터카 최대 2만원 권 제공"),
 ]
 
 # 어떤 카드의 지원내용에도 들어오면 안 되는 사이트 잔여물
@@ -184,10 +180,10 @@ def test_live_national_cards_get_target_plus_benefit_copy(title: str, card: str,
         assert chrome not in (row.benefit_text or ""), (title, chrome)
 
 
-def test_live_page_yields_the_ten_traffic_cards() -> None:
-    # 자유여행상품 추가 혜택은 할인 카드에 합쳐져 11 → 10(2026-10-15 사용자 결정)
+def test_live_page_yields_the_six_traffic_cards() -> None:
+    # 자유여행상품 추가 혜택은 할인 카드에 합치고, 칸별 요약 배너 4개는 정책이 아니다(2026-10-15 사용자 결정) - 11 → 6
     rows = _live_rows()
-    assert len(rows) == 10
+    assert len(rows) == 6
     # 다음 카드 제목이 앞 카드 원문에 딸려 들어오지 않는다
     titles = list(rows)
     for earlier, later in zip(titles, titles[1:]):
@@ -249,7 +245,6 @@ def test_air_card_does_not_infer_four_person_cap_without_page_evidence() -> None
 
 # --- 바로가기: 홍보 페이지가 아니라 혜택을 실제로 받는 곳으로 -----------------------------------------
 
-KORAIL_MONTH = "https://www.korail.com/tour/touristIntor/tourEvent/monthMain"
 KORAIL_FREE_TOUR = "https://www.korail.com/tour/touristIntor/tourEvent/monthTour"
 KORAIL_THEME_TRAIN = "https://www.korail.com/tour/touristIntor/tourEvent/monthTourSale"
 
@@ -316,11 +311,22 @@ def test_preferred_links_win_over_the_page_link(title: str, url: str) -> None:
 
 
 def test_korail_cards_each_go_to_their_own_tab() -> None:
-    # 코레일 여행가는 달은 탭마다 주소가 다르다(메인 · 자유 여행 상품 · 테마 열차 할인 · 내일로 패스) - 카드가 서로 겹치지 않는다
+    # 코레일 여행가는 달은 탭마다 주소가 다르다(자유 여행 상품 · 테마 열차 할인 · 내일로 패스) - 카드가 서로 겹치지 않는다
     rows = _live_rows()
-    assert rows["대한민국 구석구석 자유로운 기차여행"].detail_url == KORAIL_MONTH  # 캠페인 전체 카드 - 페이지 링크 그대로
-    korail = ["대한민국 구석구석 자유로운 기차여행", "인구감소지역 자유여행상품 할인", "테마열차 할인", "내일로패스 할인"]
-    assert len({rows[title].detail_url for title in korail}) == 4
+    korail = ["인구감소지역 자유여행상품 할인", "테마열차 할인", "내일로패스 할인"]
+    assert len({rows[title].detail_url for title in korail}) == 3
+
+
+def test_section_banners_are_not_policies() -> None:
+    # 칸 끝의 요약 배너는 같은 칸 혜택을 다시 적은 홍보 문구다 - 정책으로 세우지 않는다
+    rows = _live_rows()
+    for banner in (
+        "대한민국 구석구석 자유로운 기차여행",
+        "비행기타고 떠나는 방방곡곡 국내 여행",
+        "지구를 지키는 친환경여행 모두를 지키는 안전운전",
+        "바다가는 달",
+    ):
+        assert banner not in rows
 
 
 # --- 자유여행상품 할인 + 추가 혜택은 한 정책 ------------------------------------------------------------

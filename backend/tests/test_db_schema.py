@@ -296,12 +296,13 @@ def test_alembic_0049_follows_0048() -> None:
     assert script.get_revision("0049_trip_place_public_category").down_revision == "0048_public_places"
 
 
-def test_alembic_0053_follows_0052_and_is_the_only_head() -> None:
+def test_alembic_0054_follows_0053_and_is_the_only_head() -> None:
     backend = Path(__file__).parents[1]
     config = Config(str(backend / "alembic.ini"))
     config.set_main_option("script_location", str(backend / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["0053_free_tour_add_on_merge"]
+    assert script.get_heads() == ["0054_traffic_section_banners"]
+    assert script.get_revision("0054_traffic_section_banners").down_revision == "0053_free_tour_add_on_merge"
     assert script.get_revision("0053_free_tour_add_on_merge").down_revision == "0052_pg_prewarm"
     assert script.get_revision("0052_pg_prewarm").down_revision == "0051_public_place_name_trgm"
     assert script.get_revision("0051_public_place_name_trgm").down_revision == "0050_geo_reference"

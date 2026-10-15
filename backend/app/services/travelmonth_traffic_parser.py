@@ -179,7 +179,12 @@ def parse_traffic_benefits(
     )
     # 중복 제거는 페이지에 실제로 있는 링크로만 한다. KNOWN_DETAIL_URLS 는 그 뒤에 채운다 - 먼저 채우면
     # 같은 주소를 쓰는 카드(코레일 카드들)가 하나로 합쳐져 사라진다.
-    for raw_record in _deduplicate_records(_fold_add_on_records(parser.records)):
+    cards = [
+        record
+        for record in _fold_add_on_records(parser.records)
+        if core_traffic_title(str(record.get("title", ""))) not in SECTION_BANNERS
+    ]
+    for raw_record in _deduplicate_records(cards):
         title = str(raw_record.get("title", ""))
         benefit_text = str(raw_record.get("benefit", ""))
         issue_period = str(raw_record.get("issue_period", ""))
@@ -280,6 +285,10 @@ def parse_traffic_benefits(
         )
     return records
 
+
+# 칸(철도 · 항공 · 자동차 · 렌터카) 끝의 요약 배너(핵심 명칭). 같은 칸 혜택을 다시 적은 홍보 문구라
+# 정책으로 세우지 않는다(2026-10-15 사용자 결정). 기존 정책은 0054 가 내린다.
+SECTION_BANNERS = frozenset({"자유로운 기차여행", "방방곡곡 국내 여행", "모두를 지키는 안전운전", "바다가는 달"})
 
 # 덧붙임 혜택 → 붙을 카드(핵심 명칭). 같은 상품을 사야 받고 같은 코레일 화면에 있는 혜택이라
 # 카드를 따로 세우지 않는다(2026-10-15 사용자 결정). 붙을 카드가 페이지에 없으면 따로 둔다.
