@@ -218,7 +218,7 @@
 | `새 일정에 담기` 링크 | 완료 | `/trips/new?policySlug={policySlug}` | 기존 일정이 있어도 새 일정 생성 경로로 정책 slug를 전달할 수 있다. |
 | `신청하러 가기` CTA | 완료 | `applyUrl` 외부 링크 | 직접 신청 URL이 있는 정책은 primary CTA로 새 탭 외부 링크를 제공한다. |
 | `혜택 안내 보기` CTA | 완료 | `officialUrl` 외부 링크 | 직접 신청 URL이 없고 공식 안내 URL이 있으면 안내 링크를 secondary CTA로 제공한다. |
-| `신청 링크 준비 중` 비활성 CTA | 완료 | 비활성 버튼 | `applyUrl`과 `officialUrl`이 모두 없으면 신청 링크 준비 중 상태를 보여준다. |
+| `공식 신청 링크 없음` 비활성 CTA | 완료 | 비활성 버튼 | `applyUrl`과 `officialUrl`이 모두 없으면 '공식 신청 링크 없음'과 '신청 방법은 본문 안내를 확인해 주세요.'를 보여준다. 링크는 국가 · 공공기관 사이트만 걸고 민간 운영사 행사 · 여행가는 달 홍보 페이지는 걸지 않는다(2026-10-15). |
 | 사용 불가 정책 controls 안내 | 부분 완료 | `canUsePolicyActions(policy)` 조건 | 화면에는 안내 문구와 비활성 버튼 처리가 구현되어 있다. 다만 상세 조회는 일부 migration gap raw fallback을 허용하므로, 저장/일정 담기는 정규화된 active `policies` 기준 정책에서만 안정적으로 동작한다. |
 | 로딩/오류 상태 | 완료 | `useAsyncResource()` 상태 UI | 상세 로딩 중 `정책 상세를 불러오는 중입니다`, 오류/404 시 `정책 목록으로` 액션을 제공한다. |
 

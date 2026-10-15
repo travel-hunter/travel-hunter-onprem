@@ -46,6 +46,23 @@ def core_traffic_title(title: str) -> str:
     return normalize_text(text.translate({ord(c): None for c in _QUOTE_CHARS}))
 
 
+# 여행가는 달 페이지에 바로가기가 없는 카드의 실제 혜택 주소(핵심 명칭 → 주소, 2026-10-14 손으로 확인).
+# 국가 · 공공기관이 운영하는 화면만 넣는다 - 민간 운영사(네이버 · 티맵 · 카모아) 행사는 링크 없이 둔다
+# (policy_normalization 이 그런 주소와 여행가는 달 페이지를 공식 URL 에서 걸러 낸다). 페이지에 링크가 생기면 그쪽이 먼저다.
+# 코레일 여행가는 달은 탭마다 주소가 다르다(사용자 확인): 메인 monthMain(구석구석 카드의 페이지 링크) ·
+# 자유 여행 상품 monthTour · 테마 열차 할인 monthTourSale · 내일로 패스 passIntro. 페이지가 스크립트로 그려진다.
+# 렌터카는 해양수산부 '바다가는 달' 이벤트 페이지다.
+KNOWN_DETAIL_URLS = {
+    "인구감소지역 자유여행상품 할인": "https://www.korail.com/tour/touristIntor/tourEvent/monthTour",
+    "테마열차 할인": "https://www.korail.com/tour/touristIntor/tourEvent/monthTourSale",
+    "연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인": "https://seatravelmonth.kr/event/",
+}
+# 페이지 링크가 있어도 이쪽이 먼저인 카드 - 페이지가 FAQ 에 걸어 둔 것을 혜택 화면으로(2026-10-14 사용자 확인).
+PREFERRED_DETAIL_URLS = {
+    "내일로패스 할인": "https://www.korail.com/tour/freeTravel/railro/passIntro",
+}
+
+
 def traffic_canonical_key(title: str) -> str:
     """정책의 정체는 제목이다. 혜택 원문·기간은 다듬어지거나 갱신되므로 key 에 넣지 않는다 -
     넣으면(예전 방식) 재수집마다 다른 정책으로 인식돼 카드가 복제되고 사용자 링크가 옛 행에 남는다."""
@@ -83,7 +100,7 @@ class _TrafficBenefitHtmlParser(HTMLParser):
             self._in_anchor = True
             href = normalize_text(attr_map.get("href") or "")
             # "#" 은 아직 열리지 않은 바로가기다(onclick 으로 안내만 띄운다). 링크가 없는 것으로 본다 -
-            # 그래야 공식 URL 이 수집 출처 페이지로 떨어진다.
+            # 그래야 공식 URL 이 KNOWN_DETAIL_URLS(없으면 수집 출처 페이지)로 간다.
             if href and href != "#" and not self._current.get("detail_url"):
                 self._current["detail_url"] = href
 
@@ -160,14 +177,26 @@ def parse_traffic_benefits(
         normalize_text(f"{raw.get('title', '')} {raw.get('benefit', '')}")
         for raw in parser.records
     )
-    for raw_record in _deduplicate_records(parser.records):
+    # 중복 제거는 페이지에 실제로 있는 링크로만 한다. KNOWN_DETAIL_URLS 는 그 뒤에 채운다 - 먼저 채우면
+    # 같은 주소를 쓰는 카드(코레일 카드들)가 하나로 합쳐져 사라진다.
+    cards = [
+        record
+        for record in _fold_add_on_records(parser.records)
+        if core_traffic_title(str(record.get("title", ""))) not in SECTION_BANNERS
+    ]
+    for raw_record in _deduplicate_records(cards):
         title = str(raw_record.get("title", ""))
         benefit_text = str(raw_record.get("benefit", ""))
         issue_period = str(raw_record.get("issue_period", ""))
         usage_period = str(raw_record.get("usage_period", ""))
         period_text = issue_period or usage_period or str(raw_record.get("period", ""))
         contact_text = str(raw_record.get("contact", "")) or None
-        detail_url = str(raw_record.get("detail_url", "")) or None
+        core_title = core_traffic_title(title)
+        detail_url = (
+            PREFERRED_DETAIL_URLS.get(core_title)
+            or str(raw_record.get("detail_url", ""))
+            or KNOWN_DETAIL_URLS.get(core_title)
+        )
         raw_text = str(raw_record.get("raw", ""))
         if not title or not benefit_text:
             continue
@@ -175,6 +204,9 @@ def parse_traffic_benefits(
         start_date, end_date = _parse_period_with_year(period_text, fetched_at.year)
         status = normalize_status(None, start_date, end_date, today)
         benefit_value = _traffic_benefit_value(benefit_text)
+        # 덧붙임 혜택은 금액을 정한 뒤에 붙인다 - 카드 금액은 주된 혜택에서 읽는다(운임 100%, 2만원이 아니다)
+        if raw_record.get("add_on"):
+            benefit_text = normalize_text(f"{benefit_text} 추가 혜택 {raw_record['add_on']}")
         card_summary, card_issues = _traffic_card_summary(
             benefit_text,
             benefit_value,
@@ -252,6 +284,28 @@ def parse_traffic_benefits(
             )
         )
     return records
+
+
+# 칸(철도 · 항공 · 자동차 · 렌터카) 끝의 요약 배너(핵심 명칭). 같은 칸 혜택을 다시 적은 홍보 문구라
+# 정책으로 세우지 않는다(2026-10-15 사용자 결정). 기존 정책은 0054 가 내린다.
+SECTION_BANNERS = frozenset({"자유로운 기차여행", "방방곡곡 국내 여행", "모두를 지키는 안전운전", "바다가는 달"})
+
+# 덧붙임 혜택 → 붙을 카드(핵심 명칭). 같은 상품을 사야 받고 같은 코레일 화면에 있는 혜택이라
+# 카드를 따로 세우지 않는다(2026-10-15 사용자 결정). 붙을 카드가 페이지에 없으면 따로 둔다.
+_ADD_ON_HOSTS = {"인구감소지역 자유여행상품 추가 혜택": "인구감소지역 자유여행상품 할인"}
+
+
+def _fold_add_on_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    by_core = {core_traffic_title(str(record.get("title", ""))): record for record in records}
+    folded: list[dict[str, object]] = []
+    for record in records:
+        host = by_core.get(_ADD_ON_HOSTS.get(core_traffic_title(str(record.get("title", ""))), ""))
+        if host is None:
+            folded.append(record)
+            continue
+        host["add_on"] = normalize_text(str(record.get("benefit", "")))
+        host["raw"] = normalize_text(f"{host.get('raw', '')} {record.get('raw', '')}")
+    return folded
 
 
 def _deduplicate_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -340,13 +394,10 @@ def _traffic_card_summary(
         and "운임" in text
         and "쿠폰" in text
     ):
+        # 추가 혜택(13개 지역 온누리상품권)이 붙어 있으면 함께 적는다 - _fold_add_on_records
+        if "온누리상품권" in text and "1인당 2만원" in text:
+            return "방문 인증 운임 쿠폰·온누리 2만원", ()
         return "방문 인증 시 철도 운임 상당 할인쿠폰", ()
-    if (
-        "인구감소지역 자유여행상품 추가 혜택" in title
-        and "선착순" in text
-        and "1인당 2만원" in text
-    ):
-        return "1인 온누리상품권 2만원·선착순", ()
     if (
         core_title == "자유로운 기차여행"
         and "테마열차 할인" in context
@@ -455,13 +506,15 @@ def _parse_period_with_year(period_text: str, year: int) -> tuple[date | None, d
 
 def _traffic_benefit_value(benefit_text: str):
     text = normalize_text(benefit_text)
+    # "1.5만" 은 통째로 읽는다 - 앞 숫자 없이 "5만" 만 잡으면 최대값이 부풀었다(10/14 자동차 여행 할인이 5만으로 보임)
     point_matches = [
-        int(value) * 10000 for value in re.findall(r"(\d+)\s*만\s*포인트", text)
+        round(float(value) * 10000)
+        for value in re.findall(r"(?<![\d.])(\d+(?:\.\d+)?)\s*만\s*포인트", text)
     ]
     if point_matches:
         amount = max(point_matches)
         return BenefitValue(
-            value_text=f"최대 {amount // 10000}만 포인트",
+            value_text=f"최대 {amount / 10000:g}만 포인트",
             amount_krw=amount,
             discount_percent=None,
             value_type="amount",
