@@ -2,6 +2,9 @@
 
 ## Current Status
 
+- Merge-ready: repo orientation 스킬 정비(`feature/repo-orientation-skill`). 공용 스킬 `.agent/skills/repo-orientation/SKILL.md` 를 9단계 점검(develop · 방금 머지된 PR · 열린 PR · 워크트리 분류 · CHECKLIST 최신 여부 ·
+  로컬 런타임 출처 · 개발서버 대비 버전 · 남은 서버 작업)과 한국어 보고 · 다음 작업 질문으로 고쳤다. Claude Code `/repo` 는 이 PC 의 `.claude/skills/repo`(저장소 밖)에서 develop 의 공용 스킬을 읽는다.
+- CHECKLIST 동기화: PR #97 로 develop 에 머지됐다(`d870650`).
 - 정책 상세 · 일정 문구(QA): PR #96 으로 develop 에 머지됐다(`66e5b44`). 정책 본문 번역체 정리는 새 브랜치 · 새 계획서로 남았다(제안서는 사용자에게 전달, 공개 행 반영 방식을 그 계획서에서 정한다).
 - 교통 혜택 링크 · 배너 정리: PR #95 로 develop 에 머지됐다(`0b8cc9f`). 정책 링크는 국가 · 공공기관 사이트로만, 자유여행상품 추가 혜택은 할인 정책에 합침(`0053`), 칸별 요약 배너 4건 내림(`0054`) - 전국 교통 카드 11 → 6.
 - 사진 출처 정리: PR #94 로 develop 에 머지됐다(`60eb6a6`). 사진 위는 '사진: 한국관광공사', 공공누리 유형은 내 정보 → 사진 출처 창, 홈 배너 아래 단추는 뺐다.
@@ -14,6 +17,7 @@
 
 ## Recent Validation
 
+- PASS(repo orientation 스킬): 옛 스킬로 RED(fetch · 머지 확인 · 워크트리 분류 · 런타임 출처 · CHECKLIST · 개발서버 버전 · 서버 작업 · 다음 질문 빠뜨림) → 새 스킬로 GREEN(9단계 모두 수행 - 로컬 = 개발서버: CSS `index-C7IfHjxj.css` · openapi sha256 `fc43e2f1dbce` 같음, alembic `0054`).
 - 부분 PASS(#96, 커밋 `80046a4`): `npx vitest run` 742개 중 736개 - 실패 6개는 모두 `mypage.test.tsx`(쌓인 시험 일정 탓, 기존 실패). `npm run typecheck` · `npm run build` · `npm run test:mojibake` · `git diff --check` PASS.
 - PASS(#96): `npm run test:e2e:containers` 13/13(같은 워크트리로 다시 빌드한 4173), 코드 리뷰(Opus) `0b8cc9f → 80046a4` Critical 0 · Important 0.
 - PASS(#95, 커밋 `e6e2e25`): backend `python -m pytest` 1565 passed · 27 skipped(`test_stay_discount_semantics_snapshot.py` 제외 - Windows 권한 시험). `0053` · `0054` 를 로컬 Postgres 에서 실제로 돌려
