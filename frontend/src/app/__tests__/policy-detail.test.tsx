@@ -1289,16 +1289,16 @@ describe("Travel Hunter app — policy detail", () => {
       cleanup();
       renderAppRoute("/policies/no-link-policy");
       const fallbackButton = await screen.findByRole("button", {
-        name: "신청 링크 준비 중",
+        name: "공식 신청 링크 없음",
       });
       expect(fallbackButton).toBeDisabled();
       expect(fallbackButton).toHaveAttribute(
         "title",
-        "공식 신청 연결은 준비 중입니다.",
+        "신청 방법은 본문 안내를 확인해 주세요.",
       );
-      expect(document.body).toHaveTextContent("공식 신청 연결은 준비 중입니다.");
+      expect(document.body).toHaveTextContent("신청 방법은 본문 안내를 확인해 주세요.");
       expect(fallbackButton).toHaveAccessibleDescription(
-        "공식 신청 연결은 준비 중입니다.",
+        "신청 방법은 본문 안내를 확인해 주세요.",
       );
     } finally {
       getPolicySpy.mockRestore();

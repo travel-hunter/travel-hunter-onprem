@@ -261,8 +261,9 @@ function getPolicyApplicationCta(policy: Policy): PolicyApplicationCta {
   if (policy.officialUrl) return { kind: "official", label: "혜택 안내 보기", url: policy.officialUrl };
   return {
     kind: "unavailable",
-    label: "신청 링크 준비 중",
-    disabledNotice: "공식 신청 연결은 준비 중입니다.",
+    // 국가 · 공공 사이트가 없거나 민간 운영사 행사라 링크를 걸지 않은 정책이다 - '준비 중' 이 아니다(2026-10-15)
+    label: "공식 신청 링크 없음",
+    disabledNotice: "신청 방법은 본문 안내를 확인해 주세요.",
   };
 }
 

@@ -139,17 +139,12 @@ def test_traffic_card_summary_preserves_source_specific_benefit_unit(
 LIVE_FIXTURE = Path(__file__).parent / "fixtures" / "traffic_benefits_2026-09-22.html"
 
 NATIONAL_CARD_EXPECTATIONS = [
-    ("인구감소지역 자유여행상품 할인", "방문 인증 시 철도 운임 상당 할인쿠폰", "인구감소지역 자유여행상품 * 구매자 대상 철도 할인쿠폰 제공"),
-    ("인구감소지역 자유여행상품 추가 혜택", "1인 온누리상품권 2만원·선착순", "13개 인구감소지역 * 자유여행상품 구매자 대상 디지털 온누리상품권 선착순 지급"),
+    ("인구감소지역 자유여행상품 할인", "방문 인증 운임 쿠폰·온누리 2만원", "인구감소지역 자유여행상품 * 구매자 대상 철도 할인쿠폰 제공"),
     ("테마열차 할인", "테마열차 운임 50% 할인", "5개 정기노선 * 운임료 50% 할인"),
     ("내일로패스 할인", "내일로패스 2만원 할인", "내일로패스 KTX 및 일반열차 * 탑승권 2만원 정액 할인"),
-    ("대한민국 구석구석 자유로운 기차여행", "철도 할인쿠폰·테마열차·내일로 혜택", "철도 할인쿠폰 제공 구매 승차권 운임의 100%"),
     ("’네이버 항공권‘에서 국내선 이용 시 네이버 페이 N포인트 지급 (최대 4만 포인트)", "대상 국내선 왕복 최대 4만 포인트", "(내륙노선) 항공권 구매 · 이용 시 인당 1만 포인트"),
-    ("비행기타고 떠나는 방방곡곡 국내 여행", "대상 국내선 왕복 최대 4만 포인트", "네이버 항공권에서 국내선 이용 시 최대 4만 포인트 지급"),
     ("인구감소지역 자동차 여행 할인", "티맵 방문 스탬프 누적 최대 3만 포인트", "인구감소지역(89개) 소재 관광지를 목적지로 출발지 기준 30km 이상 주행한 경우"),
-    ("지구를 지키는 친환경여행 모두를 지키는 안전운전", "최대 3만 포인트", "인구감소지역 방문 주행 시 최대 3만 포인트 지급"),
     ("연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인", "저공해 렌터카 최대 2만원 할인쿠폰", "연안지역 기초 지자체 상품 구매자 대상 저공해 렌터카 * 할인쿠폰 제공"),
-    ("바다가는 달", "카모아 렌터카 최대 2만원 쿠폰", "카모아 렌터카 최대 2만원 권 제공"),
 ]
 
 # 어떤 카드의 지원내용에도 들어오면 안 되는 사이트 잔여물
@@ -185,9 +180,10 @@ def test_live_national_cards_get_target_plus_benefit_copy(title: str, card: str,
         assert chrome not in (row.benefit_text or ""), (title, chrome)
 
 
-def test_live_page_yields_exactly_the_eleven_traffic_cards() -> None:
+def test_live_page_yields_the_six_traffic_cards() -> None:
+    # 자유여행상품 추가 혜택은 할인 카드에 합치고, 칸별 요약 배너 4개는 정책이 아니다(2026-10-15 사용자 결정) - 11 → 6
     rows = _live_rows()
-    assert len(rows) == 11
+    assert len(rows) == 6
     # 다음 카드 제목이 앞 카드 원문에 딸려 들어오지 않는다
     titles = list(rows)
     for earlier, later in zip(titles, titles[1:]):
@@ -245,3 +241,104 @@ def test_air_card_does_not_infer_four_person_cap_without_page_evidence() -> None
     )
 
     assert rows[0].raw_payload["cardCopy"]["summary"] == "국내선 최대 4만 포인트"
+
+
+# --- 바로가기: 홍보 페이지가 아니라 혜택을 실제로 받는 곳으로 -----------------------------------------
+
+KORAIL_FREE_TOUR = "https://www.korail.com/tour/touristIntor/tourEvent/monthTour"
+KORAIL_THEME_TRAIN = "https://www.korail.com/tour/touristIntor/tourEvent/monthTourSale"
+
+
+@pytest.mark.parametrize(
+    ("title", "url"),
+    [
+        ("인구감소지역 자유여행상품 할인", KORAIL_FREE_TOUR),
+        ("테마열차 할인", KORAIL_THEME_TRAIN),
+        ("연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인", "https://seatravelmonth.kr/event/"),
+    ],
+)
+def test_cards_without_a_link_on_the_page_go_to_the_benefit_site(title: str, url: str) -> None:
+    # 여행가는 달 페이지에 바로가기가 없는 카드 - 국가 · 공공 운영 혜택 화면으로(2026-10-14 확인, 민간 운영사는 표에 넣지 않는다)
+    row = _live_rows()[title]
+    assert row.detail_url == url
+
+
+def test_a_link_on_the_page_wins_over_the_known_link() -> None:
+    html = (
+        "<html><body><article><div><h4>테마열차 할인</h4><p>5개 정기노선 운임료 50% 할인</p>"
+        '<a href="https://www.korail.com/new-theme">할인혜택 보러가기</a></div></article></body></html>'
+    )
+    rows = parse_traffic_benefits(
+        html, collected_page_url=SOURCE_URL, fetched_at=datetime(2026, 9, 22, tzinfo=UTC), today=date(2026, 9, 22)
+    )
+    assert rows[0].detail_url == "https://www.korail.com/new-theme"
+
+
+# --- 포인트 금액: '1.5만' 을 '5만' 으로 읽지 않는다 -------------------------------------------------
+
+
+def test_decimal_points_are_not_read_as_their_last_digit() -> None:
+    # 실페이지: 스탬프 1.5만 포인트 · 계정당 최대 3만 - 예전에는 '1.5만' 의 '5만' 을 잡아 최대 5만으로 보였다
+    rows = _live_rows()
+    assert rows["인구감소지역 자동차 여행 할인"].benefit_value_text == "최대 3만 포인트"
+    assert rows["인구감소지역 자동차 여행 할인"].extracted_amount_krw == 30000
+
+
+def test_a_decimal_maximum_keeps_its_decimal() -> None:
+    row = _one("세 번째 스탬프 적립 시 1.5만 포인트 지급")
+    assert row.benefit_value_text == "최대 1.5만 포인트"
+    assert row.extracted_amount_krw == 15000
+
+
+def test_tmap_cards_no_longer_say_the_link_opens_later() -> None:
+    from app.services.travelmonth_traffic_detail import TRAFFIC_DETAIL_BY_TITLE
+
+    notes = " ".join(item.get("value", "") or item.get("description", "") for item in TRAFFIC_DETAIL_BY_TITLE["모두를 지키는 안전운전"]["notes"])
+    assert "오픈 예정" not in notes
+
+
+# --- 페이지 링크보다 먼저: 페이지가 FAQ · 메인으로 걸어 둔 카드(2026-10-14 사용자 확인) -------------
+
+
+@pytest.mark.parametrize(
+    ("title", "url"),
+    [
+        ("내일로패스 할인", "https://www.korail.com/tour/freeTravel/railro/passIntro"),
+    ],
+)
+def test_preferred_links_win_over_the_page_link(title: str, url: str) -> None:
+    assert _live_rows()[title].detail_url == url
+
+
+def test_korail_cards_each_go_to_their_own_tab() -> None:
+    # 코레일 여행가는 달은 탭마다 주소가 다르다(자유 여행 상품 · 테마 열차 할인 · 내일로 패스) - 카드가 서로 겹치지 않는다
+    rows = _live_rows()
+    korail = ["인구감소지역 자유여행상품 할인", "테마열차 할인", "내일로패스 할인"]
+    assert len({rows[title].detail_url for title in korail}) == 3
+
+
+def test_section_banners_are_not_policies() -> None:
+    # 칸 끝의 요약 배너는 같은 칸 혜택을 다시 적은 홍보 문구다 - 정책으로 세우지 않는다
+    rows = _live_rows()
+    for banner in (
+        "대한민국 구석구석 자유로운 기차여행",
+        "비행기타고 떠나는 방방곡곡 국내 여행",
+        "지구를 지키는 친환경여행 모두를 지키는 안전운전",
+        "바다가는 달",
+    ):
+        assert banner not in rows
+
+
+# --- 자유여행상품 할인 + 추가 혜택은 한 정책 ------------------------------------------------------------
+
+
+def test_free_tour_add_on_folds_into_the_discount_card() -> None:
+    # 같은 상품을 사야 받는 덧붙임 혜택이고 코레일 같은 화면에 있다 - 카드를 따로 세우지 않는다
+    rows = _live_rows()
+    assert "인구감소지역 자유여행상품 추가 혜택" not in rows
+    merged = rows["인구감소지역 자유여행상품 할인"]
+    assert "온누리상품권" in merged.benefit_text
+    assert "1인당 2만원" in merged.benefit_text
+    assert normalize_text(merged.benefit_text).startswith("인구감소지역 자유여행상품 * 구매자 대상 철도 할인쿠폰 제공")
+    # 카드 금액은 주된 혜택(운임 100%)에서 읽는다 - 덧붙임의 2만원이 금액이 되지 않는다
+    assert merged.benefit_value_text == "최대 100%"

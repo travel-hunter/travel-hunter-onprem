@@ -18,6 +18,7 @@ from app.services.travelmonth_traffic_detail import (
     TRAFFIC_DETAIL_BY_TITLE,
     structured_detail_for_traffic,
 )
+from app.services import travelmonth_traffic_parser as traffic_parser
 from app.services.travelmonth_traffic_parser import core_traffic_title, parse_traffic_benefits
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "traffic_benefits_2026-09-22.html"
@@ -63,7 +64,7 @@ def test_depopulation_regions_render_as_two_lines_not_eighty_nine_names() -> Non
 def test_every_card_on_the_live_page_resolves_to_a_curated_entry() -> None:
     # 페이지가 제목을 바꾸면 그 카드는 표에서 빠져 혜택 원문만 남는다. 그때 여기서 터져야 한다.
     titles = [core_traffic_title(source.title) for source in _parsed_sources()]
-    assert len(titles) == 11
+    assert len(titles) == 6
     assert [title for title in titles if title not in TRAFFIC_DETAIL_BY_TITLE] == []
 
 
@@ -99,7 +100,8 @@ def test_unknown_title_falls_back_to_the_benefit_text() -> None:
     ]
 
 
-def test_parsed_periods_win_over_the_curated_table() -> None:
+def test_parsed_periods_win_over_the_curated_table(monkeypatch) -> None:
+    monkeypatch.setattr(traffic_parser, "SECTION_BANNERS", frozenset())  # 바다가는 달 배너의 표 기간을 보려고 배너도 받는다
     sources = {core_traffic_title(source.title): source for source in _parsed_sources()}
 
     rental = structured_detail_for_traffic(
@@ -115,10 +117,12 @@ def test_parsed_periods_win_over_the_curated_table() -> None:
     assert [item["title"] for item in sea["periods"]] == ["쿠폰 발급 기간", "탑승 기간"]
 
 
-def test_dead_anchor_is_not_a_link_and_the_air_card_drops_the_four_person_guess() -> None:
+def test_dead_anchor_is_not_a_link_and_the_air_card_drops_the_four_person_guess(monkeypatch) -> None:
+    monkeypatch.setattr(traffic_parser, "SECTION_BANNERS", frozenset())  # "#" 바로가기는 배너에 있었다
     sources = {core_traffic_title(source.title): source for source in _parsed_sources()}
-    assert len(sources) == 11
-    assert sources["모두를 지키는 안전운전"].detail_url is None  # href="#"
+    assert len(sources) == 10
+    # href="#" 은 링크로 받지 않는다. 티맵은 민간 운영사라 표에도 없다(국가 · 공공 사이트만 연결)
+    assert sources["모두를 지키는 안전운전"].detail_url is None
     for title in ("네이버 페이 N포인트 지급 (최대 4만 포인트)", "방방곡곡 국내 여행"):
         assert "4인" not in sources[title].raw_payload["cardCopy"]["summary"]
 
@@ -134,7 +138,8 @@ def _run_upgrade(db: Session) -> None:
     db.expire_all()  # 마이그레이션은 세션을 거치지 않고 썼다
 
 
-def test_migration_fills_detail_without_touching_policy_identity_or_links() -> None:
+def test_migration_fills_detail_without_touching_policy_identity_or_links(monkeypatch) -> None:
+    monkeypatch.setattr(traffic_parser, "SECTION_BANNERS", frozenset())  # 0045 당시에는 바다가는 달도 정책이었다
     from tests.test_policy_candidate_review import make_record
 
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -182,3 +187,12 @@ def test_migration_fills_detail_without_touching_policy_identity_or_links() -> N
         assert db.query(ExternalSourceRecord).count() == 1
     finally:
         db.close()
+
+
+def test_free_tour_discount_detail_carries_the_add_on_benefit() -> None:
+    # 추가 혜택(13개 지역 온누리상품권)은 할인 카드 상세 안의 한 칸이다 - 따로 된 표 항목이 없다
+    assert "인구감소지역 자유여행상품 추가 혜택" not in TRAFFIC_DETAIL_BY_TITLE
+    detail = TRAFFIC_DETAIL_BY_TITLE["인구감소지역 자유여행상품 할인"]
+    add_on = [item for item in detail["supportContent"] if item["title"].startswith("추가 혜택")]
+    assert add_on and "온누리상품권" in add_on[0]["description"]
+    assert any("해남군" in item["description"] for item in add_on)
