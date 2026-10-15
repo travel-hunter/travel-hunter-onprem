@@ -46,20 +46,17 @@ def core_traffic_title(title: str) -> str:
     return normalize_text(text.translate({ord(c): None for c in _QUOTE_CHARS}))
 
 
-_TMAP_TRIP_MONTH = "https://tmap.life/64246a7d"
 # 여행가는 달 페이지에 바로가기가 없는 카드의 실제 혜택 주소(핵심 명칭 → 주소, 2026-10-14 손으로 확인).
-# 없으면 공식 URL 이 수집 출처(홍보 페이지)로 떨어진다. 페이지에 링크가 생기면 그쪽이 먼저다.
+# 국가 · 공공기관이 운영하는 화면만 넣는다 - 민간 운영사(네이버 · 티맵 · 카모아) 행사는 링크 없이 둔다
+# (policy_normalization 이 그런 주소와 여행가는 달 페이지를 공식 URL 에서 걸러 낸다). 페이지에 링크가 생기면 그쪽이 먼저다.
 # 코레일 여행가는 달은 탭마다 주소가 다르다(사용자 확인): 메인 monthMain(구석구석 카드의 페이지 링크) ·
 # 자유 여행 상품 monthTour · 테마 열차 할인 monthTourSale · 내일로 패스 passIntro. 페이지가 스크립트로 그려진다.
-# 렌터카는 해수부 '바다가는 달' 이벤트 페이지가 연결한 카모아 신청 페이지다.
+# 렌터카는 해양수산부 '바다가는 달' 이벤트 페이지다.
 KNOWN_DETAIL_URLS = {
     "인구감소지역 자유여행상품 할인": "https://www.korail.com/tour/touristIntor/tourEvent/monthTour",
     "인구감소지역 자유여행상품 추가 혜택": "https://www.korail.com/tour/touristIntor/tourEvent/monthTour",
     "테마열차 할인": "https://www.korail.com/tour/touristIntor/tourEvent/monthTourSale",
-    "네이버 페이 N포인트 지급 (최대 4만 포인트)": "https://travel.naver.co.kr/koreatravel",
-    "인구감소지역 자동차 여행 할인": _TMAP_TRIP_MONTH,
-    "모두를 지키는 안전운전": _TMAP_TRIP_MONTH,
-    "연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인": "https://carmore.kr/home/page-event-detail.html?a=529",
+    "연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인": "https://seatravelmonth.kr/event/",
 }
 # 페이지 링크가 있어도 이쪽이 먼저인 카드 - 페이지가 FAQ 에 걸어 둔 것을 혜택 화면으로(2026-10-14 사용자 확인).
 PREFERRED_DETAIL_URLS = {

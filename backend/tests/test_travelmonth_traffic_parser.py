@@ -252,7 +252,6 @@ def test_air_card_does_not_infer_four_person_cap_without_page_evidence() -> None
 KORAIL_MONTH = "https://www.korail.com/tour/touristIntor/tourEvent/monthMain"
 KORAIL_FREE_TOUR = "https://www.korail.com/tour/touristIntor/tourEvent/monthTour"
 KORAIL_THEME_TRAIN = "https://www.korail.com/tour/touristIntor/tourEvent/monthTourSale"
-TMAP_TRIP_MONTH = "https://tmap.life/64246a7d"
 
 
 @pytest.mark.parametrize(
@@ -261,20 +260,13 @@ TMAP_TRIP_MONTH = "https://tmap.life/64246a7d"
         ("인구감소지역 자유여행상품 할인", KORAIL_FREE_TOUR),
         ("인구감소지역 자유여행상품 추가 혜택", KORAIL_FREE_TOUR),
         ("테마열차 할인", KORAIL_THEME_TRAIN),
-        ("’네이버 항공권‘에서 국내선 이용 시 네이버 페이 N포인트 지급 (최대 4만 포인트)", "https://travel.naver.co.kr/koreatravel"),
-        ("인구감소지역 자동차 여행 할인", TMAP_TRIP_MONTH),
-        ("지구를 지키는 친환경여행 모두를 지키는 안전운전", TMAP_TRIP_MONTH),
-        ("연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인", "https://carmore.kr/home/page-event-detail.html?a=529"),
+        ("연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인", "https://seatravelmonth.kr/event/"),
     ],
 )
 def test_cards_without_a_link_on_the_page_go_to_the_benefit_site(title: str, url: str) -> None:
-    # 여행가는 달 페이지에 바로가기가 없는 카드 - 수집 출처(홍보 페이지)로 떨어지지 않고 혜택을 받는 곳으로 간다(2026-10-14 손으로 확인)
+    # 여행가는 달 페이지에 바로가기가 없는 카드 - 국가 · 공공 운영 혜택 화면으로(2026-10-14 확인, 민간 운영사는 표에 넣지 않는다)
     row = _live_rows()[title]
     assert row.detail_url == url
-
-
-def test_every_live_card_has_its_own_link() -> None:
-    assert all(row.detail_url and row.detail_url != SOURCE_URL for row in _live_rows().values())
 
 
 def test_a_link_on_the_page_wins_over_the_known_link() -> None:

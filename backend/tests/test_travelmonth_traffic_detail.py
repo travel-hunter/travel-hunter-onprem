@@ -118,8 +118,8 @@ def test_parsed_periods_win_over_the_curated_table() -> None:
 def test_dead_anchor_is_not_a_link_and_the_air_card_drops_the_four_person_guess() -> None:
     sources = {core_traffic_title(source.title): source for source in _parsed_sources()}
     assert len(sources) == 11
-    # href="#" 은 링크로 받지 않는다 - 손으로 확인한 TMAP 주소로 간다("#" 나 홍보 페이지가 아니다)
-    assert sources["모두를 지키는 안전운전"].detail_url == "https://tmap.life/64246a7d"
+    # href="#" 은 링크로 받지 않는다. 티맵은 민간 운영사라 표에도 없다(국가 · 공공 사이트만 연결)
+    assert sources["모두를 지키는 안전운전"].detail_url is None
     for title in ("네이버 페이 N포인트 지급 (최대 4만 포인트)", "방방곡곡 국내 여행"):
         assert "4인" not in sources[title].raw_payload["cardCopy"]["summary"]
 

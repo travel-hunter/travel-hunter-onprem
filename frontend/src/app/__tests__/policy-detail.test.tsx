@@ -1289,16 +1289,16 @@ describe("Travel Hunter app — policy detail", () => {
       cleanup();
       renderAppRoute("/policies/no-link-policy");
       const fallbackButton = await screen.findByRole("button", {
-        name: "신청 링크 준비 중",
+        name: "공식 신청 링크 없음",
       });
       expect(fallbackButton).toBeDisabled();
       expect(fallbackButton).toHaveAttribute(
         "title",
-        "공식 신청 연결은 준비 중입니다.",
+        "신청 방법은 본문 안내를 확인해 주세요.",
       );
-      expect(document.body).toHaveTextContent("공식 신청 연결은 준비 중입니다.");
+      expect(document.body).toHaveTextContent("신청 방법은 본문 안내를 확인해 주세요.");
       expect(fallbackButton).toHaveAccessibleDescription(
-        "공식 신청 연결은 준비 중입니다.",
+        "신청 방법은 본문 안내를 확인해 주세요.",
       );
     } finally {
       getPolicySpy.mockRestore();
@@ -1573,30 +1573,6 @@ describe("Travel Hunter app — policy detail", () => {
       appliedSpy.mockRestore();
       listTripsSpy.mockRestore();
       addPolicyToTripSpy.mockRestore();
-    }
-  });
-
-  it("says a TMAP benefit opens in the TMAP app and may land on the install screen", async () => {
-    const tmapPolicy: Policy = {
-      ...examplePolicyDetail,
-      id: "tmap-drive",
-      slug: "tmap-drive",
-      title: "인구감소지역 자동차 여행 할인",
-      officialUrl: "https://tmap.life/64246a7d",
-      applyUrl: null,
-    };
-    const getPolicySpy = vi.spyOn(appDataApi, "getPolicy").mockResolvedValue(tmapPolicy);
-
-    try {
-      await login();
-      cleanup();
-      renderAppRoute("/policies/tmap-drive");
-      const link = await screen.findByRole("link", { name: /티맵 앱에서 참여하기/ });
-      expect(link).toHaveAttribute("href", "https://tmap.life/64246a7d");
-      expect(link).toHaveAccessibleDescription("티맵 앱 전용 혜택이에요. 앱이 없으면 설치 화면으로 이동해요.");
-      expect(screen.queryByRole("link", { name: /혜택 안내 보기/ })).toBeNull();
-    } finally {
-      getPolicySpy.mockRestore();
     }
   });
 

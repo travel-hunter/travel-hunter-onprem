@@ -688,8 +688,7 @@ body.thmap-map-view .app-container { overflow: hidden; }
     border-top: 1px solid var(--gray-200); background: var(--color-bg-card);
   }
   .thmap-pdetail-bar a { text-decoration: none; }
-  .thmap-pdetail-bar .toast,
-  .thmap-pdetail-bar .helper-text { flex-basis: 100%; margin: 0; }
+  .thmap-pdetail-bar .toast { flex-basis: 100%; margin: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

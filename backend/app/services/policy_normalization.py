@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
 import logging
+from urllib.parse import urlsplit
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, object_session
@@ -66,10 +67,23 @@ def _policy_slug_for_external_record(record: ExternalSourceRecord) -> str:
     return f"{external_source_repository.EXTERNAL_POLICY_SLUG_PREFIX}{record.id}"
 
 
+# 정책 링크는 국가 · 공공기관이 직접 운영하는 사이트로만(2026-10-15 사용자 결정). 민간 운영사 행사 화면과
+# '여행가는 달' 홍보 페이지는 링크를 걸지 않는다 - 정책 · 혜택 내용은 남고 바깥 링크 단추만 없다.
+# ponytail: 아는 곳만 막는 목록이다. 새 민간 운영사가 나오면 여기에 더한다.
+_NON_PUBLIC_LINK_HOSTS = frozenset({"travel.naver.co.kr", "tmap.life", "www.tmap.co.kr", "carmore.kr", "www.carmore.kr"})
+_PROMOTION_PAGE_PREFIXES = ("https://korean.visitkorea.or.kr/travelmonth/",)
+
+
+def _public_link(url: str | None) -> str | None:
+    if not url or url.startswith(_PROMOTION_PAGE_PREFIXES) or urlsplit(url).hostname in _NON_PUBLIC_LINK_HOSTS:
+        return None
+    return url
+
+
 def _official_url_for_external_record(record: ExternalSourceRecord) -> str | None:
     if record.source_category == DIGITAL_TOURISM_SOURCE_CATEGORY:
         return dgtour_identity.official_url_for_city(record.city, record.detail_url)
-    return record.detail_url or record.collected_page_url
+    return _public_link(record.detail_url or record.collected_page_url)
 
 
 def _source_url_for_external_record(record: ExternalSourceRecord) -> str | None:
