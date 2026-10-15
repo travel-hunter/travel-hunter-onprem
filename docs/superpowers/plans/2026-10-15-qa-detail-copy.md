@@ -48,7 +48,7 @@
 - 시험: `trip-detail.test.tsx`(제목 · 단추 이름 4곳), `mypage.test.tsx`(단추 이름 1곳)를 먼저 바꿔 RED → 구현 → GREEN.
 - 기록(2026-10-15): 시험을 먼저 바꿔 RED(trip-detail 정책 시험 3건 실패) → 제목 · 단추 두 줄 수정 → GREEN(정책 시험 10/10).
 
- (사용자: "시안대로 진행") - **이 브랜치 범위 밖**
+## 3. 정책 본문 번역체 정리 (사용자: "시안대로 진행") - **이 브랜치 범위 밖**
 
 > 2026-10-15 사용자 결정: 본문 정리는 새 브랜치로 따로 한다. #95 머지 뒤 develop 에서 새 브랜치 · 새 계획서로 진행하고, 이 절은 넘겨줄 내용으로 남긴다.
 
@@ -86,6 +86,17 @@
 - 2026-10-15 커밋 전 최종(1 · 2 · 2.5절): `npx vitest run` 742 중 736 통과 - 실패 6건은 모두 mypage(원래 실패). typecheck · mojibake · build · `git diff --check` 통과, U+FFFD 0건.
 - 2026-10-15 #95 머지(0b8cc9f) 확인: #93 · #94 · #95 커밋 10개가 모두 develop 에 들어 있다. 이 브랜치와 겹치는 파일은 `policy-detail.test.tsx` 하나(충돌 없음) - develop 을 받은 뒤 해당 시험을 다시 돌린다.
 - 2026-10-15 1 · 2절 반영 중 전체 프론트 실행: 742 중 735 통과 - mypage 6건(원래 실패) + 전국 설명 줄 시험 1건(구현 반영 전 시점 실행). typecheck · mojibake · build · diff-check 통과.
+
+### 4.2 PR 절차 기록(`.codex/local-workflow.md` 'PR 생성 전 최종 게이트')
+
+- 2026-10-15 사용자 지적: "pr 내용도 프롬프트 준수 안햇음". #96 을 만들 때 빠뜨린 것 - 코드 리뷰와 BASE/HEAD SHA 대조, 생성 직후 `gh pr view --json commits,files,baseRefName,headRefName,isDraft,state,url` 재확인, 로컬 브라우저 완료 조건(세 컨테이너 같은 working_dir · 5173), Slack 전송 여부 질문. 아래 순서로 채운다.
+- 게이트 1~4(2026-10-15): `origin/develop`(0b8cc9f) 기준 behind 0 · ahead 2(be93082 + develop 병합 f0c531b), 바뀐 파일 11개 모두 이 작업 것.
+- 로컬 런타임: db · backend · frontend 세 컨테이너를 이 워크트리(qa-copy)에서 다시 만들었다(db 는 `--force-recreate`, 볼륨 보존). working_dir 세 개 모두 qa-copy, 8000 health 200 · API 정책 98 · 전국 6, 4173 200, 5173(Vite, 같은 워크트리) 200 - 새 문구('혜택 대상' · '확인 사항' · '지난 여행')가 나온다.
+- 코드 리뷰(Opus, BASE 0b8cc9f → HEAD f0c531b): Critical 0, Important 1, Minor 4.
+  - Important: `frontend/e2e-backend/backend-mode.spec.ts` 가 옛 확인 창 이름("뺄까요" · "빼기")을 쓴다 → 고친다.
+  - Minor: `policyListText.ts` 가 "전국" 을 직접 씀 → `NATIONWIDE_REGION` 으로(고친다). 계획서 3절 제목 줄 잘림 → 고쳤다. `home.test.tsx` 일정 제목 "지난 여행" 이 새 칩 문구와 겹쳐 읽기 어려움 → 제목을 바꾼다. 옛 이름이 주석에만 남음 → 화면 영향 없어 본문 정리 브랜치에서(기록만).
+  - 고친 뒤 같은 검토자가 늘어난 범위를 다시 보고, 리뷰 SHA 와 PR HEAD 를 맞춘다.
+- 리뷰 지적 반영 뒤 검증(2026-10-15): map · home 시험 95/95, typecheck 통과, `git diff --check` 통과, `npm run test:e2e:containers`(재빌드한 4173 · 같은 워크트리 컨테이너) 13/13 통과.
 
 ## 5. Issue#3 링크 점검 기록(2026-10-15, 로컬 DB 공개 정책 98건 · 링크 63개 실접속)
 

@@ -890,7 +890,7 @@ describe("Travel Hunter app — home", () => {
     });
     const listTripsSpy = vi.spyOn(appDataApi, "listTrips").mockResolvedValue([
       upcoming("301", "여수 여행", "owner", 10),
-      upcoming("302", "지난 여행", "owner", -30),
+      upcoming("302", "끝난 여행", "owner", -30),
       upcoming("303", "보기만 하는 여행", "viewer", 10),
     ]);
     const getTripSpy = vi.spyOn(appDataApi, "getTrip").mockResolvedValue(upcoming("301", "여수 여행", "owner", 10));
@@ -957,7 +957,7 @@ describe("Travel Hunter app — home", () => {
       await user.click(within(card).getByRole("button", { name: "일정에 담기" }));
       const picker = await within(card).findByRole("group", { name: "일정 고르기" });
       await within(picker).findByRole("button", { name: /여수 여행/ });
-      expect(within(picker).queryByText("지난 여행")).toBeNull();
+      expect(within(picker).queryByText("끝난 여행")).toBeNull();
       expect(within(picker).queryByText("보기만 하는 여행")).toBeNull();
       await user.click(within(picker).getByRole("button", { name: /여수 여행/ }));
       await waitFor(() => expect(routeLocation().pathname).toBe("/trips/301"));
