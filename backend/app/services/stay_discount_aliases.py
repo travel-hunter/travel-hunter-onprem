@@ -199,7 +199,7 @@ def _alias_application_targets(alias_area: StayDiscountAliasArea) -> list[dict[s
     return [
         {
             "title": "신청대상",
-            "description": f"{alias_area.sido} {city} 등 숙박세일페스타 대상 지역 숙박 이용자",
+            "description": f"{alias_area.sido} {city} 등 숙박세일 페스타 대상 지역 숙박 이용자",
         },
         {
             "title": "신청대상",

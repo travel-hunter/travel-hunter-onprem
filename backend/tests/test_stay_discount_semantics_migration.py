@@ -63,11 +63,22 @@ def _record(migration, source_id: int) -> ExternalSourceRecord:
     )
 
 
+def _later_notation_fix():
+    """0055 가 고친 표기 - 0029 가 저장한 글자에 0055 를 거치면 지금 매퍼와 같아야 한다."""
+    path = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "0055_policy_text_notation.py"
+    spec = importlib.util.spec_from_file_location("migration_0055", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module._fix_value
+
+
 def test_frozen_migration_semantics_equal_runtime_mapper_for_both_prestates() -> None:
     migration = _migration()
+    fix = _later_notation_fix()
 
-    assert map_external_source_semantics(_record(migration, 33)).structured_detail == migration.DESIRED_33
-    assert map_external_source_semantics(_record(migration, 35)).structured_detail == migration.DESIRED_35
+    assert map_external_source_semantics(_record(migration, 33)).structured_detail == fix(migration.DESIRED_33)
+    assert map_external_source_semantics(_record(migration, 35)).structured_detail == fix(migration.DESIRED_35)
 
 
 def test_revision_is_guarded_and_mutates_only_three_semantic_columns() -> None:

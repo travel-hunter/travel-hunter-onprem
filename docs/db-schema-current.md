@@ -249,6 +249,12 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 - 표 · 열은 그대로. 여행가는 달 교통 페이지의 칸 끝 요약 배너 4건(구석구석 자유로운 기차여행 · 방방곡곡 국내 여행 · 친환경여행 · 안전운전 · 바다가는 달)은 같은 칸 혜택을 다시 적은 홍보 문구라 정책에서 내린다(사용자 결정) - 정책 `hidden`, 원본 기록 `stale`.
 - 배너를 담은 `trip_policies` · `user_saved_policies` 는 같은 칸 혜택 정책(자유여행상품 할인 · 네이버 항공권 · 자동차 여행 할인 · 연안지역 렌터카 할인)으로 옮긴다. downgrade 는 상태만 되돌린다.
 
+정책 상세 표기 오류 고치기 (2026-10-15, `0055_policy_text_notation`, 데이터만):
+
+- 표 · 열은 그대로. 주민증 · 숙박세일 · 교통 · 반값여행 정책의 `structured_detail` 안 문자열과 `target_condition` 에서 틀린 표기(발급한 → 발급받은, `VisitKorea/` → `VisitKorea(…)`, 숙박세일페스타 → 숙박세일 페스타, 89개 → 89곳 등)를 고정 쌍으로 바꾼다.
+- 반값여행 중 괄호 안에서 잘려 저장된 행('여행유형(가족' …)은 고친 매퍼로 기록에서 다시 만들어 `structured_detail` 의 기간을 뺀 칸을 바꾼다(기간은 저장값 유지). `target_condition` 은 그것도 잘렸을 때만 다시 만든다.
+- `admin_override_enabled` 행과 수집 기록(`external_source_records`)은 건드리지 않는다(검토 지문 그대로). downgrade 는 아무것도 안 한다.
+
 수집 소스·검토 후보 테이블 (2026-09-13, `0038_policy_source_catalog`; `0039_external_source_status_text`는 `external_source_records.status_text`를 Text로 넓혔다):
 
 - `policy_collection_sources`: 코드 소유 수집 소스 카탈로그. `key` UNIQUE, `adapter_key`, `official_url`, `source_category`, `display_name`, `enabled`, `publication_mode`(`review` | `auto_after_reviewed_baseline`, CHECK), `expected_min_records`, 최근 실행 상태(`last_outcome`/`last_collected_at`/`last_successful_at`/`last_error`). 행은 마이그레이션이 아니라 저장소(`ensure_builtin_collection_sources`)가 만든다.
