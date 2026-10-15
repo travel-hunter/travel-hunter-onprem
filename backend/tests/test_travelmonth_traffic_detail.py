@@ -63,7 +63,7 @@ def test_depopulation_regions_render_as_two_lines_not_eighty_nine_names() -> Non
 def test_every_card_on_the_live_page_resolves_to_a_curated_entry() -> None:
     # 페이지가 제목을 바꾸면 그 카드는 표에서 빠져 혜택 원문만 남는다. 그때 여기서 터져야 한다.
     titles = [core_traffic_title(source.title) for source in _parsed_sources()]
-    assert len(titles) == 11
+    assert len(titles) == 10
     assert [title for title in titles if title not in TRAFFIC_DETAIL_BY_TITLE] == []
 
 
@@ -117,7 +117,7 @@ def test_parsed_periods_win_over_the_curated_table() -> None:
 
 def test_dead_anchor_is_not_a_link_and_the_air_card_drops_the_four_person_guess() -> None:
     sources = {core_traffic_title(source.title): source for source in _parsed_sources()}
-    assert len(sources) == 11
+    assert len(sources) == 10
     # href="#" 은 링크로 받지 않는다. 티맵은 민간 운영사라 표에도 없다(국가 · 공공 사이트만 연결)
     assert sources["모두를 지키는 안전운전"].detail_url is None
     for title in ("네이버 페이 N포인트 지급 (최대 4만 포인트)", "방방곡곡 국내 여행"):
@@ -183,3 +183,12 @@ def test_migration_fills_detail_without_touching_policy_identity_or_links() -> N
         assert db.query(ExternalSourceRecord).count() == 1
     finally:
         db.close()
+
+
+def test_free_tour_discount_detail_carries_the_add_on_benefit() -> None:
+    # 추가 혜택(13개 지역 온누리상품권)은 할인 카드 상세 안의 한 칸이다 - 따로 된 표 항목이 없다
+    assert "인구감소지역 자유여행상품 추가 혜택" not in TRAFFIC_DETAIL_BY_TITLE
+    detail = TRAFFIC_DETAIL_BY_TITLE["인구감소지역 자유여행상품 할인"]
+    add_on = [item for item in detail["supportContent"] if item["title"].startswith("추가 혜택")]
+    assert add_on and "온누리상품권" in add_on[0]["description"]
+    assert any("해남군" in item["description"] for item in add_on)

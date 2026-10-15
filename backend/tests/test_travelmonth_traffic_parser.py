@@ -139,8 +139,7 @@ def test_traffic_card_summary_preserves_source_specific_benefit_unit(
 LIVE_FIXTURE = Path(__file__).parent / "fixtures" / "traffic_benefits_2026-09-22.html"
 
 NATIONAL_CARD_EXPECTATIONS = [
-    ("인구감소지역 자유여행상품 할인", "방문 인증 시 철도 운임 상당 할인쿠폰", "인구감소지역 자유여행상품 * 구매자 대상 철도 할인쿠폰 제공"),
-    ("인구감소지역 자유여행상품 추가 혜택", "1인 온누리상품권 2만원·선착순", "13개 인구감소지역 * 자유여행상품 구매자 대상 디지털 온누리상품권 선착순 지급"),
+    ("인구감소지역 자유여행상품 할인", "방문 인증 운임 쿠폰·온누리 2만원", "인구감소지역 자유여행상품 * 구매자 대상 철도 할인쿠폰 제공"),
     ("테마열차 할인", "테마열차 운임 50% 할인", "5개 정기노선 * 운임료 50% 할인"),
     ("내일로패스 할인", "내일로패스 2만원 할인", "내일로패스 KTX 및 일반열차 * 탑승권 2만원 정액 할인"),
     ("대한민국 구석구석 자유로운 기차여행", "철도 할인쿠폰·테마열차·내일로 혜택", "철도 할인쿠폰 제공 구매 승차권 운임의 100%"),
@@ -185,9 +184,10 @@ def test_live_national_cards_get_target_plus_benefit_copy(title: str, card: str,
         assert chrome not in (row.benefit_text or ""), (title, chrome)
 
 
-def test_live_page_yields_exactly_the_eleven_traffic_cards() -> None:
+def test_live_page_yields_the_ten_traffic_cards() -> None:
+    # 자유여행상품 추가 혜택은 할인 카드에 합쳐져 11 → 10(2026-10-15 사용자 결정)
     rows = _live_rows()
-    assert len(rows) == 11
+    assert len(rows) == 10
     # 다음 카드 제목이 앞 카드 원문에 딸려 들어오지 않는다
     titles = list(rows)
     for earlier, later in zip(titles, titles[1:]):
@@ -258,7 +258,6 @@ KORAIL_THEME_TRAIN = "https://www.korail.com/tour/touristIntor/tourEvent/monthTo
     ("title", "url"),
     [
         ("인구감소지역 자유여행상품 할인", KORAIL_FREE_TOUR),
-        ("인구감소지역 자유여행상품 추가 혜택", KORAIL_FREE_TOUR),
         ("테마열차 할인", KORAIL_THEME_TRAIN),
         ("연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인", "https://seatravelmonth.kr/event/"),
     ],
@@ -322,3 +321,18 @@ def test_korail_cards_each_go_to_their_own_tab() -> None:
     assert rows["대한민국 구석구석 자유로운 기차여행"].detail_url == KORAIL_MONTH  # 캠페인 전체 카드 - 페이지 링크 그대로
     korail = ["대한민국 구석구석 자유로운 기차여행", "인구감소지역 자유여행상품 할인", "테마열차 할인", "내일로패스 할인"]
     assert len({rows[title].detail_url for title in korail}) == 4
+
+
+# --- 자유여행상품 할인 + 추가 혜택은 한 정책 ------------------------------------------------------------
+
+
+def test_free_tour_add_on_folds_into_the_discount_card() -> None:
+    # 같은 상품을 사야 받는 덧붙임 혜택이고 코레일 같은 화면에 있다 - 카드를 따로 세우지 않는다
+    rows = _live_rows()
+    assert "인구감소지역 자유여행상품 추가 혜택" not in rows
+    merged = rows["인구감소지역 자유여행상품 할인"]
+    assert "온누리상품권" in merged.benefit_text
+    assert "1인당 2만원" in merged.benefit_text
+    assert normalize_text(merged.benefit_text).startswith("인구감소지역 자유여행상품 * 구매자 대상 철도 할인쿠폰 제공")
+    # 카드 금액은 주된 혜택(운임 100%)에서 읽는다 - 덧붙임의 2만원이 금액이 되지 않는다
+    assert merged.benefit_value_text == "최대 100%"

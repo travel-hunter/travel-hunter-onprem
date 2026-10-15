@@ -54,7 +54,6 @@ def core_traffic_title(title: str) -> str:
 # 렌터카는 해양수산부 '바다가는 달' 이벤트 페이지다.
 KNOWN_DETAIL_URLS = {
     "인구감소지역 자유여행상품 할인": "https://www.korail.com/tour/touristIntor/tourEvent/monthTour",
-    "인구감소지역 자유여행상품 추가 혜택": "https://www.korail.com/tour/touristIntor/tourEvent/monthTour",
     "테마열차 할인": "https://www.korail.com/tour/touristIntor/tourEvent/monthTourSale",
     "연안지역 제약환경(교통) 개선 및 체류 확대를 위한 렌터카 할인": "https://seatravelmonth.kr/event/",
 }
@@ -179,8 +178,8 @@ def parse_traffic_benefits(
         for raw in parser.records
     )
     # 중복 제거는 페이지에 실제로 있는 링크로만 한다. KNOWN_DETAIL_URLS 는 그 뒤에 채운다 - 먼저 채우면
-    # 같은 주소를 쓰는 카드(코레일 3건 · TMAP 2건)가 하나로 합쳐져 사라진다.
-    for raw_record in _deduplicate_records(parser.records):
+    # 같은 주소를 쓰는 카드(코레일 카드들)가 하나로 합쳐져 사라진다.
+    for raw_record in _deduplicate_records(_fold_add_on_records(parser.records)):
         title = str(raw_record.get("title", ""))
         benefit_text = str(raw_record.get("benefit", ""))
         issue_period = str(raw_record.get("issue_period", ""))
@@ -200,6 +199,9 @@ def parse_traffic_benefits(
         start_date, end_date = _parse_period_with_year(period_text, fetched_at.year)
         status = normalize_status(None, start_date, end_date, today)
         benefit_value = _traffic_benefit_value(benefit_text)
+        # 덧붙임 혜택은 금액을 정한 뒤에 붙인다 - 카드 금액은 주된 혜택에서 읽는다(운임 100%, 2만원이 아니다)
+        if raw_record.get("add_on"):
+            benefit_text = normalize_text(f"{benefit_text} 추가 혜택 {raw_record['add_on']}")
         card_summary, card_issues = _traffic_card_summary(
             benefit_text,
             benefit_value,
@@ -277,6 +279,24 @@ def parse_traffic_benefits(
             )
         )
     return records
+
+
+# 덧붙임 혜택 → 붙을 카드(핵심 명칭). 같은 상품을 사야 받고 같은 코레일 화면에 있는 혜택이라
+# 카드를 따로 세우지 않는다(2026-10-15 사용자 결정). 붙을 카드가 페이지에 없으면 따로 둔다.
+_ADD_ON_HOSTS = {"인구감소지역 자유여행상품 추가 혜택": "인구감소지역 자유여행상품 할인"}
+
+
+def _fold_add_on_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    by_core = {core_traffic_title(str(record.get("title", ""))): record for record in records}
+    folded: list[dict[str, object]] = []
+    for record in records:
+        host = by_core.get(_ADD_ON_HOSTS.get(core_traffic_title(str(record.get("title", ""))), ""))
+        if host is None:
+            folded.append(record)
+            continue
+        host["add_on"] = normalize_text(str(record.get("benefit", "")))
+        host["raw"] = normalize_text(f"{host.get('raw', '')} {record.get('raw', '')}")
+    return folded
 
 
 def _deduplicate_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -365,13 +385,10 @@ def _traffic_card_summary(
         and "운임" in text
         and "쿠폰" in text
     ):
+        # 추가 혜택(13개 지역 온누리상품권)이 붙어 있으면 함께 적는다 - _fold_add_on_records
+        if "온누리상품권" in text and "1인당 2만원" in text:
+            return "방문 인증 운임 쿠폰·온누리 2만원", ()
         return "방문 인증 시 철도 운임 상당 할인쿠폰", ()
-    if (
-        "인구감소지역 자유여행상품 추가 혜택" in title
-        and "선착순" in text
-        and "1인당 2만원" in text
-    ):
-        return "1인 온누리상품권 2만원·선착순", ()
     if (
         core_title == "자유로운 기차여행"
         and "테마열차 할인" in context

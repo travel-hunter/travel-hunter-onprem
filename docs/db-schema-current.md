@@ -238,6 +238,12 @@ non-unique 분류 키다. `canonical_key_version`은 snapshot key 생성 규칙 
 - 앱이 뜰 때(`app/services/search_warmup.py`) 뒤에서 `public_places` 와 그 색인 4개(약 460MB)를 'read' 방식으로 읽어 운영체제 캐시를 채우고(`shared_buffers` 는 차지하지 않는다) PostGIS 를 한 번 부른다. 차가운 첫 장소 검색 7.6초 → 데운 뒤 0.45초(2026-10-12 로컬 실측).
 - downgrade 는 확장을 지운다(기대는 객체가 없다).
 
+교통 혜택 자유여행상품 합치기 (2026-10-15, `0053_free_tour_add_on_merge`, 데이터만):
+
+- 표 · 열은 그대로. '인구감소지역 자유여행상품 추가 혜택' 정책을 '할인' 정책에 합친다(사용자 결정) - 추가 혜택 정책은 `hidden`, 원본 기록은 `freshness_status='stale'`(공개 조건에서 빠져 다음 수집 승격이 되살리지 않는다).
+- 추가 혜택을 담은 `trip_policies` · `user_saved_policies` 는 할인 정책으로 옮긴다(이미 둘 다 담았으면 하나만 남긴다). 할인 정책의 `structured_detail` · `card_summary` 를 합친 내용으로 채운다.
+- downgrade 는 정책 `active` · 기록 `unknown` 만 되돌린다(옮긴 링크와 상세는 그대로).
+
 수집 소스·검토 후보 테이블 (2026-09-13, `0038_policy_source_catalog`; `0039_external_source_status_text`는 `external_source_records.status_text`를 Text로 넓혔다):
 
 - `policy_collection_sources`: 코드 소유 수집 소스 카탈로그. `key` UNIQUE, `adapter_key`, `official_url`, `source_category`, `display_name`, `enabled`, `publication_mode`(`review` | `auto_after_reviewed_baseline`, CHECK), `expected_min_records`, 최근 실행 상태(`last_outcome`/`last_collected_at`/`last_successful_at`/`last_error`). 행은 마이그레이션이 아니라 저장소(`ensure_builtin_collection_sources`)가 만든다.

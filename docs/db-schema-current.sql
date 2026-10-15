@@ -2580,6 +2580,10 @@ CREATE INDEX ix_public_places_name_trgm ON public.public_places USING gin (name 
 CREATE EXTENSION IF NOT EXISTS pg_prewarm;
 
 --
+-- 교통 혜택 자유여행상품 합치기 (0053_free_tour_add_on_merge) - 데이터만, 스키마 변경 없음.
+--
+
+--
 -- PostgreSQL database dump complete
 --
 
