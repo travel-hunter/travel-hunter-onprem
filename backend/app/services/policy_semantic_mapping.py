@@ -151,7 +151,7 @@ def _stay_discount(record: ExternalSourceRecord) -> ExternalSourceSemanticMappin
             ),
         )
 
-    _append(detail["applicationTarget"], title="신청대상", description="숙박세일페스타 대상 지역 숙박 이용자")
+    _append(detail["applicationTarget"], title="신청대상", description="숙박세일 페스타 대상 지역 숙박 이용자")
     _append(
         detail["applicationTarget"],
         title="신청대상",
@@ -197,6 +197,30 @@ def _local_half_trip_default_target(record: ExternalSourceRecord) -> str:
     city = _local_half_trip_city(record)
     city_prefix = f"{city} 지역" if city else "해당 참여지역"
     return f"{city_prefix} 반값여행 참여 혜택을 신청하고, 공식 안내의 사전 신청·승인·이용 조건을 충족한 여행자"
+
+
+_SEMANTIC_SEPARATORS = ",*ㆍ·\n/"
+
+
+def _split_outside_parentheses(text: str) -> list[str]:
+    """쉼표 · 슬래시 등으로 나누되 괄호 안은 자르지 않는다 - '여행유형(가족·개인·단체·청년)' 은 한 조각.
+    원문 괄호가 끝까지 안 닫히면 그 괄호부터는 예전처럼 구분자마다 나눈다(뒤 조건이 한 줄로 뭉치지 않게)."""
+    parts: list[str] = []
+    depth = 0
+    start = 0
+    for index, char in enumerate(text):
+        if char in "(（":
+            depth += 1
+        elif char in ")）":
+            depth = max(depth - 1, 0)
+        elif depth == 0 and char in _SEMANTIC_SEPARATORS:
+            parts.append(text[start:index].strip())
+            start = index + 1
+    if depth > 0:
+        parts.extend(re.split(r"\s*(?:,|\*|ㆍ|·|\n|/)\s*", text[start:]))
+        return [part.strip() for part in parts]
+    parts.append(text[start:].strip())
+    return parts
 
 
 def _split_detail_lines(value: object) -> list[str]:
@@ -333,7 +357,7 @@ def _local_half_trip(record: ExternalSourceRecord) -> ExternalSourceSemanticMapp
 
     semantic_texts: list[str] = []
     for candidate in [payload.get("notes"), field_values.get("특이사항"), labeled_value("특이사항"), target_condition]:
-        for part in re.split(r"\s*(?:,|\*|ㆍ|·|\n|/)\s*", _text(candidate)):
+        for part in _split_outside_parentheses(_text(candidate)):
             part = _text(part)
             if part and part not in semantic_texts:
                 semantic_texts.append(part)

@@ -882,7 +882,7 @@ def make_stay_policy() -> PolicyModel:
             {"title": "할인 혜택", "description": "14만원 이상 국내 숙박상품 예약 시 7만원 할인"},
         ],
         "applicationTarget": [
-            {"title": "신청대상", "description": "숙박세일페스타 대상 지역 숙박 이용자"},
+            {"title": "신청대상", "description": "숙박세일 페스타 대상 지역 숙박 이용자"},
             {"title": "신청대상", "description": "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자"},
             {"title": "신청대상", "description": "할인권 발급 후 지정 기간 내 입실 가능한 사용자"},
         ],
@@ -1124,12 +1124,12 @@ def test_stay_discount_alias_detail_echoes_alias_slug(monkeypatch) -> None:
         "7만원 이상 국내 숙박상품 예약 시 3만원 할인 / "
         "14만원 미만 국내 숙박상품 예약 시 5만원 할인 / "
         "14만원 이상 국내 숙박상품 예약 시 7만원 할인 · "
-        "이용 조건: 경남 고성 등 숙박세일페스타 대상 지역 숙박 이용자 / "
+        "이용 조건: 경남 고성 등 숙박세일 페스타 대상 지역 숙박 이용자 / "
         "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자 / "
         "할인권 발급 후 지정 기간 내 입실 가능한 사용자"
     )
     assert detail["requirements"] == [
-        "경남 고성 등 숙박세일페스타 대상 지역 숙박 이용자",
+        "경남 고성 등 숙박세일 페스타 대상 지역 숙박 이용자",
         "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자",
         "할인권 발급 후 지정 기간 내 입실 가능한 사용자",
     ]
@@ -1191,12 +1191,12 @@ def test_stay_discount_alias_requirements_follow_persisted_structured_conditions
 
     assert detail is not None
     assert detail["requirements"] == [
-        "강원 고성 등 숙박세일페스타 대상 지역 숙박 이용자",
+        "강원 고성 등 숙박세일 페스타 대상 지역 숙박 이용자",
         "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자",
         "할인권 발급 후 지정 기간 내 입실 가능한 사용자",
     ]
     assert detail["structuredDetail"]["applicationTarget"] == [
-        {"title": "신청대상", "description": "강원 고성 등 숙박세일페스타 대상 지역 숙박 이용자"},
+        {"title": "신청대상", "description": "강원 고성 등 숙박세일 페스타 대상 지역 숙박 이용자"},
         {"title": "신청대상", "description": "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자"},
         {"title": "신청대상", "description": "할인권 발급 후 지정 기간 내 입실 가능한 사용자"},
     ]
@@ -1281,12 +1281,12 @@ def test_stay_discount_raw_fallback_detail_uses_structured_mapping_presentation(
         "7만원 이상 국내 숙박상품 예약 시 3만원 할인 / "
         "14만원 미만 국내 숙박상품 예약 시 5만원 할인 / "
         "14만원 이상 국내 숙박상품 예약 시 7만원 할인 · "
-        "이용 조건: 숙박세일페스타 대상 지역 숙박 이용자 / "
+        "이용 조건: 숙박세일 페스타 대상 지역 숙박 이용자 / "
         "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자 / "
         "할인권 발급 후 지정 기간 내 입실 가능한 사용자"
     )
     assert detail["requirements"] == [
-        "숙박세일페스타 대상 지역 숙박 이용자",
+        "숙박세일 페스타 대상 지역 숙박 이용자",
         "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자",
         "할인권 발급 후 지정 기간 내 입실 가능한 사용자",
     ]

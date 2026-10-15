@@ -2,10 +2,11 @@
 
 ## Current Status
 
-- Merge-ready: repo orientation 스킬 정비(`feature/repo-orientation-skill`). 공용 스킬 `.agent/skills/repo-orientation/SKILL.md` 를 9단계 점검(develop · 방금 머지된 PR · 열린 PR · 워크트리 분류 · CHECKLIST 최신 여부 ·
-  로컬 런타임 출처 · 개발서버 대비 버전 · 남은 서버 작업)과 한국어 보고 · 다음 작업 질문으로 고쳤다. Claude Code `/repo` 는 이 PC 의 `.claude/skills/repo`(저장소 밖)에서 develop 의 공용 스킬을 읽는다.
+- Merge-ready: 정책 상세 표기 오류(`fix/policy-text-notation`). 주민증 '발급받은 여행자' · 'VisitKorea(대한민국 구석구석)', '숙박세일 페스타', 교통 '(89곳)' · '한국관광공사 디지털관광주민증' · '운임' · '시 · 군 · 구',
+  반값여행 괄호 안을 자르지 않음('여행유형(가족·개인·단체·청년)'). 저장된 행은 `0055_policy_text_notation` 이 고친다(수집 기록은 그대로 - 검토 후보 안 생김). 문체는 그대로(사용자 결정).
+- repo orientation 스킬: PR #98 로 develop 에 머지됐다(`80bca70`). Claude Code `/repo` 는 이 PC 의 `.claude/skills/repo`(저장소 밖)에서 develop 의 공용 스킬을 읽는다.
 - CHECKLIST 동기화: PR #97 로 develop 에 머지됐다(`d870650`).
-- 정책 상세 · 일정 문구(QA): PR #96 으로 develop 에 머지됐다(`66e5b44`). 정책 본문 번역체 정리는 새 브랜치 · 새 계획서로 남았다(제안서는 사용자에게 전달, 공개 행 반영 방식을 그 계획서에서 정한다).
+- 정책 상세 · 일정 문구(QA): PR #96 으로 develop 에 머지됐다(`66e5b44`). 정책 본문 번역체 정리는 하지 않는다(2026-10-15 사용자 결정 - 지금의 명사체 유지). 표기 오류만 위 브랜치에서 고친다.
 - 교통 혜택 링크 · 배너 정리: PR #95 로 develop 에 머지됐다(`0b8cc9f`). 정책 링크는 국가 · 공공기관 사이트로만, 자유여행상품 추가 혜택은 할인 정책에 합침(`0053`), 칸별 요약 배너 4건 내림(`0054`) - 전국 교통 카드 11 → 6.
 - 사진 출처 정리: PR #94 로 develop 에 머지됐다(`60eb6a6`). 사진 위는 '사진: 한국관광공사', 공공누리 유형은 내 정보 → 사진 출처 창, 홈 배너 아래 단추는 뺐다.
 - 일정 · 정책 표시 기준: PR #93 으로 develop 에 머지됐다(`05a702d`).
@@ -17,14 +18,21 @@
 
 ## Recent Validation
 
-- PASS(repo orientation 스킬): 옛 스킬로 RED(fetch · 머지 확인 · 워크트리 분류 · 런타임 출처 · CHECKLIST · 개발서버 버전 · 서버 작업 · 다음 질문 빠뜨림) → 새 스킬로 GREEN(9단계 모두 수행 - 로컬 = 개발서버: CSS `index-C7IfHjxj.css` · openapi sha256 `fc43e2f1dbce` 같음, alembic `0054`).
+- PASS(표기 오류, 커밋 `440e69b`): backend `python -m pytest` 1588 passed · 27 skipped, 실패 1(`test_stay_discount_semantics_snapshot.py` - Windows 권한 시험, develop 에서도 실패). `alembic upgrade 0054_traffic_section_banners:head --sql` 통과(0055 는 오프라인에서 건너뜀).
+  `0055` 를 로컬 Postgres 에서 실제로 돌려 주민증 63 · 숙박세일 101 · 반값 6 · 교통 4행(숨김 포함) 교정, 옛 표기 남은 행 0, 검토 대기 후보 80 그대로, 반값 기간 줄 유지. 코드 리뷰(Opus) Critical 0 · Important 1(반영) · Minor 5(반영 · 기록). `git diff --check` PASS, U+FFFD 0. 프런트 코드 변경 없음.
 - 부분 PASS(#96, 커밋 `80046a4`): `npx vitest run` 742개 중 736개 - 실패 6개는 모두 `mypage.test.tsx`(쌓인 시험 일정 탓, 기존 실패). `npm run typecheck` · `npm run build` · `npm run test:mojibake` · `git diff --check` PASS.
 - PASS(#96): `npm run test:e2e:containers` 13/13(같은 워크트리로 다시 빌드한 4173), 코드 리뷰(Opus) `0b8cc9f → 80046a4` Critical 0 · Important 0.
 - PASS(#95, 커밋 `e6e2e25`): backend `python -m pytest` 1565 passed · 27 skipped(`test_stay_discount_semantics_snapshot.py` 제외 - Windows 권한 시험). `0053` · `0054` 를 로컬 Postgres 에서 실제로 돌려
   추가 혜택 정책 · 배너 4건 hidden · 원본 기록 stale, API 전국 정책 6건 확인. `alembic upgrade 0052_pg_prewarm:head --sql` 통과(두 데이터 마이그레이션은 오프라인에서 건너뜀).
-- 로컬 런타임(2026-10-15): db · backend · frontend 와 5173 을 develop 내용(qa-copy 워크트리)으로 띄움. 브라우저 확인은 사용자 몫 - 볼 곳은 Active Risks 의 #94 · #95 · #96 절.
+- 로컬 런타임(2026-10-15): db · backend · frontend 를 `text-notation` 워크트리로 띄움(로컬 DB alembic `0055`). 5173 은 꺼져 있음. 브라우저 확인은 사용자 몫 - 볼 곳은 Active Risks 의 표기 오류 · #94 · #95 · #96 절.
 
 ## Active Risks
+
+### 정책 상세 표기 오류(`fix/policy-text-notation`)
+
+- **배포 전 개발서버 미리 계산(읽기, 승인 뒤):** `0055` 는 반값여행 중 괄호 안에서 잘린 행을 기록의 지금 raw_payload 로 다시 만든다(기간 칸은 저장값 유지). 개발서버에서 `planned_changes` 로 행마다 바뀌는 칸을 보고 조각 잇기 외 차이가 없는지 확인한다. downgrade 는 아무것도 안 한다.
+- 범위 밖: 교통 `policy_comment` · `description` 은 수집 원문이라 '운임료' · '(89개)' 가 남는다(신청한 혜택 목록 요약에만 보임). 매퍼를 import 하는 마이그레이션이라 뒷날 매퍼가 새 열을 읽게 되면 0055 전 판 DB 를 올릴 때 멈출 수 있다(0045 · 0053 과 같은 위험).
+- 브라우저로 볼 것: 숙박세일 지역 정책 '숙박세일 페스타', 반값여행 산청 · 태안 · 함양 혜택 조건 '여행유형(가족·개인·단체·청년) …' 한 줄과 여행 기간 줄, 주민증 '발급받은 여행자' · 'VisitKorea(대한민국 구석구석)'.
 
 ### 교통 혜택 링크 · 배너 정리(PR #95, 머지됨)
 
@@ -45,7 +53,6 @@
 
 ### 정책 상세 · 일정 문구(PR #96, 머지됨)
 
-- 정책 본문(디지털관광주민증 52 · 숙박세일 32 · 반값여행 8 · 교통 6)은 아직 번역 어투가 남았다. 문장은 대부분 `policies.structured_detail` 에 저장돼 코드만 바꾸면 다시 승격될 때까지 옛 문장이다 - 새 계획서에서 반영 방식을 정한다.
 - 브라우저로 볼 것: 정책 상세 섹션 이름(혜택 내용 · 혜택 대상 · 확인 사항)과 요약 칸, 일정 '지난 여행', 연결된 정책 '삭제' 확인 창, 정책 탭 전국 공통 줄에 설명 줄이 없는지.
 - 링크 점검(2026-10-15)에서 확인 못 한 곳: 고흥 · 장흥 반값여행 사이트(이 PC 에서 접속 시간 초과), 디지털관광주민증 시군 페이지(대기 화면 뒤라 자동 확인 불가) - 브라우저로 확인한다.
 
