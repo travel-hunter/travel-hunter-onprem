@@ -11,13 +11,13 @@ Start from the actual repository, runtime, and server state instead of memory. T
 
 ## Checklist (run all; record what you could not check)
 
-1. **Sources** - read `AGENTS.md`, the nested `AGENTS.md` for the target area, `PLANS.md`, `CHECKLIST.md` top sections. Authoritative docs: `docs/requirements.md`, `docs/implemented-feature-spec.md`, `docs/next-work-plan.md`, `docs/mvp-api-contract.md`. Local procedure: `.codex/local-workflow.md`.
+1. **Sources** - read `AGENTS.md`, the nested `AGENTS.md` for the target area, `PLANS.md`, `CHECKLIST.md` top sections. Authoritative docs: `docs/requirements.md`, `docs/implemented-feature-spec.md`, `docs/next-work-plan.md`, `docs/mvp-api-contract.md`. Local procedure: `.codex/local-workflow.md` in the root checkout (local-only file, absent in worktrees).
 2. **develop** - `git fetch origin --prune`; `git log --oneline -5 origin/develop`.
-3. **Recent merges** - for the PR the user just merged (or the latest merged PRs): `gh pr view <n> --json state,mergeCommit`, and confirm each of its commits with `git merge-base --is-ancestor <sha> origin/develop`.
+3. **Recent merges** - for the PR the user just merged (or the latest merged PRs): `gh pr view <n> --json state,mergeCommit,commits`, and confirm each of its commits with `git merge-base --is-ancestor <sha> origin/develop`.
 4. **Open PRs** - `gh pr list --state open`.
 5. **Worktrees** - `git worktree list`; classify each branch: merged into `origin/develop` / commits not in develop (count) / dirty files. Root checkout: branch and `git status --short` count. Never treat `develop`, `main`, `ci/prod-jenkins` or backup branches as cleanup targets.
 6. **CHECKLIST freshness** - does `Current Status` mention every PR merged since it was last updated? List missing PRs.
-7. **Local runtime** - `com.docker.compose.project.working_dir` of `travel-hunter-onprem-{db,backend,frontend}-1` (all three must match one worktree); `http://127.0.0.1:8000/api/health`, `:4173`, `:5173`; which branch/commit that worktree is on.
+7. **Local runtime** - `docker ps --format '{{.Names}} {{.Label "com.docker.compose.project.working_dir"}}'` (labels only - never unfiltered `docker inspect`); the three `travel-hunter-onprem-*` containers must share one worktree; `http://127.0.0.1:8000/api/health`, `:4173`, `:5173`; which branch/commit that worktree is on.
 8. **Local vs dev server** - frontend: compare `/assets/index-*.css` names from `https://dev.travel-hunter.co.kr/` and `http://127.0.0.1:4173/` (JS hashes always differ - ignore them); backend: byte-compare `/openapi.json` from both; DB: local `alembic current` inside the backend container. Server DB checks only with user approval.
 9. **Pending server work** - deploy-time items listed in `CHECKLIST.md` Active Risks (review-queue approvals, data migrations, one-off server SQL).
 
@@ -32,7 +32,7 @@ Start from the actual repository, runtime, and server state instead of memory. T
 
 Then ask the next task with options, recommended first. Include these when they apply:
 - **CHECKLIST 맞추기** when step 6 found missing PRs.
-- **로컬을 개발서버에 맞추기** when step 8 differs: rebuild backend/frontend from `origin/develop` in a worktree (`docker compose --env-file <repo>/.env -p travel-hunter-onprem -f compose.local.yaml build backend frontend` then `up -d --no-deps`), `alembic upgrade head`, then copy policy data with the out-of-repo script `D:/travel-hunter-tools/sync-local-policies-from-dev.sh <db container>` (needs matching alembic versions).
+- **로컬을 개발서버에 맞추기** when step 8 differs: rebuild backend/frontend from `origin/develop` in a worktree (`docker compose --env-file <repo>/.env -p travel-hunter-onprem -f compose.local.yaml build backend frontend` then `up -d --no-deps`), `docker exec travel-hunter-onprem-backend-1 alembic upgrade head` (the backend does not migrate on start), then copy policy data with the out-of-repo script `D:/travel-hunter-tools/sync-local-policies-from-dev.sh <db container>` (needs matching alembic versions).
 - **머지된 워크트리 정리** (remove the `frontend/node_modules` junction with `rmdir` first).
 
 ## Common Mistakes

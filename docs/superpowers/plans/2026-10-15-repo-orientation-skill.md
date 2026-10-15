@@ -40,4 +40,5 @@
 - 2026-10-15 GREEN 용 스킬 작성(491단어, YAML 머리말, 체크리스트 9단계 · 보고 순서 · 다음 작업 선택지 · 흔한 실수) → 같은 요청으로 GREEN 시험.
 - 2026-10-15 GREEN(새 스킬, Sonnet): 9단계 모두 수행 - fetch, #97 커밋 2개 develop 확인, 열린 PR 0, 워크트리 분류(머지됨 11 · 남은 커밋 6 · 작업 중 1), CHECKLIST 빠진 PR 없음, 세 컨테이너 working_dir 일치 · 8000/4173/5173 200, 개발서버와 CSS · openapi 같음 · 로컬 alembic 0054, 남은 서버 작업, 못 한 점검과 이유, 다음 작업 선택지. 빠뜨림 없음 → 문구 그대로.
 - 2026-10-15 CHECKLIST 반영(PR 마다 규칙): Current Status 머지 준비 줄 · #97 머지, Recent Validation 스킬 시험.
+- 2026-10-15 커밋 91d0c83 검토(Opus, d870650 → 91d0c83): Critical 0, Important 2 - /repo 연결 파일의 git show 경로가 Git Bash 에서 깨짐(./ 로) · 머지 전엔 develop 의 옛 스킬을 조용히 읽음(첫 줄 --- 확인 뒤 브랜치 쪽으로), 런타임 출처 명령 미기재(docker ps --format 라벨만으로 명시). Minor 3 - local-workflow 는 루트 체크아웃에만, gh pr view 에 commits, alembic upgrade 는 docker exec. 모두 반영(공용 스킬 522단어).
 - 2026-10-15 사용자 추가 요구(0.1) 반영, 개발서버 · 로컬 버전 실측.
