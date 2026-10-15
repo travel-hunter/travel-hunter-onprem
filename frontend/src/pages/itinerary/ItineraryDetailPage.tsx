@@ -4741,13 +4741,13 @@ export function ItineraryDetailPage() {
       )}
       <ConfirmDialog
         open={Boolean(removeCandidatePolicy)}
-        title="이 정책을 일정에서 뺄까요?"
+        title="이 정책을 일정에서 삭제할까요?"
         body={
           `${removeCandidatePolicy?.title ?? "선택한 정책"} 연결만 풀려요. 정책은 정책 탭에 그대로 있어 다시 담을 수 있어요.` +
           (removeCandidatePolicy?.application ? " 기록해 둔 신청 진행은 함께 지워져요." : "")
         }
         error={policyRemoveError}
-        confirmLabel="빼기"
+        confirmLabel="삭제"
         isSubmitting={Boolean(removingPolicySlug)}
         onCancel={() => setRemoveCandidatePolicy(null)}
         onConfirm={() => {

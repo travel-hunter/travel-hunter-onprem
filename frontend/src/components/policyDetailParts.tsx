@@ -154,7 +154,7 @@ export function PolicyDetailFacts({
   return (
     <dl className={how ? "policy-detail-facts" : "policy-detail-facts two"}>
       <div>
-        <dt>받는 것</dt>
+        <dt>혜택</dt>
         {/* 제휴 할인은 제휴처 수가 곧 받는 것이다 */}
         <dd className="amount">{text.partnerCount > 0 ? `제휴처 ${text.partnerCount}곳 할인` : won(amountLabel)}</dd>
       </div>
@@ -164,7 +164,7 @@ export function PolicyDetailFacts({
       </div>
       {how && (
         <div>
-          <dt>받는 방법</dt>
+          <dt>혜택 사용 방법</dt>
           <dd>{how}</dd>
         </div>
       )}
@@ -178,7 +178,7 @@ export function PolicyBenefitSection({ policy, text }: { policy: Policy; text: P
     Boolean(text.lead || text.spend || text.partnerCount) ||
     [text.more, text.picks, text.conditions, text.steps, text.extra].some((list) => list.length > 0);
   return (
-    <Section id="policy-detail-benefit" title="받는 혜택">
+    <Section id="policy-detail-benefit" title="혜택 내용">
       {text.lead && <p className="policy-detail-p">{text.lead}</p>}
       {text.more.map((sentence) => (
         <p className="policy-detail-p" key={sentence}>
@@ -234,7 +234,7 @@ export function PolicyBenefitSection({ policy, text }: { policy: Policy; text: P
       )}
       {text.steps.length > 0 && (
         <>
-          <h3>받는 방법</h3>
+          <h3>혜택 사용 방법</h3>
           <ol className="policy-detail-steps">
             {text.steps.map((step) => (
               <li key={step}>{step}</li>
@@ -347,7 +347,7 @@ export function PolicyTargetSection({ policy, text }: { policy: Policy; text: Po
   const hasIslands = islandCount > 0 && Boolean(policy.eligibleIslandsOfficialUrl);
   const regionTitle = text.regions[0]?.title;
   return (
-    <Section id="policy-detail-target" title="받을 수 있는 사람">
+    <Section id="policy-detail-target" title="혜택 대상">
       {text.target.length > 0 && <List items={text.target} />}
       {regionTitle && (
         <>
@@ -411,7 +411,7 @@ export function PolicyDocumentsSection({ policy, text }: { policy: Policy; text:
 
 export function PolicyNotesSection({ text }: { text: PolicyDetailText }) {
   return (
-    <Section id="policy-detail-notes" title="확인할 점">
+    <Section id="policy-detail-notes" title="확인 사항">
       {text.notes.length > 0 && <List items={text.notes} className="muted" />}
       {/* 수집된 일반 안내 여러 줄('공식 안내에서 최종 확인' 류)을 이 한 줄로 */}
       <p className="policy-detail-standard">할인율·기간·조건은 바뀔 수 있어요. 신청 전에 공식 안내에서 최종 확인해 주세요.</p>

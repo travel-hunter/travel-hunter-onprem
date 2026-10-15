@@ -80,6 +80,8 @@ function refundText(policy: Policy): PolicyListText {
 }
 
 function otherText(policy: Policy): PolicyListText {
+  // 전국 공통은 제목 · 요약이 곧 내용이라 설명 줄이 되풀이가 된다(QA 2026-10-15)
+  if (policy.region === "전국") return { head: won(policy.cardSummary ?? ""), detail: "", partners: 0 };
   const texts = supportItems(policy).map((item) => item.description ?? "").filter(Boolean);
   const first = texts[0] ?? policy.summary ?? "";
   return { head: won(policy.cardSummary ?? ""), detail: first ? firstSentence(won(first)) : "", partners: 0 };

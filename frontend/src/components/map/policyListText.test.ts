@@ -74,4 +74,18 @@ describe("policy list text (시안 v40 목록 한 줄)", () => {
     );
     expect(other).toEqual({ head: "2만원 할인", detail: "내일로패스 탑승권을 2만원 할인해요", partners: 0 });
   });
+
+  it("drops the description line for nationwide benefits - it repeats the title", () => {
+    // QA 10/15: 전국 공통 카드의 작은 설명 줄은 제목 · 요약과 겹쳐 뺀다
+    const nationwide = policyListText(
+      policy("내일로패스 할인", {
+        region: "전국",
+        cardSummary: "내일로패스 2만원 할인",
+        structuredDetail: {
+          supportContent: [{ title: "지원 내용", description: "내일로패스 탑승권을 2만원 정액 할인합니다." }],
+        } as Policy["structuredDetail"],
+      }),
+    );
+    expect(nationwide).toEqual({ head: "내일로패스 2만원 할인", detail: "", partners: 0 });
+  });
 });

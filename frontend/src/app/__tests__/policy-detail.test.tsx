@@ -118,7 +118,7 @@ describe("Travel Hunter app — policy detail", () => {
       expect(screen.queryByText("핵심 혜택")).toBeNull();
       expect(screen.queryByText("최대 10만원 혜택")).toBeNull();
       expect(
-        within(screen.getByRole("region", { name: "받는 혜택" })).getByText("여행비 10만원 (숙박비, 왕복 배편 승선권, 식비 등)"),
+        within(screen.getByRole("region", { name: "혜택 내용" })).getByText("여행비 10만원 (숙박비, 왕복 배편 승선권, 식비 등)"),
       ).toBeInTheDocument();
 
       // past round: collapsed, still offers its document form with the selected-applicant warning
@@ -187,7 +187,7 @@ describe("Travel Hunter app — policy detail", () => {
       // 제목 앞 연도는 뺀다
       expect(await screen.findByRole("heading", { level: 1, name: "섬 여행비 지원" })).toBeInTheDocument();
       expect(
-        within(screen.getByRole("region", { name: "받을 수 있는 사람" })).getByText("대상 섬 12곳"),
+        within(screen.getByRole("region", { name: "혜택 대상" })).getByText("대상 섬 12곳"),
       ).toBeVisible();
       expect(screen.getByRole("link", { name: "대상 섬 공식 안내" })).toHaveAttribute(
         "href",
@@ -385,7 +385,7 @@ describe("Travel Hunter app — policy detail", () => {
       expect(await screen.findByRole("heading", { level: 1, name: "구조화 상세 정책" })).toBeInTheDocument();
       // 핵심 혜택 문장 대신 제휴처 수, 목록 소개 문장은 뺀다
       expect(screen.getByText("제휴처 17곳 할인")).toBeInTheDocument();
-      const benefitSection = screen.getByRole("region", { name: "받는 혜택" });
+      const benefitSection = screen.getByRole("region", { name: "혜택 내용" });
       expect(within(benefitSection).getByText("제휴처 17곳")).toBeInTheDocument();
       expect(document.body).not.toHaveTextContent("합천 제휴처 17곳의 혜택을 제공합니다.");
       expect(document.body).not.toHaveTextContent("인기순 대표 제휴처와 주요 혜택을 카테고리별로 정리했습니다.");
@@ -412,8 +412,8 @@ describe("Travel Hunter app — policy detail", () => {
       expect(within(periodSection).getByText("신청")).toBeInTheDocument();
       expect(within(periodSection).getByText("여행")).toBeInTheDocument();
       expect(within(periodSection).getByText("쿠폰 발급")).toBeInTheDocument();
-      expect(within(screen.getByRole("region", { name: "받을 수 있는 사람" })).getByText("비수도권 숙박 예약자")).toBeInTheDocument();
-      expect(within(screen.getByRole("region", { name: "확인할 점" })).getByText("예산 소진 시 조기 종료")).toBeInTheDocument();
+      expect(within(screen.getByRole("region", { name: "혜택 대상" })).getByText("비수도권 숙박 예약자")).toBeInTheDocument();
+      expect(within(screen.getByRole("region", { name: "확인 사항" })).getByText("예산 소진 시 조기 종료")).toBeInTheDocument();
       expect(document.body).not.toHaveTextContent("2026.05.01 ~ 2026.12.31");
       expect(screen.getByRole("link", { name: /혜택 안내 보기/ })).toHaveAttribute("href", "https://example.com/official");
       // 구조화된 서류 칸이 비면 옛 서류 문구를 끌어오지 않고 공식 안내 한 줄로 채운다
@@ -541,10 +541,10 @@ describe("Travel Hunter app — policy detail", () => {
 
       expect(await screen.findByRole("heading", { name: "부분 구조화 정책" })).toBeInTheDocument();
       // 짧은 '혜택' 줄은 받는 것 칸과 같은 말일 때만 뺀다 - 다른 말이면 남긴다
-      expect(within(screen.getByRole("region", { name: "받는 혜택" })).getByText("구조화 혜택")).toBeInTheDocument();
+      expect(within(screen.getByRole("region", { name: "혜택 내용" })).getByText("구조화 혜택")).toBeInTheDocument();
       expect(document.body).not.toHaveTextContent("기존 조건 fallback");
       expect(document.body).not.toHaveTextContent("기존 서류 fallback");
-      expect(screen.getByRole("region", { name: "받을 수 있는 사람" })).toHaveTextContent(
+      expect(screen.getByRole("region", { name: "혜택 대상" })).toHaveTextContent(
         "대상과 조건은 공식 안내에서 확인해 주세요.",
       );
       expect(screen.queryByRole("link", { name: /위험 링크/ })).not.toBeInTheDocument();
@@ -589,7 +589,7 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/mixed-requirement-fallback");
 
       expect(await screen.findByRole("heading", { name: "조건 구조화와 확인사항 fallback 정책" })).toBeInTheDocument();
-      const targetSection = screen.getByRole("region", { name: "받을 수 있는 사람" });
+      const targetSection = screen.getByRole("region", { name: "혜택 대상" });
       expect(within(targetSection).getByText("구조화 결제 조건")).toBeInTheDocument();
       expect(document.body).not.toHaveTextContent("모바일 지역화폐 결제");
       expect(document.body).not.toHaveTextContent("공식 공지사항 필독");
@@ -642,7 +642,7 @@ describe("Travel Hunter app — policy detail", () => {
       expect(
         await screen.findByRole("heading", { name: "구조화 숙박세일 페스타" }),
       ).toBeInTheDocument();
-      const benefitSection = screen.getByRole("region", { name: "받는 혜택" });
+      const benefitSection = screen.getByRole("region", { name: "혜택 내용" });
       expect(within(benefitSection).getByRole("heading", { name: "할인 혜택" })).toBeInTheDocument();
       expect(within(benefitSection).getByText("숙박 결제 금액에 따라 2만~7만원 할인")).toBeInTheDocument();
       expect(screen.getByText("비수도권 숙박시설 1박 이상 예약")).toBeInTheDocument();
@@ -716,11 +716,11 @@ describe("Travel Hunter app — policy detail", () => {
         await screen.findByRole("heading", { level: 1, name: "대한민국 반값여행 지원" }),
       ).toBeInTheDocument();
       expect(document.querySelector(".policy-detail-eyebrow")).toHaveTextContent("거창 · 경남");
-      const supportSection = screen.getByRole("region", { name: "받는 혜택" });
-      const targetSection = screen.getByRole("region", { name: "받을 수 있는 사람" });
+      const supportSection = screen.getByRole("region", { name: "혜택 내용" });
+      const targetSection = screen.getByRole("region", { name: "혜택 대상" });
       const documentSection = screen.getByRole("region", { name: "준비물" });
       expect(screen.getByRole("region", { name: "기간" })).toBeInTheDocument();
-      expect(screen.getByRole("region", { name: "확인할 점" })).toHaveTextContent(
+      expect(screen.getByRole("region", { name: "확인 사항" })).toHaveTextContent(
         "선착순 마감 기준은 경비 신청 순이며 예산 소진 시 마감된다.",
       );
       expect(within(supportSection).getByText(/거창 여행 중 사용한 경비의 50%/)).toBeInTheDocument();
@@ -774,7 +774,7 @@ describe("Travel Hunter app — policy detail", () => {
       ).toBeInTheDocument();
       // 구조화 전 정책은 조건 원문을 그대로 싣는다 - 분류하거나 설명을 지어 붙이지 않는다
       expect(document.body).not.toHaveTextContent("디지털관광주민증");
-      const targetSection = screen.getByRole("region", { name: "받을 수 있는 사람" });
+      const targetSection = screen.getByRole("region", { name: "혜택 대상" });
       expect(within(targetSection).getByText(gangjinRequirement)).toBeInTheDocument();
       expect(targetSection.querySelectorAll("li")).toHaveLength(1);
     } finally {
@@ -873,11 +873,11 @@ describe("Travel Hunter app — policy detail", () => {
     try {
       renderAppRoute(examplePolicyPath);
 
-      await screen.findByRole("region", { name: "받는 혜택" });
+      await screen.findByRole("region", { name: "혜택 내용" });
       expect(
         screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent),
-      ).toEqual(["받는 혜택", "기간", "받을 수 있는 사람", "준비물", "확인할 점"]);
-      expect(screen.getByRole("region", { name: "받을 수 있는 사람" })).toHaveTextContent(
+      ).toEqual(["혜택 내용", "기간", "혜택 대상", "준비물", "확인 사항"]);
+      expect(screen.getByRole("region", { name: "혜택 대상" })).toHaveTextContent(
         "디지털관광주민증 발급 또는 지역별 신청 조건 확인",
       );
       expect(document.body).not.toHaveTextContent("조건 확인 요약");
@@ -924,7 +924,7 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/card-benefit-policy");
 
       await screen.findByRole("heading", { level: 1, name: "부산 결제 캐시백" });
-      const targetSection = screen.getByRole("region", { name: "받을 수 있는 사람" });
+      const targetSection = screen.getByRole("region", { name: "혜택 대상" });
       expect(
         Array.from(targetSection.querySelectorAll("li")).map((item) => item.textContent),
       ).toEqual(["국내 여행자", "제휴 카드", "부산 결제", "월 한도 적용"]);
@@ -968,7 +968,7 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/long-summary-policy");
 
       const supportSection = await screen.findByRole("region", {
-        name: "받는 혜택",
+        name: "혜택 내용",
       });
       expect(screen.getByText("최대 14만원")).toBeInTheDocument();
       expect(within(supportSection).getByText(/정상가 대비 1만원 할인/)).toBeInTheDocument();
@@ -1011,7 +1011,7 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/dgtour-%EB%B0%80%EC%96%91-1");
 
       const supportSection = await screen.findByRole("region", {
-        name: "받는 혜택",
+        name: "혜택 내용",
       });
       // '혜택 제공' 같은 뜻 없는 금액은 받는 것 칸에서 주민증 혜택으로 바꿔 읽힌다
       expect(screen.getByText("디지털관광주민증 혜택")).toBeInTheDocument();
@@ -1062,7 +1062,7 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/travelmonth-44");
 
       const supportSection = await screen.findByRole("region", {
-        name: "받는 혜택",
+        name: "혜택 내용",
       });
       expect(screen.getByText("최대 30%")).toBeInTheDocument();
       expect(within(supportSection).getByText(welchonPolicy.summary)).toBeInTheDocument();
@@ -1131,7 +1131,7 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/stay-discount-gangwon-goseong");
 
       const supportSection = await screen.findByRole("region", {
-        name: "받는 혜택",
+        name: "혜택 내용",
       });
       expect(
         await screen.findByRole("heading", {
@@ -1154,7 +1154,7 @@ describe("Travel Hunter app — policy detail", () => {
       const documentsSection = screen.getByRole("region", { name: "준비물" });
       expect(within(documentsSection).getByText("따로 낼 서류가 없어요")).toBeInTheDocument();
       expect(within(documentsSection).getByText("온라인에서 할인권을 받아 예약하면 적용돼요.")).toBeInTheDocument();
-      const notesSection = screen.getByRole("region", { name: "확인할 점" });
+      const notesSection = screen.getByRole("region", { name: "확인 사항" });
       expect(within(notesSection).getByText("할인권은 매일 오전 10시부터 선착순 발급됩니다.")).toBeInTheDocument();
       expect(within(notesSection).getByText("예산 소진 시 조기 종료될 수 있습니다.")).toBeInTheDocument();
       // 숫자 없는 '공식 안내에서 최종 확인' 류는 끝의 한 줄 안내로 모은다
@@ -1216,7 +1216,7 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute("/policies/travelmonth-23");
 
       const supportSection = await screen.findByRole("region", {
-        name: "받는 혜택",
+        name: "혜택 내용",
       });
       // 받는 것 칸과 같은 '혜택' 줄은 한 번만, 조건은 받는 혜택 안의 '혜택 적용 조건' 목록으로
       expect(screen.getAllByText("최대 20만원 환급")).toHaveLength(1);
@@ -1626,8 +1626,9 @@ describe("Travel Hunter app — policy detail", () => {
       renderAppRoute(examplePolicyPath);
       const summary = await screen.findByRole("complementary", { name: "요약과 담기" });
       expect(document.querySelector(".prototype-policy-detail-screen")).toHaveClass("desktop-wide", "policy-detail-desk");
-      // 받는 것·기간은 오른쪽 카드로 옮기고, 탭바 자리의 버튼 줄은 그리지 않는다
-      expect(within(summary).getByText("받는 것")).toBeInTheDocument();
+      // 혜택·기간은 오른쪽 카드로 옮기고, 탭바 자리의 버튼 줄은 그리지 않는다(QA 10/15: '받는 것' → '혜택')
+      expect(within(summary).getByText("혜택")).toBeInTheDocument();
+      expect(within(summary).queryByText("받는 것")).toBeNull();
       expect(within(summary).getByText("기간")).toBeInTheDocument();
       expect(document.querySelector(".policy-detail-bar")).toBeNull();
       expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
