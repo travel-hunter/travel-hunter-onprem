@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { HERO_PHOTOS, LOGIN_PHOTOS, type HeroPhoto } from "./heroPhotos";
 import "../styles/photo-credits.css";
 
-/* 앱 전체 '사진 출처'(시안 v54). 홈 배너 아래 '사진 출처'와 내 정보 메뉴 '사진 출처'가 같은 창을 연다.
+/* 앱 전체 '사진 출처'(시안 v54). 내 정보 메뉴 '사진 출처'가 연다(홈 배너 아래 단추는 10/14 뺐다).
    open 을 단추의 onClick 에 걸고 dialog 를 그 화면 어디든 그리면 된다 - 닫으면 초점이 연 단추로 돌아간다. */
 export function usePhotoCredits() {
   const [opener, setOpener] = useState<HTMLElement | null>(null);
@@ -39,8 +39,18 @@ function PhotoCreditsDialog({ onClose }: { onClose: () => void }) {
         <CreditGroup photos={LOGIN_PHOTOS} title="로그인 화면" />
         <p className="photo-credits-note">
           위키미디어 공용 사진입니다. CC BY · CC BY-SA 사진은 저작자와 라이선스를 밝히는 것이 이용 조건이고, CC0 · 퍼블릭 도메인
-          사진은 의무는 없지만 함께 적습니다. 관광공사 사진(시군 · 정책)은 사진과 함께 출처를 적습니다.
+          사진은 의무는 없지만 함께 적습니다.
         </p>
+        <section aria-label="한국관광공사 사진" className="photo-credits-group">
+          <h3>한국관광공사 사진</h3>
+          <p className="photo-credits-note">
+            시군 · 정책 · 장소 사진은 한국관광공사(TourAPI)가 공공누리 제1유형(출처표시) · 제3유형(변경금지)으로 개방한 사진입니다.
+            받은 원본 파일을 다시 인코딩하거나 크기를 바꾸지 않고 쓰며(화면 칸에 맞춰 가장자리가 가려질 수 있습니다), 사진 위에는 '사진: 한국관광공사' 로 출처를 적습니다.{" "}
+            <a href="https://www.kogl.or.kr/info/license.do" rel="noreferrer noopener" target="_blank">
+              공공누리 이용조건
+            </a>
+          </p>
+        </section>
       </div>
     </div>
   );

@@ -72,7 +72,7 @@ def test_resolve_exact_city_hit_serves_the_stored_file(session: Session) -> None
     assert resolved.image_url == "/api/media/photos/ab/haenam.jpg"
     assert resolved.thumbnail_url is None
     assert resolved.alt == "두륜산 케이블카"
-    assert resolved.attribution == "사진: 한국관광공사 · 공공누리 제1유형"
+    assert resolved.attribution == "사진: 한국관광공사"
 
 
 def test_resolve_policy_photo_before_region_fallback(session: Session) -> None:

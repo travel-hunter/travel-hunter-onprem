@@ -800,7 +800,7 @@ Account linking policy:
       "imageUrl": "/api/media/photos/3f/3fa9c2d1e0b4a7f6c5d8e9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0.jpg",
       "thumbnailUrl": null,
       "alt": "두륜산 케이블카",
-      "attribution": "사진: 한국관광공사 · 공공누리 제1유형"
+      "attribution": "사진: 한국관광공사"
     }
   }
 ]
@@ -808,7 +808,7 @@ Account linking policy:
 
 `category` 허용 값: `"교통" | "숙박" | "여행상품" | "지역할인" | "이벤트" | "기타"`
 
-`photo`는 정책 지역 대표 관광지 사진이며 optional이다(`PolicyPhoto | null`). backend가 사진 검토에서 확정한 정책 사진 → `(policies.region, policies.city)` 시군구 사진 순으로 해석해 내려준다(`photo_review_targets` 가 고른 `photo_review_candidates`, 원본을 받아 둔 것만). 시군이 있는 정책은 그 시군 사진이 없으면 시도 대표 사진으로 넘어가지 않고 `null` 이다(2026-10-01 - 같은 도의 여러 시군이 한 장을 나눠 쓰던 것을 막는다). 시군이 없는 정책(시도 단위·전국)만 시도 대표 사진을 쓴다. 해석 실패 시 `photo`는 `null`이며 frontend는 기존 그라디언트+이모지 시각을 그대로 사용한다. 사진은 수집 기준(`backend/app/services/photo_criteria.py`: 저작권 유형 · 시설 제외 · 시군 간 겹침 금지 · 가로 800px 이상)을 거친 후보 중 관리자가 '사진 검토'에서 확정한 것만 나간다(2026-10-02, 아래 Admin photo review). 정책을 따로 확정하지 않으면 시군 사진을 그대로 쓴다. 사진 원천은 한국관광공사 TourAPI(공공누리 제1유형, 또는 원본을 고치지 않고 쓰는 조건의 제3유형 변경금지)이고 `attribution`은 항상 비어 있지 않은 출처표시 문자열이다(예: `사진: 한국관광공사 · 공공누리 제1유형`) — frontend는 사진을 렌더할 때 이 출처를 함께 표시해야 한다. `imageUrl`은 확정할 때 받아 둔 원본(다시 인코딩 · 리사이즈하지 않음)의 API 기준 상대 주소 `/api/media/photos/<해시 앞 2자>/<sha256>.<jpg|png|webp|gif>` 다(2026-10-02) - 관광공사 주소를 그대로 걸지 않는다. frontend 는 API 주소를 앞에 붙여 쓴다(`frontend/src/api/client.ts` `mediaUrl`, same-origin 이면 그대로). 이름이 내용 해시라 `Cache-Control: public, max-age=31536000, immutable` 로 나간다. `thumbnailUrl` 은 `null` 이다(관광공사 축소판은 120×80 이라 쓰지 않는다).
+`photo`는 정책 지역 대표 관광지 사진이며 optional이다(`PolicyPhoto | null`). backend가 사진 검토에서 확정한 정책 사진 → `(policies.region, policies.city)` 시군구 사진 순으로 해석해 내려준다(`photo_review_targets` 가 고른 `photo_review_candidates`, 원본을 받아 둔 것만). 시군이 있는 정책은 그 시군 사진이 없으면 시도 대표 사진으로 넘어가지 않고 `null` 이다(2026-10-01 - 같은 도의 여러 시군이 한 장을 나눠 쓰던 것을 막는다). 시군이 없는 정책(시도 단위·전국)만 시도 대표 사진을 쓴다. 해석 실패 시 `photo`는 `null`이며 frontend는 기존 그라디언트+이모지 시각을 그대로 사용한다. 사진은 수집 기준(`backend/app/services/photo_criteria.py`: 저작권 유형 · 시설 제외 · 시군 간 겹침 금지 · 가로 800px 이상)을 거친 후보 중 관리자가 '사진 검토'에서 확정한 것만 나간다(2026-10-02, 아래 Admin photo review). 정책을 따로 확정하지 않으면 시군 사진을 그대로 쓴다. 사진 원천은 한국관광공사 TourAPI(공공누리 제1유형, 또는 원본을 고치지 않고 쓰는 조건의 제3유형 변경금지)이고 `attribution`은 항상 비어 있지 않은 출처표시 문자열이다(예: `사진: 한국관광공사`) — frontend는 사진을 렌더할 때 이 출처를 함께 표시해야 한다. `imageUrl`은 확정할 때 받아 둔 원본(다시 인코딩 · 리사이즈하지 않음)의 API 기준 상대 주소 `/api/media/photos/<해시 앞 2자>/<sha256>.<jpg|png|webp|gif>` 다(2026-10-02) - 관광공사 주소를 그대로 걸지 않는다. frontend 는 API 주소를 앞에 붙여 쓴다(`frontend/src/api/client.ts` `mediaUrl`, same-origin 이면 그대로). 이름이 내용 해시라 `Cache-Control: public, max-age=31536000, immutable` 로 나간다. `thumbnailUrl` 은 `null` 이다(관광공사 축소판은 120×80 이라 쓰지 않는다).
 `sourceType` 허용 값은 `"internal" | "external"`이며 API 호환과 내부 진단을 위해 유지한다. 사용자 화면은 `internal/external` 같은 구현 구분 문구를 노출하지 않는다. 사용자에게 노출되는 모든 정책은 정규화된 `policies` 레코드이므로 저장/일정 연결 동작을 동일하게 지원한다.
 
 `PolicyStructuredDetail` v1 섹션은 아래 다섯 배열만 표준으로 사용한다. 각 item은 화면 표시용 `title`/`label`, `description`/`value`, `amount`, `startDate`, `endDate`, 기간 의미를 나타내는 `type` 같은 문자열 필드를 느슨하게 담을 수 있다. 빈 배열은 허용하며 frontend는 빈 섹션을 숨긴다. 정책 대표 공식 안내/신청 링크는 top-level `officialUrl`/`applyUrl` CTA로 노출한다. 다만 디지털관광주민증처럼 본문 안의 개별 제휴처 상세로 직접 이동해야 하는 항목은 `structuredDetail.supportContent[*].url`에 HTTP(S) 링크를 담을 수 있다. 외부 수집 정책 상세에서 `structuredDetail`은 primary screen-ready contract다. frontend는 비어 있지 않은 `structuredDetail` 섹션을 그대로 우선 렌더링하고, 해당 섹션이 비어 있거나 누락된 경우에만 `summary`/`requirements`/`documents`/기간 값으로 section-by-section fallback을 수행한다. `requirements`는 legacy/simple fallback 재료이며, `structuredDetail.applicationTarget`이 하나라도 있으면 frontend는 `requirements`를 다시 분류하거나 조건·안내 섹션에 병합하지 않는다. 외부 source 의미 분류는 등록된 `sourceCategory` mapper만 수행하며, 미등록 source는 `contact_text`나 긴 원문을 조건으로 추측하지 않고 빈 조건으로 응답한다. `stay_discount` raw fallback은 공식 4단계 할인 조합, 필수 이용 근거, 시작·종료일이 모두 해석되는 발급·입실 기간이 완전할 때만 매핑한다. 표시용 `summary`/`amount`/`requirements`는 구조화된 지원 내용·신청 대상과 canonical 금액에서 파생하고, 불완전한 원문에는 하드코딩된 캠페인 문구를 보충하지 않는다.
@@ -1542,7 +1542,7 @@ Additional `Recommendation` fields:
 - `aiReview`: string | null (공공데이터 추천은 `null`)
 - `sourceType`: `freshCandidate` | `savedSummary` | `public_place` | null - `public_place` 가 공공데이터 추천이다. `freshCandidate`(카카오 추천)는 이 경로가 더는 만들지 않는다.
 - `publicSource`: `tourapi` | `sangga` | null, `publicSourceId`: string | null, `publicCategory`: `sight` · `culture` · `leisure` · `stay` · `shopping` · `food` · `cafe` | null - 담을 때 `publicPlace: { source: publicSource, sourceId: publicSourceId }` 로 보낸다.
-- `photoUrl`: string | null (https 주소), `photoLicense`: `Type1` | `Type3` | null (TourAPI 사진만, 공공누리 출처 표시용)
+- `photoUrl`: string | null (https 주소), `photoLicense`: `Type1` | `Type3` | null (TourAPI 사진만, 공공누리 유형 기록 - 화면 출처는 유형 없이 `사진: 한국관광공사`, 유형은 앱 사진 출처 창)
 
 **Response 200** → `Recommendation[]`
 ```json
@@ -1817,7 +1817,7 @@ editor 초대 링크를 생성/확인한 뒤 email로 전송. owner 또는 edito
 | publicSourceId | string \| null | 그 출처의 장소 ID(TourAPI contentid · 상가업소번호) |
 | publicCategory | `sight` \| `culture` \| `leisure` \| `stay` \| `shopping` \| `food` \| `cafe` \| null | 공공데이터 장소 분류. 일정 화면이 시간대와 분류 표시에 쓴다 |
 | photoUrl | string \| null | 공공데이터 사진 주소(https). TourAPI 장소만 |
-| photoLicense | string \| null | 사진 저작권 유형(`Type1` · `Type3`, 공공누리). 출처 표시에 쓴다 |
+| photoLicense | string \| null | 사진 저작권 유형(`Type1` · `Type3`, 공공누리). 화면 출처 칩에는 쓰지 않는다(유형은 앱 사진 출처 창) |
 | geoKind | `"building"` \| `"parcel"` \| null | 주소 채움(방식1)으로 담긴 나만의 장소의 지번 종류. 그 행의 `address`(와 `pin` 이면 좌표)가 국토교통부 공공데이터 건물 · 땅 지번에서 왔다는 뜻이고 화면이 출처(`국토교통부 공공데이터`)를 보인다. 그 밖의 행은 `null` |
 | needsConfirmation | boolean | 예전 카카오 행(`placeOrigin` 이 `null` 이고 `sourceProvider` 가 `kakao` · `kakao_local`)이면 `true` - 이름 · 주소 · 좌표가 카카오 값이라 이름을 다시 적게 한다 |
 

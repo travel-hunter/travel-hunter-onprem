@@ -2910,7 +2910,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
 
       const sheet = await screen.findByRole("dialog", { name: "장소 수정" });
       expect(within(sheet).getByRole("img", { name: "오동도 사진" })).toHaveAttribute("src", photoUrl);
-      expect(within(sheet).getByText("사진: 한국관광공사 · 변경 금지")).toBeInTheDocument();
+      expect(within(sheet).getByText("사진: 한국관광공사")).toBeInTheDocument();
       expect(within(sheet).getByText("관광지")).toBeInTheDocument();
       expect(within(sheet).getByText(address)).toBeInTheDocument();
       expect(within(sheet).getByRole("link", { name: "카카오맵에서 보기" })).toHaveAttribute("href", "https://place.map.kakao.com/8193468");
@@ -4585,7 +4585,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       // 사진과 출처는 사진이 있는 추천에만
       const odongdoCard = screen.getByRole("button", { name: "오동도 지도에서 보기" });
       expect(odongdoCard.querySelector("img")).toHaveAttribute("src", photoUrl);
-      expect(within(odongdoCard).getByText("사진: 한국관광공사 · 변경 금지")).toBeInTheDocument();
+      expect(within(odongdoCard).getByText("사진: 한국관광공사")).toBeInTheDocument();
       expect(cafeCard.querySelector("img")).toBeNull();
 
       await user.click(screen.getByRole("button", { name: "오동도 후보 저장" }));

@@ -11,11 +11,6 @@ export const PUBLIC_CATEGORY_LABEL: Record<PublicPlaceCategory, string> = {
   cafe: "카페",
 };
 
-/* 한국관광공사 사진의 출처 표시. 공공누리 Type1 은 출처 표시, Type3 는 출처 표시 + 변경 금지다 */
-export function photoCredit(license: string | null | undefined): string {
-  return license === "Type3" ? "사진: 한국관광공사 · 변경 금지" : "사진: 한국관광공사";
-}
-
 /* 추천 미리보기의 시간대 묶음(오전 · 점심 · 카페 · 숙소)과 같은 네 갈래. 카카오 분류 코드 없이 공공데이터 분류만으로 가른다 */
 export type PublicTimeSlotGroup = "attraction" | "food" | "cafe" | "stay";
 

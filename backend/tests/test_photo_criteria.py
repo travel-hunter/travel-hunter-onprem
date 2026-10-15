@@ -10,7 +10,7 @@ import pytest
 from app.services.photo_criteria import (
     ImageProbeError,
     ImageSizeProbe,
-    attribution_for,
+    KTO_PHOTO_ATTRIBUTION,
     image_size,
     metadata_rejections,
     size_rejections,
@@ -130,6 +130,4 @@ def test_size_probe_raises_when_the_image_server_is_unreachable_and_retries_next
 
 
 def test_attribution_names_the_kogl_type() -> None:
-    assert attribution_for("Type1") == "사진: 한국관광공사 · 공공누리 제1유형"
-    assert attribution_for("Type3") == "사진: 한국관광공사 · 공공누리 제3유형(변경금지)"
-    assert attribution_for(None) == "사진: 한국관광공사"
+    assert KTO_PHOTO_ATTRIBUTION == "사진: 한국관광공사"

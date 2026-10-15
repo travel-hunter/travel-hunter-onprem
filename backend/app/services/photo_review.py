@@ -26,7 +26,7 @@ from app.data.travel_areas import normalize_municipality_name
 from app.models import ExternalSourceRecord, PhotoReviewCandidate, PhotoReviewTarget, Policy, User
 from app.repositories import photo_review as repository
 from app.repositories.policies import list_active_policies_for_photo_backfill
-from app.services.photo_criteria import ImageProbeError, attribution_for, metadata_rejections, size_rejections
+from app.services.photo_criteria import ImageProbeError, metadata_rejections, size_rejections
 from app.services.photo_storage import PhotoStorageError, StoredImage, media_root, store_remote_image
 from app.services.policies import _normalize_policy_category
 from app.services.tour_api import TourApiAreaCode, TourApiPhotoProvider, TourApiSpot
