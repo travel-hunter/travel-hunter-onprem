@@ -559,7 +559,7 @@ test("normalized policy save, unsave, trip link, and unlink stay consistent on m
   // Unlink removes it from the trip detail linked-policy region.
   // 연결에는 신청 진행 기록이 붙어 있어 바로 지우지 않고 확인 창을 거친다.
   await linkedRegion.getByRole("button", { name: `${linkedTitle} 연결 삭제` }).click();
-  await page.getByRole("dialog", { name: "이 정책을 일정에서 뺄까요?" }).getByRole("button", { name: "빼기" }).click();
+  await page.getByRole("dialog", { name: "이 정책을 일정에서 삭제할까요?" }).getByRole("button", { name: "삭제" }).click();
   await expect(
     page.getByRole("region", { name: "연결된 정책" }).getByText(linkedTitle),
   ).toHaveCount(0);

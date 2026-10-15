@@ -445,7 +445,7 @@ describe("Travel Hunter app — my page", () => {
       );
       // × 뒤에 확인 창이 한 번 더 있다
       await user.click(
-        within(await screen.findByRole("dialog")).getByRole("button", { name: "빼기" }),
+        within(await screen.findByRole("dialog")).getByRole("button", { name: "삭제" }),
       );
       await waitFor(() =>
         expect(removePolicyFromTripSpy).toHaveBeenCalledWith(

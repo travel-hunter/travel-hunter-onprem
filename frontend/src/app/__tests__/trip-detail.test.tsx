@@ -1886,7 +1886,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       expect(within(region).queryByText("삭제")).not.toBeInTheDocument();
       await user.click(within(region).getByRole("button", { name: "[서귀포] 숙박 할인 연결 삭제" }));
       const dialog = await screen.findByRole("dialog");
-      expect(dialog).toHaveTextContent("이 정책을 일정에서 뺄까요?");
+      expect(dialog).toHaveTextContent("이 정책을 일정에서 삭제할까요?");
       expect(dialog).toHaveTextContent("[서귀포] 숙박 할인");
       expect(removePolicySpy).not.toHaveBeenCalled();
 
@@ -1897,7 +1897,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
 
       // 다시 눌러 확인하면 그때 빠진다
       await user.click(within(region).getByRole("button", { name: "[서귀포] 숙박 할인 연결 삭제" }));
-      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "빼기" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "삭제" }));
       await waitFor(() => expect(removePolicySpy).toHaveBeenCalledWith("61", "seogwipo-stay"));
       await waitFor(() => expect(within(region).queryByText("[서귀포] 숙박 할인")).not.toBeInTheDocument());
     } finally {
@@ -2154,7 +2154,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       // × 는 바로 지우지 않는다 - 확인 창에서 한 번 더 받는다
       expect(removePolicySpy).not.toHaveBeenCalled();
       await userEvent.setup().click(
-        within(await screen.findByRole("dialog")).getByRole("button", { name: "빼기" }),
+        within(await screen.findByRole("dialog")).getByRole("button", { name: "삭제" }),
       );
 
       await waitFor(() =>
@@ -2239,7 +2239,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       // × 는 바로 지우지 않는다 - 확인 창에서 한 번 더 받는다
       expect(removePolicySpy).not.toHaveBeenCalled();
       await userEvent.setup().click(
-        within(await screen.findByRole("dialog")).getByRole("button", { name: "빼기" }),
+        within(await screen.findByRole("dialog")).getByRole("button", { name: "삭제" }),
       );
 
       await waitFor(() =>
@@ -2323,7 +2323,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
     }
   });
 
-  it("opens the existing trip date editor from the hero and shows a past trip as 다녀옴", async () => {
+  it("opens the existing trip date editor from the hero and shows a past trip as 지난 여행", async () => {
     const trip: Trip = {
       ...getPreviewTrip(),
       id: "61",
@@ -2341,7 +2341,7 @@ describe("Travel Hunter app — trip detail & itinerary", () => {
       const user = userEvent.setup();
       await user.click(await screen.findByRole("button", { name: "기간 바꾸기" }));
       expect(screen.getByRole("dialog", { name: "여행기간 수정" })).toBeInTheDocument();
-      expect(document.querySelector(".prototype-detail-dday-chip")).toHaveTextContent("다녀옴");
+      expect(document.querySelector(".prototype-detail-dday-chip")).toHaveTextContent("지난 여행");
     } finally {
       getTripSpy.mockRestore();
     }

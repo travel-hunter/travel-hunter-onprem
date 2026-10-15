@@ -91,12 +91,12 @@ export function daysUntilPolicyDeadline(deadline: string | null | undefined, now
 
 export type TripStatus = { tone: "past" | "now" | "urgent" | "soon"; label: string };
 
-/* 일정 목록·상세의 상태 칩. 지난 여행을 "D+108" 로 세면 읽히지 않아 "다녀옴" 으로 접는다. */
+/* 일정 목록·상세의 상태 칩. 지난 여행을 "D+108" 로 세면 읽히지 않아 "지난 여행" 으로 접는다(QA 10/15: 다녀옴 → 지난 여행). */
 export function tripStatus(startDate: string, endDate: string, now = new Date()): TripStatus | null {
   const untilStart = daysUntilPolicyDeadline(startDate, now);
   const untilEnd = daysUntilPolicyDeadline(endDate, now);
   if (untilStart === null || untilEnd === null) return null;
-  if (untilEnd < 0) return { tone: "past", label: "다녀옴" };
+  if (untilEnd < 0) return { tone: "past", label: "지난 여행" };
   if (untilStart < 0) return { tone: "now", label: "여행 중" };
   if (untilStart === 0) return { tone: "now", label: "오늘 출발" };
   return { tone: untilStart <= 7 ? "urgent" : "soon", label: `D-${untilStart}` };

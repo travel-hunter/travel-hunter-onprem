@@ -57,7 +57,7 @@ describe("policy deadline calendar labels", () => {
 
 describe("trip status chip", () => {
   it("folds past trips into one label and counts down upcoming ones", () => {
-    expect(tripStatus("2026-08-01", "2026-08-03", KST_MORNING)).toEqual({ tone: "past", label: "다녀옴" });
+    expect(tripStatus("2026-08-01", "2026-08-03", KST_MORNING)).toEqual({ tone: "past", label: "지난 여행" });
     expect(tripStatus("2026-08-20", "2026-08-22", KST_MORNING)).toEqual({ tone: "now", label: "여행 중" });
     expect(tripStatus("2026-08-19", "2026-08-21", KST_LATE_NIGHT)).toEqual({ tone: "now", label: "여행 중" });
     expect(tripStatus("2026-08-21", "2026-08-23", KST_MORNING)).toEqual({ tone: "now", label: "오늘 출발" });

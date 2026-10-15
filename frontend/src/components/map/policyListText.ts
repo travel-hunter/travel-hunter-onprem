@@ -1,5 +1,6 @@
 import type { Policy, PolicyStructuredDetailItem } from "../../api";
 import { won } from "../../utils/policyDetailText";
+import { NATIONWIDE_REGION } from "../../utils/policyPrograms";
 
 /* 정책 탭 목록 줄의 '받는 것' 한 줄(head)과 그 지역만의 한 줄(detail). 시안 v40 의 규칙(benefit_text.py)을 옮겼다.
    수집된 상세(structuredDetail)에서 규칙으로 뽑으므로 정책 상세 화면과 출처가 같다 - 검수된 카드 문구(cardSummary)만 쓰던
@@ -80,6 +81,8 @@ function refundText(policy: Policy): PolicyListText {
 }
 
 function otherText(policy: Policy): PolicyListText {
+  // 전국 공통은 제목 · 요약이 곧 내용이라 설명 줄이 되풀이가 된다(QA 2026-10-15)
+  if (policy.region === NATIONWIDE_REGION) return { head: won(policy.cardSummary ?? ""), detail: "", partners: 0 };
   const texts = supportItems(policy).map((item) => item.description ?? "").filter(Boolean);
   const first = texts[0] ?? policy.summary ?? "";
   return { head: won(policy.cardSummary ?? ""), detail: first ? firstSentence(won(first)) : "", partners: 0 };

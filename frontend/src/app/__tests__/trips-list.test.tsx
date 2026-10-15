@@ -68,9 +68,9 @@ describe("Travel Hunter app — trips list", () => {
       );
       expect(document.body).not.toHaveTextContent("추천 정책 확인 가능");
       expect(document.body).toHaveTextContent("1명 참여 중");
-      // "예상 혜택 0원" 은 혜택이 없다는 말이라 빼고, 지난 여행은 "다녀옴" 으로 접는다.
+      // "예상 혜택 0원" 은 혜택이 없다는 말이라 빼고, 지난 여행은 "지난 여행" 으로 접는다.
       expect(document.body).not.toHaveTextContent("예상 혜택");
-      expect(document.body).toHaveTextContent("다녀옴");
+      expect(document.body).toHaveTextContent("지난 여행");
 
       const user = userEvent.setup();
       const menuButton = screen.getByRole("button", { name: "부산 4일 여행 편집·삭제" });
@@ -181,12 +181,12 @@ describe("Travel Hunter app — trips list", () => {
       ).not.toBeInTheDocument();
       expect(document.querySelector(".trip-dday-chip")).not.toBeInTheDocument();
       expect(updateStatusSpy).not.toHaveBeenCalled();
-      // 작성 중·확정됨 같은 확정 상태가 아니라 여행 날짜 상태(다녀옴·D-n) 하나만 붙는다.
+      // 작성 중·확정됨 같은 확정 상태가 아니라 여행 날짜 상태(지난 여행·D-n) 하나만 붙는다.
       const statusTags = Array.from(
         document.querySelectorAll(".itinerary-policy-row .tag"),
       );
       expect(statusTags).toHaveLength(1);
-      expect(statusTags[0]).toHaveTextContent("다녀옴");
+      expect(statusTags[0]).toHaveTextContent("지난 여행");
       expect(document.body).not.toHaveTextContent("작성 중");
       expect(document.body).not.toHaveTextContent("확정됨");
     } finally {
