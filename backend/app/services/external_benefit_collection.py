@@ -204,6 +204,8 @@ def _queue_review_candidates(
     for row in rows:
         if not (isinstance(row, ExternalSourceRecord) and row.id is not None):
             continue
+        if policy_candidate_review.skip_unpublished_ended_half_trip(db, row):
+            continue
         candidate = policy_candidate_review.classify_candidate(db, record=row)
         # Only freshly created candidates go through the gate; re-seen evidence keeps its verdict.
         if candidate.review_status != "pending" or candidate.review_reason is not None:

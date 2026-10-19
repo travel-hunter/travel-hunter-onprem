@@ -10,6 +10,7 @@ from app.core import security
 from app.models import ExternalSourceRecord, Policy, PolicyReviewCandidate, User
 from app.repositories import admin as admin_repository
 from app.services import policy_normalization, policy_semantic_mapping
+from app.services.local_half_trip_display import SOURCE_CATEGORY as LOCAL_HALF_TRIP_CATEGORY
 from app.services.policy_card_quality import card_copy_for_record
 
 
@@ -76,6 +77,27 @@ def classify_review_scope(db: Session, *, record: ExternalSourceRecord, previous
     if approved is None or approved.detail_fingerprint != detail_fingerprint(record):
         return REVIEW_SCOPE_FULL
     return REVIEW_SCOPE_CARD_COPY
+
+
+def skip_unpublished_ended_half_trip(db: Session, record: ExternalSourceRecord) -> bool:
+    """승인된 정책이 없는 마감 반값여행 기록은 후보를 만들지 않고, 남은 대기 후보도 밀어낸다.
+    계약은 신청접수중·준비중만 공개하는데 승인 경로는 마감 기록도 공개하기 때문이다.
+    정책이 이미 있는 기록의 변경 후보는 그대로 흐른다."""
+    if (
+        record.source_category != LOCAL_HALF_TRIP_CATEGORY
+        or record.status != "ended"
+        or _published_policy_for_record(db, record) is not None
+    ):
+        return False
+    for candidate in db.scalars(
+        select(PolicyReviewCandidate).where(
+            PolicyReviewCandidate.external_source_record_id == record.id,
+            PolicyReviewCandidate.review_status == "pending",
+        )
+    ):
+        candidate.review_status = "superseded"
+        db.add(candidate)
+    return True
 
 
 def classify_candidate(

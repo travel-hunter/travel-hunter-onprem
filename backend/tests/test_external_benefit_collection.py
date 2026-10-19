@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import itertools
 from datetime import UTC, date, datetime
 
-from app.models import ExternalSourceRecord
+import pytest
+from sqlalchemy import create_engine, event, select
+from sqlalchemy.orm import Session, sessionmaker
+
+import app.models  # noqa: F401
+from app.db.base import Base
+from app.models import ExternalSourceRecord, Policy, PolicyReviewCandidate, User
+from app.services import external_benefit_collection
 from app.services.external_benefit_collection import (
     SourceCollectionResult,
     collect_external_benefits_from_html_sources,
     enrich_existing_local_half_trip_detail_fields,
     fetch_local_half_trip_detail_html,
 )
+from app.services.policy_candidate_review import approve_candidate, classify_candidate
 
 
 class FakeDb:
@@ -508,3 +517,112 @@ def test_live_collection_reports_island_parser_change(monkeypatch) -> None:
 
     assert result.outcome == "error"
     assert result.sources[0].outcome == "parser_changed"
+
+
+# --- 마감 반값여행 기록: 승인된 정책이 없으면 후보를 만들지 않는다 -------------------------
+
+
+@pytest.fixture
+def review_db() -> Session:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    counter = itertools.count(1000)
+
+    def assign_id(_mapper, _connection, target: Policy) -> None:
+        if target.id is None:
+            target.id = next(counter)
+
+    event.listen(Policy, "before_insert", assign_id)
+    try:
+        with session_factory() as session:
+            yield session
+    finally:
+        event.remove(Policy, "before_insert", assign_id)
+
+
+def half_trip_record(category: str = "local_half_trip", **overrides) -> ExternalSourceRecord:
+    values = dict(
+        id=1,
+        source_name="대한민국 반값여행",
+        source_type="official_campaign",
+        source_url="https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+        source_category=category,
+        external_id="half-1",
+        canonical_key="half-1",
+        collected_page_url="https://korean.visitkorea.or.kr/dgtourcard/tour50.do",
+        title="[평창] 대한민국 반값여행 지원",
+        organizer_text="평창 지자체",
+        organizers=["평창 지자체"],
+        region="강원",
+        city="평창",
+        is_nationwide=False,
+        status="active",
+        benefit_text="여행 경비의 50% 환급",
+        benefit_value_text="최대 20만원 환급",
+        benefit_value_type="mixed",
+        tags=["지역할인"],
+        inferred_travel_styles=[],
+        confidence=90,
+        field_completeness=90,
+        raw_list_text="평창 반값여행",
+        raw_detail_text="여행 경비의 50% 환급",
+        raw_payload={},
+        last_fetched_at=datetime(2026, 10, 19, 12, 0, 0),
+        freshness_status="fresh",
+    )
+    values.update(overrides)
+    return ExternalSourceRecord(**values)
+
+
+def queue_candidates(db: Session, record: ExternalSourceRecord) -> list[PolicyReviewCandidate]:
+    external_benefit_collection._queue_review_candidates(db, [record])
+    db.flush()
+    return list(db.scalars(select(PolicyReviewCandidate).order_by(PolicyReviewCandidate.id)))
+
+
+def test_ended_half_trip_record_without_policy_gets_no_candidate(review_db: Session) -> None:
+    record = half_trip_record(status="ended")
+    review_db.add(record)
+    review_db.flush()
+
+    assert queue_candidates(review_db, record) == []
+
+
+def test_ended_record_of_another_source_still_gets_a_candidate(review_db: Session) -> None:
+    record = half_trip_record(category="traffic_benefit", status="ended")
+    review_db.add(record)
+    review_db.flush()
+
+    assert [candidate.review_status for candidate in queue_candidates(review_db, record)] == ["pending"]
+
+
+def test_half_trip_record_that_ends_pushes_its_pending_candidate_out(review_db: Session) -> None:
+    record = half_trip_record()
+    review_db.add(record)
+    review_db.flush()
+    assert [candidate.review_status for candidate in queue_candidates(review_db, record)] == ["pending"]
+
+    record.status = "ended"
+
+    candidates = queue_candidates(review_db, record)
+    assert [candidate.review_status for candidate in candidates] == ["superseded"]
+
+
+def test_ended_half_trip_record_with_approved_policy_keeps_its_change_candidate(
+    review_db: Session,
+) -> None:
+    record = half_trip_record()
+    review_db.add_all([record, User(id=10, email="admin@example.com", nickname="admin", role="admin")])
+    review_db.flush()
+    admin = review_db.get(User, 10)
+    approve_candidate(review_db, candidate=classify_candidate(review_db, record=record), record=record, admin=admin)
+    record.status = "ended"
+    record.benefit_text = "여행 경비의 50% 환급, 마감"
+
+    candidates = queue_candidates(review_db, record)
+
+    assert [(candidate.review_status, candidate.change_kind) for candidate in candidates] == [
+        ("approved", "new"),
+        ("pending", "material_change"),
+    ]

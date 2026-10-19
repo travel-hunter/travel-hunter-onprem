@@ -5,11 +5,16 @@ from datetime import date, datetime
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
+from app.data.digital_tourism_resident_card import REGIONAL_URL_CODE_ROWS
 from app.schemas.external_sources import ExternalBenefitSource
 from app.services.policy_card_quality import evaluate_card_copy
-from app.services import digital_tourism_resident_card as dgtour_identity
-from app.services.local_half_trip_display import title_with_city_prefix
-from app.services.travelmonth_normalizer import normalize_text, parse_period, stable_hash
+from app.services.local_half_trip_display import display_city_name, title_with_city_prefix
+from app.services.travelmonth_normalizer import (
+    REGION_ALIASES,
+    normalize_text,
+    parse_period,
+    stable_hash,
+)
 
 
 SOURCE_NAME = "대한민국 반값여행"
@@ -20,7 +25,10 @@ DEFAULT_BENEFIT_TEXT = (
     "1명 최대 10만원, 2명 이상 최대 20만원까지 지원됩니다."
 )
 
-CITY_REGION = dgtour_identity.PARTICIPATING_CITY_REGIONS
+# 카드의 시도 코드(data-mtpcdocd) -> 지역 짧은 이름. 시도 이름은 개편마다 바뀌어(전남광주통합특별시) 코드를 먼저 본다.
+_REGION_BY_SIDO_CODE = {
+    mtpc_do_cd: region for _city, region, mtpc_do_cd, _signgu_cd in REGIONAL_URL_CODE_ROWS
+}
 
 _VOID_TAGS = {
     "area",
@@ -204,10 +212,9 @@ def _record_from_data_attrs(
     fetched_at: datetime,
     today: date,
 ) -> ExternalBenefitSource | None:
-    city = _city_from_data_attrs(raw_record)
-    if not dgtour_identity.is_participating_city(city):
+    city = display_city_name(_city_from_data_attrs(raw_record))
+    if not city:
         return None
-    city = dgtour_identity.display_city_name(city)
     status_text = normalize_text(str(raw_record.get("data-sttsnm") or ""))
     field_values = raw_record.get("field_values")
     if not isinstance(field_values, dict):
@@ -246,6 +253,7 @@ def _record_from_data_attrs(
         raw_payload["contact"] = contact_text
     return _build_record(
         city=city,
+        region=_region_from_data_attrs(raw_record),
         status_text=status_text,
         application_period=application_period,
         trip_period=trip_period,
@@ -268,9 +276,6 @@ def _record_from_section(
 ) -> ExternalBenefitSource | None:
     heading = str(raw_record.get("heading", ""))
     city, status_text = _split_heading(heading)
-    if not dgtour_identity.is_participating_city(city):
-        return None
-    city = dgtour_identity.display_city_name(city)
     paragraphs = [
         str(item) for item in raw_record.get("paragraphs", []) if str(item).strip()
     ]
@@ -279,6 +284,10 @@ def _record_from_section(
         paragraphs,
         "여행일정",
     )
+    # 시군 목록 대신 모양으로 거른다: 신청기간·여행기간 줄이 모두 있는 구역만 시군 카드다.
+    if not (city and application_period and trip_period):
+        return None
+    city = display_city_name(city)
     contact_text = _value_after_label(paragraphs, "문의전화")
     detail_url = _absolute_detail_url(raw_record.get("detail_url"), collected_page_url)
     start_date, end_date = _parse_application_period(application_period)
@@ -291,6 +300,7 @@ def _record_from_section(
         raw_payload["detailUrl"] = detail_url
     return _build_record(
         city=city,
+        region="전국",  # 대체 마크업에는 시도 정보가 없다
         status_text=status_text,
         application_period=application_period,
         trip_period=trip_period,
@@ -308,6 +318,7 @@ def _record_from_section(
 def _build_record(
     *,
     city: str,
+    region: str,
     status_text: str | None,
     application_period: str | None,
     trip_period: str | None,
@@ -337,7 +348,7 @@ def _build_record(
         title=title_with_city_prefix("대한민국 반값여행 지원", city),
         organizer_text=f"{city} 지자체",
         organizers=[f"{city} 지자체", "한국관광공사"],
-        region=dgtour_identity.region_for_city(city) or "전국",
+        region=region,
         city=city,
         is_nationwide=False,
         status_text=status_text or application_period,
@@ -370,11 +381,21 @@ def _city_from_data_attrs(raw_record: dict[str, object]) -> str:
     district = normalize_text(str(raw_record.get("data-signgucdnm") or ""))
     if district:
         return district.removesuffix("시").removesuffix("군")
+    # 제목은 "2026-경상남도 밀양" 꼴이라 마지막 낱말이 도시다.
     title = normalize_text(str(raw_record.get("data-trvnm") or ""))
-    for known_city in CITY_REGION:
-        if known_city in title:
-            return known_city
-    return ""
+    city = title.rsplit(" ", 1)[-1] if " " in title else ""
+    return city.removesuffix("시").removesuffix("군")
+
+
+def _region_from_data_attrs(raw_record: dict[str, object]) -> str:
+    sido_code = normalize_text(str(raw_record.get("data-mtpcdocd") or "")) or normalize_text(
+        str(raw_record.get("data-signgucd") or "")
+    )[:2]
+    return (
+        _REGION_BY_SIDO_CODE.get(sido_code)
+        or REGION_ALIASES.get(normalize_text(str(raw_record.get("data-mtpcdocdnm") or "")))
+        or "전국"
+    )
 
 
 def _clean_label(value: str) -> str:
