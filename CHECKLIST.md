@@ -2,8 +2,9 @@
 
 ## Current Status
 
-- Merge-ready: 정책 상세 표기 오류(`fix/policy-text-notation`). 주민증 '발급받은 여행자' · 'VisitKorea(대한민국 구석구석)', '숙박세일 페스타', 교통 '(89곳)' · '한국관광공사 디지털관광주민증' · '운임' · '시 · 군 · 구',
-  반값여행 괄호 안을 자르지 않음('여행유형(가족·개인·단체·청년)'). 저장된 행은 `0055_policy_text_notation` 이 고친다(수집 기록은 그대로 - 검토 후보 안 생김). 문체는 그대로(사용자 결정).
+- Merge-ready: 반값여행 공식 카드 전부 읽기(`fix/half-trip-all-cards`). 수집기가 디지털관광주민증 참여지역 목록으로 카드를 거르던 것을 없애 공식 카드 25장을 모두 읽는다
+  (새로 8곳: 강진 · 남해 · 영암 · 횡성 · 고성 · 영천 · 서천 · 화천). 마감된 카드 중 승인된 정책이 없는 것은 검토 후보를 만들지 않는다. API · 스키마 변경 없음.
+- 정책 상세 표기 오류: PR #99 로 develop 에 머지됐다(`7616cc1`). 저장된 행은 `0055_policy_text_notation` 이 고친다. 문체는 그대로(사용자 결정).
 - repo orientation 스킬: PR #98 로 develop 에 머지됐다(`80bca70`). Claude Code `/repo` 는 이 PC 의 `.claude/skills/repo`(저장소 밖)에서 develop 의 공용 스킬을 읽는다.
 - CHECKLIST 동기화: PR #97 로 develop 에 머지됐다(`d870650`).
 - 정책 상세 · 일정 문구(QA): PR #96 으로 develop 에 머지됐다(`66e5b44`). 정책 본문 번역체 정리는 하지 않는다(2026-10-15 사용자 결정 - 지금의 명사체 유지). 표기 오류만 위 브랜치에서 고친다.
@@ -18,17 +19,28 @@
 
 ## Recent Validation
 
-- PASS(표기 오류, 커밋 `440e69b`): backend `python -m pytest` 1588 passed · 27 skipped, 실패 1(`test_stay_discount_semantics_snapshot.py` - Windows 권한 시험, develop 에서도 실패). `alembic upgrade 0054_traffic_section_banners:head --sql` 통과(0055 는 오프라인에서 건너뜀).
+- 부분 PASS(반값여행 카드, 커밋 `e9e7496`): backend `python -m pytest` 1585 passed · 27 skipped · 1 failed - 실패는 `test_stay_discount_semantics_snapshot`(Windows 권한 시험, 기존 실패).
+  새 시험 11개(실측 축소본 25장 · 시도 코드로 지역 · 기존 시군 수집 키 그대로 · 마감 카드 후보 안 만듦 · 옛 대기 후보 밀어냄).
+- PASS(반값여행 카드): 공식 `tour50.do` 실페이지(2026-10-20)를 같은 워크트리 backend 컨테이너에서 읽어 25곳 모두 레코드(신청접수중 8 · 준비중 4 · 마감 13). 코드 리뷰(Opus) Critical 0 · Important 0.
+- PASS(#99 표기 오류, 커밋 `440e69b`): backend `python -m pytest` 1588 passed · 27 skipped, 실패 1(`test_stay_discount_semantics_snapshot.py` - Windows 권한 시험, develop 에서도 실패). `alembic upgrade 0054_traffic_section_banners:head --sql` 통과(0055 는 오프라인에서 건너뜀).
   `0055` 를 로컬 Postgres 에서 실제로 돌려 주민증 63 · 숙박세일 101 · 반값 6 · 교통 4행(숨김 포함) 교정, 옛 표기 남은 행 0, 검토 대기 후보 80 그대로, 반값 기간 줄 유지. 코드 리뷰(Opus) Critical 0 · Important 1(반영) · Minor 5(반영 · 기록). `git diff --check` PASS, U+FFFD 0. 프런트 코드 변경 없음.
 - 부분 PASS(#96, 커밋 `80046a4`): `npx vitest run` 742개 중 736개 - 실패 6개는 모두 `mypage.test.tsx`(쌓인 시험 일정 탓, 기존 실패). `npm run typecheck` · `npm run build` · `npm run test:mojibake` · `git diff --check` PASS.
 - PASS(#96): `npm run test:e2e:containers` 13/13(같은 워크트리로 다시 빌드한 4173), 코드 리뷰(Opus) `0b8cc9f → 80046a4` Critical 0 · Important 0.
 - PASS(#95, 커밋 `e6e2e25`): backend `python -m pytest` 1565 passed · 27 skipped(`test_stay_discount_semantics_snapshot.py` 제외 - Windows 권한 시험). `0053` · `0054` 를 로컬 Postgres 에서 실제로 돌려
   추가 혜택 정책 · 배너 4건 hidden · 원본 기록 stale, API 전국 정책 6건 확인. `alembic upgrade 0052_pg_prewarm:head --sql` 통과(두 데이터 마이그레이션은 오프라인에서 건너뜀).
-- 로컬 런타임(2026-10-15): db · backend · frontend 를 `text-notation` 워크트리로 띄움(로컬 DB alembic `0055`). 5173 은 꺼져 있음. 브라우저 확인은 사용자 몫 - 볼 곳은 Active Risks 의 표기 오류 · #94 · #95 · #96 절.
+- 로컬 런타임(2026-10-20): db · backend · frontend 와 5173 을 이 워크트리(half-trip-cards)로 띄움 - 8000 health 200 · 5173 200. 브라우저 확인은 사용자 몫.
 
 ## Active Risks
 
-### 정책 상세 표기 오류(`fix/policy-text-notation`)
+### 반값여행 공식 카드 전부 읽기(이 PR)
+
+- **배포 뒤 관리자 할 일(환경마다):** 반값 수집을 한 번 돌리고(개발서버는 스케줄러가 꺼져 있어 손으로), 새 시군 사이트(`healinggoseong.kr` · `yctour.kr` · `ihctour.kr` · `seocheontour.kr`)가
+  지자체 공식인지 · 고성이 경남 고성인지 본 뒤 후보를 승인한다. 영광 · 거창의 새 기간 후보도 승인한다.
+- 마감 카드의 후보 판정은 '그 기록에 승인된 정책이 있는가'다. 배포 전 개발서버에서 승인 후보 없이 공개된 반값 정책이 0건인지 읽기로 확인한다.
+- 공식 카드의 기간 라벨이 '사업기간'이라 여행기간 · 신청 상세 칸은 비어 있을 수 있다. 대체 마크업 경로(section 제목)로 읽은 기록의 지역은 늘 '전국'이다.
+- 브라우저로 볼 것: 배포 · 승인 전에는 화면 변화가 없다. 승인 뒤 정책 탭에 고성 · 영천 · 화천 반값여행 카드, 지역이 경남 · 경북 · 강원으로 나오는지.
+
+### 정책 상세 표기 오류(PR #99, 머지됨)
 
 - **배포 전 개발서버 미리 계산(읽기, 승인 뒤):** `0055` 는 반값여행 중 괄호 안에서 잘린 행을 기록의 지금 raw_payload 로 다시 만든다(기간 칸은 저장값 유지). 개발서버에서 `planned_changes` 로 행마다 바뀌는 칸을 보고 조각 잇기 외 차이가 없는지 확인한다. downgrade 는 아무것도 안 한다.
 - 범위 밖: 교통 `policy_comment` · `description` 은 수집 원문이라 '운임료' · '(89개)' 가 남는다(신청한 혜택 목록 요약에만 보임). 매퍼를 import 하는 마이그레이션이라 뒷날 매퍼가 새 열을 읽게 되면 0055 전 판 DB 를 올릴 때 멈출 수 있다(0045 · 0053 과 같은 위험).
