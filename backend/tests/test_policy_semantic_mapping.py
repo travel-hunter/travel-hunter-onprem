@@ -142,7 +142,7 @@ def test_stay_mapper_strictly_splits_support_periods_target_documents_notes() ->
         "14만원 이상 국내 숙박상품 예약 시 7만원 할인",
     ]
     assert conditions == [
-        "숙박세일페스타 대상 지역 숙박 이용자",
+        "숙박세일 페스타 대상 지역 숙박 이용자",
         "참여 온라인 여행사를 통해 국내 숙박상품을 예약하는 사용자",
         "할인권 발급 후 지정 기간 내 입실 가능한 사용자",
     ]
@@ -471,13 +471,13 @@ def test_digital_tourism_mapper_outputs_digital_only_sections() -> None:
     serialized = str(result.structured_detail)
 
     assert result.mapper_status == "mapped"
-    assert result.target_condition == "하동 디지털관광주민증을 발급한 여행자"
+    assert result.target_condition == "하동 디지털관광주민증을 발급받은 여행자"
     assert _descriptions(result, "supportContent") == [
         "디지털관광주민증 발급 지역의 숙박, 식음, 체험, 관광지 제휴 혜택"
     ]
     assert _descriptions(result, "applicationTarget") == [
-        "하동 디지털관광주민증을 발급한 여행자",
-        "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다.",
+        "하동 디지털관광주민증을 발급받은 여행자",
+        "VisitKorea(대한민국 구석구석)에서 디지털관광주민증을 발급받고 제휴처에서 제시해야 합니다.",
     ]
     assert _descriptions(result, "requiredDocuments") == [
         "별도 제출 서류 없음, 디지털관광주민증 발급 및 제시 기준으로 적용"
@@ -674,3 +674,42 @@ def test_unknown_mapper_is_explicitly_empty_and_fail_closed() -> None:
         "requiredDocuments": [],
         "notes": [],
     }
+
+def test_local_half_trip_keeps_separators_inside_parentheses() -> None:
+    record = _record(
+        source_category="local_half_trip",
+        raw_payload={
+            "notes": (
+                "여행경비 최소 10만 원 이상 결제, 여행유형(가족·개인·단체·청년) 중복신청 및 승인 후 유형변경 불가, "
+                "결제수단 : 모바일 지역화폐(QR결제) 및 개인카드(신용/체크)"
+            ),
+        },
+    )
+    record.city = "산청"
+
+    result = _map(record)
+
+    benefits = _descriptions(result, "supportContent")
+    assert "여행유형(가족·개인·단체·청년) 중복신청 및 승인 후 유형변경 불가" in benefits
+    assert "결제수단 : 모바일 지역화폐(QR결제) 및 개인카드(신용/체크)" in benefits
+    assert "여행경비 최소 10만 원 이상 결제" in benefits
+    every = [item for section in result.structured_detail.values() if isinstance(section, list) for item in section]
+    for item in every:
+        text = str(item.get("description", ""))
+        assert text.count("(") == text.count(")"), text
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("가(나·다), 라", ["가(나·다)", "라"]),
+        ("x), y(z)", ["x)", "y(z)"]),  # 닫는 괄호가 먼저 - 그 자리에서 깊이를 0 으로 둔다
+        ("a(b(c, d), e), f", ["a(b(c, d), e)", "f"]),  # 중첩
+        ("p（q, r）, s", ["p（q, r）", "s"]),  # 전각 괄호
+        ("앞, a(b, c", ["앞", "a(b", "c"]),  # 안 닫힌 괄호 - 그 조각부터는 예전처럼 나눈다
+    ],
+)
+def test_split_outside_parentheses_boundaries(text: str, expected: list[str]) -> None:
+    from app.services.policy_semantic_mapping import _split_outside_parentheses
+
+    assert _split_outside_parentheses(text) == expected

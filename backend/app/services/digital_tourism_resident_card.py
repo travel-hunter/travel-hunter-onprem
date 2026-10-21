@@ -314,7 +314,7 @@ SUPPORT_CONTENT_TEXT = "디지털관광주민증 발급 지역의 숙박, 식음
 DEFAULT_BENEFIT_TEXT = f"{SUPPORT_CONTENT_TEXT}을 이용할 수 있습니다."
 DEFAULT_BENEFIT_VALUE_TEXT = "지역 제휴 혜택"
 USAGE_CONDITION_TEXT = (
-    "VisitKorea/대한민국 구석구석에서 디지털관광주민증을 발급하고 제휴처에서 제시해야 합니다."
+    "VisitKorea(대한민국 구석구석)에서 디지털관광주민증을 발급받고 제휴처에서 제시해야 합니다."
 )
 REQUIRED_DOCUMENTS_TEXT = "별도 제출 서류 없음, 디지털관광주민증 발급 및 제시 기준으로 적용"
 OFFICIAL_CONFIRMATION_NOTE = "제휴처별 할인율, 운영 기간, 이용 조건은 VisitKorea 공식 안내에서 최종 확인하세요."
@@ -364,8 +364,8 @@ def title_with_city_prefix(city: str | None) -> str:
 def application_target_text(city: str | None) -> str:
     display_city = display_city_name(city)
     if display_city:
-        return f"{display_city} 디지털관광주민증을 발급한 여행자"
-    return "디지털관광주민증을 발급한 여행자"
+        return f"{display_city} 디지털관광주민증을 발급받은 여행자"
+    return "디지털관광주민증을 발급받은 여행자"
 
 
 def city_from_title(title: str) -> str:
